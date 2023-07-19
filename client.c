@@ -3,6 +3,7 @@
 #include <errno.h>
 #include <unistd.h>
 #include "quic.h"
+#include <sys/socket.h>
 
 #define MSG_LEN	4096
 #define TOT_LEN	204800000
@@ -73,6 +74,10 @@ int main(int argc, char *argv[])
 			}
 			len += ret;
 			printf("send %d %lld\n", ret, len);
+			if (len == TOT_LEN / 2) { /* do rekeying */
+				if (setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_KEY_UPDATE, NULL, 0))
+					return -1;
+			}
 			if (len >= TOT_LEN)
 				break;
 		}

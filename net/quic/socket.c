@@ -600,6 +600,9 @@ static int quic_setsockopt(struct sock *sk, int level, int optname,
 	case QUIC_SOCKOPT_DEST_CONNECTION_ID_NUMBERS:
 		retval = quic_connection_id_set_numbers(&qs->dest, kopt, optlen);
 		break;
+	case QUIC_SOCKOPT_KEY_UPDATE:
+		retval = quic_crypto_key_update(&qs->crypto, kopt, optlen);
+		break;
 	/* below is context setup from userspace after handshake */
 	case QUIC_SOCKOPT_LOCAL_TRANSPORT_PARAMS:
 		retval = quic_set_transport_param(sk, kopt, optlen, 1);

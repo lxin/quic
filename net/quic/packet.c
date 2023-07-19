@@ -124,8 +124,8 @@ struct sk_buff *quic_packet_create(struct sock *sk, struct quic_packet_info *pki
 	hdr->fixed = 1;
 	hdr->spin = 0;
 	hdr->reserved = 0;
-	hdr->key = 0;
 	hdr->pnl = 0x3;
+	skb_reset_transport_header(skb);
 
 	p = (u8 *)hdr + 1;
 	p = quic_put_data(p, qs->dest.active->id.data, qs->dest.active->id.len);

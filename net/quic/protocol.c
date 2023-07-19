@@ -126,7 +126,6 @@ static void quic_v6_lower_xmit(struct sock *sk, struct sk_buff *skb)
 	skb_reset_inner_mac_header(skb);
 	skb_reset_inner_transport_header(skb);
 	skb_set_inner_ipproto(skb, IPPROTO_QUIC);
-	skb_reset_transport_header(skb);
 	udp_tunnel6_xmit_skb(dst, sk, skb, NULL, &saddr->v6.sin6_addr,
 			     &daddr->v6.sin6_addr, inet6_sk(sk)->tclass, ip6_dst_hoplimit(dst),
 			     0, saddr->v6.sin6_port, daddr->v6.sin6_port, false);

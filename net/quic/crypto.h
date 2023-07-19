@@ -12,6 +12,7 @@ struct quic_packet_info {
 	u32 number;
 	u32 number_len;
 	u32 number_offset;
+	u8 key_phase:1;
 };
 
 #define QUIC_KEY_LEN	16
@@ -34,6 +35,9 @@ struct quic_crypto {
 	u8 tx_hp_key[QUIC_KEY_LEN];
 	u8 rx_hp_key[QUIC_KEY_LEN];
 
+	u32 key_update_ts;
+	u32 key_update_send_ts;
+
 	u8 key_phase:1,
 	   key_pending:1;
 };
@@ -46,3 +50,5 @@ int quic_crypto_set_secret(struct quic_crypto *crypto, void *key, u8 len, bool s
 int quic_crypto_get_secret(struct quic_crypto *crypto, int len, char __user *optval,
 			   int __user *optlen, bool send);
 void quic_crypto_destroy(struct quic_crypto *crypto);
+int quic_crypto_key_update(struct quic_crypto *crypto, u8 *key, unsigned int len);
+void quic_crypto_set_key_update_ts(struct quic_crypto *crypto, u32 key_update_ts);
