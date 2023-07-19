@@ -53,3 +53,4 @@ struct sk_buff *quic_frame_create(struct sock *sk, u8 type, void *data, u32 len)
 int quic_frame_process(struct sock *sk, struct sk_buff *skb);
 bool quic_frame_ack_eliciting(u8 type);
 bool quic_frame_ack_immediate(u8 type);
+bool quic_frame_non_probing(u8 type);

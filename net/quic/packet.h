@@ -14,6 +14,7 @@ struct quic_packet {
 	u32 len;
 	u8 ack_eliciting:1,
 	   ack_immediate:1,
+	   non_probing:1,
 	   ipfragok:1;
 
 	u32 next_number; /* next packet number to send */

@@ -151,12 +151,12 @@ static struct quic_udp_sock *quic_udp_sock_lookup(struct sock *sk, union quic_ad
 
 void quic_path_addr_set(struct quic_path_addr *a, union quic_addr *addr)
 {
-	memcpy(&a->addr[0], addr, a->addr_len);
+	memcpy(&a->addr[a->active], addr, a->addr_len);
 }
 
 union quic_addr *quic_path_addr(struct quic_path_addr *a)
 {
-	return &a->addr[0];
+	return &a->addr[a->active];
 }
 
 void quic_path_addr_init(struct quic_path_addr *a, u8 addr_len)
@@ -164,16 +164,16 @@ void quic_path_addr_init(struct quic_path_addr *a, u8 addr_len)
 	a->addr_len = addr_len;
 }
 
-int quic_udp_sock_set(struct sock *sk, struct quic_udp_sock *udp_sk[], union quic_addr *addr)
+int quic_udp_sock_set(struct sock *sk, struct quic_udp_sock *udp_sk[], struct quic_path_addr *a)
 {
 	struct quic_udp_sock *usk;
 
-	usk = quic_udp_sock_lookup(sk, addr);
+	usk = quic_udp_sock_lookup(sk, quic_path_addr(a));
 	if (!usk)
 		return -EINVAL;
 
-	quic_udp_sock_put(udp_sk[0]);
-	udp_sk[0] = usk;
+	quic_udp_sock_put(udp_sk[a->active]);
+	udp_sk[a->active] = usk;
 
 	return 0;
 }

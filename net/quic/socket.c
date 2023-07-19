@@ -106,7 +106,7 @@ static int quic_bind(struct sock *sk, struct sockaddr *addr, int addr_len)
 
 	lock_sock(sk);
 
-	a = quic_path_addr(&quic_sk(sk)->src);
+	a = quic_path_addr(&qs->src);
 	if (a->v4.sin_port || addr->sa_family != sk->sk_family ||
 	    addr_len < quic_addr_len(sk) || !quic_addr(addr)->v4.sin_port) {
 		err = -EINVAL;
@@ -115,7 +115,7 @@ static int quic_bind(struct sock *sk, struct sockaddr *addr, int addr_len)
 
 	memcpy(a, addr, quic_addr_len(sk));
 	quic_get_port(sock_net(sk), &qs->port, a);
-	err = quic_udp_sock_set(sk, qs->udp_sk, a);
+	err = quic_udp_sock_set(sk, qs->udp_sk, &qs->src);
 	if (err)
 		goto out;
 	quic_set_sk_addr(sk, a, true);
@@ -139,7 +139,7 @@ static int quic_connect(struct sock *sk, struct sockaddr *addr, int addr_len)
 		goto out;
 	if (!a->v4.sin_port) { /* auto bind */
 		quic_get_port(sock_net(sk), &qs->port, a);
-		err = quic_udp_sock_set(sk, qs->udp_sk, a);
+		err = quic_udp_sock_set(sk, qs->udp_sk, &qs->src);
 		if (err)
 			goto out;
 		quic_set_sk_addr(sk, a, true);
@@ -537,11 +537,45 @@ static int quic_sock_set_addr(struct sock *sk, struct quic_path_addr *path, void
 	if (len != quic_addr_len(sk))
 		return -EINVAL;
 
-	if (udp_bind && quic_udp_sock_set(sk, quic_sk(sk)->udp_sk, data))
+	quic_path_addr_set(path, data);
+
+	if (udp_bind && quic_udp_sock_set(sk, quic_sk(sk)->udp_sk, path))
+		return -EINVAL;
+	return 0;
+}
+
+int quic_sock_change_addr(struct sock *sk, struct quic_path_addr *path, void *data,
+			  u32 len, bool udp_bind)
+{
+	struct sk_buff *skb;
+	int err;
+
+	if (path->pending)
 		return -EINVAL;
 
-	quic_path_addr_set(path, data);
+	path->active = !path->active;
+	err = quic_sock_set_addr(sk, path, data, len, udp_bind);
+	if (err)
+		goto err;
+
+	/* send a ping before path validation so that we can delete the old path
+	 * when validation is complete with no worries that the peer hasn't been
+	 * aware of the new path.
+	 */
+	skb = quic_frame_create(sk, QUIC_FRAME_PING, NULL, 0);
+	if (!skb)
+		goto err;
+	quic_outq_ctrl_tail(sk, skb, true);
+
+	skb = quic_frame_create(sk, QUIC_FRAME_PATH_CHALLENGE, path, sizeof(*path));
+	if (!skb)
+		goto err;
+	quic_outq_ctrl_tail(sk, skb, !udp_bind);
+	path->pending = 1;
 	return 0;
+err:
+	path->active = !path->active;
+	return err;
 }
 
 static int quic_set_state(struct sock *sk, u8 *state, u32 len)
@@ -602,6 +636,9 @@ static int quic_setsockopt(struct sock *sk, int level, int optname,
 		break;
 	case QUIC_SOCKOPT_KEY_UPDATE:
 		retval = quic_crypto_key_update(&qs->crypto, kopt, optlen);
+		break;
+	case QUIC_SOCKOPT_CONNECTION_MIGRATION:
+		retval = quic_sock_change_addr(sk, &qs->src, kopt, optlen, 1);
 		break;
 	/* below is context setup from userspace after handshake */
 	case QUIC_SOCKOPT_LOCAL_TRANSPORT_PARAMS:

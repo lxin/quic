@@ -74,7 +74,19 @@ static struct sk_buff *quic_frame_ack_create(struct sock *sk, void *data, u32 le
 
 static struct sk_buff *quic_frame_ping_create(struct sock *sk, void *data, u32 len)
 {
-	return 0;
+	u8 *p, frame[10], type = QUIC_FRAME_PING;
+	struct sk_buff *skb;
+	u32 frame_len;
+
+	p = quic_put_var(frame, type);
+	frame_len = (u32)(p - frame);
+
+	skb = alloc_skb(frame_len, GFP_ATOMIC);
+	if (!skb)
+		return NULL;
+	skb_put_data(skb, frame, frame_len);
+
+	return skb;
 }
 
 static struct sk_buff *quic_frame_padding_create(struct sock *sk, void *data, u32 len)
@@ -175,12 +187,42 @@ static struct sk_buff *quic_frame_new_connection_id_create(struct sock *sk, void
 
 static struct sk_buff *quic_frame_path_response_create(struct sock *sk, void *data, u32 len)
 {
-	return 0;
+	u8 *p, frame[10], type = QUIC_FRAME_PATH_RESPONSE;
+	struct sk_buff *skb;
+	u8 *entropy = data;
+	u32 frame_len;
+
+	p = quic_put_var(frame, type);
+	p = quic_put_data(p, entropy, len);
+	frame_len = (u32)(p - frame);
+
+	skb = alloc_skb(frame_len, GFP_ATOMIC);
+	if (!skb)
+		return NULL;
+	skb_put_data(skb, frame, frame_len);
+
+	return skb;
 }
 
 static struct sk_buff *quic_frame_path_challenge_create(struct sock *sk, void *data, u32 len)
 {
-	return 0;
+	u8 *p, frame[10], type = QUIC_FRAME_PATH_CHALLENGE;
+	struct quic_path_addr *path = data;
+	struct sk_buff *skb;
+	u32 frame_len;
+
+	get_random_bytes(path->entropy, sizeof(path->entropy));
+
+	p = quic_put_var(frame, type);
+	p = quic_put_data(p, path->entropy, sizeof(path->entropy));
+	frame_len = (u32)(p - frame);
+
+	skb = alloc_skb(frame_len, GFP_ATOMIC);
+	if (!skb)
+		return NULL;
+	skb_put_data(skb, frame, frame_len);
+
+	return skb;
 }
 
 static struct sk_buff *quic_frame_reset_stream_create(struct sock *sk, void *data, u32 len)
@@ -403,7 +445,16 @@ static int quic_frame_ping_process(struct sock *sk, struct sk_buff *skb, u8 type
 
 static int quic_frame_path_challenge_process(struct sock *sk, struct sk_buff *skb, u8 type)
 {
-	return 0;
+	struct sk_buff *fskb;
+	u8 entropy[8], *p;
+
+	memcpy(entropy, skb->data, sizeof(entropy));
+	p = skb->data + sizeof(entropy);
+	fskb = quic_frame_create(sk, QUIC_FRAME_PATH_RESPONSE, entropy, sizeof(entropy));
+	if (!fskb)
+		return -ENOMEM;
+	quic_outq_ctrl_tail(sk, fskb, true);
+	return p - skb->data;
 }
 
 static int quic_frame_reset_stream_process(struct sock *sk, struct sk_buff *skb, u8 type)
@@ -529,7 +580,30 @@ static int quic_frame_streams_blocked_bidi_process(struct sock *sk, struct sk_bu
 
 static int quic_frame_path_response_process(struct sock *sk, struct sk_buff *skb, u8 type)
 {
-	return 0;
+	struct quic_sock *qs = quic_sk(sk);
+	struct quic_path_addr *path;
+	u8 entropy[8], *p;
+
+	memcpy(entropy, skb->data, sizeof(entropy));
+	p = skb->data + sizeof(entropy);
+
+	path = &qs->src; /* source address validation */
+	if (!memcmp(path->entropy, entropy, sizeof(entropy))) {
+		if (path->pending) {
+			path->pending = 0;
+			quic_udp_sock_put(qs->udp_sk[!path->active]);
+			qs->udp_sk[!path->active] = NULL;
+			memset(&path->addr[!path->active], 0, quic_addr_len(sk));
+		}
+	}
+	path = &qs->dst; /* dest address validation */
+	if (!memcmp(path->entropy, entropy, sizeof(entropy))) {
+		if (path->pending) {
+			path->pending = 0;
+			memset(&path->addr[!path->active], 0, quic_addr_len(sk));
+		}
+	}
+	return p - skb->data;
 }
 
 #define quic_frame_create_and_process(type) \
@@ -594,6 +668,8 @@ int quic_frame_process(struct sock *sk, struct sk_buff *skb)
 			if (quic_frame_ack_immediate(type))
 				quic_sk(sk)->packet.ack_immediate = 1;
 		}
+		if (quic_frame_non_probing(type))
+			quic_sk(sk)->packet.non_probing = 1;
 
 		skb_pull(skb, err);
 		if (skb->len <= 0)
@@ -627,4 +703,10 @@ bool quic_frame_ack_immediate(u8 type)
 {
 	return (type < QUIC_FRAME_STREAM || type >= QUIC_FRAME_MAX_DATA) ||
 	       (type & QUIC_STREAM_BIT_FIN);
+}
+
+bool quic_frame_non_probing(u8 type)
+{
+	return type != QUIC_FRAME_NEW_CONNECTION_ID && type != QUIC_FRAME_PADDING &&
+	       type != QUIC_FRAME_PATH_RESPONSE && type != QUIC_FRAME_PATH_CHALLENGE;
 }

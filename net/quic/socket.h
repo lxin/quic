@@ -83,6 +83,8 @@ static inline bool quic_is_connected(struct sock *sk)
 	       quic_sk(sk)->state == QUIC_STATE_CLIENT_CONNECTED;
 }
 
+int quic_sock_change_addr(struct sock *sk, struct quic_path_addr *path, void *data,
+			  u32 len, bool udp_bind);
 struct quic_sock *quic_sock_lookup_byaddr(struct sk_buff *skb, union quic_addr *a);
 int quic_get_mss(struct sock *sk);
 

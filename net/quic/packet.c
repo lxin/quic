@@ -39,6 +39,7 @@ static void quic_packet_reset(struct sock *sk)
 
 	qs->packet.ack_eliciting = 0;
 	qs->packet.ack_immediate = 0;
+	qs->packet.non_probing = 0;
 	qs->packet.ipfragok = 0;
 	skb_queue_head_init(&qs->packet.frame_list);
 }
@@ -53,6 +54,7 @@ int quic_packet_process(struct sock *sk, struct sk_buff *skb)
 {
 	struct quic_sock *qs = quic_sk(sk);
 	struct quic_packet_info pki;
+	union quic_addr saddr;
 	struct sk_buff *fskb;
 	int err;
 
@@ -75,6 +77,16 @@ int quic_packet_process(struct sock *sk, struct sk_buff *skb)
 
 	if (quic_pnmap_mark(&qs->pn_map, pki.number))
 		goto err;
+
+	/* connection migration check: an endpoint only changes the address to which
+	 * it sends packets in response to the highest-numbered non-probing packet.
+	 */
+	if (qs->packet.non_probing &&
+	    pki.number == quic_pnmap_get_max_pn_seen(&qs->pn_map)) {
+		qs->af_ops->get_msg_addr(&saddr, skb, 1);
+		if (memcmp(&saddr, quic_path_addr(&qs->dst), quic_addr_len(sk)))
+			quic_sock_change_addr(sk, &qs->dst, &saddr, quic_addr_len(sk), 0);
+	}
 
 	consume_skb(skb);
 

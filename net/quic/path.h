@@ -24,7 +24,9 @@ struct quic_udp_sock {
 struct quic_path_addr {
 	union quic_addr addr[2];
 	u8 addr_len;
-	u8 active;
+	u8 active:1,
+	   pending:1;
+	u8 entropy[8];
 };
 
 static inline struct udphdr *quic_udp_hdr(struct sk_buff *skb)
@@ -40,4 +42,4 @@ void quic_path_addr_set(struct quic_path_addr *a, union quic_addr *addr);
 union quic_addr *quic_path_addr(struct quic_path_addr *a);
 void quic_udp_sock_put(struct quic_udp_sock *us);
 struct quic_udp_sock *quic_udp_sock_get(struct quic_udp_sock *us);
-int quic_udp_sock_set(struct sock *sk, struct quic_udp_sock *udp_sk[], union quic_addr *addr);
+int quic_udp_sock_set(struct sock *sk, struct quic_udp_sock *udp_sk[], struct quic_path_addr *a);

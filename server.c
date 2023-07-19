@@ -3,6 +3,8 @@
 #include <errno.h>
 #include <unistd.h>
 #include "quic.h"
+#include <sys/socket.h>
+#include <arpa/inet.h>
 
 #define MSG_LEN 4096
 char msg[MSG_LEN + 1];
@@ -60,6 +62,15 @@ int main(int argc, char *argv[])
 				return 1;
 			}
 			len += ret;
+			if (len == MSG_LEN * 5) { /* do connection migration with bind port changed */
+				struct sockaddr_in a = {};
+
+				a.sin_family = AF_INET;
+				a.sin_port = htons(atoi(argv[2]) + 1);
+				inet_pton(AF_INET, argv[1], &a.sin_addr.s_addr);
+				if (setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_CONNECTION_MIGRATION, &a, sizeof(a)))
+					return -1;
+			}
 			printf("recv len: %lld, stream_id: %d.\n", len, sid);
 			if (flag & QUIC_STREAM_FLAG_FIN)
 				break;
