@@ -35,8 +35,6 @@ struct quic_pnmap {
 
 	u32 last_max_pn_ts;
 	u32 last_max_pn_seen;
-
-	u8 is_serv; /* for debug only */
 };
 
 struct quic_gap_ack_block {

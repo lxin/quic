@@ -27,7 +27,7 @@ that the main part of the QUIC protocol is still in Kernel space.
 - RTT Measurement
 - Rekeying
 - Connection Migration
-- Congestion Control (adding)
+- Congestion Control
 
 ### TBD
 - Use up-call netlink to pass QUIC sockfd to kernel(NFS)

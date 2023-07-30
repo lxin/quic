@@ -20,7 +20,7 @@ struct quic_snd_cb {
 	u32 data_bytes;
 	u32 transmit_ts;
 	u32 packet_number;
-	u32 stream_offset; /* for debug only */
+	u64 stream_offset; /* for debug only */
 };
 
 #define QUIC_SND_CB(__skb)      ((struct quic_snd_cb *)&((__skb)->cb[0]))

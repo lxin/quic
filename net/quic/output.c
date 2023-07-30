@@ -13,7 +13,7 @@
 #include "socket.h"
 #include "frame.h"
 
-#define QUIC_RTX_MAX	10
+#define QUIC_RTX_MAX	15
 
 static void quic_outq_transmit_ctrl(struct sock *sk)
 {
@@ -26,6 +26,7 @@ static void quic_outq_transmit_ctrl(struct sock *sk)
 		ret = quic_packet_tail(sk, skb);
 		if (!ret) {
 			quic_packet_transmit(sk);
+			quic_packet_config(sk);
 			ret = quic_packet_tail(sk, skb);
 			if (ret <= 0) {
 				__skb_queue_head(head, skb);
@@ -46,7 +47,7 @@ static int quic_outq_flow_control(struct sock *sk, struct sk_buff *skb)
 
 	/* congestion control */
 	packet = &quic_sk(sk)->packet;
-	if (packet->send.bytes - packet->send.acked_bytes + len > packet->send.window)
+	if (packet->send.inflight + len > packet->send.window)
 		requeue = 1;
 
 	/* send flow control */
@@ -78,6 +79,7 @@ static int quic_outq_flow_control(struct sock *sk, struct sk_buff *skb)
 		return 1;
 	}
 
+	packet->send.inflight += len;
 	packet->send.bytes += len;
 	stream->send.bytes += len;
 	return 0;
@@ -96,6 +98,7 @@ static void quic_outq_transmit_data(struct sock *sk)
 		ret = quic_packet_tail(sk, skb);
 		if (!ret) {
 			quic_packet_transmit(sk);
+			quic_packet_config(sk);
 			ret = quic_packet_tail(sk, skb);
 			if (ret <= 0) {
 				__skb_queue_head(head, skb);
@@ -111,7 +114,7 @@ void quic_outq_flush(struct sock *sk)
 	struct quic_packet *packet = &quic_sk(sk)->packet;
 	u32 next_number = packet->next_number;
 
-	quic_packet_init(sk);
+	quic_packet_config(sk);
 
 	quic_outq_transmit_ctrl(sk);
 
@@ -160,6 +163,7 @@ void quic_outq_retransmit_check(struct sock *sk, u32 largest, u32 smallest,
 				u32 ack_largest, u32 ack_delay)
 {
 	struct sk_buff_head *head = &quic_sk(sk)->outq.retransmit_list;
+	u32 acked_bytes = 0, acked_number = 0, transmit_ts = 0;
 	struct sk_buff *skb, *tmp, *first = skb_peek(head);
 	struct quic_packet *packet = &quic_sk(sk)->packet;
 
@@ -171,48 +175,62 @@ void quic_outq_retransmit_check(struct sock *sk, u32 largest, u32 smallest,
 		if (!QUIC_SND_CB(skb)->rtx_count &&
 		    QUIC_SND_CB(skb)->packet_number == ack_largest)
 			quic_cong_rtt_update(sk, QUIC_SND_CB(skb)->transmit_ts, ack_delay);
-		packet->send.acked_bytes += QUIC_SND_CB(skb)->data_bytes;
+		if (!acked_number) {
+			acked_number = QUIC_SND_CB(skb)->packet_number;
+			transmit_ts = QUIC_SND_CB(skb)->transmit_ts;
+		}
+		packet->send.inflight -= QUIC_SND_CB(skb)->data_bytes;
+		acked_bytes += QUIC_SND_CB(skb)->data_bytes;
 		__skb_unlink(skb, head);
 		kfree_skb(skb);
 	}
 
-	if (skb_queue_empty(head)) {
+	if (skb_queue_empty(head))
 		quic_timer_stop(sk, QUIC_TIMER_RTX);
-		return;
-	}
-
-	if (first && first != skb_peek(head))
+	else if (first && first != skb_peek(head))
 		quic_timer_reset(sk, QUIC_TIMER_RTX);
+
+	if (!acked_bytes)
+		return;
+	quic_cong_cwnd_update_after_sack(sk, acked_number, transmit_ts, acked_bytes);
 }
 
 void quic_outq_retransmit(struct sock *sk)
 {
 	struct sk_buff_head *head = &quic_sk(sk)->outq.retransmit_list;
 	struct quic_packet *packet = &quic_sk(sk)->packet;
-	struct sk_buff *skb;
+	struct sk_buff *skb, *nskb;
 	int ret;
+
+	if (packet->rtx_count >= QUIC_RTX_MAX) {
+		pr_warn("[QUIC] %s timeout!\n", __func__);
+		sk->sk_err = -ETIMEDOUT;
+		sk->sk_state_change(sk);
+		return;
+	}
+
+	quic_packet_config(sk);
 
 	skb = __skb_dequeue(head);
 	while (skb) {
-		if (QUIC_SND_CB(skb)->rtx_count++ >= QUIC_RTX_MAX) {
-			ret = -ETIMEDOUT;
-			goto err;
-		}
+		if (QUIC_SND_CB(skb)->rtx_count >= QUIC_RTX_MAX)
+			pr_warn("[QUIC] %s packet %u timeout\n", __func__,
+				QUIC_SND_CB(skb)->packet_number);
 		ret = quic_packet_tail(sk, skb);
 		if (!ret) {
 			__skb_queue_head(head, skb);
 			break;
 		}
+		QUIC_SND_CB(skb)->rtx_count++;
+		nskb = skb;
 		skb = __skb_dequeue(head);
 	}
 
 	if (packet->len != packet->overhead) {
+		packet->rtx_count++;
+		quic_cong_cwnd_update_after_timeout(sk, QUIC_SND_CB(nskb)->packet_number,
+						    QUIC_SND_CB(nskb)->transmit_ts);
 		quic_packet_transmit(sk);
 		quic_timer_start(sk, QUIC_TIMER_RTX);
 	}
-	return;
-err:
-	pr_warn("[QUIC] retransmit %d %u\n", ret, QUIC_SND_CB(skb)->packet_number);
-	sk->sk_err = ret;
-	sk->sk_state_change(sk);
 }

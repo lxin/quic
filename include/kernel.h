@@ -40,6 +40,11 @@ enum quic_cmsg_type {
 	QUIC_RCVINFO,
 };
 
+enum {
+	QUIC_CONG_ALG_RENO,
+	QUIC_CONG_ALG_MAX,
+};
+
 struct quic_connection_id {
 	uint32_t number;
 	uint8_t len;
@@ -76,6 +81,7 @@ enum quic_state {
 #define QUIC_SOCKOPT_DEST_CONNECTION_ID_NUMBERS		1
 #define QUIC_SOCKOPT_KEY_UPDATE				2
 #define QUIC_SOCKOPT_CONNECTION_MIGRATION		3
+#define QUIC_SOCKOPT_CONGESTION_CONTROL			4
 
 #define QUIC_SOCKOPT_LOCAL_TRANSPORT_PARAMS	100
 #define QUIC_SOCKOPT_PEER_TRANSPORT_PARAMS	101

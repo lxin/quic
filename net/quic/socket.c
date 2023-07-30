@@ -64,6 +64,7 @@ static int quic_init_sock(struct sock *sk)
 
 	quic_outq_init(&qs->outq);
 	quic_inq_init(&qs->inq);
+	quic_packet_init(sk);
 
 	sk->sk_destruct = inet_sock_destruct;
 	sk->sk_write_space = quic_write_space;
@@ -233,6 +234,8 @@ static int quic_send_handshake_ack(struct sock *sk)
 
 	quic_outq_ctrl_tail(sk, skb, false);
 	quic_unhash(sk);
+
+	quic_cong_cwnd_update(sk, min_t(u32, quic_packet_mss(sk) * 10, 14720));
 	return 0;
 }
 
@@ -248,6 +251,8 @@ static int quic_send_handshake_done(struct sock *sk)
 
 	quic_outq_ctrl_tail(sk, skb, false);
 	quic_unhash(sk);
+
+	quic_cong_cwnd_update(sk, min_t(u32, quic_packet_mss(sk) * 10, 14720));
 	return 0;
 }
 
@@ -606,7 +611,6 @@ static int quic_set_state(struct sock *sk, u8 *state, u32 len)
 	}
 
 	quic_sk(sk)->state = *state;
-	quic_sk(sk)->pn_map.is_serv = (*state == QUIC_STATE_SERVER_CONNECTED); /* debug */
 	return 0;
 }
 
@@ -639,6 +643,9 @@ static int quic_setsockopt(struct sock *sk, int level, int optname,
 		break;
 	case QUIC_SOCKOPT_CONNECTION_MIGRATION:
 		retval = quic_sock_change_addr(sk, &qs->src, kopt, optlen, 1);
+		break;
+	case QUIC_SOCKOPT_CONGESTION_CONTROL:
+		retval = quic_cong_set_cong_alg(sk, kopt, optlen);
 		break;
 	/* below is context setup from userspace after handshake */
 	case QUIC_SOCKOPT_LOCAL_TRANSPORT_PARAMS:

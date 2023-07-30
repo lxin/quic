@@ -58,6 +58,9 @@ int main(int argc, char *argv[])
 		/* sockfd can be passed to kernel by 'handshake' netlink for NFS use */
 		printf("setup kernel quic done %d\n", sockfd);
 
+		/* for the congestion control testing setup:
+		 * 'system("tc qdisc add dev lo root netem loss 50%")'
+		 */
 		for (i = 0; i < MSG_LEN; i++)
 			msg[i] = i % 10 + 48;
 		msg[i] = '\0';
