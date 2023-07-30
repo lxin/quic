@@ -42,13 +42,33 @@ struct quic_gap_ack_block {
 	u16 end;
 };
 
+static inline void quic_pnmap_set_max_record_ts(struct quic_pnmap *map, u32 max_record_ts)
+{
+	map->max_record_ts = max_record_ts;
+}
+
+static inline u32 quic_pnmap_cpn(const struct quic_pnmap *map)
+{
+	return map->cumulative_pn_ack_point;
+}
+
+static inline u32 quic_pnmap_max_pn_seen(const struct quic_pnmap *map)
+{
+	return map->max_pn_seen;
+}
+
+static inline u32 quic_pnmap_base_pn(const struct quic_pnmap *map)
+{
+	return map->base_pn;
+}
+
+static inline u32 quic_pnmap_max_pn_ts(const struct quic_pnmap *map)
+{
+	return map->max_pn_ts;
+}
+
 struct quic_pnmap *quic_pnmap_init(struct quic_pnmap *map);
-u32 quic_pnmap_get_cpn(const struct quic_pnmap *map);
-u32 quic_pnmap_get_max_pn_seen(const struct quic_pnmap *map);
-u32 quic_pnmap_get_max_pn_ts(const struct quic_pnmap *map);
 int quic_pnmap_check(const struct quic_pnmap *map, u32 pn);
 int quic_pnmap_mark(struct quic_pnmap *map, u32 pn);
 void quic_pnmap_free(struct quic_pnmap *map);
 u16 quic_pnmap_num_gabs(struct quic_pnmap *map, struct quic_gap_ack_block *gabs);
-u32 quic_pnmap_get_base_pn(const struct quic_pnmap *map);
-void quic_pnmap_set_max_record_ts(struct quic_pnmap *map, u32 max_record_ts);

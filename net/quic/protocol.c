@@ -277,13 +277,13 @@ static int quic_inet_listen(struct socket *sock, int backlog)
 
 	sk->sk_max_ack_backlog = backlog;
 	if (!backlog) {
-		quic_sk(sk)->state = QUIC_STATE_USER_CLOSED;
+		quic_set_state(sk, QUIC_STATE_USER_CLOSED);
 		sk->sk_prot->unhash(sk);
 		release_sock(sk);
 		return 0;
 	}
 
-	quic_sk(sk)->state = QUIC_STATE_USER_CONNECTING;
+	quic_set_state(sk, QUIC_STATE_USER_CONNECTING);
 	err = sk->sk_prot->hash(sk);
 	release_sock(sk);
 	return err;
@@ -291,48 +291,48 @@ static int quic_inet_listen(struct socket *sock, int backlog)
 
 int quic_inet_getname(struct socket *sock, struct sockaddr *uaddr, int peer)
 {
-	return quic_sk(sock->sk)->af_ops->get_sk_addr(sock, uaddr, peer);
+	return quic_af_ops(sock->sk)->get_sk_addr(sock, uaddr, peer);
 }
 
 int quic_encap_len(struct sock *sk)
 {
-	return sizeof(struct udphdr) + quic_sk(sk)->af_ops->iph_len;
+	return sizeof(struct udphdr) + quic_af_ops(sk)->iph_len;
 }
 
 int quic_addr_len(struct sock *sk)
 {
-	return quic_sk(sk)->af_ops->addr_len;
+	return quic_af_ops(sk)->addr_len;
 }
 
 void quic_set_sk_addr(struct sock *sk, union quic_addr *a, bool src)
 {
-	return quic_sk(sk)->af_ops->set_sk_addr(sk, a, src);
+	return quic_af_ops(sk)->set_sk_addr(sk, a, src);
 }
 
 void quic_get_sk_addr(struct socket *sock, struct sockaddr *a, bool peer)
 {
-	quic_sk(sock->sk)->af_ops->get_sk_addr(sock, a, peer);
+	quic_af_ops(sock->sk)->get_sk_addr(sock, a, peer);
 }
 
 void quic_get_msg_addr(struct sock *sk, union quic_addr *addr, struct sk_buff *skb, bool src)
 {
-	quic_sk(sk)->af_ops->get_msg_addr(addr, skb, src);
+	quic_af_ops(sk)->get_msg_addr(addr, skb, src);
 }
 
 void quic_udp_conf_init(struct sock *sk, struct udp_port_cfg *udp_conf, union quic_addr *a)
 {
-	quic_sk(sk)->af_ops->udp_conf_init(udp_conf, a);
+	quic_af_ops(sk)->udp_conf_init(udp_conf, a);
 }
 
 void quic_lower_xmit(struct sock *sk, struct sk_buff *skb)
 {
 	skb_set_owner_w(skb, sk);
-	quic_sk(sk)->af_ops->lower_xmit(sk, skb);
+	quic_af_ops(sk)->lower_xmit(sk, skb);
 }
 
 int quic_flow_route(struct sock *sk, union quic_addr *a)
 {
-	return quic_sk(sk)->af_ops->flow_route(sk, a);
+	return quic_af_ops(sk)->flow_route(sk, a);
 }
 
 static const struct proto_ops quic_proto_ops = {

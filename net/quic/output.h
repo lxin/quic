@@ -11,6 +11,16 @@
 struct quic_outqueue {
 	struct sk_buff_head control_list;
 	struct sk_buff_head retransmit_list;
+	u64 max_bytes;
+	u64 inflight;
+	u64 window;
+	u64 bytes;
+
+	u32 ack_delay_exponent;
+	u32 max_ack_delay;
+
+	u8 data_blocked;
+	u8 rtx_count;
 };
 
 struct quic_snd_cb {
@@ -38,9 +48,37 @@ static inline void quic_outq_purge(struct sock *sk, struct quic_outqueue *outq)
 	__skb_queue_purge(&outq->control_list);
 }
 
+static inline void quic_outq_reset(struct quic_outqueue *outq)
+{
+	outq->rtx_count = 0;
+}
+
+static inline u32 quic_outq_inflight(struct quic_outqueue *outq)
+{
+	return outq->inflight;
+}
+
+static inline void quic_outq_set_window(struct quic_outqueue *outq, u32 window)
+{
+	outq->window = window;
+}
+
+static inline u32 quic_outq_max_ack_delay(struct quic_outqueue *outq)
+{
+	return outq->max_ack_delay;
+}
+
+static inline u32 quic_outq_ack_delay_exponent(struct quic_outqueue *outq)
+{
+	return outq->ack_delay_exponent;
+}
+
 void quic_outq_data_tail(struct sock *sk, struct sk_buff *skb, bool cork);
 void quic_outq_ctrl_tail(struct sock *sk, struct sk_buff *skb, bool cork);
+void quic_outq_rtx_tail(struct sock *sk, struct sk_buff *skb);
 void quic_outq_flush(struct sock *sk);
 void quic_outq_retransmit(struct sock *sk);
 void quic_outq_retransmit_check(struct sock *sk, u32 largest, u32 smallest,
 				u32 ack_largest, u32 ack_delay);
+void quic_outq_set_param(struct sock *sk, struct quic_transport_param *p);
+void quic_outq_get_param(struct sock *sk, struct quic_transport_param *p);

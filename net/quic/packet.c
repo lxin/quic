@@ -32,7 +32,6 @@ static void quic_packet_reset(struct quic_packet *packet)
 	packet->ack_eliciting = 0;
 	packet->ack_immediate = 0;
 	packet->non_probing = 0;
-	packet->rtx_count = 0;
 }
 
 void quic_packet_config(struct sock *sk)
@@ -47,11 +46,6 @@ void quic_packet_config(struct sock *sk)
 	qs->packet.ipfragok = 0;
 
 	qs->packet.mss = quic_get_mss(sk);
-}
-
-void quic_packet_init(struct sock *sk)
-{
-	skb_queue_head_init(&quic_sk(sk)->packet.frame_list);
 }
 
 int quic_packet_process(struct sock *sk, struct sk_buff *skb)
@@ -89,7 +83,7 @@ int quic_packet_process(struct sock *sk, struct sk_buff *skb)
 	 * it sends packets in response to the highest-numbered non-probing packet.
 	 */
 	if (qs->packet.non_probing &&
-	    pki.number == quic_pnmap_get_max_pn_seen(&qs->pn_map)) {
+	    pki.number == quic_pnmap_max_pn_seen(&qs->pn_map)) {
 		qs->af_ops->get_msg_addr(&saddr, skb, 1);
 		if (memcmp(&saddr, quic_path_addr(&qs->dst), quic_addr_len(sk)))
 			quic_sock_change_addr(sk, &qs->dst, &saddr, quic_addr_len(sk), 0);
@@ -110,6 +104,7 @@ int quic_packet_process(struct sock *sk, struct sk_buff *skb)
 	quic_timer_stop(sk, QUIC_TIMER_ACK);
 
 out:
+	quic_outq_reset(&qs->outq);
 	quic_outq_flush(sk);
 	return 0;
 err:
@@ -118,12 +113,12 @@ err:
 	return err;
 }
 
-struct sk_buff *quic_packet_create(struct sock *sk, struct quic_packet_info *pki)
+static struct sk_buff *quic_packet_create(struct sock *sk, struct quic_packet_info *pki)
 {
-	struct sk_buff_head *head, *retransmit;
 	struct quic_sock *qs = quic_sk(sk);
 	struct quic_packet *packet;
 	struct sk_buff *fskb, *skb;
+	struct sk_buff_head *head;
 	struct quichdr *hdr;
 	int len, hlen;
 	u8 *p;
@@ -156,7 +151,6 @@ struct sk_buff *quic_packet_create(struct sock *sk, struct quic_packet_info *pki
 	p = quic_put_int(p, pki->number, pki->number_len);
 
 	head = &packet->frame_list;
-	retransmit = &quic_sk(sk)->outq.retransmit_list;
 	fskb =  __skb_dequeue(head);
 	while (fskb) {
 		p = quic_put_data(p, fskb->data, fskb->len);
@@ -167,7 +161,7 @@ struct sk_buff *quic_packet_create(struct sock *sk, struct quic_packet_info *pki
 		}
 		pr_debug("[QUIC] %s offset: %llu number: %u\n", __func__,
 			 QUIC_SND_CB(fskb)->stream_offset, pki->number);
-		__skb_queue_tail(retransmit, fskb);
+		quic_outq_rtx_tail(sk, fskb);
 		QUIC_SND_CB(fskb)->packet_number = pki->number;
 		QUIC_SND_CB(fskb)->transmit_ts = jiffies_to_usecs(jiffies);
 		fskb =  __skb_dequeue(head);
@@ -187,7 +181,7 @@ void quic_packet_transmit(struct sock *sk)
 		err = -ENOMEM;
 		goto err;
 	}
-	err = quic_crypto_encrypt(&quic_sk(sk)->crypto, skb, &pki);
+	err = quic_crypto_encrypt(quic_crypto(sk), skb, &pki);
 	if (err) {
 		kfree_skb(skb);
 		goto err;
@@ -203,7 +197,7 @@ err:
 
 int quic_packet_tail(struct sock *sk, struct sk_buff *skb)
 {
-	struct quic_packet *packet = &quic_sk(sk)->packet;
+	struct quic_packet *packet = quic_packet(sk);
 
 	if (packet->len + skb->len > packet->mss) {
 		if (packet->len != packet->overhead)
@@ -213,49 +207,4 @@ int quic_packet_tail(struct sock *sk, struct sk_buff *skb)
 	packet->len += skb->len;
 	__skb_queue_tail(&packet->frame_list, skb);
 	return skb->len;
-}
-
-void quic_packet_set_send_window(struct sock *sk, u32 window)
-{
-	quic_sk(sk)->packet.send.window = window;
-}
-
-u32 quic_packet_mss(struct sock *sk)
-{
-	return quic_sk(sk)->packet.mss;
-}
-
-u32 quic_packet_inflight(struct sock *sk)
-{
-	return quic_sk(sk)->packet.send.inflight;
-}
-
-u32 quic_packet_next_number(struct sock *sk)
-{
-	return quic_sk(sk)->packet.next_number;
-}
-
-void quic_packet_set_param(struct sock *sk, struct quic_transport_param *p, u8 send)
-{
-	struct quic_packet *packet = &quic_sk(sk)->packet;
-
-	if (send) {
-		packet->send.max_bytes = p->initial_max_data;
-		sk->sk_sndbuf = 2 * p->initial_max_data;
-		return;
-	}
-	packet->recv.window = p->initial_max_data;
-	packet->recv.max_bytes = packet->recv.window;
-	sk->sk_rcvbuf = 2 * p->initial_max_data;
-}
-
-void quic_packet_get_param(struct sock *sk, struct quic_transport_param *p, u8 send)
-{
-	struct quic_packet *packet = &quic_sk(sk)->packet;
-
-	if (send) {
-		p->initial_max_data = packet->send.window;
-		return;
-	}
-	p->initial_max_data = packet->recv.window;
 }

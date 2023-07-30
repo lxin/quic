@@ -102,16 +102,16 @@ static void quic_inq_recv_tail(struct sock *sk, struct quic_stream *stream, stru
 
 int quic_inq_flow_control(struct sock *sk, struct quic_stream *stream, struct sk_buff *skb)
 {
-	struct quic_packet *packet = &quic_sk(sk)->packet;
+	struct quic_inqueue *inq = quic_inq(sk);
 	struct sk_buff *nskb = NULL;
 
 	stream->recv.bytes += skb->len;
-	packet->recv.bytes += skb->len;
+	inq->bytes += skb->len;
 
 	/* recv flow control */
-	if (packet->recv.max_bytes - packet->recv.bytes < packet->recv.window / 2) {
-		packet->recv.max_bytes = packet->recv.bytes + packet->recv.window;
-		nskb = quic_frame_create(sk, QUIC_FRAME_MAX_DATA, packet, 0);
+	if (inq->max_bytes - inq->bytes < inq->window / 2) {
+		inq->max_bytes = inq->bytes + inq->window;
+		nskb = quic_frame_create(sk, QUIC_FRAME_MAX_DATA, inq, 0);
 		if (nskb)
 			quic_outq_ctrl_tail(sk, nskb, true);
 	}
@@ -132,14 +132,14 @@ int quic_inq_flow_control(struct sock *sk, struct quic_stream *stream, struct sk
 
 int quic_inq_reasm_tail(struct sock *sk, struct sk_buff *skb)
 {
-	struct sk_buff_head *head = &quic_sk(sk)->inq.reassemble_list;
 	u64 stream_offset = QUIC_RCV_CB(skb)->stream_offset, offset;
 	u32 stream_id = QUIC_RCV_CB(skb)->stream_id, highest = 0;
-	struct quic_packet *packet = &quic_sk(sk)->packet;
+	struct quic_inqueue *inq = quic_inq(sk);
 	struct quic_stream *stream;
+	struct sk_buff_head *head;
 	struct sk_buff *tmp;
 
-	stream = quic_stream_recv_get(&quic_sk(sk)->streams, stream_id, quic_is_serv(sk));
+	stream = quic_stream_recv_get(quic_streams(sk), stream_id, quic_is_serv(sk));
 	if (!stream || stream->recv.offset > stream_offset) {
 		kfree_skb(skb);
 		return 0;
@@ -151,11 +151,12 @@ int quic_inq_reasm_tail(struct sock *sk, struct sk_buff *skb)
 	offset = stream_offset + skb->len;
 	if (offset > stream->recv.highest) {
 		highest = offset - stream->recv.highest;
-		if (packet->recv.highest + highest > packet->recv.max_bytes ||
+		if (inq->highest + highest > inq->max_bytes ||
 		    stream->recv.highest + highest > stream->recv.max_bytes)
 			return -ENOBUFS;
 	}
 
+	head = &inq->reassemble_list;
 	if (stream->recv.offset < stream_offset) {
 		skb_queue_walk(head, tmp) {
 			if (QUIC_RCV_CB(tmp)->stream_id < stream_id)
@@ -173,13 +174,13 @@ int quic_inq_reasm_tail(struct sock *sk, struct sk_buff *skb)
 		stream->recv.frags++;
 		if (QUIC_RCV_CB(skb)->stream_fin)
 			stream->recv.state = QUIC_STREAM_RECV_STATE_SIZE_KNOWN;
-		packet->recv.highest += highest;
+		inq->highest += highest;
 		stream->recv.highest += highest;
 		return 0;
 	}
 
 	/* fast path: stream->recv.offset == stream_offset */
-	packet->recv.highest += highest;
+	inq->highest += highest;
 	stream->recv.highest += highest;
 	quic_inq_recv_tail(sk, stream, skb);
 	if (!stream->recv.frags)
@@ -197,4 +198,24 @@ int quic_inq_reasm_tail(struct sock *sk, struct sk_buff *skb)
 		quic_inq_recv_tail(sk, stream, skb);
 	}
 	return 0;
+}
+
+void quic_inq_set_param(struct sock *sk, struct quic_transport_param *p)
+{
+	struct quic_inqueue *inq = quic_inq(sk);
+
+	inq->max_ack_delay = p->max_ack_delay;
+	inq->ack_delay_exponent = p->ack_delay_exponent;
+	inq->window = p->initial_max_data;
+	inq->max_bytes = p->initial_max_data;
+	sk->sk_rcvbuf = 2 * p->initial_max_data;
+}
+
+void quic_inq_get_param(struct sock *sk, struct quic_transport_param *p)
+{
+	struct quic_inqueue *inq = quic_inq(sk);
+
+	p->initial_max_data = inq->window;
+	p->max_ack_delay = inq->max_ack_delay;
+	p->ack_delay_exponent = inq->ack_delay_exponent;
 }

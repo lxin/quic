@@ -44,22 +44,16 @@ struct quic_sock {
 	struct quic_path_addr		dst;
 
 	struct quic_stream_table	streams;
-
 	struct quic_crypto		crypto;
-
-	struct quic_outqueue		outq;
-
-	struct quic_inqueue		inq;
-
 	struct quic_pnmap		pn_map;
 
+	struct quic_outqueue		outq;
+	struct quic_inqueue		inq;
 	struct quic_packet		packet;
-
 	struct quic_cong		cong;
+	struct quic_timer		timers[QUIC_TIMER_MAX];
 
 	struct hlist_node		node;
-
-	struct quic_timer		timers[QUIC_TIMER_MAX];
 };
 
 static inline struct quic_sock *quic_sk(const struct sock *sk)
@@ -67,20 +61,85 @@ static inline struct quic_sock *quic_sk(const struct sock *sk)
 	return (struct quic_sock *)sk;
 }
 
+static inline struct quic_addr_family_ops *quic_af_ops(const struct sock *sk)
+{
+	return quic_sk(sk)->af_ops;
+}
+
+static inline enum quic_state quic_state(const struct sock *sk)
+{
+	return quic_sk(sk)->state;
+}
+
+static inline void quic_set_state(struct sock *sk, enum quic_state state)
+{
+	quic_sk(sk)->state = state;
+}
+
+static inline struct quic_path_addr *quic_src(const struct sock *sk)
+{
+	return &quic_sk(sk)->src;
+}
+
+static inline struct quic_path_addr *quic_dst(const struct sock *sk)
+{
+	return &quic_sk(sk)->dst;
+}
+
+static inline struct quic_packet *quic_packet(const struct sock *sk)
+{
+	return &quic_sk(sk)->packet;
+}
+
+static inline struct quic_outqueue *quic_outq(const struct sock *sk)
+{
+	return &quic_sk(sk)->outq;
+}
+
+static inline struct quic_inqueue *quic_inq(const struct sock *sk)
+{
+	return &quic_sk(sk)->inq;
+}
+
+static inline struct quic_cong *quic_cong(const struct sock *sk)
+{
+	return &quic_sk(sk)->cong;
+}
+
+static inline struct quic_crypto *quic_crypto(const struct sock *sk)
+{
+	return &quic_sk(sk)->crypto;
+}
+
+static inline struct quic_pnmap *quic_pnmap(const struct sock *sk)
+{
+	return &quic_sk(sk)->pn_map;
+}
+
+static inline struct quic_stream_table *quic_streams(const struct sock *sk)
+{
+	return &quic_sk(sk)->streams;
+}
+
+static inline struct quic_timer *quic_timer(const struct sock *sk, u8 type)
+{
+	return &quic_sk(sk)->timers[type];
+}
+
 static inline bool quic_handshake_user(struct sock *sk)
 {
-	return quic_sk(sk)->state == QUIC_STATE_USER_CONNECTING;
+	return quic_state(sk) == QUIC_STATE_USER_CONNECTING;
 }
 
 static inline bool quic_is_serv(struct sock *sk)
 {
-	return quic_sk(sk)->state == QUIC_STATE_SERVER_CONNECTED;
+	return quic_state(sk) == QUIC_STATE_SERVER_CONNECTED;
 }
 
 static inline bool quic_is_connected(struct sock *sk)
 {
-	return quic_sk(sk)->state == QUIC_STATE_SERVER_CONNECTED ||
-	       quic_sk(sk)->state == QUIC_STATE_CLIENT_CONNECTED;
+	return quic_state(sk) == QUIC_STATE_SERVER_CONNECTED ||
+	       quic_state(sk) == QUIC_STATE_CLIENT_CONNECTED;
 }
 
 int quic_sock_change_addr(struct sock *sk, struct quic_path_addr *path, void *data,

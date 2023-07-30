@@ -53,7 +53,7 @@ out:
 
 void quic_timer_reset(struct sock *sk, u8 type)
 {
-	struct quic_timer *t = &quic_sk(sk)->timers[type];
+	struct quic_timer *t = quic_timer(sk, type);
 
 	if (!mod_timer(&t->timer, jiffies + t->timeout))
 		sock_hold(sk);
@@ -61,7 +61,7 @@ void quic_timer_reset(struct sock *sk, u8 type)
 
 void quic_timer_start(struct sock *sk, u8 type)
 {
-	struct quic_timer *t = &quic_sk(sk)->timers[type];
+	struct quic_timer *t = quic_timer(sk, type);
 
 	if (!timer_pending(&t->timer)) {
 		if (!mod_timer(&t->timer, jiffies + t->timeout))
@@ -71,26 +71,25 @@ void quic_timer_start(struct sock *sk, u8 type)
 
 void quic_timer_stop(struct sock *sk, u8 type)
 {
-	if (del_timer(&quic_sk(sk)->timers[type].timer))
+	if (del_timer(&quic_timer(sk, type)->timer))
 		sock_put(sk);
 }
 
 void quic_timer_setup(struct sock *sk, u8 type, u32 timeout)
 {
-	quic_sk(sk)->timers[type].timeout = usecs_to_jiffies(timeout);
+	quic_timer(sk, type)->timeout = usecs_to_jiffies(timeout);
 }
 
 void quic_timers_init(struct sock *sk)
 {
-	struct quic_cong *cong = &quic_sk(sk)->cong;
 	struct quic_timer *t;
 
-	t = &quic_sk(sk)->timers[QUIC_TIMER_RTX];
-	t->timeout = usecs_to_jiffies(cong->rto);
+	t = quic_timer(sk, QUIC_TIMER_RTX);
+	t->timeout = usecs_to_jiffies(quic_cong_rto(quic_cong(sk)));
 	timer_setup(&t->timer, quic_timer_rtx_timeout, 0);
 
-	t = &quic_sk(sk)->timers[QUIC_TIMER_ACK];
-	t->timeout = usecs_to_jiffies(cong->send.max_ack_delay);
+	t = quic_timer(sk, QUIC_TIMER_ACK);
+	t->timeout = usecs_to_jiffies(quic_outq_max_ack_delay(quic_outq(sk)));
 	timer_setup(&t->timer, quic_timer_delay_ack_timeout, 0);
 }
 

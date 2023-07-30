@@ -34,26 +34,6 @@ static inline int quic_pnmap_has_gap(const struct quic_pnmap *map)
 	return map->cumulative_pn_ack_point != map->max_pn_seen;
 }
 
-u32 quic_pnmap_get_cpn(const struct quic_pnmap *map)
-{
-	return map->cumulative_pn_ack_point;
-}
-
-u32 quic_pnmap_get_max_pn_seen(const struct quic_pnmap *map)
-{
-	return map->max_pn_seen;
-}
-
-u32 quic_pnmap_get_base_pn(const struct quic_pnmap *map)
-{
-	return map->base_pn;
-}
-
-u32 quic_pnmap_get_max_pn_ts(const struct quic_pnmap *map)
-{
-	return map->max_pn_ts;
-}
-
 static void quic_pnmap_find_gap_ack(const struct quic_pnmap *map, u16 off,
 				    u16 len, u16 *start, u16 *end);
 static int quic_pnmap_grow(struct quic_pnmap *map, u16 size);
@@ -81,11 +61,6 @@ struct quic_pnmap *quic_pnmap_init(struct quic_pnmap *map)
 	map->last_max_pn_seen = 0;
 
 	return map;
-}
-
-void quic_pnmap_set_max_record_ts(struct quic_pnmap *map, u32 max_record_ts)
-{
-	map->max_record_ts = max_record_ts;
 }
 
 void quic_pnmap_free(struct quic_pnmap *map)

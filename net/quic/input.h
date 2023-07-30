@@ -10,6 +10,13 @@
 
 struct quic_inqueue {
 	struct sk_buff_head reassemble_list;
+	u64 max_bytes;
+	u64 window;
+	u64 bytes;
+	u64 highest;
+
+	u32 ack_delay_exponent;
+	u32 max_ack_delay;
 };
 
 struct quic_rcv_cb {
@@ -31,7 +38,19 @@ static inline void quic_inq_purge(struct sock *sk, struct quic_inqueue *inq)
 	__skb_queue_purge(&inq->reassemble_list);
 }
 
+static inline u32 quic_inq_max_ack_delay(struct quic_inqueue *inq)
+{
+	return inq->max_ack_delay;
+}
+
+static inline u32 quic_inq_ack_delay_exponent(struct quic_inqueue *inq)
+{
+	return inq->ack_delay_exponent;
+}
+
 int quic_do_rcv(struct sock *sk, struct sk_buff *skb);
 int quic_rcv(struct sk_buff *skb);
 int quic_inq_reasm_tail(struct sock *sk, struct sk_buff *skb);
 int quic_inq_flow_control(struct sock *sk, struct quic_stream *stream, struct sk_buff *skb);
+void quic_inq_set_param(struct sock *sk, struct quic_transport_param *p);
+void quic_inq_get_param(struct sock *sk, struct quic_transport_param *p);

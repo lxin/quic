@@ -25,15 +25,6 @@ struct quic_cong_ops {
 };
 
 struct quic_cong {
-	struct {
-		u32 ack_delay_exponent;
-		u32 max_ack_delay;
-	} send;
-	struct {
-		u32 ack_delay_exponent;
-		u32 max_ack_delay;
-	} recv;
-
 	u32 rto;
 	u32 rttvar;
 	u32 min_rtt;
@@ -52,10 +43,15 @@ struct quic_cong {
 	struct quic_cong_ops *ops;
 };
 
-void quic_cong_set_param(struct sock *sk, struct quic_transport_param *p, u8 send);
-void quic_cong_get_param(struct sock *sk, struct quic_transport_param *p, u8 send);
-void quic_cong_rtt_update(struct sock *sk, u32 transmit_ts, u32 ack_delay);
+static inline u32 quic_cong_rto(struct quic_cong *cong)
+{
+	return cong->rto;
+}
+
 int quic_cong_set_cong_alg(struct sock *sk, u8 *alg, unsigned int len);
+void quic_cong_set_param(struct sock *sk, struct quic_transport_param *p);
+void quic_cong_get_param(struct sock *sk, struct quic_transport_param *p);
+void quic_cong_rtt_update(struct sock *sk, u32 transmit_ts, u32 ack_delay);
 void quic_cong_cwnd_update(struct sock *sk, u32 window);
 void quic_cong_cwnd_update_after_timeout(struct sock *sk, u32 packet_number, u32 transmit_ts);
 void quic_cong_cwnd_update_after_sack(struct sock *sk, u32 acked_number, u32 transmit_ts,

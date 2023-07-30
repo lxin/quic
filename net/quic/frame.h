@@ -49,8 +49,22 @@ struct quic_frame_ops {
 	int (*frame_process)(struct sock *sk, struct sk_buff *skb, u8 type);
 };
 
+static inline bool quic_frame_ack_eliciting(u8 type)
+{
+	return type != QUIC_FRAME_ACK && type != QUIC_FRAME_PADDING;
+}
+
+static inline bool quic_frame_ack_immediate(u8 type)
+{
+	return (type < QUIC_FRAME_STREAM || type >= QUIC_FRAME_MAX_DATA) ||
+	       (type & QUIC_STREAM_BIT_FIN);
+}
+
+static inline bool quic_frame_non_probing(u8 type)
+{
+	return type != QUIC_FRAME_NEW_CONNECTION_ID && type != QUIC_FRAME_PADDING &&
+	       type != QUIC_FRAME_PATH_RESPONSE && type != QUIC_FRAME_PATH_CHALLENGE;
+}
+
 struct sk_buff *quic_frame_create(struct sock *sk, u8 type, void *data, u32 len);
 int quic_frame_process(struct sock *sk, struct sk_buff *skb);
-bool quic_frame_ack_eliciting(u8 type);
-bool quic_frame_ack_immediate(u8 type);
-bool quic_frame_non_probing(u8 type);
