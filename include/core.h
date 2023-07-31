@@ -14,7 +14,6 @@
 
 #include "list.h"
 #include "quic.h"
-#include "kernel.h"
 #include "debug.h"
 
 enum {

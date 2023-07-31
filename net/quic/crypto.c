@@ -398,12 +398,10 @@ int quic_crypto_decrypt(struct quic_crypto *crypto, struct sk_buff *skb,
 	return quic_crypto_payload_decrypt(crypto->aead_tfm, skb, pki, key, iv);
 }
 
-int quic_crypto_set_secret(struct quic_crypto *crypto, void *key, u8 len, bool send)
+int quic_crypto_set_secret(struct quic_crypto *crypto, u8 *key, bool send)
 {
+	u8 len = QUIC_SECRET_LEN;
 	void *tfm;
-
-	if (len != QUIC_SECRET_LEN)
-		return -EINVAL;
 
 	tfm = crypto->secret_tfm;
 	if (!tfm) {
@@ -435,21 +433,11 @@ int quic_crypto_set_secret(struct quic_crypto *crypto, void *key, u8 len, bool s
 	return quic_crypto_rx_keys_derive_and_install(crypto);
 }
 
-int quic_crypto_get_secret(struct quic_crypto *crypto, int len, char __user *optval,
-			   int __user *optlen, bool send)
+int quic_crypto_get_secret(struct quic_crypto *crypto, u8 *key, bool send)
 {
-	u8 *secret;
+	u8 *secret = send ? crypto->tx_secret : crypto->rx_secret;
 
-	if (len < QUIC_SECRET_LEN)
-		return -EINVAL;
-	len = QUIC_SECRET_LEN;
-	if (put_user(len, optlen))
-		return -EFAULT;
-
-	secret = send ? crypto->tx_secret : crypto->rx_secret;
-	if (copy_to_user(optval, secret, len))
-		return -EFAULT;
-
+	memcpy(key, secret, QUIC_SECRET_LEN);
 	return 0;
 }
 

@@ -257,10 +257,13 @@ static int quic_send_handshake_done(struct sock *sk)
 	return 0;
 }
 
-static int quic_msghdr_parse(struct msghdr *msg, struct quic_sndinfo *info)
+static int quic_msghdr_parse(struct sock *sk, struct msghdr *msg, struct quic_sndinfo *info)
 {
 	struct quic_sndinfo *s;
 	struct cmsghdr *cmsg;
+
+	info->stream_id = quic_is_serv(sk);
+	info->stream_flag = QUIC_STREAM_FLAG_NEW | QUIC_STREAM_FLAG_FIN;
 
 	for_each_cmsghdr(cmsg, msg) {
 		if (!CMSG_OK(msg, cmsg))
@@ -355,7 +358,7 @@ static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 		err = quic_send_handshake_user(sk, msg, msg_len);
 		goto out;
 	}
-	err = quic_msghdr_parse(msg, &sndinfo);
+	err = quic_msghdr_parse(sk, msg, &sndinfo);
 	if (err)
 		goto out;
 
@@ -523,29 +526,13 @@ static void quic_close(struct sock *sk, long timeout)
 	sk_common_release(sk);
 }
 
-static int quic_set_transport_param(struct sock *sk, struct quic_transport_param *param,
-				    u32 len, u8 send)
+static int quic_sock_set_addr(struct sock *sk, struct quic_path_addr *path,
+			      union quic_addr *addr, bool udp_bind)
 {
-	if (len != sizeof(*param))
+	if (quic_addr_family(sk) != addr->sa.sa_family)
 		return -EINVAL;
 
-	if (send) {
-		quic_outq_set_param(sk, param);
-		quic_cong_set_param(sk, param);
-	} else {
-		quic_inq_set_param(sk, param);
-	}
-	quic_streams_set_param(quic_streams(sk), param, send);
-	return 0;
-}
-
-static int quic_sock_set_addr(struct sock *sk, struct quic_path_addr *path, void *data,
-			      u32 len, bool udp_bind)
-{
-	if (len != quic_addr_len(sk))
-		return -EINVAL;
-
-	quic_path_addr_set(path, data);
+	quic_path_addr_set(path, addr);
 
 	if (udp_bind && quic_udp_sock_set(sk, quic_sk(sk)->udp_sk, path))
 		return -EINVAL;
@@ -561,8 +548,11 @@ int quic_sock_change_addr(struct sock *sk, struct quic_path_addr *path, void *da
 	if (path->pending)
 		return -EINVAL;
 
+	if (len != quic_addr_len(sk))
+		return -EINVAL;
+
 	path->active = !path->active;
-	err = quic_sock_set_addr(sk, path, data, len, udp_bind);
+	err = quic_sock_set_addr(sk, path, data, udp_bind);
 	if (err)
 		goto err;
 
@@ -590,10 +580,7 @@ static int quic_sock_set_state(struct sock *sk, u8 *state, u32 len)
 {
 	int ret = 0;
 
-	if (!len)
-		return -EINVAL;
-
-	if (quic_state(sk) == *state)
+	if (!len || quic_state(sk) == *state)
 		return -EINVAL;
 
 	switch (*state) {
@@ -614,6 +601,44 @@ static int quic_sock_set_state(struct sock *sk, u8 *state, u32 len)
 	}
 
 	quic_set_state(sk, *state);
+	return 0;
+}
+
+int quic_sock_set_context(struct sock *sk, struct quic_context *context, u32 len)
+{
+	struct quic_sock *qs = quic_sk(sk);
+	int err;
+
+	if (sizeof(*context) > len)
+		return -EINVAL;
+
+	quic_outq_set_param(sk, &context->local);
+	quic_cong_set_param(sk, &context->local);
+	quic_streams_set_param(quic_streams(sk), &context->local, 1);
+	quic_inq_set_param(sk, &context->remote);
+	quic_streams_set_param(quic_streams(sk), &context->remote, 0);
+
+	err = quic_sock_set_addr(sk, &qs->src, quic_addr(&context->src), 1);
+	if (err)
+		return err;
+	err = quic_sock_set_addr(sk, &qs->dst, quic_addr(&context->dst), 0);
+	if (err)
+		return err;
+	err = quic_connection_id_add(&qs->source, &context->source, sk);
+	if (err)
+		return err;
+	err = quic_connection_id_add(&qs->dest, &context->dest, sk);
+	if (err)
+		return err;
+	err = quic_crypto_set_secret(&qs->crypto, context->send.secret, 1);
+	if (err)
+		return err;
+	err = quic_crypto_set_secret(&qs->crypto, context->recv.secret, 0);
+	if (err)
+		return err;
+	err = quic_sock_set_state(sk, &context->state, sizeof(context->state));
+	if (err)
+		return err;
 	return 0;
 }
 
@@ -650,30 +675,8 @@ static int quic_setsockopt(struct sock *sk, int level, int optname,
 	case QUIC_SOCKOPT_CONGESTION_CONTROL:
 		retval = quic_cong_set_cong_alg(sk, kopt, optlen);
 		break;
-	/* below is context setup from userspace after handshake */
-	case QUIC_SOCKOPT_LOCAL_TRANSPORT_PARAMS:
-		retval = quic_set_transport_param(sk, kopt, optlen, 1);
-		break;
-	case QUIC_SOCKOPT_PEER_TRANSPORT_PARAMS:
-		retval = quic_set_transport_param(sk, kopt, optlen, 0);
-		break;
-	case QUIC_SOCKOPT_SOURCE_ADDRESS:
-		retval = quic_sock_set_addr(sk, &qs->src, kopt, optlen, 1);
-		break;
-	case QUIC_SOCKOPT_DEST_ADDRESS:
-		retval = quic_sock_set_addr(sk, &qs->dst, kopt, optlen, 0);
-		break;
-	case QUIC_SOCKOPT_SOURCE_CONNECTION_ID:
-		retval = quic_connection_id_add(&qs->source, kopt, optlen, sk);
-		break;
-	case QUIC_SOCKOPT_DEST_CONNECTION_ID:
-		retval = quic_connection_id_add(&qs->dest, kopt, optlen, sk);
-		break;
-	case QUIC_SOCKOPT_CRYPTO_SEND_SECRET:
-		retval = quic_crypto_set_secret(&qs->crypto, kopt, optlen, 1);
-		break;
-	case QUIC_SOCKOPT_CRYPTO_RECV_SECRET:
-		retval = quic_crypto_set_secret(&qs->crypto, kopt, optlen, 0);
+	case QUIC_SOCKOPT_CONTEXT:
+		retval = quic_sock_set_context(sk, kopt, optlen);
 		break;
 	case QUIC_SOCKOPT_STATE:
 		retval = quic_sock_set_state(sk, kopt, optlen);
@@ -687,48 +690,42 @@ static int quic_setsockopt(struct sock *sk, int level, int optname,
 	return retval;
 }
 
-static int quic_get_transport_param(struct sock *sk, int len,
-				    char __user *optval, int __user *optlen, u8 send)
+static int quic_sock_get_context(struct sock *sk, int len, char __user *optval, int __user *optlen)
 {
-	struct quic_transport_param param;
+	struct quic_sock *qs = quic_sk(sk);
+	struct quic_context context;
 
-	if (len < sizeof(param))
-		return -EINVAL;
-	len = sizeof(param);
+        if (len < sizeof(context))
+                return -EINVAL;
+	len = sizeof(context);
+	memset(&context, 0, len);
+
+	quic_outq_get_param(sk, &context.local);
+	quic_cong_get_param(sk, &context.local);
+	quic_streams_get_param(quic_streams(sk), &context.local, 1);
+
+	quic_inq_get_param(sk, &context.remote);
+	quic_streams_get_param(quic_streams(sk), &context.remote, 0);
+
+	memcpy(quic_addr(&context.src), quic_path_addr(&qs->src), quic_addr_len(sk));
+	memcpy(quic_addr(&context.dst), quic_path_addr(&qs->dst), quic_addr_len(sk));
+
+	quic_connection_id_get(&qs->source, &context.source);
+	quic_connection_id_get(&qs->dest, &context.dest);
+
+	quic_crypto_get_secret(&qs->crypto, context.send.secret, 1);
+	quic_crypto_get_secret(&qs->crypto, context.recv.secret, 0);
+
+	context.state = quic_state(sk);
+
 	if (put_user(len, optlen))
 		return -EFAULT;
-
-	if (send) {
-		quic_outq_get_param(sk, &param);
-		quic_cong_get_param(sk, &param);
-	} else {
-		quic_inq_get_param(sk, &param);
-	}
-	quic_streams_get_param(quic_streams(sk), &param, send);
-	if (copy_to_user(optval, &param, len))
+	if (copy_to_user(optval, &context, len))
 		return -EFAULT;
 	return 0;
 }
 
-static int quic_sock_get_addr(struct sock *sk, struct quic_path_addr *a, int len,
-			      char __user *optval, int __user *optlen)
-{
-	union quic_addr *addr;
-
-	if (len < quic_addr_len(sk))
-		return -EINVAL;
-	len = quic_addr_len(sk);
-	if (put_user(len, optlen))
-		return -EFAULT;
-
-	addr = quic_path_addr(a);
-	if (copy_to_user(optval, addr, len))
-		return -EFAULT;
-	return 0;
-}
-
-static int quic_get_state(struct sock *sk, int len, char __user *optval,
-			  int __user *optlen, bool src)
+static int quic_sock_get_state(struct sock *sk, int len, char __user *optval, int __user *optlen)
 {
 	u8 state = quic_state(sk);
 
@@ -767,33 +764,11 @@ static int quic_getsockopt(struct sock *sk, int level, int optname,
 	case QUIC_SOCKOPT_DEST_CONNECTION_ID_NUMBERS:
 		retval = quic_connection_id_get_numbers(&qs->dest, len, optval, optlen);
 		break;
-	/* below is context setup from userspace after handshake */
-	case QUIC_SOCKOPT_LOCAL_TRANSPORT_PARAMS:
-		retval = quic_get_transport_param(sk, len, optval, optlen, 0);
-		break;
-	case QUIC_SOCKOPT_PEER_TRANSPORT_PARAMS:
-		retval = quic_get_transport_param(sk, len, optval, optlen, 1);
-		break;
-	case QUIC_SOCKOPT_SOURCE_ADDRESS:
-		retval = quic_sock_get_addr(sk, &qs->src, len, optval, optlen);
-		break;
-	case QUIC_SOCKOPT_DEST_ADDRESS:
-		retval = quic_sock_get_addr(sk, &qs->dst, len, optval, optlen);
-		break;
-	case QUIC_SOCKOPT_SOURCE_CONNECTION_ID:
-		retval = quic_connection_id_get(&qs->source, len, optval, optlen);
-		break;
-	case QUIC_SOCKOPT_DEST_CONNECTION_ID:
-		retval = quic_connection_id_get(&qs->dest, len, optval, optlen);
-		break;
-	case QUIC_SOCKOPT_CRYPTO_SEND_SECRET:
-		retval = quic_crypto_get_secret(&qs->crypto, len, optval, optlen, 1);
-		break;
-	case QUIC_SOCKOPT_CRYPTO_RECV_SECRET:
-		retval = quic_crypto_get_secret(&qs->crypto, len, optval, optlen, 0);
+	case QUIC_SOCKOPT_CONTEXT:
+		retval = quic_sock_get_context(sk, len, optval, optlen);
 		break;
 	case QUIC_SOCKOPT_STATE:
-		retval = quic_get_state(sk, len, optval, optlen, 0);
+		retval = quic_sock_get_state(sk, len, optval, optlen);
 		break;
 	default:
 		retval = -ENOPROTOOPT;

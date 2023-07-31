@@ -29,6 +29,7 @@ struct quic_addr_family_ops {
 
 int quic_encap_len(struct sock *sk);
 int quic_addr_len(struct sock *sk);
+int quic_addr_family(struct sock *sk);
 void quic_set_sk_addr(struct sock *sk, union quic_addr *a, bool src);
 void quic_get_sk_addr(struct socket *sock, struct sockaddr *a, bool peer);
 void quic_get_msg_addr(struct sock *sk, union quic_addr *addr, struct sk_buff *skb, bool src);

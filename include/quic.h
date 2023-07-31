@@ -1,7 +1,8 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <stdlib.h>
-#include "kernel.h"
+#include <sys/socket.h>
+#include <linux/quic.h>
 
 #ifdef IN_KERNEL_QUIC
 #define IS_KERN 1

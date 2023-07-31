@@ -12,6 +12,7 @@
 #define __uapi_quic_h__
 
 #include <linux/types.h>
+#include <linux/socket.h>
 
 enum {
 	IPPROTO_QUIC = 144,		/* A UDP-Based Multiplexed and Secure Transport	*/
@@ -70,6 +71,23 @@ struct quic_transport_param {
 	uint32_t initial_smoothed_rtt;
 };
 
+struct quic_crypto_secret {
+	uint8_t type;
+	uint8_t secret[32];
+};
+
+struct quic_context {
+	struct quic_transport_param	local;
+	struct quic_transport_param	remote;
+	struct quic_connection_id	source;
+	struct quic_connection_id	dest;
+	struct sockaddr_storage		src;
+	struct sockaddr_storage		dst;
+	struct quic_crypto_secret	send;
+	struct quic_crypto_secret	recv;
+	uint8_t				state;
+};
+
 enum quic_state {
 	QUIC_STATE_USER_CLOSED,
 	QUIC_STATE_USER_CONNECTING,
@@ -83,14 +101,7 @@ enum quic_state {
 #define QUIC_SOCKOPT_CONNECTION_MIGRATION		3
 #define QUIC_SOCKOPT_CONGESTION_CONTROL			4
 
-#define QUIC_SOCKOPT_LOCAL_TRANSPORT_PARAMS	100
-#define QUIC_SOCKOPT_PEER_TRANSPORT_PARAMS	101
-#define QUIC_SOCKOPT_SOURCE_ADDRESS		102
-#define QUIC_SOCKOPT_DEST_ADDRESS		103
-#define QUIC_SOCKOPT_SOURCE_CONNECTION_ID	104
-#define QUIC_SOCKOPT_DEST_CONNECTION_ID		105
-#define QUIC_SOCKOPT_CRYPTO_SEND_SECRET		106
-#define QUIC_SOCKOPT_CRYPTO_RECV_SECRET		107
-#define QUIC_SOCKOPT_STATE			108
+#define QUIC_SOCKOPT_CONTEXT				100
+#define QUIC_SOCKOPT_STATE				101
 
 #endif /* __uapi_quic_h__ */

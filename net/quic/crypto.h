@@ -46,9 +46,8 @@ int quic_crypto_encrypt(struct quic_crypto *crypto, struct sk_buff *skb,
 			struct quic_packet_info *pki);
 int quic_crypto_decrypt(struct quic_crypto *crypto, struct sk_buff *skb,
 			struct quic_packet_info *pki);
-int quic_crypto_set_secret(struct quic_crypto *crypto, void *key, u8 len, bool send);
-int quic_crypto_get_secret(struct quic_crypto *crypto, int len, char __user *optval,
-			   int __user *optlen, bool send);
+int quic_crypto_set_secret(struct quic_crypto *crypto, u8 *key, bool send);
+int quic_crypto_get_secret(struct quic_crypto *crypto, u8 *key, bool send);
 void quic_crypto_destroy(struct quic_crypto *crypto);
 int quic_crypto_key_update(struct quic_crypto *crypto, u8 *key, unsigned int len);
 void quic_crypto_set_key_update_ts(struct quic_crypto *crypto, u32 key_update_ts);

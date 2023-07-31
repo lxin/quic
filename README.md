@@ -37,15 +37,6 @@ that the main part of the QUIC protocol is still in Kernel space.
 
 Note: The kernel and gnutls version should not be too old, the example below is on RHEL-9.
 
-### build and install lib ngtcp2
-    # dnf install -y autoconf automake pkg-config libtool gnutls-devel
-    # git clone https://github.com/ngtcp2/ngtcp2.git
-    # cd ngtcp2
-    # autoreconf -i
-    # ./configure --with-gnutls --prefix=/usr
-    # make -j$(nproc) check
-    # make install
-
 ### build kernel module quic.ko
     # dnf install kernel-devel gcc libev-devel
     # git clone https://github.com/lxin/quic.git
@@ -82,12 +73,30 @@ Note: The kernel and gnutls version should not be too old, the example below is 
     ip6_udp_tunnel         16384  1 quic
     udp_tunnel             24576  1 quic
 
+### build and install lib ngtcp2
+    (NOTE: you can skip this if you only use apps under sample/ directory)
+
+    # dnf install -y autoconf automake pkg-config libtool gnutls-devel
+    # git clone https://github.com/ngtcp2/ngtcp2.git
+    # cd ngtcp2
+    # autoreconf -i
+    # ./configure --with-gnutls --prefix=/usr
+    # make -j$(nproc) check
+    # make install
+
 ### testing
   - After kernel quic module is installed, then:
 
         # make app
         # ./server 127.0.0.1 1234 ./keys/pkey.key ./keys/cert.crt
         # ./client 127.0.0.1 1234 ./keys/pkey.key ./keys/cert.crt
+
+  - If you want to use in-kernel QUIC without userspace handshake, try the
+    sample_app where it's using the keys pre-defined in sample_context.h:
+
+        # make sample_app
+        # ./sample/sample_server 127.0.0.1 1234 127.0.0.1 4321
+        # ./sample/sample_client 127.0.0.1 4321 127.0.0.1 1234
 
   - If you want use ngtcp2 without in-kernel QUIC:
 

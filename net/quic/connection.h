@@ -34,9 +34,8 @@ struct quic_connection_id_set {
 
 struct quic_source_connection_id *quic_source_connection_id_lookup(struct net *net, u8 *scid);
 int quic_connection_id_add(struct quic_connection_id_set *id_set,
-			   struct quic_connection_id *conn_id, u8 len, struct sock *sk);
-int quic_connection_id_get(struct quic_connection_id_set *id_set, int len,
-			   char __user *optval, int __user *optlen);
+			   struct quic_connection_id *conn_id, struct sock *sk);
+int quic_connection_id_get(struct quic_connection_id_set *id_set, struct quic_connection_id *conn_id);
 int quic_connection_id_get_numbers(struct quic_connection_id_set *id_set, int len,
 				   char __user *optval, int __user *optlen);
 int quic_connection_id_set_numbers(struct quic_connection_id_set *id_set,

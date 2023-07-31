@@ -37,7 +37,7 @@ union quic_addr {
 	struct sockaddr sa;
 };
 
-static inline union quic_addr *quic_addr(const struct sockaddr *addr)
+static inline union quic_addr *quic_addr(const void *addr)
 {
 	return (union quic_addr *)addr;
 }

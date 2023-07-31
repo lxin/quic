@@ -59,7 +59,7 @@ void quic_source_connection_id_free(struct quic_source_connection_id *s_conn_id)
 }
 
 int quic_connection_id_add(struct quic_connection_id_set *id_set,
-			   struct quic_connection_id *conn_id, u8 len, struct sock *sk)
+			   struct quic_connection_id *conn_id, struct sock *sk)
 {
 	struct quic_common_connection_id *common, *last;
 	struct quic_source_connection_id *s_conn_id;
@@ -97,33 +97,17 @@ int quic_connection_id_add(struct quic_connection_id_set *id_set,
 	return 0;
 }
 
-int quic_connection_id_get(struct quic_connection_id_set *id_set, int len,
-			   char __user *optval, int __user *optlen)
+int quic_connection_id_get(struct quic_connection_id_set *id_set, struct quic_connection_id *conn_id)
 {
 	struct quic_common_connection_id *common;
-	struct quic_connection_id conn_id, *tmp;
-
-	if (len < sizeof(conn_id))
-		return -EINVAL;
-	len = sizeof(conn_id);
-
-	if (copy_from_user(&conn_id, optval, len))
-		return -EFAULT;
 
 	list_for_each_entry(common, &id_set->head, list) {
-		if (common->id.number == conn_id.number) {
-			tmp = &common->id;
-			goto found;
+		if (common->id.number == conn_id->number) {
+			*conn_id = common->id;
+			return 0;
 		}
 	}
 	return -ENOENT;
-
-found:
-	if (put_user(len, optlen))
-		return -EFAULT;
-	if (copy_to_user(optval, tmp, len))
-		return -EFAULT;
-	return 0;
 }
 
 int quic_connection_id_get_numbers(struct quic_connection_id_set *id_set, int len,

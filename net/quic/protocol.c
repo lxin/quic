@@ -304,6 +304,11 @@ int quic_addr_len(struct sock *sk)
 	return quic_af_ops(sk)->addr_len;
 }
 
+int quic_addr_family(struct sock *sk)
+{
+	return quic_af_ops(sk)->sa_family;
+}
+
 void quic_set_sk_addr(struct sock *sk, union quic_addr *a, bool src)
 {
 	return quic_af_ops(sk)->set_sk_addr(sk, a, src);

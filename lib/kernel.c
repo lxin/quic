@@ -18,67 +18,7 @@ static int quic_kernel_socket_set_blocking(int sockfd)
 	return 0;
 }
 
-static int quic_kernel_socket_setup_cids(struct quic_connection *conn)
-{
-	int sd = conn->sockfd, count, i, err;
-	struct quic_connection_id cid = {};
-	const ngtcp2_cid *dest;
-	ngtcp2_cid source[3];
-
-	count = ngtcp2_conn_get_scid(conn->conn, source);
-	for (i = 0; i < count; i++) {
-		cid.number = i;
-		cid.len = source[i].datalen;
-		memcpy(cid.data, source[i].data, cid.len);
-		err = setsockopt(sd, SOL_QUIC, QUIC_SOCKOPT_SOURCE_CONNECTION_ID,
-				 &cid, sizeof(cid));
-		if (err < 0) {
-			qlog("%s ERR %d\n", __func__, errno);
-			return -1;
-		}
-	}
-
-	dest = ngtcp2_conn_get_dcid(conn->conn);
-	if (!dest)
-		return -1;
-
-	cid.number = 1;
-	cid.len = dest->datalen;
-	memcpy(cid.data, dest->data, cid.len);
-	err = setsockopt(sd, SOL_QUIC, QUIC_SOCKOPT_DEST_CONNECTION_ID,
-			&cid, sizeof(cid));
-	if (err < 0) {
-		qlog("%s ERR %d\n", __func__, errno);
-		return -1;
-	}
-
-	qlog("%s CONNECTION IDS DONE\n", __func__);
-	return 0;
-}
-
-static int quic_kernel_socket_setup_addrs(struct quic_connection *conn)
-{
-	int sd = conn->sockfd, err;
-
-	err = setsockopt(sd, SOL_QUIC, QUIC_SOCKOPT_SOURCE_ADDRESS,
-			 &conn->la, sizeof(conn->la));
-	if (err < 0) {
-		qlog("%s SOURCE ERR %d\n", __func__, errno);
-		return -1;
-	}
-
-	err = setsockopt(sd, SOL_QUIC, QUIC_SOCKOPT_DEST_ADDRESS,
-			 &conn->ra, sizeof(conn->ra));
-	if (err < 0) {
-		qlog("%s DEST ERR %d\n", __func__, errno);
-		return -1;
-	}
-	qlog("%s ADDRESS DONE\n", __func__);
-
-	return 0;
-}
-
-static int quic_kernel_socket_setup_transport_params(struct quic_connection *conn)
+static int quic_context_transport_params(struct quic_connection *conn, struct quic_context *context)
 {
 	struct quic_transport_param param = {};
 	const ngtcp2_transport_params *p;
@@ -95,11 +35,8 @@ static int quic_kernel_socket_setup_transport_params(struct quic_connection *con
 	param.initial_max_streams_bidi = p->initial_max_streams_bidi;
 	param.initial_max_streams_uni = p->initial_max_streams_uni;
 	param.initial_smoothed_rtt = conn->connected_ts - conn->connecting_ts;
-	err = setsockopt(sd, SOL_QUIC, QUIC_SOCKOPT_LOCAL_TRANSPORT_PARAMS, &param, sizeof(param));
-	if (err < 0) {
-		qlog("%s LOCAL ERR %d\n", __func__, errno);
-		return -1;
-	}
+	context->local = param;
+
 	p = ngtcp2_conn_get_remote_transport_params(conn->conn);
 	param.max_udp_payload_size = p->max_udp_payload_size;
 	param.ack_delay_exponent = p->ack_delay_exponent;
@@ -110,54 +47,17 @@ static int quic_kernel_socket_setup_transport_params(struct quic_connection *con
 	param.initial_max_stream_data_uni = p->initial_max_stream_data_uni;
 	param.initial_max_streams_bidi = p->initial_max_streams_bidi;
 	param.initial_max_streams_uni = p->initial_max_streams_uni;
-	err = setsockopt(sd, SOL_QUIC, QUIC_SOCKOPT_PEER_TRANSPORT_PARAMS, &param, sizeof(param));
-	if (err < 0) {
-		qlog("%s REMOTE ERR %d\n", __func__, errno);
-		return -1;
-	}
-	qlog("%s TRANSPORT PARAMS DONE\n", __func__);
-	return 0;
-}
-
-static int quic_kernel_socket_setup_crypto_keys(struct quic_connection *conn)
-{
-	int sd = conn->sockfd, err;
-
-	err = setsockopt(sd, SOL_QUIC, QUIC_SOCKOPT_CRYPTO_RECV_SECRET,
-			 conn->secret[0].key, conn->secret[0].keylen);
-	if (err < 0) {
-		qlog("%s RECV ERR %d\n", __func__, errno);
-		return -1;
-	}
-	err = setsockopt(sd, SOL_QUIC, QUIC_SOCKOPT_CRYPTO_SEND_SECRET,
-			 conn->secret[1].key, conn->secret[1].keylen);
-	if (err < 0) {
-		qlog("%s SEND ERR %d\n", __func__, errno);
-		return -1;
-	}
-	qlog("%s CRYPTO KEYS DONE\n", __func__);
-	return 0;
-}
-
-static int quic_kernel_socket_setup_state(struct quic_connection *conn)
-{
-	int sd = conn->sockfd, err;
-	uint8_t state;
-
-	state = conn->ep->is_serv ? QUIC_STATE_SERVER_CONNECTED : QUIC_STATE_CLIENT_CONNECTED;
-
-	err = setsockopt(sd, SOL_QUIC, QUIC_SOCKOPT_STATE, &state, sizeof(state));
-	if (err < 0) {
-		qlog("%s STATE ERR %d\n", __func__, errno);
-		return -1;
-	}
-
-	qlog("%s STATE DONE\n", __func__);
+	context->remote = param;
 	return 0;
 }
 
 int quic_kernel_socket_setup(struct quic_connection *conn, uint8_t reuse)
 {
+	int is_serv = conn->ep->is_serv, count, err;
+	struct quic_context context;
+	const ngtcp2_cid *dest;
+	ngtcp2_cid source[3];
+
 	conn->sockfd = conn->ep->sockfd;
 	if (!reuse) {
 		conn->sockfd = socket(AF_INET, SOCK_DGRAM | SOCK_NONBLOCK, IPPROTO_QUIC);
@@ -167,16 +67,36 @@ int quic_kernel_socket_setup(struct quic_connection *conn, uint8_t reuse)
 	if (quic_kernel_socket_set_blocking(conn->sockfd))
 		return -1;
 
-	if (quic_kernel_socket_setup_cids(conn))
+	memset(&context, 0, sizeof(context));
+
+	count = ngtcp2_conn_get_scid(conn->conn, source);
+	if (count != 1)
 		return -1;
-	if (quic_kernel_socket_setup_addrs(conn))
+	context.source.number = 0;
+	context.source.len = source[0].datalen;
+	memcpy(context.source.data, source[0].data, context.source.len);
+	dest = ngtcp2_conn_get_dcid(conn->conn);
+	if (!dest)
 		return -1;
-	if (quic_kernel_socket_setup_transport_params(conn))
+	context.dest.number = 1;
+	context.dest.len = dest->datalen;
+	memcpy(context.dest.data, dest->data, context.dest.len);
+
+	quic_context_transport_params(conn, &context);
+
+	memcpy(&context.src, &conn->la, sizeof(conn->la));
+	memcpy(&context.dst, &conn->ra, sizeof(conn->ra));
+
+	memcpy(context.recv.secret, conn->secret[0].key, conn->secret[0].keylen);
+	memcpy(context.send.secret, conn->secret[1].key, conn->secret[1].keylen);
+
+	context.state = is_serv ? QUIC_STATE_SERVER_CONNECTED : QUIC_STATE_CLIENT_CONNECTED;
+
+	err = setsockopt(conn->sockfd, SOL_QUIC, QUIC_SOCKOPT_CONTEXT, &context, sizeof(context));
+	if (err < 0) {
+		qlog("%s CONTEXT ERR %d\n", __func__, errno);
 		return -1;
-	if (quic_kernel_socket_setup_crypto_keys(conn))
-		return -1;
-	if (quic_kernel_socket_setup_state(conn))
-		return -1;
+	}
 	return 0;
 }
 
