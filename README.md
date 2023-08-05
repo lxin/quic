@@ -4,20 +4,23 @@
 
 As mentioned in https://github.com/lxin/tls_hs#the-backgrounds: "some people may
 argue that TLS handshake should stay in user space and use up-call to user space
-in kernel to complete the handshake". The repo is to implement the idea. Note
+in kernel to complete the handshake". This repo is to implement the idea. Note
 that the main part of the QUIC protocol is still in Kernel space.
 
-### posix-like QUIC APIs use based on ngtcp2 and gnutls
+### userspace handshake based on ngtcp2 and gnutls
 - Since only gnutls released version supports QUIC APIs, we choose
   ngtcp2 over gnutls instead of openssl as the userspace part.
+- The userspace handshake part for the in-kernel QUIC is in [handshake.c](https://github.com/lxin/quic/tree/main/handshake.c).
 
-### in-kernel QUIC implementation (Prototype)
-- The userspace handshake part for the in-kernel QUIC in [lib/](https://github.com/lxin/quic/tree/main/lib).
+### in-kernel QUIC implementation
+- This is the main code part: it only processes SHORT packets when it is
+  in connected state and passes LONG packets directly to userspace when
+  it is in connecting/handshaking state.
 - The kernel part for the rest of QUIC protocol is in [net/quic/](https://github.com/lxin/quic/tree/main/net/quic).
 
 ### up-call netlink to pass QUIC sockfd to NFS (TBD)
-- Pass the sockfd to Kernel via 'handshake' netlink for NFS use.
-  (Base on https://docs.kernel.org/networking/tls-handshake.html)
+- Pass the sockfd to Kernel via [handshake netlink](https://docs.kernel.org/networking/tls-handshake.html) for NFS use.
+- May integrate the handshake code into [ktls-utils](https://github.com/oracle/ktls-utils) for this.
 
 ## Implementation
 
@@ -28,21 +31,24 @@ that the main part of the QUIC protocol is still in Kernel space.
 - Rekeying
 - Connection Migration
 - Congestion Control
+- Suppport both X509 Certficate and PSK mode
 
 ### TBD
+- Keepalive Timer
+- Connection ID Management
+- Stream Enhanced Management
 - Use up-call netlink to pass QUIC sockfd to kernel(NFS)
-- Connection ID and Path and Stream Enhanced Management
 
 ## INSTALL
 
 Note: The kernel and gnutls version should not be too old, the example below is on RHEL-9.
 
 ### build kernel module quic.ko
-    # dnf install kernel-devel gcc libev-devel
+    # dnf install kernel-devel gcc
     # git clone https://github.com/lxin/quic.git
     # make module
-    make -C /lib/modules/5.14.0-327.el9.x86_64/build M=/root/quic/net/quic modules
-    make[1]: Entering directory '/usr/src/kernels/5.14.0-327.el9.x86_64'
+    make -C /lib/modules/5.14.0-332.el9.x86_64/build M=/root/quic/net/quic modules
+    make[1]: Entering directory '/usr/src/kernels/5.14.0-332.el9.x86_64'
       CC [M]  /root/quic/net/quic/protocol.o
       CC [M]  /root/quic/net/quic/socket.o
       CC [M]  /root/quic/net/quic/connection.o
@@ -54,16 +60,15 @@ Note: The kernel and gnutls version should not be too old, the example below is 
       CC [M]  /root/quic/net/quic/output.o
       CC [M]  /root/quic/net/quic/crypto.o
       CC [M]  /root/quic/net/quic/pnmap.o
+      CC [M]  /root/quic/net/quic/timer.o
+      CC [M]  /root/quic/net/quic/cong.o
       LD [M]  /root/quic/net/quic/quic.o
       MODPOST /root/quic/net/quic/Module.symvers
       CC [M]  /root/quic/net/quic/quic.mod.o
       LD [M]  /root/quic/net/quic/quic.ko
       BTF [M] /root/quic/net/quic/quic.ko
     Skipping BTF generation for /root/quic/net/quic/quic.ko due to unavailability of vmlinux
-    make[1]: Leaving directory '/usr/src/kernels/5.14.0-327.el9.x86_64'
-
-    # make module_install
-    echo "file /root/quic/net/quic/* +p" > /sys/kernel/debug/dynamic_debug/control
+    make[1]: Leaving directory '/usr/src/kernels/5.14.0-332.el9.x86_64'
     modprobe udp_tunnel
     modprobe ip6_udp_tunnel
     insmod net/quic/quic.ko
@@ -88,19 +93,21 @@ Note: The kernel and gnutls version should not be too old, the example below is 
   - After kernel quic module is installed, then:
 
         # make app
+        # cd example/
+
+        1.  With Certificate mode:
         # ./server 127.0.0.1 1234 ./keys/pkey.key ./keys/cert.crt
-        # ./client 127.0.0.1 1234 ./keys/pkey.key ./keys/cert.crt
+        # ./client 127.0.0.1 1234
+
+        2.  With PSK mode:
+        # ./server 127.0.0.1 1234 ./keys/psk.txt
+        # ./client 127.0.0.1 1234 ./keys/pst.txt
 
   - If you want to use in-kernel QUIC without userspace handshake, try the
     sample_app where it's using the keys pre-defined in sample_context.h:
 
         # make sample_app
-        # ./sample/sample_server 127.0.0.1 1234 127.0.0.1 4321
-        # ./sample/sample_client 127.0.0.1 4321 127.0.0.1 1234
+        # cd sample/
 
-  - If you want use ngtcp2 without in-kernel QUIC:
-
-        # make clean
-        # make app
-        # ./server 127.0.0.1 1234 ./keys/pkey.key ./keys/cert.crt
-        # ./client 127.0.0.1 1234 ./keys/pkey.key ./keys/cert.crt
+        # ./sample_server 127.0.0.1 1234 127.0.0.1 4321
+        # ./sample_client 127.0.0.1 4321 127.0.0.1 1234
