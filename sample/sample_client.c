@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <errno.h>
 #include <stdlib.h>
+#include <unistd.h>
 #include <arpa/inet.h>
 #include "sample_context.h"
 
@@ -68,5 +69,8 @@ int main(int argc, char *argv[])
 		return 1;
 	}
 	printf("recv: \"%s\", len: %d\n", msg, ret);
+
+	close(sd);
+
 	return 0;
 }
