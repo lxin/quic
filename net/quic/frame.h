@@ -68,3 +68,31 @@ static inline bool quic_frame_non_probing(u8 type)
 
 struct sk_buff *quic_frame_create(struct sock *sk, u8 type, void *data, u32 len);
 int quic_frame_process(struct sock *sk, struct sk_buff *skb);
+
+// 20.1 Transport Error Codes
+enum quic_transport_error {
+	QUIC_TRANS_ERR_NONE,
+	QUIC_TRANS_ERR_INTERNAL,
+	QUIC_TRANS_ERR_CONNECTION_REFUSED,
+	QUIC_TRANS_ERR_FLOW_CONTROL,
+	QUIC_TRANS_ERR_STREAM_LIMIT,
+	QUIC_TRANS_ERR_STREAM_STATE,
+	QUIC_TRANS_ERR_FINAL_SIZE,
+	QUIC_TRANS_ERR_FRAME_ENCODING,
+	QUIC_TRANS_ERR_TRANSPORT_PARAM,
+	QUIC_TRANS_ERR_CONNECTION_ID_LIMIT,
+	QUIC_TRANS_ERR_PROTOCOL_VIOLATION,
+	QUIC_TRANS_ERR_INVALID_TOKEN,
+	QUIC_TRANS_ERR_APPLICATION,
+	QUIC_TRANS_ERR_CRYPTO_BUF_EXCEEDED,
+	QUIC_TRANS_ERR_KEY_UPDATE,
+	QUIC_TRANS_ERR_AED_LIMIT_REACHED,
+	QUIC_TRANS_ERR_NO_VIABLE_PATH,
+
+	/* The cryptographic handshake failed. A range of 256 values is reserved
+	 * for carrying error codes specific to the cryptographic handshake that
+	 * is used. Codes for errors occurring when TLS is used for the
+	 * cryptographic handshake are described in Section 4.8 of [QUIC-TLS].
+	 */
+	QUIC_TRANS_ERR_CRYPTO,
+};
