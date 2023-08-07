@@ -11,6 +11,9 @@
  */
 
 #include <net/udp_tunnel.h>
+
+#include <linux/version.h>
+
 #include "uapi/linux/quic.h"
 #include "hashtable.h"
 #include "protocol.h"
@@ -34,7 +37,11 @@ void quic_get_port(struct net *net, struct quic_bind_port *port, union quic_addr
 
 	inet_get_local_port_range(net, &low, &high);
 	remaining = (high - low) + 1;
+#if KERNEL_VERSION(6, 1, 0) >= LINUX_VERSION_CODE
 	rover = prandom_u32_max(remaining) + low;
+#else
+	rover = get_random_u32_below(remaining) + low;
+#endif
 	do {
 		rover++;
 		if ((rover < low) || (rover > high))
