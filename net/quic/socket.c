@@ -509,9 +509,16 @@ static struct sock *quic_accept(struct sock *sk, int flags, int *err, bool kern)
 static void quic_close(struct sock *sk, long timeout)
 {
 	struct quic_sock *qs = quic_sk(sk);
+	struct sk_buff *skb;
 
 	lock_sock(sk);
-	qs->state = QUIC_STATE_USER_CLOSED;
+	quic_set_state(sk, QUIC_STATE_USER_CLOSED);
+
+	skb = quic_frame_create(sk, QUIC_FRAME_CONNECTION_CLOSE_APP, NULL, 0);
+	if (!skb)
+		sk->sk_err = -ENOMEM;
+	else
+		quic_outq_ctrl_tail(sk, skb, false);
 
 	quic_outq_purge(sk, &qs->outq);
 	quic_inq_purge(sk, &qs->inq);

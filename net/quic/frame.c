@@ -287,6 +287,26 @@ static struct sk_buff *quic_frame_connection_close_create(struct sock *sk, void 
 	return 0;
 }
 
+static struct sk_buff *quic_frame_connection_close_app_create(struct sock *sk, void *data, u32 len)
+{
+	u8 *p, frame[10], type = QUIC_FRAME_CONNECTION_CLOSE_APP;
+	struct sk_buff *skb;
+	u32 frame_len;
+
+	p = quic_put_var(frame, type);
+	p = quic_put_var(p, 0);
+	p = quic_put_var(p, 0);
+
+	frame_len = (u32)(p - frame);
+
+	skb = alloc_skb(frame_len, GFP_ATOMIC);
+	if (!skb)
+		return NULL;
+	skb_put_data(skb, frame, frame_len);
+
+	return skb;
+}
+
 static struct sk_buff *quic_frame_data_blocked_create(struct sock *sk, void *data, u32 len)
 {
 	u8 *p, frame[10], type = QUIC_FRAME_DATA_BLOCKED;
@@ -517,6 +537,11 @@ static int quic_frame_connection_close_process(struct sock *sk, struct sk_buff *
 	return 0;
 }
 
+static int quic_frame_connection_close_app_process(struct sock *sk, struct sk_buff *skb, u8 type)
+{
+	return 0;
+}
+
 static int quic_frame_data_blocked_process(struct sock *sk, struct sk_buff *skb, u8 type)
 {
 	struct quic_inqueue *inq = quic_inq(sk);
@@ -637,7 +662,7 @@ static struct quic_frame_ops quic_frame_ops[QUIC_FRAME_BASE_MAX + 1] = {
 	quic_frame_create_and_process(path_challenge),
 	quic_frame_create_and_process(path_response),
 	quic_frame_create_and_process(connection_close),
-	quic_frame_create_and_process(connection_close), /* close_app */
+	quic_frame_create_and_process(connection_close_app),
 	quic_frame_create_and_process(handshake_done),
 };
 
