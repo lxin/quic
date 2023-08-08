@@ -111,3 +111,20 @@ Note: The kernel and gnutls version should not be too old, the example below is 
 
         # ./sample_server 127.0.0.1 1234 127.0.0.1 4321
         # ./sample_client 127.0.0.1 4321 127.0.0.1 1234
+
+### usage:
+   The handshake and module can be installed as a library by:
+
+       # make install
+
+   When using it, load quic module just like others:
+
+       # modprobe quic
+
+   in application c file such as in app.c (see example/ for how APIs are used):
+
+       #include <netinet/quic.h>
+
+   then build it by:
+
+       # gcc app.c -o app -lquic

@@ -1,0 +1,22 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+/* QUIC kernel implementation
+ * (C) Copyright Red Hat Corp. 2023
+ *
+ * This file is the userspace handshake part for the QUIC kernel implementation
+ *
+ * Initialization/cleanup for QUIC protocol support.
+ *
+ * Written or modified by:
+ *    Xin Long <lucien.xin@gmail.com>
+ */
+
+prefix=/usr
+exec_prefix=/usr
+libdir=/usr/lib64
+includedir=/usr/include
+
+Name: quic
+Description: User-level API library for in-kernel QUIC
+Version: 1.0.0
+Libs: -L${libdir} -lquic
+Cflags: -I${includedir}
