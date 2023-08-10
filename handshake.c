@@ -25,7 +25,7 @@
 #include <stdio.h>
 #include <fcntl.h>
 
-#include <linux/quic.h>
+#include "handshake.h"
 
 enum {
 	QUIC_STATE_CLOSED,
@@ -57,9 +57,9 @@ struct quic_endpoint {
 	struct quic_key secret[2];	/* secrets for sending and receiving */
 	struct quic_cid connid[2];	/* source and dest connection IDs */
 
-	char keyfile[2][100];	/* private key & certificate or psk file */
-	int (*server_session_new)(struct quic_endpoint *ep, ngtcp2_pkt_hd *hd);
-	int (*client_session_new)(struct quic_endpoint *ep);
+	struct quic_handshake_parms *parms;
+	int (*session_new)(struct quic_endpoint *ep, ngtcp2_pkt_hd *hd);
+	int (*cred_setkey)(struct quic_endpoint *ep, void *cred);
 
 	ngtcp2_conn *conn;	/* connection structure from libngtcp2 */
 	ngtcp2_crypto_conn_ref conn_ref;	/* used in session hook */
@@ -257,7 +257,7 @@ static int quic_client_connection_new(struct quic_endpoint *ep)
 	params.active_connection_id_limit = 7;
 	ngtcp2_settings_default(&settings);
 	settings.initial_ts = quic_get_timestamp();
-	settings.handshake_timeout = 30 * NGTCP2_SECONDS;
+	settings.handshake_timeout = (ep->parms->timeout ?: 30) * NGTCP2_SECONDS;
 	quic_ngtcp2_conn_callbacks_init(&callbacks);
 
 	scid.datalen = 17;
@@ -294,7 +294,7 @@ static int quic_server_connection_new(struct quic_endpoint *ep, ngtcp2_pkt_hd *h
 	params.active_connection_id_limit = 7;
 	ngtcp2_settings_default(&settings);
 	settings.initial_ts = quic_get_timestamp();
-	settings.handshake_timeout = 30 * NGTCP2_SECONDS;
+	settings.handshake_timeout = (ep->parms->timeout ?: 30) * NGTCP2_SECONDS;
 	quic_ngtcp2_conn_callbacks_init(&callbacks);
 
 	params.original_dcid = hd->dcid;
@@ -320,7 +320,44 @@ static int quic_server_connection_new(struct quic_endpoint *ep, ngtcp2_pkt_hd *h
 #define GROUPS "-GROUP-ALL:+GROUP-X25519:+GROUP-SECP256R1:+GROUP-SECP384R1:+GROUP-SECP521R1"
 #define PRIORITY MODES":"CIPHERS":"GROUPS
 
-static int quic_client_set_x509_session(struct quic_endpoint *ep)
+#define ARRAY_SIZE(x)	(sizeof(x) / sizeof((x)[0]))
+
+static int quic_client_x509_cb(gnutls_session_t session)
+{
+	ngtcp2_crypto_conn_ref *conn_ref = gnutls_session_get_ptr(session);
+	struct quic_endpoint *ep = conn_ref->user_data;
+	struct quic_handshake_parms *parms = ep->parms;
+	const gnutls_datum_t *peercerts;
+	unsigned int i, status;
+	int ret;
+
+	ret = gnutls_certificate_verify_peers3(session, parms->peername, &status);
+	if (ret != GNUTLS_E_SUCCESS || status)
+		return -1;
+
+	peercerts = gnutls_certificate_get_peers(session, &parms->num_keys);
+	if (!peercerts || !parms->num_keys)
+		return -1;
+	if (parms->num_keys > ARRAY_SIZE(parms->keys))
+		parms->num_keys = ARRAY_SIZE(parms->keys);
+	for (i = 0; i < parms->num_keys; i++)
+		parms->keys[0] = peercerts[i];
+
+	return 0;
+}
+
+static int quic_client_set_x509_cred(struct quic_endpoint *ep, void *cred)
+{
+	gnutls_privkey_t privkey = ep->parms->privkey;
+	gnutls_pcert_st  *cert = ep->parms->cert;
+
+	if (!privkey || !cert)
+		return 0;
+
+	return gnutls_certificate_set_key(cred, NULL, 0, cert, 1, privkey);
+}
+
+static int quic_client_set_x509_session(struct quic_endpoint *ep, ngtcp2_pkt_hd *hd)
 {
 	gnutls_certificate_credentials_t cred;
 	ngtcp2_crypto_conn_ref *conn_ref;
@@ -330,6 +367,9 @@ static int quic_client_set_x509_session(struct quic_endpoint *ep)
 		return -1;
 	if (gnutls_certificate_set_x509_system_trust(cred) < 0)
 		goto err_cred;
+	if (ep->cred_setkey(ep, cred))
+		goto err_cred;
+	gnutls_certificate_set_verify_function(cred, quic_client_x509_cb);
 
 	conn_ref = &ep->conn_ref;
 	conn_ref->get_conn = quic_session_get_conn;
@@ -343,7 +383,9 @@ static int quic_client_set_x509_session(struct quic_endpoint *ep)
 		goto err_session;
 	gnutls_handshake_set_secret_function(session, quic_session_secret_func);
 	gnutls_credentials_set(session, GNUTLS_CRD_CERTIFICATE, cred);
-
+	if (ep->parms->peername)
+		gnutls_server_name_set(session, GNUTLS_NAME_DNS,
+				ep->parms->peername, strlen(ep->parms->peername));
 	if (quic_client_connection_new(ep))
 		goto err_session;
 	ngtcp2_conn_set_tls_native_handle(ep->conn, session);
@@ -356,10 +398,11 @@ err_cred:
 	return -1;
 }
 
-static int quic_psk_set_client_credentials_file(gnutls_psk_client_credentials_t cred, char *psk)
+static int quic_client_set_psk_cred(struct quic_endpoint *ep, void *cred)
 {
+	unsigned char identity[256], *key;
+	char *psk = ep->parms->names[0];
 	gnutls_datum_t gkey, pkey;
-	char identity[256], *key;
 	int len, fd, err = -1;
 
 	fd = open(psk, O_RDONLY);
@@ -367,18 +410,24 @@ static int quic_psk_set_client_credentials_file(gnutls_psk_client_credentials_t 
 		return -1;
 
 	len = read(fd, identity, sizeof(identity));
-	if (len < 0)
+	if (len < 0 || len > 256)
 		goto out;
-	identity[len - 1] = '\0';
 	key = strchr(identity, ':');
 	if (!key)
 		goto out;
 	*key = '\0';
 	key++;
-
 	gkey.data = key;
-	gkey.size = strlen(key);
-	gnutls_hex_decode2(&gkey, &pkey);
+
+	key = strchr(key, '\n');
+	if (!key) {
+		gkey.size = identity + len - gkey.data;
+	} else {
+		*key = '\0';
+		gkey.size = strlen(gkey.data);
+	}
+	if (gnutls_hex_decode2(&gkey, &pkey))
+		goto out;
 
 	err = gnutls_psk_set_client_credentials(cred, identity, &pkey, GNUTLS_PSK_KEY_RAW);
 out:
@@ -386,7 +435,17 @@ out:
 	return err;
 }
 
-static int quic_client_set_psk_session(struct quic_endpoint *ep)
+static int quic_client_set_psk_cred_tlshd(struct quic_endpoint *ep, void *cred)
+{
+	gnutls_datum_t *key = &ep->parms->keys[0];
+	char *identity = ep->parms->names[0];
+
+	ep->parms->peername = identity;
+
+	return gnutls_psk_set_client_credentials(cred, identity, key, GNUTLS_PSK_KEY_RAW);
+}
+
+static int quic_client_set_psk_session(struct quic_endpoint *ep, ngtcp2_pkt_hd *hd)
 {
 	gnutls_psk_client_credentials_t cred;
 	ngtcp2_crypto_conn_ref *conn_ref;
@@ -394,7 +453,7 @@ static int quic_client_set_psk_session(struct quic_endpoint *ep)
 
 	if (gnutls_psk_allocate_client_credentials(&cred))
 		return -1;
-	if (quic_psk_set_client_credentials_file(cred, ep->keyfile[0]))
+	if (ep->cred_setkey(ep, cred))
 		goto err_cred;
 
 	conn_ref = &ep->conn_ref;
@@ -422,6 +481,48 @@ err_cred:
 	return -1;
 }
 
+static int quic_server_x509_cb(gnutls_session_t session)
+{
+	ngtcp2_crypto_conn_ref *conn_ref = gnutls_session_get_ptr(session);
+	struct quic_endpoint *ep = conn_ref->user_data;
+	struct quic_handshake_parms *parms = ep->parms;
+	const gnutls_datum_t *peercerts;
+	unsigned int i, status;
+	int ret;
+
+	ret = gnutls_certificate_verify_peers3(session, NULL, &status);
+	if (ret == GNUTLS_E_NO_CERTIFICATE_FOUND)
+		return 0;
+	if (ret != GNUTLS_E_SUCCESS || status)
+		return -1;
+
+	peercerts = gnutls_certificate_get_peers(session, &parms->num_keys);
+	if (!peercerts || !parms->num_keys)
+		return -1;
+	if (parms->num_keys > ARRAY_SIZE(parms->keys))
+		parms->num_keys = ARRAY_SIZE(parms->keys);
+	for (i = 0; i < parms->num_keys; i++)
+		parms->keys[0] = peercerts[i];
+
+	return 0;
+}
+
+static int quic_server_set_x509_cred(struct quic_endpoint *ep, void *cred)
+{
+	char *pkey = ep->parms->names[0];
+	char *cert = ep->parms->names[1];
+
+	return gnutls_certificate_set_x509_key_file(cred, cert, pkey, GNUTLS_X509_FMT_PEM);
+}
+
+static int quic_server_set_x509_cred_tlshd(struct quic_endpoint *ep, void *cred)
+{
+	gnutls_privkey_t privkey = ep->parms->privkey;
+	gnutls_pcert_st  *cert = ep->parms->cert;
+
+	return gnutls_certificate_set_key(cred, NULL, 0, cert, 1, privkey);
+}
+
 static int quic_server_set_x509_session(struct quic_endpoint *ep, ngtcp2_pkt_hd *hd)
 {
 	gnutls_certificate_credentials_t cred;
@@ -432,9 +533,9 @@ static int quic_server_set_x509_session(struct quic_endpoint *ep, ngtcp2_pkt_hd 
 		return -1;
 	if (gnutls_certificate_set_x509_system_trust(cred) < 0)
 		goto err_cred;
-	if (gnutls_certificate_set_x509_key_file(cred, ep->keyfile[1], ep->keyfile[0],
-						 GNUTLS_X509_FMT_PEM))
+	if (ep->cred_setkey(ep, cred))
 		goto err_cred;
+	gnutls_certificate_set_verify_function(cred, quic_server_x509_cb);
 
 	conn_ref = &ep->conn_ref;
 	conn_ref->get_conn = quic_session_get_conn;
@@ -448,6 +549,7 @@ static int quic_server_set_x509_session(struct quic_endpoint *ep, ngtcp2_pkt_hd 
 		goto err_session;
 	gnutls_handshake_set_secret_function(session, quic_session_secret_func);
 	gnutls_credentials_set(session, GNUTLS_CRD_CERTIFICATE, cred);
+	gnutls_certificate_server_set_request(session, GNUTLS_CERT_REQUEST);
 
 	if (quic_server_connection_new(ep, hd))
 		goto err_session;
@@ -461,6 +563,36 @@ err_cred:
 	return -1;
 }
 
+static int quic_server_set_psk_cred(struct quic_endpoint *ep, void *cred)
+{
+	char *psk = ep->parms->names[0];
+
+	return gnutls_psk_set_server_credentials_file(cred, psk);
+}
+
+static int quic_server_psk_cb(gnutls_session_t session, const char *username, gnutls_datum_t *key)
+{
+	ngtcp2_crypto_conn_ref *conn_ref = gnutls_session_get_ptr(session);
+	struct quic_endpoint *ep = conn_ref->user_data;
+	int i;
+
+	for (i = 0; i < ep->parms->num_keys; i++)
+		if (!strcmp(ep->parms->names[i], username))
+			break;
+	if (i == ep->parms->num_keys)
+		return -1;
+
+	ep->parms->peername = ep->parms->names[i];
+	*key = ep->parms->keys[i];
+	return 0;
+}
+
+static int quic_server_set_psk_cred_tlshd(struct quic_endpoint *ep, void *cred)
+{
+	gnutls_psk_set_server_credentials_function(cred, quic_server_psk_cb);
+	return 0;
+}
+
 static int quic_server_set_psk_session(struct quic_endpoint *ep, ngtcp2_pkt_hd *hd)
 {
 	gnutls_psk_server_credentials_t cred;
@@ -469,7 +601,7 @@ static int quic_server_set_psk_session(struct quic_endpoint *ep, ngtcp2_pkt_hd *
 
 	if (gnutls_psk_allocate_server_credentials(&cred))
 		return -1;
-	if (gnutls_psk_set_server_credentials_file(cred, ep->keyfile[0]))
+	if (ep->cred_setkey(ep, cred))
 		return -1;
 
 	conn_ref = &ep->conn_ref;
@@ -520,7 +652,7 @@ static void quic_handshake_read(struct quic_endpoint *ep)
 			break;
 		if (!ep->conn) {
 			memcpy(&ep->ra, &a, sizeof(a));
-			if (ngtcp2_accept(&hd, buf, ret) || ep->server_session_new(ep, &hd)) {
+			if (ngtcp2_accept(&hd, buf, ret) || ep->session_new(ep, &hd)) {
 				ep->dead = 2;
 				break;
 			}
@@ -682,7 +814,7 @@ static int quic_client_do_handshake(struct quic_endpoint *ep)
 		return -1;
 	}
 
-	if (ep->client_session_new(ep))
+	if (ep->session_new(ep, NULL))
 		return -1;
 
 	err = quic_do_handshake(ep);
@@ -739,12 +871,38 @@ out:
  */
 int quic_client_psk_handshake(int sockfd, struct sockaddr_in *ra, char *psk)
 {
+	struct quic_handshake_parms parms = {};
 	struct quic_endpoint ep = {};
 
 	ep.sockfd = sockfd;
-	strcpy(ep.keyfile[0], psk);
+	ep.parms = &parms;
+	ep.parms->names[0] = psk;
 	memcpy(&ep.ra, ra, sizeof(*ra));
-	ep.client_session_new = quic_client_set_psk_session;
+	ep.session_new = quic_client_set_psk_session;
+	ep.cred_setkey = quic_client_set_psk_cred;
+
+	return quic_client_do_handshake(&ep);
+}
+
+/**
+ * quic_client_psk_tlshd - start a QUIC handshake with PSK mode from client side
+ * @sockfd: IPPROTO_QUIC type socket
+ * @ra: peer server address
+ * @parms: parameter for psk identities and keys.
+ *
+ * Return values:
+ * - On success, 0.
+ * - On error, the error is returned.
+ */
+int quic_client_psk_tlshd(int sockfd, struct sockaddr_in *ra, struct quic_handshake_parms *parms)
+{
+	struct quic_endpoint ep = {};
+
+	ep.sockfd = sockfd;
+	ep.parms = parms;
+	memcpy(&ep.ra, ra, sizeof(*ra));
+	ep.session_new = quic_client_set_psk_session;
+	ep.cred_setkey = quic_client_set_psk_cred_tlshd;
 
 	return quic_client_do_handshake(&ep);
 }
@@ -760,11 +918,37 @@ int quic_client_psk_handshake(int sockfd, struct sockaddr_in *ra, char *psk)
  */
 int quic_client_x509_handshake(int sockfd, struct sockaddr_in *ra)
 {
+	struct quic_handshake_parms parms = {};
 	struct quic_endpoint ep = {};
 
 	ep.sockfd = sockfd;
+	ep.parms = &parms;
 	memcpy(&ep.ra, ra, sizeof(*ra));
-	ep.client_session_new = quic_client_set_x509_session;
+	ep.session_new = quic_client_set_x509_session;
+	ep.cred_setkey = quic_client_set_x509_cred;
+
+	return quic_client_do_handshake(&ep);
+}
+
+/**
+ * quic_client_x509_tlshd - start a QUIC handshake with Certificate mode from client side
+ * @sockfd: IPPROTO_QUIC type socket
+ * @ra: peer server address
+ * @parms: parameters for certificate and private key and (optional) servername.
+ *
+ * Return values:
+ * - On success, 0.
+ * - On error, the error is returned.
+ */
+int quic_client_x509_tlshd(int sockfd, struct sockaddr_in *ra, struct quic_handshake_parms *parms)
+{
+	struct quic_endpoint ep = {};
+
+	ep.sockfd = sockfd;
+	ep.parms = parms;
+	memcpy(&ep.ra, ra, sizeof(*ra));
+	ep.session_new = quic_client_set_x509_session;
+	ep.cred_setkey = quic_client_set_x509_cred;
 
 	return quic_client_do_handshake(&ep);
 }
@@ -780,17 +964,41 @@ int quic_client_x509_handshake(int sockfd, struct sockaddr_in *ra)
  */
 int quic_server_psk_handshake(int sockfd, char *psk)
 {
+	struct quic_handshake_parms parms = {};
 	struct quic_endpoint ep = {};
 
 	ep.sockfd = sockfd;
-	strcpy(ep.keyfile[0], psk);
-	ep.server_session_new = quic_server_set_psk_session;
+	ep.parms = &parms;
+	ep.parms->names[0] = psk;
+	ep.session_new = quic_server_set_psk_session;
+	ep.cred_setkey = quic_server_set_psk_cred;
 
 	return quic_server_do_handshake(&ep);
 }
 
 /**
- * quic_client_x509_handshake - start a QUIC handshake with Certificate mode from server side
+ * quic_server_psk_tlshd - start a QUIC handshake with PSK mode from server side
+ * @sockfd: IPPROTO_QUIC type socket
+ * @parms: parameter for psk identities and keys.
+ *
+ * Return values:
+ * - On success, 0.
+ * - On error, the error is returned.
+ */
+int quic_server_psk_tlshd(int sockfd, struct quic_handshake_parms *parms)
+{
+	struct quic_endpoint ep = {};
+
+	ep.sockfd = sockfd;
+	ep.parms = parms;
+	ep.session_new = quic_server_set_psk_session;
+	ep.cred_setkey = quic_server_set_psk_cred_tlshd;
+
+	return quic_server_do_handshake(&ep);
+}
+
+/**
+ * quic_server_x509_handshake - start a QUIC handshake with Certificate mode from server side
  * @sockfd: IPPROTO_QUIC type socket
  * @pkey: private key file
  * @cert: certificate file
@@ -801,12 +1009,36 @@ int quic_server_psk_handshake(int sockfd, char *psk)
  */
 int quic_server_x509_handshake(int sockfd, char *pkey, char *cert)
 {
+	struct quic_handshake_parms parms = {};
 	struct quic_endpoint ep = {};
 
 	ep.sockfd = sockfd;
-	strcpy(ep.keyfile[0], pkey);
-	strcpy(ep.keyfile[1], cert);
-	ep.server_session_new = quic_server_set_x509_session;
+	ep.parms = &parms;
+	ep.parms->names[0] = pkey;
+	ep.parms->names[1] = cert;
+	ep.session_new = quic_server_set_x509_session;
+	ep.cred_setkey = quic_server_set_x509_cred;
+
+	return quic_server_do_handshake(&ep);
+}
+
+/**
+ * quic_server_x509_tlshd - start a QUIC handshake with Certificate mode from server side
+ * @sockfd: IPPROTO_QUIC type socket
+ * @parms: parameters for certificate and private key
+ *
+ * Return values:
+ * - On success, 0.
+ * - On error, the error is returned.
+ */
+int quic_server_x509_tlshd(int sockfd, struct quic_handshake_parms *parms)
+{
+	struct quic_endpoint ep = {};
+
+	ep.sockfd = sockfd;
+	ep.parms = parms;
+	ep.session_new = quic_server_set_x509_session;
+	ep.cred_setkey = quic_server_set_x509_cred_tlshd;
 
 	return quic_server_do_handshake(&ep);
 }
