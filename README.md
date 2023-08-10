@@ -93,15 +93,27 @@ Note: The kernel and gnutls version should not be too old, the example below is 
   - After kernel quic module is installed, then:
 
         # make app
-        # cd example/
+        # cd example/keys
+        # ./ca_cert_pkey.sh # (setup ca and certifcates)
+        # cd ../
 
         1.  With Certificate mode:
-        # ./server 127.0.0.1 1234 ./keys/pkey.key ./keys/cert.crt
+        # ./server 127.0.0.1 1234 ./keys/server-key.pem ./keys/server-cert.pem
         # ./client 127.0.0.1 1234
 
         2.  With PSK mode:
-        # ./server 127.0.0.1 1234 ./keys/psk.txt
-        # ./client 127.0.0.1 1234 ./keys/pst.txt
+        # ./server 127.0.0.1 1234 ./keys/server-psk.txt
+        # ./client 127.0.0.1 1234 ./keys/client-psk.txt
+
+  - You can also run the example for tlshd interface:
+
+        1.  With Certificate mode:
+        # ./tlshd_server 127.0.0.1 1234 ./keys/server-key.pem ./keys/server-cert.pem
+        # ./tlshd_client 127.0.0.1 1234 ./keys/client-key.pem ./keys/client-cert.pem server.test
+
+        2.  With PSK mode:
+        # ./tlshd_server 127.0.0.1 1234 ./keys/server-psk.txt
+        # ./tlshd_client 127.0.0.1 1234 ./keys/client-psk.txt
 
   - If you want to use in-kernel QUIC without userspace handshake, try the
     sample_app where it's using the keys pre-defined in sample_context.h:
@@ -112,19 +124,57 @@ Note: The kernel and gnutls version should not be too old, the example below is 
         # ./sample_server 127.0.0.1 1234 127.0.0.1 4321
         # ./sample_client 127.0.0.1 4321 127.0.0.1 1234
 
-### usage:
-   The handshake and module can be installed as a library by:
+## USAGE:
+### General use:
 
-       # make install
+  - The handshake and module can be installed as a library by:
 
-   When using it, load quic module just like others:
+        # make install
 
-       # modprobe quic
+  - When using it, load quic module just like others:
 
-   in application c file such as in app.c (see example/ for how APIs are used):
+        # modprobe quic
 
-       #include <netinet/quic.h>
+  - in application c file such as in app.c (see example/ for how APIs are used):
 
-   then build it by:
+        #include <netinet/quic.h>
 
-       # gcc app.c -o app -lquic
+      and it includes APIs:
+
+        int quic_client_x509_handshake(int sockfd, struct sockaddr *ra);
+        int quic_server_x509_handshake(int sockfd, char *pkey, char *cert);
+
+        int quic_client_psk_handshake(int sockfd, struct sockaddr *ra, char *psk);
+        int quic_server_psk_handshake(int sockfd, char *psk);
+
+        int quic_sendmsg(int sockfd, const void *msg, size_t len, uint32_t sid, uint32_t flag);
+        int quic_recvmsg(int sockfd, void *msg, size_t len, uint32_t *sid, uint32_t *flag);
+
+  - then build it by:
+
+        # gcc app.c -o app -lquic
+
+### APIs for tlshd
+
+(also included in netinet/quic.h)
+
+        struct quic_handshake_parms {
+        	uint32_t		timeout;	/* handshake timeout in seconds */
+        
+        	gnutls_privkey_t	privkey;	/* private key for x509 handshake */
+        	gnutls_pcert_st		*cert;		/* certificate for x509 handshake */
+        	char 			*peername;	/* - server name for client side x509 handshake or,
+        						 * - psk identity name chosen during PSK handshake
+        						 */
+        	char			*names[10];	/* psk identifies in PSK handshake */
+        	gnutls_datum_t		keys[10];	/* - psk keys in PSK handshake, or,
+        						 * - certificates received in x509 handshake
+        						 */
+        	uint32_t		num_keys;	/* keys total numbers */
+        };
+
+        int quic_client_x509_tlshd(int sockfd, struct sockaddr *ra, struct quic_handshake_parms *parms);
+        int quic_server_x509_tlshd(int sockfd, struct quic_handshake_parms *parms);
+
+        int quic_client_psk_tlshd(int sockfd, struct sockaddr *ra, struct quic_handshake_parms *parms);
+        int quic_server_psk_tlshd(int sockfd, struct quic_handshake_parms *parms);

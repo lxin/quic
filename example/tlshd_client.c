@@ -1,26 +1,26 @@
-#include <string.h>
 #include <stdio.h>
 #include <errno.h>
 #include <unistd.h>
 #include <stdlib.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
-#include "handshake.h"
+#include "tlshd_fake.h"
 
 #define MSG_LEN	4096
-#define TOT_LEN	204800000
+#define TOT_LEN	20480
 char msg[MSG_LEN + 1];
 
 int main(int argc, char *argv[])
 {
+	struct quic_handshake_parms parms = {};
         struct sockaddr_in ra = {};
 	struct quic_endpoint *ep;
 	int sid = 0, flag, i;
 	uint64_t len = 0;
 	int ret, sockfd;
 
-	if (argc != 3 && argc != 4) {
-		printf("%s <PEER ADDR> <PEER PORT> [<PSK file>]\n", argv[0]);
+	if (argc != 3 && argc != 4 && argc != 5 && argc != 6) {
+		printf("%s <PEER ADDR> <PEER PORT> [<PSK file> | [<PRIVATE_KEY_FILE> <CERTIFICATE_FILE> [<SERVER_NAME>]]]\n", argv[0]);
 		return 0;
 	}
 
@@ -34,10 +34,34 @@ int main(int argc, char *argv[])
         ra.sin_port = htons(atoi(argv[2]));
         inet_pton(AF_INET, argv[1], &ra.sin_addr.s_addr);
 
-	if (argc == 3 && quic_client_x509_handshake(sockfd, (struct sockaddr *)&ra))
-		return -1;
-	if (argc == 4 && quic_client_psk_handshake(sockfd, (struct sockaddr *)&ra, argv[3]))
-		return -1;
+	parms.timeout = 15;
+	if (argc == 4)  {
+		ret = read_psk_file(argv[3], parms.names, parms.keys);
+		if (ret <= 0)
+			return -1;
+		parms.num_keys = ret;
+		if (quic_client_psk_tlshd(sockfd, (struct sockaddr *)&ra, &parms))
+			return -1;
+		printf("psk identity chosen: '%s'\n", parms.peername);
+	}
+	if (argc == 3) {
+		if (quic_client_x509_tlshd(sockfd, (struct sockaddr *)&ra, &parms))
+			return -1;
+		printf("received cert number: '%d'\n", parms.num_keys);
+	}
+	if (argc >= 5) {
+		gnutls_pcert_st cert;
+		parms.cert = &cert;
+
+		if (read_pkey_file(argv[3], &parms.privkey) ||
+		    read_cert_file(argv[4], &parms.cert))
+			return -1;
+		if (argc == 6)
+			parms.peername = argv[5];
+		if (quic_client_x509_tlshd(sockfd, (struct sockaddr *)&ra, &parms))
+			return -1;
+		printf("received cert number: '%d'\n", parms.num_keys);
+	}
 	/* sockfd can be passed to kernel by 'handshake' netlink for NFS use */
 	printf("handshake done %d\n", sockfd);
 

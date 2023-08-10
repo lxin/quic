@@ -869,7 +869,7 @@ out:
  * - On success, 0.
  * - On error, the error is returned.
  */
-int quic_client_psk_handshake(int sockfd, struct sockaddr_in *ra, char *psk)
+int quic_client_psk_handshake(int sockfd, struct sockaddr *ra, char *psk)
 {
 	struct quic_handshake_parms parms = {};
 	struct quic_endpoint ep = {};
@@ -877,7 +877,7 @@ int quic_client_psk_handshake(int sockfd, struct sockaddr_in *ra, char *psk)
 	ep.sockfd = sockfd;
 	ep.parms = &parms;
 	ep.parms->names[0] = psk;
-	memcpy(&ep.ra, ra, sizeof(*ra));
+	memcpy(&ep.ra, ra, sizeof(ep.ra));
 	ep.session_new = quic_client_set_psk_session;
 	ep.cred_setkey = quic_client_set_psk_cred;
 
@@ -894,13 +894,13 @@ int quic_client_psk_handshake(int sockfd, struct sockaddr_in *ra, char *psk)
  * - On success, 0.
  * - On error, the error is returned.
  */
-int quic_client_psk_tlshd(int sockfd, struct sockaddr_in *ra, struct quic_handshake_parms *parms)
+int quic_client_psk_tlshd(int sockfd, struct sockaddr *ra, struct quic_handshake_parms *parms)
 {
 	struct quic_endpoint ep = {};
 
 	ep.sockfd = sockfd;
 	ep.parms = parms;
-	memcpy(&ep.ra, ra, sizeof(*ra));
+	memcpy(&ep.ra, ra, sizeof(ep.ra));
 	ep.session_new = quic_client_set_psk_session;
 	ep.cred_setkey = quic_client_set_psk_cred_tlshd;
 
@@ -916,14 +916,14 @@ int quic_client_psk_tlshd(int sockfd, struct sockaddr_in *ra, struct quic_handsh
  * - On success, 0.
  * - On error, the error is returned.
  */
-int quic_client_x509_handshake(int sockfd, struct sockaddr_in *ra)
+int quic_client_x509_handshake(int sockfd, struct sockaddr *ra)
 {
 	struct quic_handshake_parms parms = {};
 	struct quic_endpoint ep = {};
 
 	ep.sockfd = sockfd;
 	ep.parms = &parms;
-	memcpy(&ep.ra, ra, sizeof(*ra));
+	memcpy(&ep.ra, ra, sizeof(ep.ra));
 	ep.session_new = quic_client_set_x509_session;
 	ep.cred_setkey = quic_client_set_x509_cred;
 
@@ -940,13 +940,13 @@ int quic_client_x509_handshake(int sockfd, struct sockaddr_in *ra)
  * - On success, 0.
  * - On error, the error is returned.
  */
-int quic_client_x509_tlshd(int sockfd, struct sockaddr_in *ra, struct quic_handshake_parms *parms)
+int quic_client_x509_tlshd(int sockfd, struct sockaddr *ra, struct quic_handshake_parms *parms)
 {
 	struct quic_endpoint ep = {};
 
 	ep.sockfd = sockfd;
 	ep.parms = parms;
-	memcpy(&ep.ra, ra, sizeof(*ra));
+	memcpy(&ep.ra, ra, sizeof(ep.ra));
 	ep.session_new = quic_client_set_x509_session;
 	ep.cred_setkey = quic_client_set_x509_cred;
 
