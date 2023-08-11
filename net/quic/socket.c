@@ -101,6 +101,11 @@ static void quic_destroy_sock(struct sock *sk)
 
 static int quic_bind(struct sock *sk, struct sockaddr *addr, int addr_len)
 {
+	return -EOPNOTSUPP;
+}
+
+static int quic_handshake_bind(struct sock *sk, struct sockaddr *addr, int addr_len)
+{
 	struct quic_sock *qs = quic_sk(sk);
 	union quic_addr *a;
 	__u32 err = 0;
@@ -127,6 +132,11 @@ out:
 }
 
 static int quic_connect(struct sock *sk, struct sockaddr *addr, int addr_len)
+{
+	return -EOPNOTSUPP;
+}
+
+static int quic_handshake_connect(struct sock *sk, struct sockaddr *addr, int addr_len)
 {
 	struct quic_sock *qs = quic_sk(sk);
 	union quic_addr *a;
@@ -193,31 +203,40 @@ static void quic_unhash(struct sock *sk)
 	spin_unlock(&head->lock);
 }
 
-static int quic_send_handshake_user(struct sock *sk, struct msghdr *msg, size_t msg_len)
+static int quic_handshake_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 {
-	int hlen = quic_encap_len(sk) + MAX_HEADER;
 	union quic_addr *daddr = msg->msg_name;
 	struct sk_buff *skb;
+	int hlen, err;
 
 	if (!daddr)
 		return -EINVAL;
 
+	lock_sock(sk);
+	hlen = quic_encap_len(sk) + MAX_HEADER;
 	quic_path_addr_set(quic_dst(sk), daddr);
-	if (quic_flow_route(sk, NULL))
-		return -EHOSTUNREACH;
+	err = quic_flow_route(sk, NULL);
+	if (err)
+		goto err;
 
 	skb = alloc_skb(msg_len + hlen, GFP_KERNEL);
-	if (!skb)
-		return -ENOMEM;
+	if (!skb) {
+		err = -ENOMEM;
+		goto err;
+	}
 	skb_reserve(skb, msg_len + hlen);
 	if (!copy_from_iter_full(skb_push(skb, msg_len), msg_len, &msg->msg_iter)) {
 		kfree(skb);
-		return -EFAULT;
+		err = -EFAULT;
+		goto err;
 	}
 
 	skb->ignore_df = 1;
 	quic_lower_xmit(sk, skb);
-	return msg_len;
+	err = (int)msg_len;
+err:
+	release_sock(sk);
+	return err;
 }
 
 static int quic_send_handshake_ack(struct sock *sk)
@@ -354,10 +373,6 @@ static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 	long timeo;
 
 	lock_sock(sk);
-	if (quic_handshake_user(sk)) {
-		err = quic_send_handshake_user(sk, msg, msg_len);
-		goto out;
-	}
 	err = quic_msghdr_parse(sk, msg, &sndinfo);
 	if (err)
 		goto out;
@@ -465,9 +480,6 @@ static int quic_recvmsg(struct sock *sk, struct msghdr *msg, size_t len, int fla
 	if (copy != skb->len)
 		msg->msg_flags |= MSG_TRUNC;
 
-	if (quic_handshake_user(sk))
-		goto skip_stream;
-
 	stream_id = QUIC_RCV_CB(skb)->stream_id;
 	stream = quic_stream_recv_get(quic_streams(sk), stream_id, quic_is_serv(sk));
 	if (!stream) {
@@ -484,7 +496,53 @@ static int quic_recvmsg(struct sock *sk, struct msghdr *msg, size_t len, int fla
 	put_cmsg(msg, IPPROTO_QUIC, QUIC_RCVINFO, sizeof(info), &info);
 	quic_inq_flow_control(sk, stream, skb);
 
-skip_stream:
+	if (addr) {
+		quic_get_msg_addr(sk, addr, skb, 1);
+		*addr_len = quic_addr_len(sk);
+	}
+
+	err = copy;
+	if (flags & MSG_PEEK)
+		goto out;
+
+	kfree_skb(__skb_dequeue(&sk->sk_receive_queue));
+
+out:
+	release_sock(sk);
+	return err;
+}
+
+#if KERNEL_VERSION(5, 18, 0) >= LINUX_VERSION_CODE
+static int quic_handshake_recvmsg(struct sock *sk, struct msghdr *msg, size_t len, int nonblock,
+				  int flags, int *addr_len)
+{
+#else
+static int quic_handshake_recvmsg(struct sock *sk, struct msghdr *msg, size_t len, int flags,
+				  int *addr_len)
+{
+	int nonblock = flags & MSG_DONTWAIT;
+#endif
+	union quic_addr *addr = msg->msg_name;
+	struct sk_buff *skb;
+	int copy, err;
+	long timeo;
+
+	lock_sock(sk);
+
+	timeo = sock_rcvtimeo(sk, nonblock);
+	err = quic_wait_for_packet(sk, timeo);
+	if (err)
+		goto out;
+
+	skb = skb_peek(&sk->sk_receive_queue);
+	copy = min_t(int, skb->len, len);
+	err = skb_copy_datagram_msg(skb, 0, msg, copy);
+	if (err)
+		goto out;
+
+	if (copy != skb->len)
+		msg->msg_flags |= MSG_TRUNC;
+
 	if (addr) {
 		quic_get_msg_addr(sk, addr, skb, 1);
 		*addr_len = quic_addr_len(sk);
@@ -529,6 +587,14 @@ static void quic_close(struct sock *sk, long timeout)
 	quic_connection_id_set_free(&qs->source);
 	quic_connection_id_set_free(&qs->dest);
 
+	release_sock(sk);
+	sk_common_release(sk);
+}
+
+static void quic_handshake_close(struct sock *sk, long timeout)
+{
+	lock_sock(sk);
+	quic_udp_sock_put(quic_sk(sk)->udp_sk[0]);
 	release_sock(sk);
 	sk_common_release(sk);
 }
@@ -643,6 +709,7 @@ int quic_sock_set_context(struct sock *sk, struct quic_context *context, u32 len
 	err = quic_crypto_set_secret(&qs->crypto, context->recv.secret, 0);
 	if (err)
 		return err;
+	quic_update_proto_ops(sk);
 	err = quic_sock_set_state(sk, &context->state, sizeof(context->state));
 	if (err)
 		return err;
@@ -657,7 +724,7 @@ static int quic_setsockopt(struct sock *sk, int level, int optname,
 	int retval = 0;
 
 	if (level != SOL_QUIC)
-		return qs->af_ops->setsockopt(sk, level, optname, optval, optlen);
+		return quic_af_ops(sk)->setsockopt(sk, level, optname, optval, optlen);
 
 	if (optlen > 0) {
 		kopt = memdup_sockptr(optval, optlen);
@@ -682,6 +749,32 @@ static int quic_setsockopt(struct sock *sk, int level, int optname,
 	case QUIC_SOCKOPT_CONGESTION_CONTROL:
 		retval = quic_cong_set_cong_alg(sk, kopt, optlen);
 		break;
+	default:
+		retval = -ENOPROTOOPT;
+		break;
+	}
+	release_sock(sk);
+	kfree(kopt);
+	return retval;
+}
+
+static int quic_handshake_setsockopt(struct sock *sk, int level, int optname,
+				     sockptr_t optval, unsigned int optlen)
+{
+	void *kopt = NULL;
+	int retval = 0;
+
+	if (level != SOL_QUIC)
+		return quic_af_ops(sk)->setsockopt(sk, level, optname, optval, optlen);
+
+	if (optlen > 0) {
+		kopt = memdup_sockptr(optval, optlen);
+		if (IS_ERR(kopt))
+			return PTR_ERR(kopt);
+	}
+
+	lock_sock(sk);
+	switch (optname) {
 	case QUIC_SOCKOPT_CONTEXT:
 		retval = quic_sock_set_context(sk, kopt, optlen);
 		break;
@@ -732,6 +825,41 @@ static int quic_sock_get_context(struct sock *sk, int len, char __user *optval, 
 	return 0;
 }
 
+static int quic_getsockopt(struct sock *sk, int level, int optname,
+			   char __user *optval, int __user *optlen)
+{
+	struct quic_sock *qs = quic_sk(sk);
+	int retval = 0;
+	int len;
+
+	if (level != SOL_QUIC)
+		return quic_af_ops(sk)->getsockopt(sk, level, optname, optval, optlen);
+
+	if (get_user(len, optlen))
+		return -EFAULT;
+
+	if (len < 0)
+		return -EINVAL;
+
+	lock_sock(sk);
+	switch (optname) {
+	case QUIC_SOCKOPT_CONTEXT:
+		retval = quic_sock_get_context(sk, len, optval, optlen);
+		break;
+	case QUIC_SOCKOPT_SOURCE_CONNECTION_ID_NUMBERS:
+		retval = quic_connection_id_get_numbers(&qs->source, len, optval, optlen);
+		break;
+	case QUIC_SOCKOPT_DEST_CONNECTION_ID_NUMBERS:
+		retval = quic_connection_id_get_numbers(&qs->dest, len, optval, optlen);
+		break;
+	default:
+		retval = -ENOPROTOOPT;
+		break;
+	}
+	release_sock(sk);
+	return retval;
+}
+
 static int quic_sock_get_state(struct sock *sk, int len, char __user *optval, int __user *optlen)
 {
 	u8 state = quic_state(sk);
@@ -747,42 +875,13 @@ static int quic_sock_get_state(struct sock *sk, int len, char __user *optval, in
 	return 0;
 }
 
-static int quic_getsockopt(struct sock *sk, int level, int optname,
-			   char __user *optval, int __user *optlen)
+static int quic_handshake_getsockopt(struct sock *sk, int level, int optname,
+				     char __user *optval, int __user *optlen)
 {
-	struct quic_sock *qs = quic_sk(sk);
-	int retval = 0;
-	int len;
+	if (level == SOL_QUIC)
+		return -ENOPROTOOPT;
 
-	if (level != SOL_QUIC)
-		return qs->af_ops->getsockopt(sk, level, optname, optval, optlen);
-
-	if (get_user(len, optlen))
-		return -EFAULT;
-
-	if (len < 0)
-		return -EINVAL;
-
-	lock_sock(sk);
-	switch (optname) {
-	case QUIC_SOCKOPT_SOURCE_CONNECTION_ID_NUMBERS:
-		retval = quic_connection_id_get_numbers(&qs->source, len, optval, optlen);
-		break;
-	case QUIC_SOCKOPT_DEST_CONNECTION_ID_NUMBERS:
-		retval = quic_connection_id_get_numbers(&qs->dest, len, optval, optlen);
-		break;
-	case QUIC_SOCKOPT_CONTEXT:
-		retval = quic_sock_get_context(sk, len, optval, optlen);
-		break;
-	case QUIC_SOCKOPT_STATE:
-		retval = quic_sock_get_state(sk, len, optval, optlen);
-		break;
-	default:
-		retval = -ENOPROTOOPT;
-		break;
-	}
-	release_sock(sk);
-	return retval;
+	return quic_af_ops(sk)->getsockopt(sk, level, optname, optval, optlen);
 }
 
 struct proto quic_prot = {
@@ -822,6 +921,48 @@ struct proto quicv6_prot = {
 	.hash		=  quic_hash,
 	.unhash		=  quic_unhash,
 	.backlog_rcv	=  quic_do_rcv,
+	.no_autobind	=  true,
+	.obj_size	=  sizeof(struct quic_sock),
+	.sockets_allocated	=  &quic_sockets_allocated,
+};
+
+struct proto quic_handshake_prot = {
+	.name		=  "QUIC",
+	.owner		=  THIS_MODULE,
+	.init		=  quic_init_sock,
+	.destroy	=  quic_destroy_sock,
+	.setsockopt	=  quic_handshake_setsockopt,
+	.getsockopt	=  quic_handshake_getsockopt,
+	.connect	=  quic_handshake_connect,
+	.bind		=  quic_handshake_bind,
+	.close		=  quic_handshake_close,
+	.sendmsg	=  quic_handshake_sendmsg,
+	.recvmsg	=  quic_handshake_recvmsg,
+	.accept		=  quic_accept,
+	.hash		=  quic_hash,
+	.unhash		=  quic_unhash,
+	.backlog_rcv	=  quic_handshake_do_rcv,
+	.no_autobind	=  true,
+	.obj_size	=  sizeof(struct quic_sock),
+	.sockets_allocated	=  &quic_sockets_allocated,
+};
+
+struct proto quicv6_handshake_prot = {
+	.name		=  "QUICv6",
+	.owner		=  THIS_MODULE,
+	.init		=  quic_init_sock,
+	.destroy	=  quic_destroy_sock,
+	.setsockopt	=  quic_handshake_setsockopt,
+	.getsockopt	=  quic_handshake_getsockopt,
+	.connect	=  quic_handshake_connect,
+	.bind		=  quic_handshake_bind,
+	.close		=  quic_handshake_close,
+	.sendmsg	=  quic_handshake_sendmsg,
+	.recvmsg	=  quic_handshake_recvmsg,
+	.accept		=  quic_accept,
+	.hash		=  quic_hash,
+	.unhash		=  quic_unhash,
+	.backlog_rcv	=  quic_handshake_do_rcv,
 	.no_autobind	=  true,
 	.obj_size	=  sizeof(struct quic_sock),
 	.sockets_allocated	=  &quic_sockets_allocated,

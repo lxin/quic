@@ -25,6 +25,7 @@ struct quic_addr_family_ops {
 			      unsigned int optlen);
 	int	(*getsockopt)(struct sock *sk, int level, int optname, char __user *optval,
 			      int __user *optlen);
+	void	(*update_proto_ops)(struct sock *sk);
 };
 
 int quic_encap_len(struct sock *sk);
@@ -36,4 +37,5 @@ void quic_get_msg_addr(struct sock *sk, union quic_addr *addr, struct sk_buff *s
 void quic_udp_conf_init(struct sock *sk, struct udp_port_cfg *udp_conf, union quic_addr *a);
 void quic_lower_xmit(struct sock *sk, struct sk_buff *skb);
 int quic_flow_route(struct sock *sk, union quic_addr *a);
+void quic_update_proto_ops(struct sock *sk);
 struct quic_addr_family_ops *quic_af_ops_get(sa_family_t family);

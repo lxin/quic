@@ -49,6 +49,7 @@ static inline u32 quic_inq_ack_delay_exponent(struct quic_inqueue *inq)
 }
 
 int quic_do_rcv(struct sock *sk, struct sk_buff *skb);
+int quic_handshake_do_rcv(struct sock *sk, struct sk_buff *skb);
 int quic_rcv(struct sk_buff *skb);
 int quic_inq_reasm_tail(struct sock *sk, struct sk_buff *skb);
 int quic_inq_flow_control(struct sock *sk, struct quic_stream *stream, struct sk_buff *skb);

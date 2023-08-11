@@ -215,6 +215,16 @@ static void quic_v6_set_sk_addr(struct sock *sk, union quic_addr *a, bool src)
 	}
 }
 
+static void quic_v4_update_proto_ops(struct sock *sk)
+{
+	sk->sk_prot = &quic_prot;
+}
+
+static void quic_v6_update_proto_ops(struct sock *sk)
+{
+	sk->sk_prot = &quicv6_prot;
+}
+
 static struct quic_addr_family_ops quic_af_inet = {
 	.sa_family		= AF_INET,
 	.addr_len		= sizeof(struct sockaddr_in),
@@ -227,6 +237,7 @@ static struct quic_addr_family_ops quic_af_inet = {
 	.get_sk_addr		= quic_v4_get_sk_addr,
 	.setsockopt		= ip_setsockopt,
 	.getsockopt		= ip_getsockopt,
+	.update_proto_ops		= quic_v4_update_proto_ops,
 };
 
 static struct quic_addr_family_ops quic_af_inet6 = {
@@ -241,6 +252,7 @@ static struct quic_addr_family_ops quic_af_inet6 = {
 	.get_sk_addr		= quic_v6_get_sk_addr,
 	.setsockopt		= ipv6_setsockopt,
 	.getsockopt		= ipv6_getsockopt,
+	.update_proto_ops		= quic_v6_update_proto_ops,
 };
 
 struct quic_addr_family_ops *quic_af_ops_get(sa_family_t family)
@@ -340,6 +352,12 @@ int quic_flow_route(struct sock *sk, union quic_addr *a)
 	return quic_af_ops(sk)->flow_route(sk, a);
 }
 
+void quic_update_proto_ops(struct sock *sk)
+{
+	quic_af_ops(sk)->update_proto_ops(sk);
+	sk->sk_backlog_rcv = sk->sk_prot->backlog_rcv;
+}
+
 static const struct proto_ops quic_proto_ops = {
 	.family		   = PF_INET,
 	.owner		   = THIS_MODULE,
@@ -365,14 +383,14 @@ static const struct proto_ops quic_proto_ops = {
 static struct inet_protosw quic_stream_protosw = {
 	.type       = SOCK_STREAM,
 	.protocol   = IPPROTO_QUIC,
-	.prot       = &quic_prot,
+	.prot       = &quic_handshake_prot,
 	.ops        = &quic_proto_ops,
 };
 
 static struct inet_protosw quic_seqpacket_protosw = {
 	.type       = SOCK_DGRAM,
 	.protocol   = IPPROTO_QUIC,
-	.prot       = &quic_prot,
+	.prot       = &quic_handshake_prot,
 	.ops        = &quic_proto_ops,
 };
 
@@ -416,13 +434,13 @@ static int quic_protosw_init(void)
 {
 	int err;
 
-	err = proto_register(&quic_prot, 1);
+	err = proto_register(&quic_handshake_prot, 1);
 	if (err)
 		return err;
 
-	err = proto_register(&quicv6_prot, 1);
+	err = proto_register(&quicv6_handshake_prot, 1);
 	if (err) {
-		proto_unregister(&quic_prot);
+		proto_unregister(&quic_handshake_prot);
 		return err;
 	}
 
@@ -438,11 +456,11 @@ static void quic_protosw_exit(void)
 {
 	inet_unregister_protosw(&quic_seqpacket_protosw);
 	inet_unregister_protosw(&quic_stream_protosw);
-	proto_unregister(&quic_prot);
+	proto_unregister(&quic_handshake_prot);
 
 	inet6_unregister_protosw(&quicv6_seqpacket_protosw);
 	inet6_unregister_protosw(&quicv6_stream_protosw);
-	proto_unregister(&quicv6_prot);
+	proto_unregister(&quicv6_handshake_prot);
 }
 
 static int __net_init quic_net_init(struct net *net)

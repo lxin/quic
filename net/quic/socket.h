@@ -29,6 +29,9 @@
 extern struct proto quic_prot;
 extern struct proto quicv6_prot;
 
+extern struct proto quic_handshake_prot;
+extern struct proto quicv6_handshake_prot;
+
 struct quic_sock {
 	struct inet_sock		inet;
 	struct quic_addr_family_ops	*af_ops; /* inet4 or inet6 */
@@ -124,11 +127,6 @@ static inline struct quic_stream_table *quic_streams(const struct sock *sk)
 static inline struct quic_timer *quic_timer(const struct sock *sk, u8 type)
 {
 	return &quic_sk(sk)->timers[type];
-}
-
-static inline bool quic_handshake_user(struct sock *sk)
-{
-	return quic_state(sk) == QUIC_STATE_USER_CONNECTING;
 }
 
 static inline bool quic_is_serv(struct sock *sk)

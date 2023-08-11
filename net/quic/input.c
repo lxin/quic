@@ -13,19 +13,33 @@
 #include "socket.h"
 #include "frame.h"
 
-static void quic_recv_handshake_user(struct sock *sk, struct sk_buff *skb)
+static void quic_inq_rfree(struct sk_buff *skb)
 {
+	atomic_sub(skb->len, &skb->sk->sk_rmem_alloc);
+}
+
+static void quic_inq_set_owner_r(struct sk_buff *skb, struct sock *sk)
+{
+	skb_orphan(skb);
+	skb->sk = sk;
+	atomic_add(skb->len, &sk->sk_rmem_alloc);
+	skb->destructor = quic_inq_rfree;
+}
+
+int quic_handshake_do_rcv(struct sock *sk, struct sk_buff *skb)
+{
+	if (atomic_read(&sk->sk_rmem_alloc) + skb->len > sk->sk_rcvbuf) {
+		kfree_skb(skb);
+		return -ENOBUFS;
+	}
+	quic_inq_set_owner_r(skb, sk);
 	__skb_queue_tail(&sk->sk_receive_queue, skb);
 	sk->sk_data_ready(sk);
+	return 0;
 }
 
 int quic_do_rcv(struct sock *sk, struct sk_buff *skb)
 {
-	if (quic_handshake_user(sk)) {
-		quic_recv_handshake_user(sk, skb);
-		return 0;
-	}
-
 	if (!quic_is_connected(sk)) {
 		kfree_skb(skb);
 		return 0;
@@ -67,7 +81,7 @@ int quic_rcv(struct sk_buff *skb)
 			goto err;
 		}
 	} else {
-		quic_do_rcv(sk, skb);
+		sk_backlog_rcv(sk, skb);
 	}
 	bh_unlock_sock(sk);
 	return 0;
@@ -75,19 +89,6 @@ int quic_rcv(struct sk_buff *skb)
 err:
 	kfree_skb(skb);
 	return err;
-}
-
-static void quic_inq_rfree(struct sk_buff *skb)
-{
-	atomic_sub(skb->len, &skb->sk->sk_rmem_alloc);
-}
-
-static void quic_inq_set_owner_r(struct sk_buff *skb, struct sock *sk)
-{
-	skb_orphan(skb);
-	skb->sk = sk;
-	atomic_add(skb->len, &sk->sk_rmem_alloc);
-	skb->destructor = quic_inq_rfree;
 }
 
 static void quic_inq_recv_tail(struct sock *sk, struct quic_stream *stream, struct sk_buff *skb)
