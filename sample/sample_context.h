@@ -39,6 +39,7 @@ struct quic_context client_context = {
 	.recv = {
 		.secret = "0eb530a5596bfc1176e26fd224460e84",
 	},
+	.is_serv = 0,
 };
 
 struct quic_context server_context = {
@@ -80,6 +81,7 @@ struct quic_context server_context = {
 	.send = {
 		.secret = "0eb530a5596bfc1176e26fd224460e84",
 	},
+	.is_serv = 1,
 };
 
 int quic_recvmsg(int sockfd, void *msg, size_t len, uint32_t *stream_id, uint32_t *stream_flag)

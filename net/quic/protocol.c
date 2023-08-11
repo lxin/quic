@@ -291,12 +291,15 @@ static int quic_inet_listen(struct socket *sock, int backlog)
 	if (!backlog) {
 		quic_set_state(sk, QUIC_STATE_USER_CLOSED);
 		sk->sk_prot->unhash(sk);
-		release_sock(sk);
-		return 0;
+		goto out;
 	}
+
+	if (!hlist_unhashed(&quic_sk(sk)->node))
+		goto out;
 
 	quic_set_state(sk, QUIC_STATE_USER_CONNECTING);
 	err = sk->sk_prot->hash(sk);
+out:
 	release_sock(sk);
 	return err;
 }

@@ -760,7 +760,7 @@ static void quic_context_copy_transport_params(struct quic_endpoint *ep,
 	param->initial_smoothed_rtt = ep->connecting_ts[1] - ep->connecting_ts[0];
 }
 
-static int quic_set_socket_context(struct quic_endpoint *ep, int state)
+static int quic_set_socket_context(struct quic_endpoint *ep, uint8_t is_serv)
 {
 	const ngtcp2_transport_params *p;
 	struct quic_context context;
@@ -784,7 +784,7 @@ static int quic_set_socket_context(struct quic_endpoint *ep, int state)
 	memcpy(context.recv.secret, ep->secret[0].key, ep->secret[0].keylen);
 	memcpy(context.send.secret, ep->secret[1].key, ep->secret[1].keylen);
 
-	context.state = state;
+	context.is_serv = is_serv;
 	if (setsockopt(ep->sockfd, SOL_QUIC, QUIC_SOCKOPT_CONTEXT, &context, sizeof(context))) {
 		printf("socket setsockopt context failed\n");
 		return -1;
@@ -808,12 +808,6 @@ static int quic_client_do_handshake(struct quic_endpoint *ep)
 	}
 	memcpy(&ep->la, la, sizeof(*la));
 
-	state = QUIC_STATE_USER_CONNECTING;
-	if (setsockopt(ep->sockfd, SOL_QUIC, QUIC_SOCKOPT_STATE, &state, sizeof(state))) {
-		printf("socket setsockopt state failed\n");
-		return -1;
-	}
-
 	if (ep->session_new(ep, NULL))
 		return -1;
 
@@ -823,7 +817,7 @@ static int quic_client_do_handshake(struct quic_endpoint *ep)
 		goto out;
 	}
 
-	err = quic_set_socket_context(ep, QUIC_STATE_CLIENT_CONNECTED);
+	err = quic_set_socket_context(ep, 0);
 out:
 	ngtcp2_conn_del(ep->conn);
 	return err;
@@ -841,19 +835,14 @@ static int quic_server_do_handshake(struct quic_endpoint *ep)
 	}
 	memcpy(&ep->la, la, sizeof(*la));
 
-	state = QUIC_STATE_USER_CONNECTING;
-	if (setsockopt(ep->sockfd, SOL_QUIC, QUIC_SOCKOPT_STATE, &state, sizeof(state))) {
-		printf("socket setsockopt state failed\n");
-		return -1;
-	}
-
+	listen(ep->sockfd, 1);
 	err = quic_do_handshake(ep);
 	if (err) {
 		printf("handshake failed, reason: %d\n", err);
 		goto out;
 	}
 
-	err = quic_set_socket_context(ep, QUIC_STATE_SERVER_CONNECTED);
+	err = quic_set_socket_context(ep, 1);
 out:
 	ngtcp2_conn_del(ep->conn);
 	return err;

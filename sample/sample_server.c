@@ -40,7 +40,6 @@ int main(int argc, char *argv[])
 	inet_pton(AF_INET, argv[3], &da.sin_addr.s_addr);
 	memcpy(&ctx.dst, &da, sizeof(da));
 
-	ctx.state = QUIC_STATE_SERVER_CONNECTED;
 	if (setsockopt(sd, SOL_QUIC, QUIC_SOCKOPT_CONTEXT, &ctx, sizeof(ctx))) {
 		printf("set sockopt failed\n");
 		return -1;

@@ -156,6 +156,11 @@ static int quic_handshake_connect(struct sock *sk, struct sockaddr *addr, int ad
 		quic_set_sk_addr(sk, a, true);
 	}
 
+	if (!hlist_unhashed(&qs->node))
+		goto out;
+
+	quic_set_state(sk, QUIC_STATE_USER_CONNECTING);
+	err = sk->sk_prot->hash(sk);
 out:
 	release_sock(sk);
 	return err;
@@ -237,43 +242,6 @@ static int quic_handshake_sendmsg(struct sock *sk, struct msghdr *msg, size_t ms
 err:
 	release_sock(sk);
 	return err;
-}
-
-static int quic_send_handshake_ack(struct sock *sk)
-{
-	struct sk_buff *skb;
-
-	quic_inq_purge(sk, quic_inq(sk));
-
-	if (quic_pnmap_mark(quic_pnmap(sk), 0))
-		return -EFAULT;
-
-	skb = quic_frame_create(sk, QUIC_FRAME_ACK, NULL, 0);
-	if (!skb)
-		return -ENOMEM;
-
-	quic_outq_ctrl_tail(sk, skb, false);
-	quic_unhash(sk);
-
-	quic_cong_cwnd_update(sk, min_t(u32, quic_packet_mss(quic_packet(sk)) * 10, 14720));
-	return 0;
-}
-
-static int quic_send_handshake_done(struct sock *sk)
-{
-	struct sk_buff *skb;
-
-	quic_inq_purge(sk, quic_inq(sk));
-
-	skb = quic_frame_create(sk, QUIC_FRAME_HANDSHAKE_DONE, NULL, 0);
-	if (!skb)
-		return -ENOMEM;
-
-	quic_outq_ctrl_tail(sk, skb, false);
-	quic_unhash(sk);
-
-	quic_cong_cwnd_update(sk, min_t(u32, quic_packet_mss(quic_packet(sk)) * 10, 14720));
-	return 0;
 }
 
 static int quic_msghdr_parse(struct sock *sk, struct msghdr *msg, struct quic_sndinfo *info)
@@ -649,38 +617,11 @@ err:
 	return err;
 }
 
-static int quic_sock_set_state(struct sock *sk, u8 *state, u32 len)
-{
-	int ret = 0;
-
-	if (!len || quic_state(sk) == *state)
-		return -EINVAL;
-
-	switch (*state) {
-	case QUIC_STATE_USER_CLOSED:
-		quic_unhash(sk);
-		break;
-	case QUIC_STATE_USER_CONNECTING:
-		ret = quic_hash(sk);
-		break;
-	case QUIC_STATE_CLIENT_CONNECTED:
-		ret = quic_send_handshake_ack(sk);
-		break;
-	case QUIC_STATE_SERVER_CONNECTED:
-		ret = quic_send_handshake_done(sk);
-		break;
-	default:
-		return -ESOCKTNOSUPPORT;
-	}
-
-	quic_set_state(sk, *state);
-	return 0;
-}
-
 int quic_sock_set_context(struct sock *sk, struct quic_context *context, u32 len)
 {
 	struct quic_sock *qs = quic_sk(sk);
-	int err;
+	int err, type, state;
+	struct sk_buff *skb;
 
 	if (sizeof(*context) > len)
 		return -EINVAL;
@@ -709,10 +650,27 @@ int quic_sock_set_context(struct sock *sk, struct quic_context *context, u32 len
 	err = quic_crypto_set_secret(&qs->crypto, context->recv.secret, 0);
 	if (err)
 		return err;
+
+	/* clean up all handshake packets before going to connected state */
+	quic_inq_purge(sk, quic_inq(sk));
+
+	if (context->is_serv) {
+		state = QUIC_STATE_SERVER_CONNECTED;
+		type = QUIC_FRAME_HANDSHAKE_DONE;
+	} else {
+		state = QUIC_STATE_CLIENT_CONNECTED;
+		type = QUIC_FRAME_ACK;
+	}
+	skb = quic_frame_create(sk, type, NULL, 0);
+	if (!skb)
+		return -ENOMEM;
+
 	quic_update_proto_ops(sk);
-	err = quic_sock_set_state(sk, &context->state, sizeof(context->state));
-	if (err)
-		return err;
+	quic_outq_ctrl_tail(sk, skb, false);
+	quic_set_state(sk, state);
+
+	quic_unhash(sk);
+	quic_cong_cwnd_update(sk, min_t(u32, quic_packet_mss(quic_packet(sk)) * 10, 14720));
 	return 0;
 }
 
@@ -778,9 +736,6 @@ static int quic_handshake_setsockopt(struct sock *sk, int level, int optname,
 	case QUIC_SOCKOPT_CONTEXT:
 		retval = quic_sock_set_context(sk, kopt, optlen);
 		break;
-	case QUIC_SOCKOPT_STATE:
-		retval = quic_sock_set_state(sk, kopt, optlen);
-		break;
 	default:
 		retval = -ENOPROTOOPT;
 		break;
@@ -816,7 +771,7 @@ static int quic_sock_get_context(struct sock *sk, int len, char __user *optval, 
 	quic_crypto_get_secret(&qs->crypto, context.send.secret, 1);
 	quic_crypto_get_secret(&qs->crypto, context.recv.secret, 0);
 
-	context.state = quic_state(sk);
+	context.is_serv = quic_is_serv(sk);
 
 	if (put_user(len, optlen))
 		return -EFAULT;
@@ -858,21 +813,6 @@ static int quic_getsockopt(struct sock *sk, int level, int optname,
 	}
 	release_sock(sk);
 	return retval;
-}
-
-static int quic_sock_get_state(struct sock *sk, int len, char __user *optval, int __user *optlen)
-{
-	u8 state = quic_state(sk);
-
-	if (!len)
-		return -EINVAL;
-	len = 1;
-	if (put_user(len, optlen))
-		return -EFAULT;
-
-	if (copy_to_user(optval, &state, len))
-		return -EFAULT;
-	return 0;
 }
 
 static int quic_handshake_getsockopt(struct sock *sk, int level, int optname,

@@ -32,6 +32,13 @@ extern struct proto quicv6_prot;
 extern struct proto quic_handshake_prot;
 extern struct proto quicv6_handshake_prot;
 
+enum quic_state {
+	QUIC_STATE_USER_CLOSED,
+	QUIC_STATE_USER_CONNECTING,
+	QUIC_STATE_CLIENT_CONNECTED,
+	QUIC_STATE_SERVER_CONNECTED,
+};
+
 struct quic_sock {
 	struct inet_sock		inet;
 	struct quic_addr_family_ops	*af_ops; /* inet4 or inet6 */

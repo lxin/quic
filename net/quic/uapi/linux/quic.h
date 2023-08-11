@@ -85,23 +85,14 @@ struct quic_context {
 	struct sockaddr_storage		dst;
 	struct quic_crypto_secret	send;
 	struct quic_crypto_secret	recv;
-	uint8_t				state;
+	uint8_t				is_serv;
 };
 
-enum quic_state {
-	QUIC_STATE_USER_CLOSED,
-	QUIC_STATE_USER_CONNECTING,
-	QUIC_STATE_CLIENT_CONNECTED,
-	QUIC_STATE_SERVER_CONNECTED,
-};
-
-#define QUIC_SOCKOPT_SOURCE_CONNECTION_ID_NUMBERS	0
-#define QUIC_SOCKOPT_DEST_CONNECTION_ID_NUMBERS		1
-#define QUIC_SOCKOPT_KEY_UPDATE				2
-#define QUIC_SOCKOPT_CONNECTION_MIGRATION		3
-#define QUIC_SOCKOPT_CONGESTION_CONTROL			4
-
-#define QUIC_SOCKOPT_CONTEXT				100
-#define QUIC_SOCKOPT_STATE				101
+#define QUIC_SOCKOPT_CONTEXT				0
+#define QUIC_SOCKOPT_SOURCE_CONNECTION_ID_NUMBERS	1
+#define QUIC_SOCKOPT_DEST_CONNECTION_ID_NUMBERS		2
+#define QUIC_SOCKOPT_KEY_UPDATE				3
+#define QUIC_SOCKOPT_CONNECTION_MIGRATION		4
+#define QUIC_SOCKOPT_CONGESTION_CONTROL			5
 
 #endif /* __uapi_quic_h__ */
