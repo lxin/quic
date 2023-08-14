@@ -28,7 +28,6 @@ int main(int argc, char *argv[])
 	sa.sin_family = AF_INET;
 	sa.sin_port = htons(atoi(argv[2]));
 	inet_pton(AF_INET, argv[1], &sa.sin_addr.s_addr);
-	memcpy(&ctx.src, &sa, sizeof(sa));
 
 	if (bind(sd, (struct sockaddr *)&sa, sizeof(sa))) {
 		printf("socket bind failed\n");
@@ -38,7 +37,11 @@ int main(int argc, char *argv[])
 	da.sin_family = AF_INET;
 	da.sin_port = htons(atoi(argv[4]));
 	inet_pton(AF_INET, argv[3], &da.sin_addr.s_addr);
-	memcpy(&ctx.dst, &da, sizeof(da));
+
+	if (connect(sd, (struct sockaddr *)&da, sizeof(da))) {
+		printf("socket connect failed\n");
+		return -1;
+	}
 
 	if (setsockopt(sd, SOL_QUIC, QUIC_SOCKOPT_CONTEXT, &ctx, sizeof(ctx))) {
 		printf("set sockopt failed\n");

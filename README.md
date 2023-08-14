@@ -31,13 +31,13 @@ that the main part of the QUIC protocol is still in Kernel space.
 - Rekeying
 - Connection Migration
 - Congestion Control
-- Suppport both X509 Certficate and PSK mode
+- Support both X509 Certficate and PSK mode
+- Handshake APIs for tlshd use (NFS)
 
 ### TBD
 - Keepalive Timer
 - Connection ID Management
 - Stream Enhanced Management
-- Use up-call netlink to pass QUIC sockfd to kernel(NFS)
 
 ## INSTALL
 
@@ -141,10 +141,10 @@ Note: The kernel and gnutls version should not be too old, the example below is 
 
       and it includes APIs:
 
-        int quic_client_x509_handshake(int sockfd, struct sockaddr *ra);
+        int quic_client_x509_handshake(int sockfd);
         int quic_server_x509_handshake(int sockfd, char *pkey, char *cert);
 
-        int quic_client_psk_handshake(int sockfd, struct sockaddr *ra, char *psk);
+        int quic_client_psk_handshake(int sockfd, char *psk);
         int quic_server_psk_handshake(int sockfd, char *psk);
 
         int quic_sendmsg(int sockfd, const void *msg, size_t len, uint32_t sid, uint32_t flag);
@@ -158,23 +158,23 @@ Note: The kernel and gnutls version should not be too old, the example below is 
 
 (also included in netinet/quic.h)
 
-        struct quic_handshake_parms {
-        	uint32_t		timeout;	/* handshake timeout in seconds */
-        
-        	gnutls_privkey_t	privkey;	/* private key for x509 handshake */
-        	gnutls_pcert_st		*cert;		/* certificate for x509 handshake */
-        	char 			*peername;	/* - server name for client side x509 handshake or,
-        						 * - psk identity name chosen during PSK handshake
-        						 */
-        	char			*names[10];	/* psk identifies in PSK handshake */
-        	gnutls_datum_t		keys[10];	/* - psk keys in PSK handshake, or,
-        						 * - certificates received in x509 handshake
-        						 */
-        	uint32_t		num_keys;	/* keys total numbers */
-        };
+    struct quic_handshake_parms {
+    	uint32_t		timeout;	/* handshake timeout in seconds */
+    
+    	gnutls_privkey_t	privkey;	/* private key for x509 handshake */
+    	gnutls_pcert_st		*cert;		/* certificate for x509 handshake */
+    	char 			*peername;	/* - server name for client side x509 handshake or,
+    						 * - psk identity name chosen during PSK handshake
+    						 */
+    	char			*names[10];	/* psk identifies in PSK handshake */
+    	gnutls_datum_t		keys[10];	/* - psk keys in PSK handshake, or,
+    						 * - certificates received in x509 handshake
+    						 */
+    	uint32_t		num_keys;	/* keys total numbers */
+    };
 
-        int quic_client_x509_tlshd(int sockfd, struct sockaddr *ra, struct quic_handshake_parms *parms);
-        int quic_server_x509_tlshd(int sockfd, struct quic_handshake_parms *parms);
+    int quic_client_x509_tlshd(int sockfd, struct quic_handshake_parms *parms);
+    int quic_server_x509_tlshd(int sockfd, struct quic_handshake_parms *parms);
 
-        int quic_client_psk_tlshd(int sockfd, struct sockaddr *ra, struct quic_handshake_parms *parms);
-        int quic_server_psk_tlshd(int sockfd, struct quic_handshake_parms *parms);
+    int quic_client_psk_tlshd(int sockfd, struct quic_handshake_parms *parms);
+    int quic_server_psk_tlshd(int sockfd, struct quic_handshake_parms *parms);

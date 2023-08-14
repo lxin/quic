@@ -81,8 +81,6 @@ struct quic_context {
 	struct quic_transport_param	remote;
 	struct quic_connection_id	source;
 	struct quic_connection_id	dest;
-	struct sockaddr_storage		src;
-	struct sockaddr_storage		dst;
 	struct quic_crypto_secret	send;
 	struct quic_crypto_secret	recv;
 	uint8_t				is_serv;

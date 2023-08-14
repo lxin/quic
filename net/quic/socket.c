@@ -148,6 +148,7 @@ static int quic_handshake_connect(struct sock *sk, struct sockaddr *addr, int ad
 	err = quic_flow_route(sk, a);
 	if (err)
 		goto out;
+	quic_set_sk_addr(sk, quic_addr(addr), false);
 	if (!a->v4.sin_port) { /* auto bind */
 		quic_get_port(sock_net(sk), &qs->port, a);
 		err = quic_udp_sock_set(sk, qs->udp_sk, &qs->src);
@@ -160,6 +161,7 @@ static int quic_handshake_connect(struct sock *sk, struct sockaddr *addr, int ad
 		goto out;
 
 	quic_set_state(sk, QUIC_STATE_USER_CONNECTING);
+	inet_sk_set_state(sk, TCP_SYN_RECV);
 	err = sk->sk_prot->hash(sk);
 out:
 	release_sock(sk);
@@ -632,12 +634,6 @@ int quic_sock_set_context(struct sock *sk, struct quic_context *context, u32 len
 	quic_inq_set_param(sk, &context->remote);
 	quic_streams_set_param(quic_streams(sk), &context->remote, 0);
 
-	err = quic_sock_set_addr(sk, &qs->src, quic_addr(&context->src), 1);
-	if (err)
-		return err;
-	err = quic_sock_set_addr(sk, &qs->dst, quic_addr(&context->dst), 0);
-	if (err)
-		return err;
 	err = quic_connection_id_add(&qs->source, &context->source, sk);
 	if (err)
 		return err;
@@ -668,6 +664,7 @@ int quic_sock_set_context(struct sock *sk, struct quic_context *context, u32 len
 	quic_update_proto_ops(sk);
 	quic_outq_ctrl_tail(sk, skb, false);
 	quic_set_state(sk, state);
+	inet_sk_set_state(sk, TCP_ESTABLISHED);
 
 	quic_unhash(sk);
 	quic_cong_cwnd_update(sk, min_t(u32, quic_packet_mss(quic_packet(sk)) * 10, 14720));
@@ -761,9 +758,6 @@ static int quic_sock_get_context(struct sock *sk, int len, char __user *optval, 
 
 	quic_inq_get_param(sk, &context.remote);
 	quic_streams_get_param(quic_streams(sk), &context.remote, 0);
-
-	memcpy(quic_addr(&context.src), quic_path_addr(&qs->src), quic_addr_len(sk));
-	memcpy(quic_addr(&context.dst), quic_path_addr(&qs->dst), quic_addr_len(sk));
 
 	quic_connection_id_get(&qs->source, &context.source);
 	quic_connection_id_get(&qs->dest, &context.dest);

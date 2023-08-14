@@ -34,10 +34,19 @@ int main(int argc, char *argv[])
         ra.sin_port = htons(atoi(argv[2]));
         inet_pton(AF_INET, argv[1], &ra.sin_addr.s_addr);
 
-	if (argc == 3 && quic_client_x509_handshake(sockfd, (struct sockaddr *)&ra))
+	if (connect(sockfd, (struct sockaddr *)&ra, sizeof(ra))) {
+		printf("socket connect failed\n");
 		return -1;
-	if (argc == 4 && quic_client_psk_handshake(sockfd, (struct sockaddr *)&ra, argv[3]))
-		return -1;
+	}
+
+	if (argc == 3) {
+		if (quic_client_x509_handshake(sockfd))
+			return -1;
+	}
+	if (argc == 4) {
+		if (quic_client_psk_handshake(sockfd, argv[3]))
+			return -1;
+	}
 	/* sockfd can be passed to kernel by 'handshake' netlink for NFS use */
 	printf("handshake done %d\n", sockfd);
 

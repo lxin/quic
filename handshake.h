@@ -29,16 +29,16 @@ struct quic_handshake_parms {
 	uint32_t		num_keys;	/* keys total numbers */
 };
 
-int quic_client_x509_tlshd(int sockfd, struct sockaddr *ra, struct quic_handshake_parms *parms);
+int quic_client_x509_tlshd(int sockfd, struct quic_handshake_parms *parms);
 int quic_server_x509_tlshd(int sockfd, struct quic_handshake_parms *parms);
 
-int quic_client_psk_tlshd(int sockfd, struct sockaddr *ra, struct quic_handshake_parms *parms);
+int quic_client_psk_tlshd(int sockfd, struct quic_handshake_parms *parms);
 int quic_server_psk_tlshd(int sockfd, struct quic_handshake_parms *parms);
 
-int quic_client_x509_handshake(int sockfd, struct sockaddr *ra);
+int quic_client_x509_handshake(int sockfd);
 int quic_server_x509_handshake(int sockfd, char *pkey, char *cert);
 
-int quic_client_psk_handshake(int sockfd, struct sockaddr *ra, char *psk);
+int quic_client_psk_handshake(int sockfd, char *psk);
 int quic_server_psk_handshake(int sockfd, char *psk);
 
 int quic_sendmsg(int sockfd, const void *msg, size_t len, uint32_t sid, uint32_t flag);

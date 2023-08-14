@@ -779,8 +779,6 @@ static int quic_set_socket_context(struct quic_endpoint *ep, uint8_t is_serv)
 	p = ngtcp2_conn_get_remote_transport_params(ep->conn);
 	quic_context_copy_transport_params(ep, &context.remote, p);
 
-	memcpy(&context.src, &ep->la, sizeof(ep->la));
-	memcpy(&context.dst, &ep->ra, sizeof(ep->ra));
 	memcpy(context.recv.secret, ep->secret[0].key, ep->secret[0].keylen);
 	memcpy(context.send.secret, ep->secret[1].key, ep->secret[1].keylen);
 
@@ -794,19 +792,21 @@ static int quic_set_socket_context(struct quic_endpoint *ep, uint8_t is_serv)
 
 static int quic_client_do_handshake(struct quic_endpoint *ep)
 {
-	struct sockaddr_in sa, *la = &sa;
+	struct sockaddr_in sa, *a = &sa;
 	int state, len, err;
 
-	if (connect(ep->sockfd, (struct sockaddr *)&ep->ra, sizeof(ep->ra))) {
-		printf("socket connect failed\n");
-		return -1;
-	}
-	len = sizeof(*la);
-	if (getsockname(ep->sockfd, (struct sockaddr *)la, &len)) {
+	len = sizeof(*a);
+	if (getsockname(ep->sockfd, (struct sockaddr *)a, &len)) {
 		printf("socket getsockname failed\n");
 		return -1;
 	}
-	memcpy(&ep->la, la, sizeof(*la));
+	memcpy(&ep->la, a, sizeof(*a));
+	len = sizeof(*a);
+	if (getpeername(ep->sockfd, (struct sockaddr *)a, &len)) {
+		printf("socket getpeername failed\n");
+		return -1;
+	}
+	memcpy(&ep->ra, a, sizeof(*a));
 
 	if (ep->session_new(ep, NULL))
 		return -1;
@@ -851,14 +851,13 @@ out:
 /**
  * quic_client_psk_handshake - start a QUIC handshake with PSK mode from client side
  * @sockfd: IPPROTO_QUIC type socket
- * @ra: peer server address
  * @psk: PSK file
  *
  * Return values:
  * - On success, 0.
  * - On error, the error is returned.
  */
-int quic_client_psk_handshake(int sockfd, struct sockaddr *ra, char *psk)
+int quic_client_psk_handshake(int sockfd, char *psk)
 {
 	struct quic_handshake_parms parms = {};
 	struct quic_endpoint ep = {};
@@ -866,7 +865,6 @@ int quic_client_psk_handshake(int sockfd, struct sockaddr *ra, char *psk)
 	ep.sockfd = sockfd;
 	ep.parms = &parms;
 	ep.parms->names[0] = psk;
-	memcpy(&ep.ra, ra, sizeof(ep.ra));
 	ep.session_new = quic_client_set_psk_session;
 	ep.cred_setkey = quic_client_set_psk_cred;
 
@@ -876,20 +874,18 @@ int quic_client_psk_handshake(int sockfd, struct sockaddr *ra, char *psk)
 /**
  * quic_client_psk_tlshd - start a QUIC handshake with PSK mode from client side
  * @sockfd: IPPROTO_QUIC type socket
- * @ra: peer server address
  * @parms: parameter for psk identities and keys.
  *
  * Return values:
  * - On success, 0.
  * - On error, the error is returned.
  */
-int quic_client_psk_tlshd(int sockfd, struct sockaddr *ra, struct quic_handshake_parms *parms)
+int quic_client_psk_tlshd(int sockfd, struct quic_handshake_parms *parms)
 {
 	struct quic_endpoint ep = {};
 
 	ep.sockfd = sockfd;
 	ep.parms = parms;
-	memcpy(&ep.ra, ra, sizeof(ep.ra));
 	ep.session_new = quic_client_set_psk_session;
 	ep.cred_setkey = quic_client_set_psk_cred_tlshd;
 
@@ -899,20 +895,18 @@ int quic_client_psk_tlshd(int sockfd, struct sockaddr *ra, struct quic_handshake
 /**
  * quic_client_x509_handshake - start a QUIC handshake with Certificate mode from client side
  * @sockfd: IPPROTO_QUIC type socket
- * @ra: peer server address
  *
  * Return values:
  * - On success, 0.
  * - On error, the error is returned.
  */
-int quic_client_x509_handshake(int sockfd, struct sockaddr *ra)
+int quic_client_x509_handshake(int sockfd)
 {
 	struct quic_handshake_parms parms = {};
 	struct quic_endpoint ep = {};
 
 	ep.sockfd = sockfd;
 	ep.parms = &parms;
-	memcpy(&ep.ra, ra, sizeof(ep.ra));
 	ep.session_new = quic_client_set_x509_session;
 	ep.cred_setkey = quic_client_set_x509_cred;
 
@@ -922,20 +916,18 @@ int quic_client_x509_handshake(int sockfd, struct sockaddr *ra)
 /**
  * quic_client_x509_tlshd - start a QUIC handshake with Certificate mode from client side
  * @sockfd: IPPROTO_QUIC type socket
- * @ra: peer server address
  * @parms: parameters for certificate and private key and (optional) servername.
  *
  * Return values:
  * - On success, 0.
  * - On error, the error is returned.
  */
-int quic_client_x509_tlshd(int sockfd, struct sockaddr *ra, struct quic_handshake_parms *parms)
+int quic_client_x509_tlshd(int sockfd, struct quic_handshake_parms *parms)
 {
 	struct quic_endpoint ep = {};
 
 	ep.sockfd = sockfd;
 	ep.parms = parms;
-	memcpy(&ep.ra, ra, sizeof(ep.ra));
 	ep.session_new = quic_client_set_x509_session;
 	ep.cred_setkey = quic_client_set_x509_cred;
 
