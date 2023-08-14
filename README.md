@@ -98,21 +98,21 @@ Note: The kernel and gnutls version should not be too old, the example below is 
         # cd ../
 
         1.  With Certificate mode:
-        # ./server 127.0.0.1 1234 ./keys/server-key.pem ./keys/server-cert.pem
+        # ./server 0.0.0.0 1234 ./keys/server-key.pem ./keys/server-cert.pem
         # ./client 127.0.0.1 1234
 
         2.  With PSK mode:
-        # ./server 127.0.0.1 1234 ./keys/server-psk.txt
+        # ./server 0.0.0.0 1234 ./keys/server-psk.txt
         # ./client 127.0.0.1 1234 ./keys/client-psk.txt
 
   - You can also run the example for tlshd interface:
 
         1.  With Certificate mode:
-        # ./tlshd_server 127.0.0.1 1234 ./keys/server-key.pem ./keys/server-cert.pem
+        # ./tlshd_server 0.0.0.0 1234 ./keys/server-key.pem ./keys/server-cert.pem
         # ./tlshd_client 127.0.0.1 1234 ./keys/client-key.pem ./keys/client-cert.pem server.test
 
         2.  With PSK mode:
-        # ./tlshd_server 127.0.0.1 1234 ./keys/server-psk.txt
+        # ./tlshd_server 0.0.0.0 1234 ./keys/server-psk.txt
         # ./tlshd_client 127.0.0.1 1234 ./keys/client-psk.txt
 
   - If you want to use in-kernel QUIC without userspace handshake, try the

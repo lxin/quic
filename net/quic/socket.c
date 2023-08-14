@@ -63,6 +63,7 @@ struct sock *quic_sock_lookup(struct sk_buff *skb, union quic_addr *sa, union qu
 	struct net *net = dev_net(skb->dev);
 	struct sock *sk, *nsk = NULL;
 	struct quic_hash_head *head;
+	union quic_addr a = {};
 
 	head = quic_listen_sock_head(net, sa);
 	spin_lock(&head->lock);
@@ -76,6 +77,26 @@ struct sock *quic_sock_lookup(struct sk_buff *skb, union quic_addr *sa, union qu
 			continue;
 		}
 		if (!memcmp(quic_path_addr(quic_dst(sk)), da, quic_addr_len(sk))) {
+			nsk = sk;
+			break;
+		}
+	}
+	spin_unlock(&head->lock);
+	if (nsk)
+		return nsk;
+
+	/* Search for socket binding to the same port with 0.0.0.0 or :: address */
+	a.v4.sin_family = sa->v4.sin_family;
+	a.v4.sin_port = sa->v4.sin_port;
+	sa = &a;
+	head = quic_listen_sock_head(net, sa);
+	spin_lock(&head->lock);
+	sk_for_each(sk,  &head->head) {
+		if (net != sock_net(sk))
+			continue;
+		if (memcmp(quic_path_addr(quic_src(sk)), sa, quic_addr_len(sk)))
+			continue;
+		if (quic_is_listen(sk)) {
 			nsk = sk;
 			break;
 		}

@@ -138,6 +138,7 @@ static struct quic_udp_sock *quic_udp_sock_lookup(struct sock *sk, union quic_ad
 	struct quic_udp_sock *tmp, *us = NULL;
 	struct net *net = sock_net(sk);
 	struct quic_hash_head *head;
+	union quic_addr sa = {};
 
 	head = quic_udp_sock_head(net, a);
 	spin_lock(&head->lock);
@@ -149,10 +150,25 @@ static struct quic_udp_sock *quic_udp_sock_lookup(struct sock *sk, union quic_ad
 		}
 	}
 	spin_unlock(&head->lock);
+	if (us)
+		return us;
+
+	/* Search for socket binding to the same port with 0.0.0.0 or :: address */
+	sa.v4.sin_family = a->v4.sin_family;
+	sa.v4.sin_port = a->v4.sin_port;
+	head = quic_udp_sock_head(net, &sa);
+	spin_lock(&head->lock);
+	hlist_for_each_entry(tmp, &head->head, node) {
+		if (net == sock_net(tmp->sk) &&
+		    !memcmp(&tmp->addr, &sa, quic_addr_len(sk))) {
+			us = quic_udp_sock_get(tmp);
+			break;
+		}
+	}
+	spin_unlock(&head->lock);
 
 	if (!us)
 		us = quic_udp_sock_create(sk, a);
-
 	return us;
 }
 
