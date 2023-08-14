@@ -835,7 +835,6 @@ static int quic_server_do_handshake(struct quic_endpoint *ep)
 	}
 	memcpy(&ep->la, la, sizeof(*la));
 
-	listen(ep->sockfd, 1);
 	err = quic_do_handshake(ep);
 	if (err) {
 		printf("handshake failed, reason: %d\n", err);

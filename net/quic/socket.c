@@ -17,25 +17,71 @@
 
 extern struct percpu_counter quic_sockets_allocated;
 
-struct quic_sock *quic_sock_lookup_byaddr(struct sk_buff *skb, union quic_addr *a)
+bool quic_request_sock_exists(struct sock *sk, union quic_addr *sa, union quic_addr *da)
+{
+	struct quic_request_sock *req;
+
+	list_for_each_entry(req, quic_reqs(sk), list) {
+		if (!memcmp(&req->src, sa, quic_addr_len(sk)) &&
+		    !memcmp(&req->dst, da, quic_addr_len(sk)))
+			return true;
+	}
+	return false;
+}
+
+int quic_request_sock_enqueue(struct sock *sk, union quic_addr *sa, union quic_addr *da)
+{
+	struct quic_request_sock *req;
+
+	if (sk_acceptq_is_full(sk))
+		return -ENOMEM;
+
+	req = kzalloc(sizeof(*req), GFP_ATOMIC);
+	if (!req)
+		return -ENOMEM;
+
+	memcpy(&req->src, sa, quic_addr_len(sk));
+	memcpy(&req->dst, da, quic_addr_len(sk));
+	list_add_tail(&req->list, quic_reqs(sk));
+	sk_acceptq_added(sk);
+	return 0;
+}
+
+struct quic_request_sock *quic_request_sock_dequeue(struct sock *sk)
+{
+	struct quic_request_sock *req;
+
+	req = list_first_entry(quic_reqs(sk), struct quic_request_sock, list);
+
+	list_del_init(&req->list);
+	sk_acceptq_removed(sk);
+	return req;
+}
+
+struct sock *quic_sock_lookup(struct sk_buff *skb, union quic_addr *sa, union quic_addr *da)
 {
 	struct net *net = dev_net(skb->dev);
-	struct quic_sock *tmp, *qs = NULL;
+	struct sock *sk, *nsk = NULL;
 	struct quic_hash_head *head;
-	struct sock *sk;
 
-	head = quic_listen_sock_head(net, a);
+	head = quic_listen_sock_head(net, sa);
 	spin_lock(&head->lock);
-	hlist_for_each_entry(tmp, &head->head, node) {
-		sk = &tmp->inet.sk;
-		if (net == sock_net(sk) &&
-		    !memcmp(quic_path_addr(&tmp->src), a, quic_addr_len(sk))) {
-			qs = tmp;
+	sk_for_each(sk,  &head->head) {
+		if (net != sock_net(sk))
+			continue;
+		if (memcmp(quic_path_addr(quic_src(sk)), sa, quic_addr_len(sk)))
+			continue;
+		if (quic_is_listen(sk)) {
+			nsk = sk;
+			continue;
+		}
+		if (!memcmp(quic_path_addr(quic_dst(sk)), da, quic_addr_len(sk))) {
+			nsk = sk;
 			break;
 		}
 	}
 	spin_unlock(&head->lock);
-	return qs;
+	return nsk;
 }
 
 static void quic_write_space(struct sock *sk)
@@ -73,6 +119,7 @@ static int quic_init_sock(struct sock *sk)
 	quic_pnmap_init(&qs->pn_map);
 	quic_streams_init(&qs->streams);
 	quic_timers_init(sk);
+	INIT_LIST_HEAD(&qs->reqs);
 
 	local_bh_disable();
 	sk_sockets_allocated_inc(sk);
@@ -157,7 +204,7 @@ static int quic_handshake_connect(struct sock *sk, struct sockaddr *addr, int ad
 		quic_set_sk_addr(sk, a, true);
 	}
 
-	if (!hlist_unhashed(&qs->node))
+	if (sk_hashed(sk))
 		goto out;
 
 	quic_set_state(sk, QUIC_STATE_USER_CONNECTING);
@@ -170,25 +217,26 @@ out:
 
 static int quic_hash(struct sock *sk)
 {
+	union quic_addr *saddr, *daddr;
 	struct quic_hash_head *head;
-	union quic_addr *addr, *a;
-	struct quic_sock *qs;
+	struct sock *nsk;
 	int err = 0;
 
-	addr = quic_path_addr(quic_src(sk));
-	head = quic_listen_sock_head(sock_net(sk), addr);
+	saddr = quic_path_addr(quic_src(sk));
+	daddr = quic_path_addr(quic_dst(sk));
+	head = quic_listen_sock_head(sock_net(sk), saddr);
 	spin_lock(&head->lock);
 
-	hlist_for_each_entry(qs, &head->head, node) {
-		a = quic_path_addr(&qs->src);
-		if (sock_net(sk) == sock_net(&qs->inet.sk) &&
-		    !memcmp(addr, a, quic_addr_len(sk))) {
+	sk_for_each(nsk,  &head->head) {
+		if (sock_net(sk) == sock_net(nsk) &&
+		    !memcmp(saddr, quic_path_addr(quic_src(nsk)), quic_addr_len(sk)) &&
+		    !memcmp(daddr, quic_path_addr(quic_dst(nsk)), quic_addr_len(sk))) {
 			err = -EADDRINUSE;
 			goto out;
 		}
 	}
 
-	hlist_add_head(&quic_sk(sk)->node, &head->head);
+	__sk_add_node(sk, &head->head);
 out:
 	spin_unlock(&head->lock);
 	return err;
@@ -196,17 +244,16 @@ out:
 
 static void quic_unhash(struct sock *sk)
 {
-	struct quic_sock *qs = quic_sk(sk);
 	struct quic_hash_head *head;
 	union quic_addr *addr;
 
-	if (hlist_unhashed(&qs->node))
+	if (sk_unhashed(sk))
 		return;
 
-	addr = quic_path_addr(&qs->src);
+	addr = quic_path_addr(quic_src(sk));
 	head = quic_listen_sock_head(sock_net(sk), addr);
 	spin_lock(&head->lock);
-	hlist_del_init(&qs->node);
+	__sk_del_node_init(sk);
 	spin_unlock(&head->lock);
 }
 
@@ -534,6 +581,120 @@ static struct sock *quic_accept(struct sock *sk, int flags, int *err, bool kern)
 	return NULL;
 }
 
+static int quic_wait_for_accept(struct sock *sk, long timeo)
+{
+	DEFINE_WAIT(wait);
+	int err = 0;
+
+	for (;;) {
+		prepare_to_wait_exclusive(sk_sleep(sk), &wait, TASK_INTERRUPTIBLE);
+		if (list_empty(quic_reqs(sk))) {
+			release_sock(sk);
+			timeo = schedule_timeout(timeo);
+			lock_sock(sk);
+		}
+
+		if (!quic_is_listen(sk)) {
+			err = -EINVAL;
+			break;
+		}
+
+		if (!list_empty(quic_reqs(sk))) {
+			err = 0;
+			break;
+		}
+
+		if (signal_pending(current)) {
+			err = sock_intr_errno(timeo);
+			break;
+		}
+
+		if (!timeo) {
+			err = -EAGAIN;
+			break;
+		}
+	}
+
+	finish_wait(sk_sleep(sk), &wait);
+	return err;
+}
+
+static void quic_copy_sock(struct sock *nsk, struct sock *sk, struct quic_request_sock *req)
+{
+	struct sk_buff *skb, *tmp;
+	union quic_addr sa, da;
+
+	nsk->sk_type = sk->sk_type;
+	nsk->sk_flags = sk->sk_flags;
+	nsk->sk_family = sk->sk_family;
+	nsk->sk_protocol = IPPROTO_QUIC;
+	nsk->sk_backlog_rcv = sk->sk_prot->backlog_rcv;
+
+	nsk->sk_sndbuf = sk->sk_sndbuf;
+	nsk->sk_rcvbuf = sk->sk_rcvbuf;
+	nsk->sk_rcvtimeo = sk->sk_rcvtimeo;
+	nsk->sk_sndtimeo = sk->sk_sndtimeo;
+
+	skb_queue_walk_safe(&sk->sk_receive_queue, skb, tmp) {
+		quic_af_ops(sk)->get_msg_addr(&da, skb, 0);
+		quic_af_ops(sk)->get_msg_addr(&sa, skb, 1);
+
+		if (!memcmp(&req->src, &da, quic_addr_len(sk)) &&
+		    !memcmp(&req->dst, &sa, quic_addr_len(sk))) {
+			__skb_unlink(skb, &sk->sk_receive_queue);
+			__skb_queue_tail(&nsk->sk_receive_queue, skb);
+			quic_inq_set_owner_r(skb, nsk);
+		}
+	}
+}
+
+static struct sock *quic_handshake_accept(struct sock *sk, int flags, int *err, bool kern)
+{
+	struct quic_request_sock *req = NULL;
+	struct sock *nsk = NULL;
+	int error = -EINVAL;
+	long timeo;
+
+	lock_sock(sk);
+
+	if (!quic_is_listen(sk))
+		goto out;
+
+	timeo = sock_rcvtimeo(sk, flags & O_NONBLOCK);
+	error = quic_wait_for_accept(sk, timeo);
+	if (error)
+		goto out;
+	req = quic_request_sock_dequeue(sk);
+
+	nsk = sk_alloc(sock_net(sk), quic_addr_family(sk), GFP_KERNEL, sk->sk_prot, kern);
+	if (!nsk) {
+		error = -ENOMEM;
+		goto out;
+	}
+	sock_init_data(NULL, nsk);
+	error = nsk->sk_prot->init(nsk);
+	if (error)
+		goto free;
+
+	quic_copy_sock(nsk, sk, req);
+	error = nsk->sk_prot->bind(nsk, &req->src.sa, quic_addr_len(nsk));
+	if (error)
+		goto free;
+
+	error = nsk->sk_prot->connect(nsk, &req->dst.sa, quic_addr_len(nsk));
+	if (error)
+		goto free;
+out:
+	release_sock(sk);
+	*err = error;
+	kfree(req);
+	return nsk;
+free:
+	nsk->sk_prot->close(nsk, 0);
+	nsk = NULL;
+	goto out;
+}
+
 static void quic_close(struct sock *sk, long timeout)
 {
 	struct quic_sock *qs = quic_sk(sk);
@@ -564,6 +725,7 @@ static void quic_close(struct sock *sk, long timeout)
 static void quic_handshake_close(struct sock *sk, long timeout)
 {
 	lock_sock(sk);
+	quic_inq_purge(sk, quic_inq(sk));
 	quic_udp_sock_put(quic_sk(sk)->udp_sk[0]);
 	release_sock(sk);
 	sk_common_release(sk);
@@ -872,7 +1034,7 @@ struct proto quic_handshake_prot = {
 	.close		=  quic_handshake_close,
 	.sendmsg	=  quic_handshake_sendmsg,
 	.recvmsg	=  quic_handshake_recvmsg,
-	.accept		=  quic_accept,
+	.accept		=  quic_handshake_accept,
 	.hash		=  quic_hash,
 	.unhash		=  quic_unhash,
 	.backlog_rcv	=  quic_handshake_do_rcv,
@@ -893,7 +1055,7 @@ struct proto quicv6_handshake_prot = {
 	.close		=  quic_handshake_close,
 	.sendmsg	=  quic_handshake_sendmsg,
 	.recvmsg	=  quic_handshake_recvmsg,
-	.accept		=  quic_accept,
+	.accept		=  quic_handshake_accept,
 	.hash		=  quic_hash,
 	.unhash		=  quic_unhash,
 	.backlog_rcv	=  quic_handshake_do_rcv,

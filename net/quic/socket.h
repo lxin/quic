@@ -34,9 +34,16 @@ extern struct proto quicv6_handshake_prot;
 
 enum quic_state {
 	QUIC_STATE_USER_CLOSED,
+	QUIC_STATE_USER_LISTEN,
 	QUIC_STATE_USER_CONNECTING,
 	QUIC_STATE_CLIENT_CONNECTED,
 	QUIC_STATE_SERVER_CONNECTED,
+};
+
+struct quic_request_sock {
+	struct list_head	list;
+	union quic_addr		src;
+	union quic_addr		dst;
 };
 
 struct quic_sock {
@@ -63,7 +70,7 @@ struct quic_sock {
 	struct quic_cong		cong;
 	struct quic_timer		timers[QUIC_TIMER_MAX];
 
-	struct hlist_node		node;
+	struct list_head		reqs;
 };
 
 static inline struct quic_sock *quic_sk(const struct sock *sk)
@@ -136,6 +143,11 @@ static inline struct quic_timer *quic_timer(const struct sock *sk, u8 type)
 	return &quic_sk(sk)->timers[type];
 }
 
+static inline struct list_head *quic_reqs(const struct sock *sk)
+{
+	return &quic_sk(sk)->reqs;
+}
+
 static inline bool quic_is_serv(struct sock *sk)
 {
 	return quic_state(sk) == QUIC_STATE_SERVER_CONNECTED;
@@ -147,9 +159,17 @@ static inline bool quic_is_connected(struct sock *sk)
 	       quic_state(sk) == QUIC_STATE_CLIENT_CONNECTED;
 }
 
+static inline bool quic_is_listen(struct sock *sk)
+{
+	return quic_state(sk) == QUIC_STATE_USER_LISTEN;
+}
+
 int quic_sock_change_addr(struct sock *sk, struct quic_path_addr *path, void *data,
 			  u32 len, bool udp_bind);
-struct quic_sock *quic_sock_lookup_byaddr(struct sk_buff *skb, union quic_addr *a);
+struct sock *quic_sock_lookup(struct sk_buff *skb, union quic_addr *sa, union quic_addr *da);
+bool quic_request_sock_exists(struct sock *sk, union quic_addr *sa, union quic_addr *da);
+int quic_request_sock_enqueue(struct sock *sk, union quic_addr *sa, union quic_addr *da);
+struct quic_request_sock *quic_request_sock_dequeue(struct sock *sk);
 int quic_get_mss(struct sock *sk);
 
 #endif /* __net_quic_h__ */

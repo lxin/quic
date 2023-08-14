@@ -12,12 +12,12 @@ char msg[MSG_LEN + 1];
 
 int main(int argc, char *argv[])
 {
+	struct sockaddr_in la = {}, ra = {};
+	int ret, listenfd, sockfd, addrlen;
 	struct quic_connection *conn;
-	struct sockaddr_in la = {};
 	struct quic_endpoint *ep;
 	int flag = 0, sid = 0;
 	uint64_t len = 0;
-	int ret, sockfd;
 
 
 	if (argc != 4 && argc != 5) {
@@ -28,20 +28,36 @@ int main(int argc, char *argv[])
 	la.sin_family = AF_INET;
 	la.sin_port = htons(atoi(argv[2]));
 	inet_pton(AF_INET, argv[1], &la.sin_addr.s_addr);
-	sockfd = socket(AF_INET, SOCK_DGRAM, IPPROTO_QUIC);
-	if (sockfd < 0) {
+	listenfd = socket(AF_INET, SOCK_DGRAM, IPPROTO_QUIC);
+	if (listenfd < 0) {
 		printf("socket create failed\n");
 		return -1;
 	}
-	if (bind(sockfd, (struct sockaddr *)&la, sizeof(la))) {
+	if (bind(listenfd, (struct sockaddr *)&la, sizeof(la))) {
 		printf("socket bind failed\n");
 		return -1;
 	}
+	if (listen(listenfd, 1)) {
+		printf("socket listen failed\n");
+		return -1;
+	}
+	addrlen = sizeof(ra);
+loop:
+	printf("waiting for new socket...\n");
+	sockfd = accept(listenfd, (struct sockaddr *)&ra, &addrlen);
+	if (sockfd < 0) {
+		printf("socket accept failed %d %d\n", errno, sockfd);
+		return -1;
+	}
 
-	if (argc == 5 && quic_server_x509_handshake(sockfd, argv[3], argv[4]))
-		return -1;
-	if (argc == 4 && quic_server_psk_handshake(sockfd, argv[3]))
-		return -1;
+	if (argc == 4) {
+		if (quic_server_psk_handshake(sockfd, argv[3]))
+			return -1;
+	}
+	if (argc == 5) {
+		if (quic_server_x509_handshake(sockfd, argv[3], argv[4]))
+			return -1;
+	}
 	/* sockfd can be passed to kernel by 'handshake' netlink for NFS use */
 	printf("handshake done %d\n", sockfd);
 
@@ -75,5 +91,7 @@ int main(int argc, char *argv[])
 		return -1;
 	}
 	sleep(1);
+	close(sockfd);
+	goto loop;
 	return 0;
 }

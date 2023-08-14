@@ -18,7 +18,7 @@ static void quic_inq_rfree(struct sk_buff *skb)
 	atomic_sub(skb->len, &skb->sk->sk_rmem_alloc);
 }
 
-static void quic_inq_set_owner_r(struct sk_buff *skb, struct sock *sk)
+void quic_inq_set_owner_r(struct sk_buff *skb, struct sock *sk)
 {
 	skb_orphan(skb);
 	skb->sk = sk;
@@ -26,12 +26,57 @@ static void quic_inq_set_owner_r(struct sk_buff *skb, struct sock *sk)
 	skb->destructor = quic_inq_rfree;
 }
 
+static int quic_new_sock_do_rcv(struct sock *sk, struct sk_buff *skb,
+				union quic_addr *da, union quic_addr *sa)
+{
+	struct sock *nsk;
+	int ret = 0;
+
+	local_bh_disable();
+	nsk = quic_sock_lookup(skb, da, sa);
+	if (nsk == sk)
+		goto out;
+	/* the request sock was just accepted */
+	bh_lock_sock(nsk);
+	if (sock_owned_by_user(nsk)) {
+		if (sk_add_backlog(nsk, skb, READ_ONCE(nsk->sk_rcvbuf)))
+			kfree_skb(skb);
+	} else {
+		sk_backlog_rcv(nsk, skb);
+	}
+	bh_unlock_sock(nsk);
+	ret = 1;
+out:
+	local_bh_enable();
+	return ret;
+}
+
 int quic_handshake_do_rcv(struct sock *sk, struct sk_buff *skb)
 {
+	union quic_addr da, sa;
+
+	if (!quic_is_listen(sk))
+		goto out;
+
+	quic_af_ops(sk)->get_msg_addr(&da, skb, 0);
+	quic_af_ops(sk)->get_msg_addr(&sa, skb, 1);
+	if (quic_request_sock_exists(sk, &da, &sa))
+		goto out;
+
+	if (QUIC_RCV_CB(skb)->backlog &&
+	    quic_new_sock_do_rcv(sk, skb, &da, &sa))
+		return 0;
+
+	if (quic_request_sock_enqueue(sk, &da, &sa)) {
+		kfree_skb(skb);
+		return -ENOMEM;
+	}
+out:
 	if (atomic_read(&sk->sk_rmem_alloc) + skb->len > sk->sk_rcvbuf) {
 		kfree_skb(skb);
 		return -ENOBUFS;
 	}
+
 	quic_inq_set_owner_r(skb, sk);
 	__skb_queue_tail(&sk->sk_receive_queue, skb);
 	sk->sk_data_ready(sk);
@@ -52,11 +97,10 @@ int quic_rcv(struct sk_buff *skb)
 {
 	struct quic_source_connection_id *s_conn_id;
 	struct quic_addr_family_ops *af_ops;
-	struct quic_sock *qs = NULL;
-	union quic_addr daddr;
+	union quic_addr daddr, saddr;
+	struct sock *sk = NULL;
 	int err = -EINVAL;
-	u8 *dcid = NULL;
-	struct sock *sk;
+	u8 *dcid;
 
 	skb_pull(skb, skb_transport_offset(skb));
 	af_ops = quic_af_ops_get(ip_hdr(skb)->version == 4 ? AF_INET : AF_INET6);
@@ -65,17 +109,18 @@ int quic_rcv(struct sk_buff *skb)
 		dcid = (uint8_t *)quic_hdr(skb) + 1;
 		s_conn_id = quic_source_connection_id_lookup(dev_net(skb->dev), dcid);
 		if (s_conn_id)
-			qs = quic_sk(s_conn_id->sk);
+			sk = s_conn_id->sk;
 	}
-	if (!qs) {
+	if (!sk) {
 		af_ops->get_msg_addr(&daddr, skb, 0);
-		qs = quic_sock_lookup_byaddr(skb, &daddr);
-		if (!qs)
+		af_ops->get_msg_addr(&saddr, skb, 1);
+		sk = quic_sock_lookup(skb, &daddr, &saddr);
+		if (!sk)
 			goto err;
 	}
-	sk = &qs->inet.sk;
 	bh_lock_sock(sk);
 	if (sock_owned_by_user(sk)) {
+		QUIC_RCV_CB(skb)->backlog = 1;
 		if (sk_add_backlog(sk, skb, READ_ONCE(sk->sk_rcvbuf))) {
 			bh_unlock_sock(sk);
 			goto err;

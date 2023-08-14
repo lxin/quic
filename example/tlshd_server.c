@@ -12,12 +12,12 @@ char msg[MSG_LEN + 1];
 int main(int argc, char *argv[])
 {
 	struct quic_handshake_parms parms = {};
+	struct sockaddr_in la = {}, ra = {};
+	int ret, sockfd, listenfd, addrlen;
 	struct quic_connection *conn;
-	struct sockaddr_in la = {};
 	struct quic_endpoint *ep;
 	int flag = 0, sid = 0;
 	uint64_t len = 0;
-	int ret, sockfd;
 
 	if (argc != 4 && argc != 5) {
 		printf("%s <LOCAL ADDR> <LOCAL PORT> <PSK_FILE> | <PRIVATE_KEY_FILE> <CERTIFICATE_FILE>\n", argv[0]);
@@ -27,16 +27,25 @@ int main(int argc, char *argv[])
 	la.sin_family = AF_INET;
 	la.sin_port = htons(atoi(argv[2]));
 	inet_pton(AF_INET, argv[1], &la.sin_addr.s_addr);
-	sockfd = socket(AF_INET, SOCK_DGRAM, IPPROTO_QUIC);
-	if (sockfd < 0) {
+	listenfd = socket(AF_INET, SOCK_DGRAM, IPPROTO_QUIC);
+	if (listenfd < 0) {
 		printf("socket create failed\n");
 		return -1;
 	}
-	if (bind(sockfd, (struct sockaddr *)&la, sizeof(la))) {
+	if (bind(listenfd, (struct sockaddr *)&la, sizeof(la))) {
 		printf("socket bind failed\n");
 		return -1;
 	}
-
+	if (listen(listenfd, 1)) {
+		printf("socket listen failed\n");
+		return -1;
+	}
+	addrlen = sizeof(ra);
+	sockfd = accept(listenfd, (struct sockaddr *)&ra, &addrlen);
+	if (sockfd < 0) {
+		printf("socket accept failed %d %d\n", errno, sockfd);
+		return -1;
+	}
 	parms.timeout = 15;
 	if (argc == 4)  {
 		ret = read_psk_file(argv[3], parms.names, parms.keys);
