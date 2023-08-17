@@ -380,7 +380,6 @@ static const struct proto_ops quic_proto_ops = {
 	.sendmsg	   = inet_sendmsg,
 	.recvmsg	   = inet_recvmsg,
 	.mmap		   = sock_no_mmap,
-	.sendpage	   = sock_no_sendpage,
 };
 
 static struct inet_protosw quic_stream_protosw = {
@@ -416,7 +415,6 @@ static const struct proto_ops quicv6_proto_ops = {
 	.sendmsg	   = inet_sendmsg,
 	.recvmsg	   = inet_recvmsg,
 	.mmap		   = sock_no_mmap,
-	.sendpage	   = sock_no_sendpage,
 };
 
 static struct inet_protosw quicv6_stream_protosw = {

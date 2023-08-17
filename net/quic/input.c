@@ -42,7 +42,7 @@ static int quic_new_sock_do_rcv(struct sock *sk, struct sk_buff *skb,
 		if (sk_add_backlog(nsk, skb, READ_ONCE(nsk->sk_rcvbuf)))
 			kfree_skb(skb);
 	} else {
-		sk_backlog_rcv(nsk, skb);
+		sk->sk_backlog_rcv(nsk, skb);
 	}
 	bh_unlock_sock(nsk);
 	ret = 1;
@@ -126,7 +126,7 @@ int quic_rcv(struct sk_buff *skb)
 			goto err;
 		}
 	} else {
-		sk_backlog_rcv(sk, skb);
+		sk->sk_backlog_rcv(sk, skb);
 	}
 	bh_unlock_sock(sk);
 	return 0;
