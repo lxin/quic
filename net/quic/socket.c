@@ -805,8 +805,8 @@ err:
 int quic_sock_set_context(struct sock *sk, struct quic_context *context, u32 len)
 {
 	struct quic_sock *qs = quic_sk(sk);
-	int err, type, state;
 	struct sk_buff *skb;
+	int err, state;
 
 	if (sizeof(*context) > len)
 		return -EINVAL;
@@ -832,20 +832,20 @@ int quic_sock_set_context(struct sock *sk, struct quic_context *context, u32 len
 
 	/* clean up all handshake packets before going to connected state */
 	quic_inq_purge(sk, quic_inq(sk));
-
-	if (context->is_serv) {
-		state = QUIC_STATE_SERVER_CONNECTED;
-		type = QUIC_FRAME_HANDSHAKE_DONE;
-	} else {
+	if (!context->is_serv) {
 		state = QUIC_STATE_CLIENT_CONNECTED;
-		type = QUIC_FRAME_ACK;
+		quic_packet_config(sk);
+		goto out;
 	}
-	skb = quic_frame_create(sk, type, NULL, 0);
+
+	state = QUIC_STATE_SERVER_CONNECTED;
+	skb = quic_frame_create(sk, QUIC_FRAME_HANDSHAKE_DONE, NULL, 0);
 	if (!skb)
 		return -ENOMEM;
-
-	quic_update_proto_ops(sk);
 	quic_outq_ctrl_tail(sk, skb, false);
+
+out:
+	quic_update_proto_ops(sk);
 	quic_set_state(sk, state);
 	inet_sk_set_state(sk, TCP_ESTABLISHED);
 
