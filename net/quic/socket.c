@@ -389,6 +389,7 @@ out:
 
 int quic_get_mss(struct sock *sk)
 {
+	int mss, max_udp = quic_inq_max_udp(quic_inq(sk));
 	struct dst_entry *dst;
 
 	dst = __sk_dst_check(sk, 0);
@@ -398,7 +399,11 @@ int quic_get_mss(struct sock *sk)
 		dst = __sk_dst_get(sk);
 	}
 
-	return dst_mtu(dst) - quic_encap_len(sk) - QUIC_TAG_LEN;
+	mss = dst_mtu(dst) - quic_encap_len(sk);
+	if (mss > max_udp)
+		mss = max_udp;
+
+	return mss - QUIC_TAG_LEN;
 }
 
 static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)

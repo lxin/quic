@@ -250,6 +250,7 @@ void quic_inq_set_param(struct sock *sk, struct quic_transport_param *p)
 {
 	struct quic_inqueue *inq = quic_inq(sk);
 
+	inq->max_udp_payload_size = p->max_udp_payload_size;
 	inq->max_ack_delay = p->max_ack_delay;
 	inq->ack_delay_exponent = p->ack_delay_exponent;
 	inq->window = p->initial_max_data;
