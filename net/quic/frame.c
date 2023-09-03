@@ -28,8 +28,8 @@
 static struct sk_buff *quic_frame_ack_create(struct sock *sk, void *data, u32 len)
 {
 	struct quic_gap_ack_block gabs[QUIC_PN_MAX_GABS];
-	u32 largest, smallest = 0, base, range, pn_ts;
 	struct quic_pnmap *map = quic_pnmap(sk);
+	u32 largest, smallest, range, pn_ts;
 	u8 *p, type = QUIC_FRAME_ACK;
 	u32 frame_len, num_gabs;
 	struct sk_buff *skb;
@@ -41,10 +41,9 @@ static struct sk_buff *quic_frame_ack_create(struct sock *sk, void *data, u32 le
 
 	largest = quic_pnmap_max_pn_seen(map);
 	pn_ts = quic_pnmap_max_pn_ts(map);
-	base = quic_pnmap_base_pn(map);
-	smallest = base;
+	smallest = quic_pnmap_min_pn_seen(map);
 	if (num_gabs)
-		smallest += gabs[num_gabs - 1].end;
+		smallest = quic_pnmap_base_pn(map) + gabs[num_gabs - 1].end;
 	range = largest - smallest;
 	skb = alloc_skb(frame_len, GFP_ATOMIC);
 	if (!skb)
@@ -59,11 +58,11 @@ static struct sk_buff *quic_frame_ack_create(struct sock *sk, void *data, u32 le
 
 	if (num_gabs) {
 		for (i = num_gabs - 1; i > 0; i--) {
-			p = quic_put_var(p, gabs[i].end - gabs[i].start + 1); /* Gap */
-			p = quic_put_var(p, gabs[i].start - gabs[i - 1].end - 1); /* ACK Range Length */
+			p = quic_put_var(p, gabs[i].end - gabs[i].start); /* Gap */
+			p = quic_put_var(p, gabs[i].start - gabs[i - 1].end - 2); /* ACK Range Length */
 		}
-		p = quic_put_var(p, gabs[0].end - gabs[0].start + 1); /* Gap */
-		p = quic_put_var(p, gabs[0].start - 1); /* ACK Range Length */
+		p = quic_put_var(p, gabs[0].end - gabs[0].start); /* Gap */
+		p = quic_put_var(p, gabs[0].start - 2); /* ACK Range Length */
 	}
 	frame_len = (u32)(p - skb->data);
 	skb_put(skb, frame_len);
@@ -417,8 +416,8 @@ static int quic_frame_ack_process(struct sock *sk, struct sk_buff *skb, u8 type)
 	for (i = 0; i < count; i++) {
 		gap = quic_get_var(&p, &len);
 		range = quic_get_var(&p, &len);
-		largest = smallest - gap - 1;
-		smallest = largest - range + 1;
+		largest = smallest - gap - 2;
+		smallest = largest - range;
 		quic_outq_retransmit_check(sk, largest, smallest, 0, 0);
 	}
 

@@ -16,22 +16,24 @@
  * base_pn --^   last_max_pn_seen --^       max_pn_seen --^
  *
  * move forward:
- *   base_pn = last_max_pn_seen;
+ *   base_pn = last_max_pn_seen - 1;
  *   last_max_pn_seen = max_pn_seen;
- * every after:
- *   'max_pn_ts - last_max_pn_ts >= max_record_ts'.
+ * when:
+ *   'max_pn_ts - last_max_pn_ts >= max_record_ts' or
+ *   'max_pn_seen - last_max_pn_seen > QUIC_PN_MAP_SIZE / 2'
  */
 struct quic_pnmap {
 	unsigned long *pn_map;
 	u16 len;
 
 	u32 base_pn;
-	u32 cumulative_pn_ack_point;
+	u32 min_pn_seen;
 
 	u32 max_pn_seen;
 	u32 max_pn_ts;
 
 	u32 max_record_ts;
+	u32 cum_ack_point;
 
 	u32 last_max_pn_ts;
 	u32 last_max_pn_seen;
@@ -47,9 +49,9 @@ static inline void quic_pnmap_set_max_record_ts(struct quic_pnmap *map, u32 max_
 	map->max_record_ts = max_record_ts;
 }
 
-static inline u32 quic_pnmap_cpn(const struct quic_pnmap *map)
+static inline u32 quic_pnmap_min_pn_seen(const struct quic_pnmap *map)
 {
-	return map->cumulative_pn_ack_point;
+	return map->min_pn_seen;
 }
 
 static inline u32 quic_pnmap_max_pn_seen(const struct quic_pnmap *map)
@@ -65,6 +67,11 @@ static inline u32 quic_pnmap_base_pn(const struct quic_pnmap *map)
 static inline u32 quic_pnmap_max_pn_ts(const struct quic_pnmap *map)
 {
 	return map->max_pn_ts;
+}
+
+static inline bool quic_pnmap_has_gap(const struct quic_pnmap *map)
+{
+	return map->cum_ack_point != map->max_pn_seen;
 }
 
 struct quic_pnmap *quic_pnmap_init(struct quic_pnmap *map);

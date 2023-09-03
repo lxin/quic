@@ -61,7 +61,7 @@ int quic_packet_process(struct sock *sk, struct sk_buff *skb)
 	if (err)
 		goto err;
 
-	pr_debug("[QUIC] %s number: %u\n", __func__, pki.number);
+	pr_debug("[QUIC] %s number: %u serv: %d\n", __func__, pki.number, quic_is_serv(sk));
 	err = quic_pnmap_check(&qs->pn_map, pki.number);
 	if (err) {
 		err = -EINVAL;
@@ -94,7 +94,7 @@ int quic_packet_process(struct sock *sk, struct sk_buff *skb)
 	if (!qs->packet.ack_eliciting)
 		goto out;
 
-	if (!qs->packet.ack_immediate) {
+	if (!qs->packet.ack_immediate && !quic_pnmap_has_gap(&qs->pn_map)) {
 		quic_timer_start(sk, QUIC_TIMER_ACK);
 		goto out;
 	}
@@ -108,7 +108,7 @@ out:
 	quic_outq_flush(sk);
 	return 0;
 err:
-	pr_debug("[QUIC] %s pktn: %d err: %d\n", __func__, pki.number, err);
+	pr_warn("[QUIC] %s pktn: %d err: %d serv: %u\n", __func__, pki.number, err, quic_is_serv(sk));
 	kfree_skb(skb);
 	return err;
 }
