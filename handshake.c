@@ -316,7 +316,7 @@ static int quic_server_connection_new(struct quic_endpoint *ep, ngtcp2_pkt_hd *h
 }
 
 #define MODES "%DISABLE_TLS13_COMPAT_MODE"
-#define CIPHERS "NORMAL:-VERS-ALL:+VERS-TLS1.3:-CIPHER-ALL:+AES-128-GCM:+AES-256-GCM:+CHACHA20-POLY1305:+AES-128-CCM:+PSK"
+#define CIPHERS "NORMAL:-VERS-ALL:+VERS-TLS1.3:-CIPHER-ALL:+AES-128-GCM:+PSK"
 #define GROUPS "-GROUP-ALL:+GROUP-X25519:+GROUP-SECP256R1:+GROUP-SECP384R1:+GROUP-SECP521R1"
 #define PRIORITY MODES":"CIPHERS":"GROUPS
 
@@ -386,6 +386,14 @@ static int quic_client_set_x509_session(struct quic_endpoint *ep, ngtcp2_pkt_hd 
 	if (ep->parms->peername)
 		gnutls_server_name_set(session, GNUTLS_NAME_DNS,
 				ep->parms->peername, strlen(ep->parms->peername));
+	if (ep->parms->alpn) {
+		gnutls_datum_t alpn = {
+			.data = ep->parms->alpn,
+			.size = strlen(ep->parms->alpn),
+		};
+		gnutls_alpn_set_protocols(session, &alpn, 1, GNUTLS_ALPN_MANDATORY);
+	}
+
 	if (quic_client_connection_new(ep))
 		goto err_session;
 	ngtcp2_conn_set_tls_native_handle(ep->conn, session);
@@ -468,6 +476,13 @@ static int quic_client_set_psk_session(struct quic_endpoint *ep, ngtcp2_pkt_hd *
 		goto err_session;
 	gnutls_handshake_set_secret_function(session, quic_session_secret_func);
 	gnutls_credentials_set(session, GNUTLS_CRD_PSK, cred);
+	if (ep->parms->alpn) {
+		gnutls_datum_t alpn = {
+			.data = ep->parms->alpn,
+			.size = strlen(ep->parms->alpn),
+		};
+		gnutls_alpn_set_protocols(session, &alpn, 1, GNUTLS_ALPN_MANDATORY);
+	}
 
 	if (quic_client_connection_new(ep))
 		goto err_session;
@@ -523,6 +538,28 @@ static int quic_server_set_x509_cred_tlshd(struct quic_endpoint *ep, void *cred)
 	return gnutls_certificate_set_key(cred, NULL, 0, cert, 1, privkey);
 }
 
+static int quic_alpn_cb(gnutls_session_t session, unsigned int htype, unsigned when,
+			unsigned int incoming, const gnutls_datum_t *msg)
+{
+	ngtcp2_crypto_conn_ref *conn_ref = gnutls_session_get_ptr(session);
+	struct quic_endpoint *ep = conn_ref->user_data;
+	gnutls_datum_t alpn;
+	int ret;
+
+	if (!ep->parms->alpn)
+		return 0;
+
+	ret = gnutls_alpn_get_selected_protocol(session, &alpn);
+	if (ret)
+		return ret;
+
+	if (strlen(ep->parms->alpn) != alpn.size ||
+	    memcmp(ep->parms->alpn, alpn.data, alpn.size))
+		return -1;
+
+	return 0;
+}
+
 static int quic_server_set_x509_session(struct quic_endpoint *ep, ngtcp2_pkt_hd *hd)
 {
 	gnutls_certificate_credentials_t cred;
@@ -548,8 +585,17 @@ static int quic_server_set_x509_session(struct quic_endpoint *ep, ngtcp2_pkt_hd 
 	if (ngtcp2_crypto_gnutls_configure_server_session(session))
 		goto err_session;
 	gnutls_handshake_set_secret_function(session, quic_session_secret_func);
+	gnutls_handshake_set_hook_function(session, GNUTLS_HANDSHAKE_CLIENT_HELLO,
+					   GNUTLS_HOOK_POST, quic_alpn_cb);
 	gnutls_credentials_set(session, GNUTLS_CRD_CERTIFICATE, cred);
 	gnutls_certificate_server_set_request(session, GNUTLS_CERT_REQUEST);
+	if (ep->parms->alpn) {
+		gnutls_datum_t alpn = {
+			.data = ep->parms->alpn,
+			.size = strlen(ep->parms->alpn),
+		};
+		gnutls_alpn_set_protocols(session, &alpn, 1, GNUTLS_ALPN_MANDATORY);
+	}
 
 	if (quic_server_connection_new(ep, hd))
 		goto err_session;
@@ -615,7 +661,16 @@ static int quic_server_set_psk_session(struct quic_endpoint *ep, ngtcp2_pkt_hd *
 	if (ngtcp2_crypto_gnutls_configure_server_session(session))
 		goto err_session;
 	gnutls_handshake_set_secret_function(session, quic_session_secret_func);
+	gnutls_handshake_set_hook_function(session, GNUTLS_HANDSHAKE_CLIENT_HELLO,
+					   GNUTLS_HOOK_POST, quic_alpn_cb);
 	gnutls_credentials_set(session, GNUTLS_CRD_PSK, cred);
+	if (ep->parms->alpn) {
+		gnutls_datum_t alpn = {
+			.data = ep->parms->alpn,
+			.size = strlen(ep->parms->alpn),
+		};
+		gnutls_alpn_set_protocols(session, &alpn, 1, GNUTLS_ALPN_MANDATORY);
+	}
 
 	if (quic_server_connection_new(ep, hd))
 		goto err_session;
@@ -636,7 +691,7 @@ static void quic_handshake_read(struct quic_endpoint *ep)
 	ngtcp2_pkt_info pi = {0};
 	ngtcp2_path_storage ps;
 	ngtcp2_pkt_hd hd;
-	uint8_t buf[2000];
+	uint8_t buf[2048];
 
 	do {
 		state = ep->state;
@@ -737,7 +792,8 @@ static int quic_do_handshake(struct quic_endpoint *ep)
 		quic_handshake_write(ep);
 	}
 
-	timer_delete(ep->timer);
+	if (timer_delete(ep->timer))
+		return -1;
 	if (setsockopt(ep->sockfd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)))
 		return -1;
 

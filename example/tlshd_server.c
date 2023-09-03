@@ -47,6 +47,7 @@ int main(int argc, char *argv[])
 		return -1;
 	}
 	parms.timeout = 15;
+	parms.alpn = "sample";
 	if (argc == 4)  {
 		ret = read_psk_file(argv[3], parms.names, parms.keys);
 		if (ret <= 0)
@@ -85,7 +86,7 @@ int main(int argc, char *argv[])
 			if (setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_CONNECTION_MIGRATION, &a, sizeof(a)))
 				return -1;
 		}
-		printf("recv len: %lld, stream_id: %d.\n", len, sid);
+		printf("recv len: %lld, stream_id: %d, flag: %d.\n", len, sid, flag);
 		if (flag & QUIC_STREAM_FLAG_FIN)
 			break;
 	}

@@ -8,7 +8,7 @@
 #include "handshake.h"
 
 #define MSG_LEN	4096
-#define TOT_LEN	204800000
+#define TOT_LEN	20480000
 char msg[MSG_LEN + 1];
 
 int main(int argc, char *argv[])

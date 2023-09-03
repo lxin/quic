@@ -7,7 +7,7 @@
 #include "tlshd_fake.h"
 
 #define MSG_LEN	4096
-#define TOT_LEN	20480
+#define TOT_LEN	20480000
 char msg[MSG_LEN + 1];
 
 int main(int argc, char *argv[])
@@ -40,6 +40,7 @@ int main(int argc, char *argv[])
 	}
 
 	parms.timeout = 15;
+	parms.alpn = "sample";
 	if (argc == 4)  {
 		ret = read_psk_file(argv[3], parms.names, parms.keys);
 		if (ret <= 0)

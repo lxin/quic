@@ -19,7 +19,6 @@ int main(int argc, char *argv[])
 	int flag = 0, sid = 0;
 	uint64_t len = 0;
 
-
 	if (argc != 4 && argc != 5) {
 		printf("%s <LOCAL ADDR> <LOCAL PORT> <PSK_FILE> | <PRIVATE_KEY_FILE> <CERTIFICATE_FILE>\n", argv[0]);
 		return 0;
@@ -77,7 +76,7 @@ loop:
 			if (setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_CONNECTION_MIGRATION, &a, sizeof(a)))
 				return -1;
 		}
-		printf("recv len: %lld, stream_id: %d.\n", len, sid);
+		printf("recv len: %lld, stream_id: %d, flag: %d.\n", len, sid, flag);
 		if (flag & QUIC_STREAM_FLAG_FIN)
 			break;
 	}
