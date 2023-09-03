@@ -1120,7 +1120,7 @@ int quic_recvmsg(int sockfd, void *msg, size_t len, uint32_t *sid, uint32_t *fla
 		return error;
 
 	for (cmsg = CMSG_FIRSTHDR(&inmsg); cmsg != NULL; cmsg = CMSG_NXTHDR(&inmsg, cmsg))
-		if (SOL_QUIC == cmsg->cmsg_level && QUIC_RCVINFO == cmsg->cmsg_type)
+		if (IPPROTO_QUIC == cmsg->cmsg_level && QUIC_RCVINFO == cmsg->cmsg_type)
 			break;
 	if (cmsg)
 		memcpy(&rinfo, CMSG_DATA(cmsg), sizeof(struct quic_rcvinfo));
@@ -1162,7 +1162,7 @@ int quic_sendmsg(int sockfd, const void *msg, size_t len, uint32_t sid, uint32_t
 	outmsg.msg_flags = 0;
 
 	cmsg = CMSG_FIRSTHDR(&outmsg);
-	cmsg->cmsg_level = SOL_QUIC;
+	cmsg->cmsg_level = IPPROTO_QUIC;
 	cmsg->cmsg_type = 0;
 	cmsg->cmsg_len = CMSG_LEN(sizeof(struct quic_sndinfo));
 

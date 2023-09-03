@@ -99,10 +99,6 @@ static void quic_v4_lower_xmit(struct sock *sk, struct sk_buff *skb)
 		df = htons(IP_DF);
 
 	inet = inet_sk(sk);
-	skb->encapsulation = 1;
-	skb_reset_inner_mac_header(skb);
-	skb_reset_inner_transport_header(skb);
-	skb_set_inner_ipproto(skb, IPPROTO_QUIC);
 	udp_tunnel_xmit_skb((struct rtable *)dst, sk, skb, saddr->v4.sin_addr.s_addr,
 			    daddr->v4.sin_addr.s_addr, inet->tos, ip4_dst_hoplimit(dst), df,
 			    saddr->v4.sin_port, daddr->v4.sin_port, false, false);
@@ -122,10 +118,6 @@ static void quic_v6_lower_xmit(struct sock *sk, struct sk_buff *skb)
 		 &daddr->v6.sin6_addr, ntohs(daddr->v6.sin6_port));
 
 	dst = sk_dst_get(sk);
-	skb->encapsulation = 1;
-	skb_reset_inner_mac_header(skb);
-	skb_reset_inner_transport_header(skb);
-	skb_set_inner_ipproto(skb, IPPROTO_QUIC);
 	udp_tunnel6_xmit_skb(dst, sk, skb, NULL, &saddr->v6.sin6_addr,
 			     &daddr->v6.sin6_addr, inet6_sk(sk)->tclass, ip6_dst_hoplimit(dst),
 			     0, saddr->v6.sin6_port, daddr->v6.sin6_port, false);

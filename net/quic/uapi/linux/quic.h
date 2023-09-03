@@ -15,11 +15,11 @@
 #include <linux/socket.h>
 
 enum {
-	IPPROTO_QUIC = 144,		/* A UDP-Based Multiplexed and Secure Transport	*/
+	IPPROTO_QUIC = 261,		/* A UDP-Based Multiplexed and Secure Transport	*/
 #define IPPROTO_QUIC		IPPROTO_QUIC
 };
 
-#define SOL_QUIC	144
+#define SOL_QUIC	287
 
 enum {
 	QUIC_STREAM_FLAG_NEW = (1 << 0),
