@@ -187,6 +187,8 @@ void quic_outq_retransmit_check(struct sock *sk, u32 largest, u32 smallest,
 		}
 		outq->inflight -= QUIC_SND_CB(skb)->data_bytes;
 		acked_bytes += QUIC_SND_CB(skb)->data_bytes;
+		if (outq->retransmit_skb == skb)
+			outq->retransmit_skb = NULL;
 		__skb_unlink(skb, head);
 		kfree_skb(skb);
 	}
@@ -204,42 +206,37 @@ void quic_outq_retransmit_check(struct sock *sk, u32 largest, u32 smallest,
 void quic_outq_retransmit(struct sock *sk)
 {
 	struct quic_outqueue *outq = quic_outq(sk);
-	struct sk_buff *skb, *nskb;
 	struct sk_buff_head *head;
-	int ret;
+	struct sk_buff *skb;
 
 	head = &outq->retransmit_list;
 	if (outq->rtx_count >= QUIC_RTX_MAX) {
 		pr_warn("[QUIC] %s timeout!\n", __func__);
+		quic_set_state(sk, QUIC_STATE_USER_CLOSED);
 		sk->sk_err = -ETIMEDOUT;
 		sk->sk_state_change(sk);
 		return;
 	}
 
+	skb = outq->retransmit_skb ?: skb_peek(head);
+	if (!skb)
+		return;
+	__skb_unlink(skb, head);
+
 	quic_packet_config(sk);
+	quic_packet_tail(sk, skb);
+	quic_packet_transmit(sk);
 
-	skb = __skb_dequeue(head);
-	while (skb) {
-		if (QUIC_SND_CB(skb)->rtx_count >= QUIC_RTX_MAX)
-			pr_warn("[QUIC] %s packet %u timeout\n", __func__,
-				QUIC_SND_CB(skb)->packet_number);
-		ret = quic_packet_tail(sk, skb);
-		if (!ret) {
-			__skb_queue_head(head, skb);
-			break;
-		}
-		QUIC_SND_CB(skb)->rtx_count++;
-		nskb = skb;
-		skb = __skb_dequeue(head);
-	}
+	outq->retransmit_skb = skb;
+	outq->rtx_count++;
 
-	if (!quic_packet_empty(quic_packet(sk))) {
-		outq->rtx_count++;
-		quic_cong_cwnd_update_after_timeout(sk, QUIC_SND_CB(nskb)->packet_number,
-						    QUIC_SND_CB(nskb)->transmit_ts);
-		quic_packet_transmit(sk);
-		quic_timer_start(sk, QUIC_TIMER_RTX);
-	}
+	QUIC_SND_CB(skb)->rtx_count++;
+	if (QUIC_SND_CB(skb)->rtx_count >= QUIC_RTX_MAX)
+		pr_warn("[QUIC] %s packet %u timeout\n", __func__,
+			QUIC_SND_CB(skb)->packet_number);
+	quic_timer_start(sk, QUIC_TIMER_RTX);
+	quic_cong_cwnd_update_after_timeout(sk, QUIC_SND_CB(skb)->packet_number,
+					    QUIC_SND_CB(skb)->transmit_ts);
 }
 
 void quic_outq_set_param(struct sock *sk, struct quic_transport_param *p)
