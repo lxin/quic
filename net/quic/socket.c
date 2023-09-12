@@ -479,6 +479,9 @@ static int quic_wait_for_packet(struct sock *sk, long timeo)
 			goto out;
 		}
 
+		if (quic_state(sk) == QUIC_STATE_USER_CLOSED)
+			goto out;
+
 		exit = 0;
 		release_sock(sk);
 		timeo = schedule_timeout(timeo);

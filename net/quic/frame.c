@@ -533,11 +533,27 @@ static int quic_frame_max_streams_bidi_process(struct sock *sk, struct sk_buff *
 
 static int quic_frame_connection_close_process(struct sock *sk, struct sk_buff *skb, u8 type)
 {
+	quic_set_state(sk, QUIC_STATE_USER_CLOSED);
+
+	/*
+	 * Now that state is QUIC_STATE_USER_CLOSED, we can wake the waiting
+	 * recv thread up.
+	 */
+	sk->sk_state_change(sk);
+
 	return 0;
 }
 
 static int quic_frame_connection_close_app_process(struct sock *sk, struct sk_buff *skb, u8 type)
 {
+	quic_set_state(sk, QUIC_STATE_USER_CLOSED);
+
+	/*
+	 * Now that state is QUIC_STATE_USER_CLOSED, we can wake the waiting
+	 * recv thread up.
+	 */
+	sk->sk_state_change(sk);
+
 	return 0;
 }
 
