@@ -160,6 +160,8 @@ static void quic_destroy_sock(struct sock *sk)
 	quic_pnmap_free(&qs->pn_map);
 	quic_crypto_destroy(&qs->crypto);
 
+	kfree(qs->token.data);
+
 	local_bh_disable();
 	quic_put_port(sock_net(sk), &qs->port);
 	sk_sockets_allocated_dec(sk);
@@ -907,6 +909,38 @@ static int quic_sock_retire_connection_id(struct sock *sk, u32 *number, u8 len)
 	return 0;
 }
 
+static int quic_sock_set_token(struct sock *sk, void *data, u32 len)
+{
+	struct quic_token *token = quic_token(sk);
+
+	if (!len)
+		return -EINVAL;
+
+	token->len = len;
+	kfree(token->data);
+	token->data = kmemdup(data, token->len, GFP_KERNEL);
+
+	return 0;
+}
+
+static int quic_sock_new_token(struct sock *sk, void *data, u32 len)
+{
+	struct quic_token token;
+	struct sk_buff *skb;
+
+	if (!len)
+		return -EINVAL;
+
+	token.data = data;
+	token.len = len;
+	skb = quic_frame_create(sk, QUIC_FRAME_NEW_TOKEN, &token, 0);
+	if (!skb)
+		return -ENOMEM;
+
+	quic_outq_ctrl_tail(sk, skb, false);
+	return 0;
+}
+
 static int quic_setsockopt(struct sock *sk, int level, int optname,
 			   sockptr_t optval, unsigned int optlen)
 {
@@ -939,6 +973,12 @@ static int quic_setsockopt(struct sock *sk, int level, int optname,
 		break;
 	case QUIC_SOCKOPT_CONGESTION_CONTROL:
 		retval = quic_cong_set_cong_alg(sk, kopt, optlen);
+		break;
+	case QUIC_SOCKOPT_TOKEN:
+		retval = quic_sock_set_token(sk, kopt, optlen);
+		break;
+	case QUIC_SOCKOPT_NEW_TOKEN:
+		retval = quic_sock_new_token(sk, kopt, optlen);
 		break;
 	default:
 		retval = -ENOPROTOOPT;
@@ -1010,6 +1050,19 @@ static int quic_sock_get_context(struct sock *sk, int len, char __user *optval, 
 	return 0;
 }
 
+static int quic_sock_get_token(struct sock *sk, int len, char __user *optval, int __user *optlen)
+{
+	struct quic_token *token = quic_token(sk);
+
+	if (len < token->len)
+		return -EINVAL;
+	if (put_user(token->len, optlen))
+		return -EFAULT;
+	if (copy_to_user(optval, token->data, token->len))
+		return -EFAULT;
+	return 0;
+}
+
 static int quic_getsockopt(struct sock *sk, int level, int optname,
 			   char __user *optval, int __user *optlen)
 {
@@ -1029,6 +1082,9 @@ static int quic_getsockopt(struct sock *sk, int level, int optname,
 	switch (optname) {
 	case QUIC_SOCKOPT_CONTEXT:
 		retval = quic_sock_get_context(sk, len, optval, optlen);
+		break;
+	case QUIC_SOCKOPT_TOKEN:
+		retval = quic_sock_get_token(sk, len, optval, optlen);
 		break;
 	default:
 		retval = -ENOPROTOOPT;

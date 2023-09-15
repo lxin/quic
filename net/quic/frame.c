@@ -94,7 +94,19 @@ static struct sk_buff *quic_frame_padding_create(struct sock *sk, void *data, u3
 
 static struct sk_buff *quic_frame_new_token_create(struct sock *sk, void *data, u32 len)
 {
-	return 0;
+	u8 type = QUIC_FRAME_NEW_TOKEN, *p;
+	struct quic_token *token = data;
+	struct sk_buff *skb;
+
+	skb = alloc_skb(token->len + 4, GFP_ATOMIC);
+	if (!skb)
+		return NULL;
+	p = quic_put_var(skb->data, type);
+	p = quic_put_var(p, token->len);
+	p = quic_put_data(p, token->data, token->len);
+	skb_put(skb, (u32)(p - skb->data));
+
+	return skb;
 }
 
 static struct sk_buff *quic_frame_stream_create(struct sock *sk, void *data, u32 len)
@@ -536,7 +548,16 @@ static int quic_frame_retire_connection_id_process(struct sock *sk, struct sk_bu
 
 static int quic_frame_new_token_process(struct sock *sk, struct sk_buff *skb, u8 type)
 {
-	return 0;
+	struct quic_token *token = quic_token(sk);
+	u8 *p = skb->data;
+	u32 len;
+
+	token->len = quic_get_var(&p, &len);
+	kfree(token->data);
+	token->data = kmemdup(p, token->len, GFP_ATOMIC);
+	p += len;
+
+	return p - skb->data;
 }
 
 static int quic_frame_handshake_done_process(struct sock *sk, struct sk_buff *skb, u8 type)

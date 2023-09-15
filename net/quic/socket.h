@@ -46,6 +46,11 @@ struct quic_request_sock {
 	union quic_addr		dst;
 };
 
+struct quic_token {
+	u32 len;
+	void *data;
+};
+
 struct quic_sock {
 	struct inet_sock		inet;
 	struct quic_addr_family_ops	*af_ops; /* inet4 or inet6 */
@@ -63,6 +68,7 @@ struct quic_sock {
 	struct quic_stream_table	streams;
 	struct quic_crypto		crypto;
 	struct quic_pnmap		pn_map;
+	struct quic_token		token;
 
 	struct quic_outqueue		outq;
 	struct quic_inqueue		inq;
@@ -146,6 +152,11 @@ static inline struct quic_timer *quic_timer(const struct sock *sk, u8 type)
 static inline struct list_head *quic_reqs(const struct sock *sk)
 {
 	return &quic_sk(sk)->reqs;
+}
+
+static inline struct quic_token *quic_token(const struct sock *sk)
+{
+	return &quic_sk(sk)->token;
 }
 
 static inline bool quic_is_serv(struct sock *sk)

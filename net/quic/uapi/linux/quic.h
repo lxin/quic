@@ -91,5 +91,7 @@ struct quic_context {
 #define QUIC_SOCKOPT_KEY_UPDATE				3
 #define QUIC_SOCKOPT_CONNECTION_MIGRATION		4
 #define QUIC_SOCKOPT_CONGESTION_CONTROL			5
+#define QUIC_SOCKOPT_TOKEN				6
+#define QUIC_SOCKOPT_NEW_TOKEN				7
 
 #endif /* __uapi_quic_h__ */
