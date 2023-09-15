@@ -52,10 +52,9 @@ struct quic_connection_id {
 	uint8_t data[20];
 };
 
-struct quic_connection_id_numbers {
-	uint32_t start_number;
-	uint32_t end_number;
-	uint32_t active_number;
+struct quic_new_connection_id {
+	uint32_t prior;
+	uint32_t seqno;
 };
 
 struct quic_transport_param {
@@ -87,8 +86,8 @@ struct quic_context {
 };
 
 #define QUIC_SOCKOPT_CONTEXT				0
-#define QUIC_SOCKOPT_SOURCE_CONNECTION_ID_NUMBERS	1
-#define QUIC_SOCKOPT_DEST_CONNECTION_ID_NUMBERS		2
+#define QUIC_SOCKOPT_NEW_CONNECTION_ID			1
+#define QUIC_SOCKOPT_RETIRE_CONNECTION_ID		2
 #define QUIC_SOCKOPT_KEY_UPDATE				3
 #define QUIC_SOCKOPT_CONNECTION_MIGRATION		4
 #define QUIC_SOCKOPT_CONGESTION_CONTROL			5

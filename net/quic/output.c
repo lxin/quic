@@ -178,6 +178,8 @@ void quic_outq_retransmit_check(struct sock *sk, u32 largest, u32 smallest,
 			continue;
 		if (QUIC_SND_CB(skb)->packet_number < smallest)
 			break;
+		if (QUIC_SND_CB(skb)->frame_type == QUIC_FRAME_NEW_CONNECTION_ID)
+			quic_frame_new_connection_id_ack(sk, skb);
 		if (!QUIC_SND_CB(skb)->rtx_count &&
 		    QUIC_SND_CB(skb)->packet_number == ack_largest)
 			quic_cong_rtt_update(sk, QUIC_SND_CB(skb)->transmit_ts, ack_delay);

@@ -174,12 +174,42 @@ static struct sk_buff *quic_frame_crypto_create(struct sock *sk, void *data, u32
 
 static struct sk_buff *quic_frame_retire_connection_id_create(struct sock *sk, void *data, u32 len)
 {
-	return 0;
+	u8 *p, frame[10], type = QUIC_FRAME_RETIRE_CONNECTION_ID;
+	u32 *number = data, frame_len;
+	struct sk_buff *skb;
+
+	p = quic_put_var(frame, type);
+	p = quic_put_var(p, *number);
+	frame_len = (u32)(p - frame);
+
+	skb = alloc_skb(frame_len, GFP_ATOMIC);
+	if (!skb)
+		return NULL;
+	skb_put_data(skb, frame, frame_len);
+	return skb;
 }
 
 static struct sk_buff *quic_frame_new_connection_id_create(struct sock *sk, void *data, u32 len)
 {
-	return 0;
+	u8 *p, frame[100], type = QUIC_FRAME_NEW_CONNECTION_ID, conn_id[16], token[16];
+	struct quic_new_connection_id *nums = data;
+	struct sk_buff *skb;
+	u32 frame_len;
+
+	p = quic_put_var(frame, type);
+	p = quic_put_var(p, nums->prior);
+	p = quic_put_var(p, nums->seqno);
+	p = quic_put_var(p, 16);
+	get_random_bytes(conn_id, 16);
+	quic_put_data(p, conn_id, 16);
+	quic_put_data(p, token, 16);
+	frame_len = (u32)(p - frame);
+
+	skb = alloc_skb(frame_len, GFP_ATOMIC);
+	if (!skb)
+		return NULL;
+	skb_put_data(skb, frame, frame_len);
+	return skb;
 }
 
 static struct sk_buff *quic_frame_path_response_create(struct sock *sk, void *data, u32 len)
@@ -432,12 +462,76 @@ static int quic_frame_ack_process(struct sock *sk, struct sk_buff *skb, u8 type)
 
 static int quic_frame_new_connection_id_process(struct sock *sk, struct sk_buff *skb, u8 type)
 {
+	struct quic_connection_id_set *id_set;
+	u8 *p = skb->data, *conn_id, *token;
+	struct quic_new_connection_id nums;
+	u32 seqno, len, prior;
+	int err;
+
+	seqno = quic_get_var(&p, &len);
+	prior = quic_get_var(&p, &len);
+	len = quic_get_var(&p, &len);
+	conn_id = p;
+	token = conn_id + len; /* TODO: Stateless Reset */
+	p = token + 16;
+
+	id_set = &quic_sk(sk)->dest;
+	if (seqno != quic_connection_id_last_number(id_set) + 1 || prior > seqno)
+		return -EINVAL;
+
+	nums.prior = prior;
+	nums.seqno = seqno;
+	err = quic_connection_id_set(id_set, &nums, sk, conn_id, len);
+	if (err)
+		return err;
+
+	return p - skb->data;
+}
+
+int quic_frame_new_connection_id_ack(struct sock *sk, struct sk_buff *skb)
+{
+	struct quic_connection_id_set *id_set;
+	struct quic_new_connection_id nums;
+	u8 *p = skb->data, *conn_id;
+	u32 len;
+
+	nums.seqno = quic_get_var(&p, &len);
+	nums.prior = quic_get_var(&p, &len);
+	len = quic_get_var(&p, &len);
+	conn_id = p;
+
+	id_set = &quic_sk(sk)->source;
+	quic_connection_id_set(id_set, &nums, sk, conn_id, len);
+	id_set->pending = 0;
 	return 0;
+
 }
 
 static int quic_frame_retire_connection_id_process(struct sock *sk, struct sk_buff *skb, u8 type)
 {
-	return 0;
+	struct quic_connection_id_set *id_set;
+	struct quic_new_connection_id nums;
+	struct sk_buff *nskb;
+	u8 *p = skb->data;
+	u32 seqno, len;
+
+	seqno = quic_get_var(&p, &len);
+	nums.prior = seqno;
+	id_set = &quic_sk(sk)->source;
+	nums.seqno = quic_connection_id_last_number(id_set);
+	if (nums.prior > nums.seqno)
+		return -EINVAL;
+
+	id_set = &quic_sk(sk)->source;
+	if (id_set->pending)
+		return -EBUSY;
+
+	nskb = quic_frame_create(sk, QUIC_FRAME_NEW_CONNECTION_ID, &nums, 0);
+	if (!nskb)
+		return -ENOMEM;
+	quic_outq_data_tail(sk, nskb, true);
+	id_set->pending = 1;
+	return p - skb->data;
 }
 
 static int quic_frame_new_token_process(struct sock *sk, struct sk_buff *skb, u8 type)

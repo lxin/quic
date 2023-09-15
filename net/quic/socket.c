@@ -862,6 +862,51 @@ out:
 	return 0;
 }
 
+static int quic_sock_new_connection_id(struct sock *sk, u32 *number, u8 len)
+{
+	struct quic_connection_id_set *id_set;
+	struct quic_new_connection_id nums;
+	struct sk_buff *skb;
+
+	if (len < sizeof(*number))
+		return -EINVAL;
+
+	nums.prior = *number;
+	nums.seqno = quic_connection_id_last_number(id_set);
+	if (nums.prior > nums.seqno)
+		return -EINVAL;
+
+	id_set = &quic_sk(sk)->source;
+	if (id_set->pending)
+		return -EBUSY;
+
+	skb = quic_frame_create(sk, QUIC_FRAME_NEW_CONNECTION_ID, &nums, 0);
+	if (!skb)
+		return -ENOMEM;
+	quic_outq_data_tail(sk, skb, false);
+	id_set->pending = 1;
+	return 0;
+}
+
+static int quic_sock_retire_connection_id(struct sock *sk, u32 *number, u8 len)
+{
+	struct quic_connection_id_set *id_set;
+	struct sk_buff *skb;
+
+	if (len < sizeof(*number))
+		return -EINVAL;
+
+	id_set = &quic_sk(sk)->dest;
+	if (*number > quic_connection_id_last_number(id_set))
+		return -EINVAL;
+
+	skb = quic_frame_create(sk, QUIC_FRAME_RETIRE_CONNECTION_ID, &number, 0);
+	if (!skb)
+		return -ENOMEM;
+	quic_outq_data_tail(sk, skb, false);
+	return 0;
+}
+
 static int quic_setsockopt(struct sock *sk, int level, int optname,
 			   sockptr_t optval, unsigned int optlen)
 {
@@ -880,11 +925,11 @@ static int quic_setsockopt(struct sock *sk, int level, int optname,
 
 	lock_sock(sk);
 	switch (optname) {
-	case QUIC_SOCKOPT_SOURCE_CONNECTION_ID_NUMBERS:
-		retval = quic_connection_id_set_numbers(&qs->source, kopt, optlen);
+	case QUIC_SOCKOPT_NEW_CONNECTION_ID:
+		retval = quic_sock_new_connection_id(sk, kopt, optlen);
 		break;
-	case QUIC_SOCKOPT_DEST_CONNECTION_ID_NUMBERS:
-		retval = quic_connection_id_set_numbers(&qs->dest, kopt, optlen);
+	case QUIC_SOCKOPT_RETIRE_CONNECTION_ID:
+		retval = quic_sock_retire_connection_id(sk, kopt, optlen);
 		break;
 	case QUIC_SOCKOPT_KEY_UPDATE:
 		retval = quic_crypto_key_update(&qs->crypto, kopt, optlen);
@@ -968,7 +1013,6 @@ static int quic_sock_get_context(struct sock *sk, int len, char __user *optval, 
 static int quic_getsockopt(struct sock *sk, int level, int optname,
 			   char __user *optval, int __user *optlen)
 {
-	struct quic_sock *qs = quic_sk(sk);
 	int retval = 0;
 	int len;
 
@@ -985,12 +1029,6 @@ static int quic_getsockopt(struct sock *sk, int level, int optname,
 	switch (optname) {
 	case QUIC_SOCKOPT_CONTEXT:
 		retval = quic_sock_get_context(sk, len, optval, optlen);
-		break;
-	case QUIC_SOCKOPT_SOURCE_CONNECTION_ID_NUMBERS:
-		retval = quic_connection_id_get_numbers(&qs->source, len, optval, optlen);
-		break;
-	case QUIC_SOCKOPT_DEST_CONNECTION_ID_NUMBERS:
-		retval = quic_connection_id_get_numbers(&qs->dest, len, optval, optlen);
 		break;
 	default:
 		retval = -ENOPROTOOPT;

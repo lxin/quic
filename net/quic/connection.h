@@ -30,15 +30,22 @@ struct quic_connection_id_set {
 	struct list_head head;
 	u32 entry_size;
 	u32 count;
+	u8 pending;
 };
+
+static inline u32 quic_connection_id_last_number(struct quic_connection_id_set *id_set)
+{
+	struct quic_common_connection_id *common;
+
+	common = list_last_entry(&id_set->head, struct quic_common_connection_id, list);
+	return common->id.number;
+}
 
 struct quic_source_connection_id *quic_source_connection_id_lookup(struct net *net, u8 *scid);
 int quic_connection_id_add(struct quic_connection_id_set *id_set,
 			   struct quic_connection_id *conn_id, struct sock *sk);
 int quic_connection_id_get(struct quic_connection_id_set *id_set, struct quic_connection_id *conn_id);
-int quic_connection_id_get_numbers(struct quic_connection_id_set *id_set, int len,
-				   char __user *optval, int __user *optlen);
-int quic_connection_id_set_numbers(struct quic_connection_id_set *id_set,
-				   struct quic_connection_id_numbers *numbers, u8 len);
+int quic_connection_id_set(struct quic_connection_id_set *id_set, struct quic_new_connection_id *nums,
+			   struct sock *sk, u8 *conn_id, u8 len);
 void quic_connection_id_set_init(struct quic_connection_id_set *id_set, bool source);
 void quic_connection_id_set_free(struct quic_connection_id_set *id_set);
