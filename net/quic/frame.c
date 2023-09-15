@@ -181,7 +181,20 @@ static struct sk_buff *quic_frame_handshake_done_create(struct sock *sk, void *d
 
 static struct sk_buff *quic_frame_crypto_create(struct sock *sk, void *data, u32 len)
 {
-	return 0;
+	struct quic_token *ticket = data;
+	u8 type = QUIC_FRAME_CRYPTO, *p;
+	struct sk_buff *skb;
+
+	skb = alloc_skb(ticket->len + 8, GFP_ATOMIC);
+	if (!skb)
+		return NULL;
+	p = quic_put_var(skb->data, type);
+	p = quic_put_var(p, 0);
+	p = quic_put_var(p, ticket->len);
+	p = quic_put_data(p, ticket->data, ticket->len);
+	skb_put(skb, (u32)(p - skb->data));
+
+	return skb;
 }
 
 static struct sk_buff *quic_frame_retire_connection_id_create(struct sock *sk, void *data, u32 len)
@@ -399,7 +412,23 @@ static struct sk_buff *quic_frame_streams_blocked_bidi_create(struct sock *sk, v
 
 static int quic_frame_crypto_process(struct sock *sk, struct sk_buff *skb, u8 type)
 {
-	return 0;
+	struct quic_token *ticket = quic_ticket(sk);
+	u32 len, length, offset;
+	u8 *p = skb->data;
+
+	offset = quic_get_var(&p, &len);
+	if (offset)
+		return -EINVAL;
+	length = quic_get_var(&p, &len);
+	if (*p != 4) /* for TLS NEWSESSION_TICKET message only */
+		return -EINVAL;
+
+	ticket->len = length;
+	kfree(ticket->data);
+	ticket->data = kmemdup(p, ticket->len, GFP_ATOMIC);
+	p += length;
+
+	return p - skb->data;
 }
 
 static int quic_frame_stream_process(struct sock *sk, struct sk_buff *skb, u8 type)

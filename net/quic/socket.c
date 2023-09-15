@@ -161,6 +161,7 @@ static void quic_destroy_sock(struct sock *sk)
 	quic_crypto_destroy(&qs->crypto);
 
 	kfree(qs->token.data);
+	kfree(qs->ticket.data);
 
 	local_bh_disable();
 	quic_put_port(sock_net(sk), &qs->port);
@@ -941,6 +942,44 @@ static int quic_sock_new_token(struct sock *sk, void *data, u32 len)
 	return 0;
 }
 
+static int quic_sock_set_session_ticket(struct sock *sk, u8 *data, u32 len)
+{
+	struct quic_token *ticket = quic_ticket(sk);
+
+	if (len < 4 + 4 + 1 + 2)
+		return -EINVAL;
+
+	if (*data != 4)
+		return -EINVAL;
+
+	ticket->len = len;
+	kfree(ticket->data);
+	ticket->data = kmemdup(data, ticket->len, GFP_KERNEL);
+
+	return 0;
+}
+
+static int quic_sock_new_session_ticket(struct sock *sk, u8 *data, u32 len)
+{
+	struct quic_token ticket;
+	struct sk_buff *skb;
+
+	if (len < 4 + 4 + 1 + 2)
+		return -EINVAL;
+
+	if (*data != 4) /* for TLS NEWSESSION_TICKET message only */
+		return -EINVAL;
+
+	ticket.data = data;
+	ticket.len = len;
+	skb = quic_frame_create(sk, QUIC_FRAME_CRYPTO, &ticket, 0);
+	if (!skb)
+		return -ENOMEM;
+
+	quic_outq_ctrl_tail(sk, skb, false);
+	return 0;
+}
+
 static int quic_setsockopt(struct sock *sk, int level, int optname,
 			   sockptr_t optval, unsigned int optlen)
 {
@@ -979,6 +1018,12 @@ static int quic_setsockopt(struct sock *sk, int level, int optname,
 		break;
 	case QUIC_SOCKOPT_NEW_TOKEN:
 		retval = quic_sock_new_token(sk, kopt, optlen);
+		break;
+	case QUIC_SOCKOPT_SESSION_TICKET:
+		retval = quic_sock_set_session_ticket(sk, kopt, optlen);
+		break;
+	case QUIC_SOCKOPT_NEW_SESSION_TICKET:
+		retval = quic_sock_new_session_ticket(sk, kopt, optlen);
 		break;
 	default:
 		retval = -ENOPROTOOPT;
@@ -1063,6 +1108,20 @@ static int quic_sock_get_token(struct sock *sk, int len, char __user *optval, in
 	return 0;
 }
 
+static int quic_sock_get_session_ticket(struct sock *sk, int len,
+					char __user *optval, int __user *optlen)
+{
+	struct quic_token *ticket = quic_ticket(sk);
+
+	if (len < ticket->len)
+		return -EINVAL;
+	if (put_user(ticket->len, optlen))
+		return -EFAULT;
+	if (copy_to_user(optval, ticket->data, ticket->len))
+		return -EFAULT;
+	return 0;
+}
+
 static int quic_getsockopt(struct sock *sk, int level, int optname,
 			   char __user *optval, int __user *optlen)
 {
@@ -1085,6 +1144,9 @@ static int quic_getsockopt(struct sock *sk, int level, int optname,
 		break;
 	case QUIC_SOCKOPT_TOKEN:
 		retval = quic_sock_get_token(sk, len, optval, optlen);
+		break;
+	case QUIC_SOCKOPT_SESSION_TICKET:
+		retval = quic_sock_get_session_ticket(sk, len, optval, optlen);
 		break;
 	default:
 		retval = -ENOPROTOOPT;
