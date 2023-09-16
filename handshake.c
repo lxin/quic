@@ -106,6 +106,7 @@ static int quic_get_new_connection_id_cb(ngtcp2_conn *conn, ngtcp2_cid *cid,
 	cid->datalen = cidlen;
 	if (gnutls_rnd(GNUTLS_RND_RANDOM, token, NGTCP2_STATELESS_RESET_TOKENLEN))
 		return NGTCP2_ERR_CALLBACK_FAILURE;
+	printf("warning: new connection id is not allowed from user space!\n");
 	return 0;
 }
 
@@ -287,7 +288,7 @@ static int quic_server_connection_new(struct quic_endpoint *ep, ngtcp2_pkt_hd *h
 	params.initial_max_stream_data_bidi_local = 64 * 1024;
 	params.initial_max_stream_data_bidi_remote = 64 * 1024;
 	params.initial_max_stream_data_uni = 64 * 1024;
-	params.initial_max_data = 128 * 1024;
+	params.initial_max_data = 16 * 1024 * 1024;
 	params.initial_max_streams_bidi = 100;
 	params.initial_max_streams_uni = 100;
 	params.max_idle_timeout = 30 * NGTCP2_SECONDS;
@@ -588,7 +589,6 @@ static int quic_server_set_x509_session(struct quic_endpoint *ep, ngtcp2_pkt_hd 
 	gnutls_handshake_set_hook_function(session, GNUTLS_HANDSHAKE_CLIENT_HELLO,
 					   GNUTLS_HOOK_POST, quic_alpn_cb);
 	gnutls_credentials_set(session, GNUTLS_CRD_CERTIFICATE, cred);
-	gnutls_certificate_server_set_request(session, GNUTLS_CERT_REQUEST);
 	if (ep->parms->alpn) {
 		gnutls_datum_t alpn = {
 			.data = ep->parms->alpn,
@@ -742,7 +742,7 @@ static void quic_handshake_write(struct quic_endpoint *ep)
 		pos += ret;
 		if (!pos)
 			break;
-		if (ret == 0 || ret < 1200) { /* try to merge the sh and hs packets */
+		if (ret == 0 || ret < 1200 || ep->state == QUIC_STATE_CONNECTED) { /* try to merge the sh and hs packets */
 			sendto(ep->sockfd, buf, pos, 0, (struct sockaddr *)&ep->ra, sizeof(ep->ra));
 			break;
 		}
