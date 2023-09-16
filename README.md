@@ -33,11 +33,15 @@ that the main part of the QUIC protocol is still in Kernel space.
 - Congestion Control
 - Support both X509 Certficate and PSK mode
 - Handshake APIs for tlshd use (NFS)
+- Connection ID Management
+- Interoperability Testing with MSQUIC
 
 ### TBD
 - Keepalive Timer
-- Connection ID Management
 - Stream Enhanced Management
+- Interoperability Testing with more Other QUIC Implementations
+- IPv6 Support Needs to be Tested
+- Handle Malicous QUIC Packets
 
 ## INSTALL
 
@@ -89,13 +93,17 @@ Note: The kernel and gnutls version should not be too old, the example below is 
     # make -j$(nproc) check
     # make install
 
-### testing
-  - After kernel quic module is installed, then:
+### setup ca and generate certifcates
+    # cd example/keys
+    # ./ca_cert_pkey.sh
+    # cd ../
 
-        # make app
-        # cd example/keys
-        # ./ca_cert_pkey.sh # (setup ca and certifcates)
-        # cd ../
+### basic testing
+  - After kernel quic module is installed, you can have some simple test and
+    some tests with tlshd interface (see *APIs for tlshd* section):
+
+        # cd example
+        # make
 
         1.  With Certificate mode:
         # ./server 0.0.0.0 1234 ./keys/server-key.pem ./keys/server-cert.pem
@@ -105,24 +113,24 @@ Note: The kernel and gnutls version should not be too old, the example below is 
         # ./server 0.0.0.0 1234 ./keys/server-psk.txt
         # ./client 127.0.0.1 1234 ./keys/client-psk.txt
 
-  - You can also run the example for tlshd interface:
-
-        1.  With Certificate mode:
+        3.  Testing tlshd interface with Certificate mode:
         # ./tlshd_server 0.0.0.0 1234 ./keys/server-key.pem ./keys/server-cert.pem
         # ./tlshd_client 127.0.0.1 1234 ./keys/client-key.pem ./keys/client-cert.pem server.test
 
-        2.  With PSK mode:
+        4.  Testing tlshd interface with PSK mode:
         # ./tlshd_server 0.0.0.0 1234 ./keys/server-psk.txt
         # ./tlshd_client 127.0.0.1 1234 ./keys/client-psk.txt
 
   - If you want to use in-kernel QUIC without userspace handshake, try the
     sample_app where it's using the keys pre-defined in sample_context.h:
 
-        # make sample_app
         # cd sample/
+        # make
 
         # ./sample_server 127.0.0.1 1234 127.0.0.1 4321
         # ./sample_client 127.0.0.1 4321 127.0.0.1 1234
+
+  - See Interoperability Testing in *Interoperability Testing* section.
 
 ## USAGE:
 ### General use:
@@ -179,3 +187,37 @@ Note: The kernel and gnutls version should not be too old, the example below is 
 
     int quic_client_psk_tlshd(int sockfd, struct quic_handshake_parms *parms);
     int quic_server_psk_tlshd(int sockfd, struct quic_handshake_parms *parms);
+
+## Interoperability Testing:
+
+### build and run the test with MSQUIC
+  - install msquic lib
+
+        # yum install -y cmake
+        # git clone --recursive https://github.com/microsoft/msquic.git
+        # cd msquic
+        # mkdir build && cd build
+        # cmake -G 'Unix Makefiles' ..
+        # cmake --build .
+        # make install
+
+  - run the 4 tests between msquic and lkquic (Linux Kernel QUIC in this repo):
+
+        # cd test/
+        # make
+
+        1. msquic -> msquic:
+        # ./msquic_test -server -cert_file:../example/keys/server-cert.pem -key_file:../example/keys/server-key.pem
+        # time ./msquic_test -client -target:127.0.0.1
+
+        2. lkquic -> msquic:
+        # ./msquic_test -server -cert_file:../example/keys/server-cert.pem -key_file:../example/keys/server-key.pem
+        # time ./lkquic_test client 127.0.0.1 1234
+
+        3. msquic -> lkquic:
+        # ./lkquic_test server 127.0.0.1 1234 ../example/keys/server-key.pem ../example/keys/server-cert.pem
+        # time ./msquic_test -client -target:127.0.0.1
+
+        4. lkquic -> lkquic:
+        # ./lkquic_test server 127.0.0.1 1234 ../example/keys/server-key.pem ../example/keys/server-cert.pem
+        # time ./lkquic_test client 127.0.0.1 1234
