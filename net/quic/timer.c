@@ -24,7 +24,7 @@ static void quic_timer_delay_ack_timeout(struct timer_list *t)
 		goto out;
 	}
 
-	skb = quic_frame_create(sk, QUIC_FRAME_ACK, NULL, 0);
+	skb = quic_frame_create(sk, QUIC_FRAME_ACK, NULL);
 	if (skb)
 		quic_outq_ctrl_tail(sk, skb, false);
 

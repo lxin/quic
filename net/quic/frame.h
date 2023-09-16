@@ -45,7 +45,7 @@ struct quic_msginfo {
 };
 
 struct quic_frame_ops {
-	struct sk_buff *(*frame_create)(struct sock *sk, void *data, u32 len);
+	struct sk_buff *(*frame_create)(struct sock *sk, void *data, u8 type);
 	int (*frame_process)(struct sock *sk, struct sk_buff *skb, u8 type);
 };
 
@@ -68,7 +68,7 @@ static inline bool quic_frame_non_probing(u8 type)
 	       type != QUIC_FRAME_PATH_RESPONSE && type != QUIC_FRAME_PATH_CHALLENGE;
 }
 
-struct sk_buff *quic_frame_create(struct sock *sk, u8 type, void *data, u32 len);
+struct sk_buff *quic_frame_create(struct sock *sk, u8 type, void *data);
 int quic_frame_process(struct sock *sk, struct sk_buff *skb);
 int quic_frame_new_connection_id_ack(struct sock *sk, struct sk_buff *skb);
 

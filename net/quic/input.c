@@ -157,14 +157,14 @@ int quic_inq_flow_control(struct sock *sk, struct quic_stream *stream, struct sk
 	/* recv flow control */
 	if (inq->max_bytes - inq->bytes < inq->window / 2) {
 		inq->max_bytes = inq->bytes + inq->window;
-		nskb = quic_frame_create(sk, QUIC_FRAME_MAX_DATA, inq, 0);
+		nskb = quic_frame_create(sk, QUIC_FRAME_MAX_DATA, inq);
 		if (nskb)
 			quic_outq_ctrl_tail(sk, nskb, true);
 	}
 
 	if (stream->recv.max_bytes - stream->recv.bytes < stream->recv.window / 2) {
 		stream->recv.max_bytes = stream->recv.bytes + stream->recv.window;
-		nskb = quic_frame_create(sk, QUIC_FRAME_MAX_STREAM_DATA, stream, 0);
+		nskb = quic_frame_create(sk, QUIC_FRAME_MAX_STREAM_DATA, stream);
 		if (nskb)
 			quic_outq_ctrl_tail(sk, nskb, true);
 	}

@@ -442,7 +442,7 @@ static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 	msginfo.flag = sndinfo.stream_flag;
 
 	while (iov_iter_count(msginfo.msg) > 0) {
-		skb = quic_frame_create(sk, QUIC_FRAME_STREAM, &msginfo, sizeof(msginfo));
+		skb = quic_frame_create(sk, QUIC_FRAME_STREAM, &msginfo);
 		if (!skb) {
 			err = -ENOMEM;
 			goto out;
@@ -735,7 +735,7 @@ static void quic_close(struct sock *sk, long timeout)
 	lock_sock(sk);
 	quic_set_state(sk, QUIC_STATE_USER_CLOSED);
 
-	skb = quic_frame_create(sk, QUIC_FRAME_CONNECTION_CLOSE_APP, NULL, 0);
+	skb = quic_frame_create(sk, QUIC_FRAME_CONNECTION_CLOSE_APP, NULL);
 	if (!skb)
 		sk->sk_err = -ENOMEM;
 	else
@@ -797,12 +797,12 @@ int quic_sock_change_addr(struct sock *sk, struct quic_path_addr *path, void *da
 	 * when validation is complete with no worries that the peer hasn't been
 	 * aware of the new path.
 	 */
-	skb = quic_frame_create(sk, QUIC_FRAME_PING, NULL, 0);
+	skb = quic_frame_create(sk, QUIC_FRAME_PING, NULL);
 	if (!skb)
 		goto err;
 	quic_outq_ctrl_tail(sk, skb, true);
 
-	skb = quic_frame_create(sk, QUIC_FRAME_PATH_CHALLENGE, path, sizeof(*path));
+	skb = quic_frame_create(sk, QUIC_FRAME_PATH_CHALLENGE, path);
 	if (!skb)
 		goto err;
 	quic_outq_ctrl_tail(sk, skb, !udp_bind);
@@ -850,7 +850,7 @@ int quic_sock_set_context(struct sock *sk, struct quic_context *context, u32 len
 	}
 
 	state = QUIC_STATE_SERVER_CONNECTED;
-	skb = quic_frame_create(sk, QUIC_FRAME_HANDSHAKE_DONE, NULL, 0);
+	skb = quic_frame_create(sk, QUIC_FRAME_HANDSHAKE_DONE, NULL);
 	if (!skb)
 		return -ENOMEM;
 	quic_outq_ctrl_tail(sk, skb, false);
@@ -883,7 +883,7 @@ static int quic_sock_new_connection_id(struct sock *sk, u32 *number, u8 len)
 	if (id_set->pending)
 		return -EBUSY;
 
-	skb = quic_frame_create(sk, QUIC_FRAME_NEW_CONNECTION_ID, &nums, 0);
+	skb = quic_frame_create(sk, QUIC_FRAME_NEW_CONNECTION_ID, &nums);
 	if (!skb)
 		return -ENOMEM;
 	quic_outq_data_tail(sk, skb, false);
@@ -903,7 +903,7 @@ static int quic_sock_retire_connection_id(struct sock *sk, u32 *number, u8 len)
 	if (*number > quic_connection_id_last_number(id_set))
 		return -EINVAL;
 
-	skb = quic_frame_create(sk, QUIC_FRAME_RETIRE_CONNECTION_ID, &number, 0);
+	skb = quic_frame_create(sk, QUIC_FRAME_RETIRE_CONNECTION_ID, &number);
 	if (!skb)
 		return -ENOMEM;
 	quic_outq_data_tail(sk, skb, false);
@@ -934,7 +934,7 @@ static int quic_sock_new_token(struct sock *sk, void *data, u32 len)
 
 	token.data = data;
 	token.len = len;
-	skb = quic_frame_create(sk, QUIC_FRAME_NEW_TOKEN, &token, 0);
+	skb = quic_frame_create(sk, QUIC_FRAME_NEW_TOKEN, &token);
 	if (!skb)
 		return -ENOMEM;
 
@@ -972,7 +972,7 @@ static int quic_sock_new_session_ticket(struct sock *sk, u8 *data, u32 len)
 
 	ticket.data = data;
 	ticket.len = len;
-	skb = quic_frame_create(sk, QUIC_FRAME_CRYPTO, &ticket, 0);
+	skb = quic_frame_create(sk, QUIC_FRAME_CRYPTO, &ticket);
 	if (!skb)
 		return -ENOMEM;
 

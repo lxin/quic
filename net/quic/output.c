@@ -53,7 +53,7 @@ static int quic_outq_flow_control(struct sock *sk, struct sk_buff *skb)
 	stream = quic_stream_find(quic_streams(sk), QUIC_SND_CB(skb)->stream_id);
 	if (stream->send.bytes + len > stream->send.max_bytes) {
 		if (!stream->send.data_blocked) {
-			nskb = quic_frame_create(sk, QUIC_FRAME_STREAM_DATA_BLOCKED, stream, 0);
+			nskb = quic_frame_create(sk, QUIC_FRAME_STREAM_DATA_BLOCKED, stream);
 			if (nskb)
 				quic_outq_ctrl_tail(sk, nskb, true);
 			stream->send.data_blocked = 1;
@@ -62,7 +62,7 @@ static int quic_outq_flow_control(struct sock *sk, struct sk_buff *skb)
 	}
 	if (outq->bytes + len > outq->max_bytes) {
 		if (!outq->data_blocked) {
-			nskb = quic_frame_create(sk, QUIC_FRAME_DATA_BLOCKED, outq, 0);
+			nskb = quic_frame_create(sk, QUIC_FRAME_DATA_BLOCKED, outq);
 			if (nskb)
 				quic_outq_ctrl_tail(sk, nskb, true);
 			outq->data_blocked = 1;

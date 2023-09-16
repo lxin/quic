@@ -98,7 +98,7 @@ int quic_packet_process(struct sock *sk, struct sk_buff *skb)
 		quic_timer_start(sk, QUIC_TIMER_ACK);
 		goto out;
 	}
-	fskb = quic_frame_create(sk, QUIC_FRAME_ACK, NULL, 0);
+	fskb = quic_frame_create(sk, QUIC_FRAME_ACK, NULL);
 	if (fskb)
 		quic_outq_ctrl_tail(sk, fskb, true);
 	quic_timer_stop(sk, QUIC_TIMER_ACK);
