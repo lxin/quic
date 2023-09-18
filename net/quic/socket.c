@@ -506,11 +506,11 @@ static int quic_recvmsg(struct sock *sk, struct msghdr *msg, size_t len, int fla
 {
 	int nonblock = flags & MSG_DONTWAIT;
 #endif
-	union quic_addr *addr = msg->msg_name;
+	int copy, copied = 0, freed = 0;
 	struct quic_rcvinfo info = {};
 	struct quic_stream *stream;
-	int copy, err, stream_id;
 	struct sk_buff *skb;
+	int err, fin, off;
 	long timeo;
 
 	lock_sock(sk);
@@ -521,41 +521,48 @@ static int quic_recvmsg(struct sock *sk, struct msghdr *msg, size_t len, int fla
 		goto out;
 
 	skb = skb_peek(&sk->sk_receive_queue);
-	copy = min_t(int, skb->len, len);
-	err = skb_copy_datagram_msg(skb, 0, msg, copy);
-	if (err)
-		goto out;
-
-	if (copy != skb->len)
-		msg->msg_flags |= MSG_TRUNC;
-
-	stream_id = QUIC_RCV_CB(skb)->stream_id;
-	stream = quic_stream_recv_get(quic_streams(sk), stream_id, quic_is_serv(sk));
+	info.stream_id = QUIC_RCV_CB(skb)->stream_id;
+	stream = quic_stream_recv_get(quic_streams(sk), info.stream_id, quic_is_serv(sk));
 	if (!stream) {
 		err = -EPIPE;
 		goto out;
 	}
-	if (QUIC_RCV_CB(skb)->stream_fin) {
-		stream->recv.state = QUIC_STREAM_RECV_STATE_READ;
-		msg->msg_flags |= MSG_EOR;
-		info.stream_flag |= QUIC_STREAM_FLAG_FIN;
-	}
 
-	info.stream_id = stream_id;
+	do {
+		off = QUIC_RCV_CB(skb)->offset;
+		copy = min_t(int, skb->len - off, len - copied);
+		err = skb_copy_datagram_msg(skb, off, msg, copy);
+		if (err) {
+			if (!copied)
+				goto out;
+			break;
+		}
+		copied += copy;
+		fin = QUIC_RCV_CB(skb)->stream_fin;
+
+		if (flags & MSG_PEEK)
+			break;
+		if (copy != skb->len - off) {
+			QUIC_RCV_CB(skb)->offset += copy;
+			break;
+		}
+		freed += skb->len;
+		kfree_skb(__skb_dequeue(&sk->sk_receive_queue));
+		if (fin) {
+			stream->recv.state = QUIC_STREAM_RECV_STATE_READ;
+			msg->msg_flags |= MSG_EOR;
+			info.stream_flag |= QUIC_STREAM_FLAG_FIN;
+			break;
+		}
+
+		skb = skb_peek(&sk->sk_receive_queue);
+		if (!skb || QUIC_RCV_CB(skb)->stream_id != info.stream_id)
+			break;
+	} while (copied < len);
+
+	quic_inq_flow_control(sk, stream, freed);
 	put_cmsg(msg, IPPROTO_QUIC, QUIC_RCVINFO, sizeof(info), &info);
-	quic_inq_flow_control(sk, stream, skb);
-
-	if (addr) {
-		quic_get_msg_addr(sk, addr, skb, 1);
-		*addr_len = quic_addr_len(sk);
-	}
-
-	err = copy;
-	if (flags & MSG_PEEK)
-		goto out;
-
-	kfree_skb(__skb_dequeue(&sk->sk_receive_queue));
-
+	err = copied;
 out:
 	release_sock(sk);
 	return err;

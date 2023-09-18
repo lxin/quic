@@ -21,12 +21,8 @@ struct quic_inqueue {
 };
 
 struct quic_rcv_cb {
-	union {
-		struct inet_skb_parm    h4;
-#if IS_ENABLED(CONFIG_IPV6)
-		struct inet6_skb_parm   h6;
-#endif
-	} header;
+	struct udp_skb_cb udp;
+	u16 offset;
 	u8 backlog;
 	u8 stream_fin;
 	u32 stream_id;
@@ -65,7 +61,7 @@ int quic_do_rcv(struct sock *sk, struct sk_buff *skb);
 int quic_handshake_do_rcv(struct sock *sk, struct sk_buff *skb);
 int quic_rcv(struct sk_buff *skb);
 int quic_inq_reasm_tail(struct sock *sk, struct sk_buff *skb);
-int quic_inq_flow_control(struct sock *sk, struct quic_stream *stream, struct sk_buff *skb);
+int quic_inq_flow_control(struct sock *sk, struct quic_stream *stream, int len);
 void quic_inq_set_param(struct sock *sk, struct quic_transport_param *p);
 void quic_inq_get_param(struct sock *sk, struct quic_transport_param *p);
 void quic_inq_set_owner_r(struct sk_buff *skb, struct sock *sk);

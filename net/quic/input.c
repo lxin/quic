@@ -146,13 +146,16 @@ static void quic_inq_recv_tail(struct sock *sk, struct quic_stream *stream, stru
 	sk->sk_data_ready(sk);
 }
 
-int quic_inq_flow_control(struct sock *sk, struct quic_stream *stream, struct sk_buff *skb)
+int quic_inq_flow_control(struct sock *sk, struct quic_stream *stream, int len)
 {
 	struct quic_inqueue *inq = quic_inq(sk);
 	struct sk_buff *nskb = NULL;
 
-	stream->recv.bytes += skb->len;
-	inq->bytes += skb->len;
+	if (!len)
+		return 0;
+
+	stream->recv.bytes += len;
+	inq->bytes += len;
 
 	/* recv flow control */
 	if (inq->max_bytes - inq->bytes < inq->window / 2) {
