@@ -18,9 +18,9 @@ that the main part of the QUIC protocol is still in Kernel space.
   it is in connecting/handshaking state.
 - The kernel part for the rest of QUIC protocol is in [net/quic/](https://github.com/lxin/quic/tree/main/net/quic).
 
-### up-call netlink to pass QUIC sockfd to NFS (TBD)
-- Pass the sockfd to Kernel via [handshake netlink](https://docs.kernel.org/networking/tls-handshake.html) for NFS use.
-- May integrate the handshake code into [ktls-utils](https://github.com/oracle/ktls-utils) for this.
+### Kernel Use like NFS and SMB over QUIC
+- Send handshake request in kernel via [handshake netlink](https://docs.kernel.org/networking/tls-handshake.html) to Userspace.
+- Integrate QUIC handshake in [ktls-utils](https://github.com/lxin/ktls-utils) for this.
 
 ## Implementation
 
@@ -39,7 +39,6 @@ that the main part of the QUIC protocol is still in Kernel space.
 ### TBD
 - Keepalive Timer
 - Stream Enhanced Management
-- Interoperability Testing with more Other QUIC Implementations
 - IPv6 Support Needs to be Tested
 - Handle Malicous QUIC Packets
 
@@ -220,3 +219,48 @@ Note: The kernel and gnutls version should not be too old, the example below is 
         4. lkquic -> lkquic:
         # ./lkquic_test server 127.0.0.1 1234 ../example/keys/server-key.pem ../example/keys/server-cert.pem
         # time ./lkquic_test client 127.0.0.1 1234
+
+### build and run the tests from kernel space
+  - build and install tlshd:
+
+        # make install
+        # git clone https://github.com/lxin/ktls-utils
+        # cd ktls-utils
+        # cat src/tlshd/tlshd.conf (setup certficates, for example)
+          [authenticate.client]
+          #x509.truststore= <pathname>
+          x509.certificate=/root/quic_new/example/keys/client-cert.pem
+          x509.private_key=/root/quic_new/example/keys/client-key.pem
+          
+          [authenticate.server]
+          #x509.truststore= <pathname>
+          x509.certificate=/root/quic_new/example/keys/server-cert.pem
+          x509.private_key=/root/quic_new/example/keys/server-key.pem
+        
+        # ./autogen.sh
+        # ./configure && make && make install
+        # systemctl start tlshd
+
+  - run the 4 tests between kernel and lk/msquic:
+
+        # cd test/
+        # make
+
+        1. kernel -> lkquic
+        # rmmod quic_test
+        # ./lkquic_test server 127.0.0.1 1234 ../example/keys/server-key.pem ../example/keys/server-cert.pem
+        # insmod ../net/quic/quic_test.ko
+
+        2. kernel -> msquic
+        # rmmod quic_test
+        # ./msquic_test -server -cert_file:../example/keys/server-cert.pem -key_file:../example/keys/server-key.pem
+        # insmod ../net/quic/quic_test.ko
+
+        3. lkquic -> kernel
+        # rmmod quic_test
+        # insmod ../net/quic/quic_test.ko role=server
+        # time ./lkquic_test client 127.0.0.1 1234
+
+        4. msquic -> kernel
+        # insmod net/quic/quic_test.ko role=server
+        # time ./msquic_test -client -target:127.0.0.1

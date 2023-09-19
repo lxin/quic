@@ -26,3 +26,6 @@ menuconfig IP_QUIC
 	  kernel's dynamic debugging framework.
 
 	  If in doubt, say N.
+
+config IP_QUIC_TEST
+	  depends on IP_QUIC

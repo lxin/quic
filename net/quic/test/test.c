@@ -1,0 +1,320 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+/* QUIC kernel implementation
+ * (C) Copyright Red Hat Corp. 2023
+ *
+ * This file is kernel test of the QUIC kernel implementation
+ *
+ * Initialization/cleanup for QUIC protocol support.
+ *
+ * Written or modified by:
+ *    Xin Long <lucien.xin@gmail.com>
+ */
+
+#include <uapi/linux/quic.h>
+#include <linux/module.h>
+#include <linux/kernel.h>
+#include <linux/inet.h>
+#include <linux/net.h>
+#include <linux/delay.h>
+#include <linux/completion.h>
+#include <net/handshake.h>
+#include <net/sock.h>
+
+#define ROLE_LEN	10
+#define IP_LEN		20
+#define ALPN_LEN	20
+
+static char role[ROLE_LEN] = "client";
+static char ip[IP_LEN] = "127.0.0.1";
+static int port = 1234;
+static char alpn[ALPN_LEN] = "sample";
+
+#define SND_MSG_LEN	4096
+#define RCV_MSG_LEN	4096 * 16
+#define TOT_LEN		2048000000
+
+char	snd_msg[SND_MSG_LEN + 1];
+char	rcv_msg[RCV_MSG_LEN + 1];
+
+static int quic_test_recvmsg(struct socket *sock, void *msg, int len, int *sid, int *flag)
+{
+	char incmsg[CMSG_SPACE(sizeof(struct quic_rcvinfo))];
+	struct quic_rcvinfo *rinfo = CMSG_DATA(incmsg);
+	struct msghdr inmsg;
+	struct kvec iov;
+	int error;
+
+	iov.iov_base = msg;
+	iov.iov_len = len;
+
+	memset(&inmsg, 0, sizeof(inmsg));
+	inmsg.msg_control = incmsg;
+	inmsg.msg_controllen = sizeof(incmsg);
+
+	error = kernel_recvmsg(sock, &inmsg, &iov, 1, len, 0);
+	if (error < 0)
+		return error;
+
+	if (!sid)
+		return error;
+
+	*sid = rinfo->stream_id;
+	*flag = rinfo->stream_flag;
+	return error;
+}
+
+static int quic_test_sendmsg(struct socket *sock, const void *msg, int len, int sid, int flag)
+{
+	char outcmsg[CMSG_SPACE(sizeof(struct quic_sndinfo))];
+	struct quic_sndinfo *sinfo;
+	struct msghdr outmsg;
+	struct cmsghdr *cmsg;
+	struct kvec iov;
+
+	iov.iov_base = (void *)msg;
+	iov.iov_len = len;
+
+	memset(&outmsg, 0, sizeof(outmsg));
+	outmsg.msg_control = outcmsg;
+	outmsg.msg_controllen = sizeof(outcmsg);
+
+	cmsg = CMSG_FIRSTHDR(&outmsg);
+	cmsg->cmsg_level = IPPROTO_QUIC;
+	cmsg->cmsg_type = 0;
+	cmsg->cmsg_len = CMSG_LEN(sizeof(struct quic_sndinfo));
+
+	outmsg.msg_controllen = cmsg->cmsg_len;
+	sinfo = (struct quic_sndinfo *)CMSG_DATA(cmsg);
+	memset(sinfo, 0, sizeof(struct quic_sndinfo));
+	sinfo->stream_id = sid;
+	sinfo->stream_flag = flag;
+
+	return kernel_sendmsg(sock, &outmsg, &iov, 1, len);
+}
+
+struct quic_test_priv {
+	struct completion sk_handshake_done;
+	struct file *filp;
+	int status;
+};
+
+static void quic_test_handshake_done(void *data, int status, key_serial_t peerid)
+{
+	struct quic_test_priv *priv = data;
+
+	priv->status = status;
+	complete_all(&priv->sk_handshake_done);
+}
+
+static int quic_test_client_handshake(struct socket *sock, struct quic_test_priv *priv)
+{
+	struct tls_handshake_args args = {};
+	int err;
+
+	err = sock_common_setsockopt(sock, SOL_QUIC, QUIC_SOCKOPT_ALPN,
+				     KERNEL_SOCKPTR(alpn), strlen(alpn) + 1);
+	if (err)
+		return err;
+
+	init_completion(&priv->sk_handshake_done);
+
+	args.ta_sock = sock;
+	args.ta_done = quic_test_handshake_done;
+	args.ta_data = priv;
+	args.ta_peername = "server.test";
+	args.ta_timeout_ms = 3000;
+	err = tls_client_hello_x509(&args, GFP_KERNEL);
+	if (err)
+		return err;
+	err = wait_for_completion_interruptible_timeout(&priv->sk_handshake_done, 5 * HZ);
+	if (err <= 0) {
+		tls_handshake_cancel(sock->sk);
+		return -EINVAL;
+	}
+	return priv->status;
+}
+
+static int quic_test_server_handshake(struct socket *sock, struct quic_test_priv *priv)
+{
+	struct tls_handshake_args args = {};
+	int err;
+
+	err = sock_common_setsockopt(sock, SOL_QUIC, QUIC_SOCKOPT_ALPN,
+				     KERNEL_SOCKPTR(alpn), strlen(alpn) + 1);
+	if (err)
+		return err;
+
+	init_completion(&priv->sk_handshake_done);
+
+	args.ta_sock = sock;
+	args.ta_done = quic_test_handshake_done;
+	args.ta_data = priv;
+	args.ta_timeout_ms = 3000;
+	err = tls_server_hello_x509(&args, GFP_KERNEL);
+	if (err)
+		return err;
+	err = wait_for_completion_interruptible_timeout(&priv->sk_handshake_done, 5 * HZ);
+	if (err <= 0) {
+		tls_handshake_cancel(sock->sk);
+		return -EINVAL;
+	}
+	return priv->status;
+}
+
+static int quic_test_do_client(void)
+{
+	struct quic_test_priv priv = {};
+	int i, err, flag = 0, sid = 0;
+	struct sockaddr_in ra = {};
+	struct socket *sock;
+	uint64_t len = 0;
+
+	err = __sock_create(&init_net, PF_INET, SOCK_DGRAM, IPPROTO_QUIC, &sock, 1);
+	if (err < 0)
+		return err;
+	priv.filp = sock_alloc_file(sock, 0, NULL);
+	if (IS_ERR(priv.filp))
+		return PTR_ERR(priv.filp);
+
+	ra.sin_family = AF_INET;
+	ra.sin_port = htons((u16)port);
+	if (!in4_pton(ip, strlen(ip), (u8 *)&ra.sin_addr.s_addr, -1, NULL))
+		goto free;
+	err = kernel_connect(sock, (struct sockaddr *)&ra, sizeof(ra), 0);
+	if (err < 0)
+		goto free;
+
+	err = quic_test_client_handshake(sock, &priv);
+	if (err < 0)
+		goto free;
+
+	for (i = 0; i < SND_MSG_LEN; i++)
+		snd_msg[i] = i % 10 + 48;
+	flag = QUIC_STREAM_FLAG_NEW;
+	snd_msg[i] = '\0';
+	while (1) {
+		if (len) {
+			flag = 0;
+			if (len == TOT_LEN - SND_MSG_LEN)
+				flag = QUIC_STREAM_FLAG_FIN;
+		}
+		err = quic_test_sendmsg(sock, snd_msg, strlen(snd_msg), sid, flag);
+		if (err < 0) {
+			printk("send %d\n", err);
+			goto free;
+		}
+		len += err;
+		if (len % (SND_MSG_LEN * 1024) == 0)
+			printk("send len: %lld, stream_id: %d, flag: %d.\n", len, sid, flag);
+		if (len >= TOT_LEN)
+			break;
+	}
+	printk("send done!\n");
+
+	memset(rcv_msg, 0, sizeof(rcv_msg));
+	err = quic_test_recvmsg(sock, rcv_msg, sizeof(rcv_msg), &sid, &flag);
+	if (err < 0) {
+		printk("recv error %d\n", err);
+		goto free;
+	}
+	printk("recv: \"%s\", len: %d, stream_id: %d, flag: %d.\n", rcv_msg, err, sid, flag);
+	err = 0;
+free:
+	__fput_sync(priv.filp);
+	return err;
+}
+
+static int quic_test_do_server(void)
+{
+	struct quic_test_priv priv = {};
+	struct socket *sock, *newsock;
+	int err, flag = 0, sid = 0;
+	struct sockaddr_in la = {};
+	uint64_t len = 0;
+
+	err = __sock_create(&init_net, PF_INET, SOCK_DGRAM, IPPROTO_QUIC, &sock, 1);
+	if (err < 0)
+		return err;
+
+	la.sin_family = AF_INET;
+	la.sin_port = htons((u16)port);
+	if (!in4_pton(ip, strlen(ip), (u8 *)&la.sin_addr.s_addr, -1, NULL))
+		goto free;
+	err = kernel_bind(sock, (struct sockaddr *)&la, sizeof(la));
+	if (err < 0)
+		goto free;
+
+	err = kernel_listen(sock, 1);
+	if (err < 0)
+		goto free;
+	err = kernel_accept(sock, &newsock, 0);
+	if (err < 0)
+		goto free;
+	priv.filp = sock_alloc_file(newsock, 0, NULL);
+	if (IS_ERR(priv.filp)) {
+		err = PTR_ERR(priv.filp);
+		goto free;
+	}
+
+	err = quic_test_server_handshake(newsock, &priv);
+	if (err < 0)
+		goto free_flip;
+
+	while (1) {
+		err = quic_test_recvmsg(newsock, &rcv_msg, sizeof(rcv_msg), &sid, &flag);
+		if (err < 0) {
+			printk("recv error %d\n", err);
+			goto free_flip;
+		}
+		len += err;
+		udelay(10);
+		printk("recv len: %lld, stream_id: %d, flag: %d.\n", len, sid, flag);
+		if (flag & QUIC_STREAM_FLAG_FIN)
+			break;
+	}
+
+	flag = QUIC_STREAM_FLAG_FIN;
+	strcpy(snd_msg, "recv done");
+	err = quic_test_sendmsg(newsock, snd_msg, strlen(snd_msg), sid, flag);
+	if (err < 0) {
+		printk("send %d\n", err);
+		goto free_flip;
+	}
+	msleep(100);
+	err = 0;
+free_flip:
+	__fput_sync(priv.filp);
+free:
+	sock_release(sock);
+	return err;
+}
+
+static int quic_test_init(void)
+{
+	printk(KERN_INFO "[QUIC_TEST] quic test start\n");
+	if (!strcmp(role, "client"))
+		return quic_test_do_client();
+	if (!strcmp(role, "server"))
+		return quic_test_do_server();
+	return -EINVAL;
+}
+
+static void quic_test_exit(void)
+{
+	printk(KERN_INFO "[QUIC_TEST] quic test exit\n");
+}
+
+module_init(quic_test_init);
+module_exit(quic_test_exit);
+
+module_param_string(role, role, ROLE_LEN, 0644);
+module_param_string(alpn, alpn, ALPN_LEN, 0644);
+module_param_string(ip, ip, IP_LEN, 0644);
+module_param_named(port, port, int, 0644);
+MODULE_PARM_DESC(role, "client or server");
+MODULE_PARM_DESC(ip, "server address");
+MODULE_PARM_DESC(port, "server port");
+MODULE_PARM_DESC(alpn, "alpn name");
+MODULE_AUTHOR("Xin Long <lucien.xin@gmail.com>");
+MODULE_DESCRIPTION("Test For Support for the QUIC protocol (RFC9000)");
+MODULE_LICENSE("GPL");
