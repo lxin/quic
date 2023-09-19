@@ -162,6 +162,7 @@ static void quic_destroy_sock(struct sock *sk)
 
 	kfree(qs->token.data);
 	kfree(qs->ticket.data);
+	kfree(qs->alpn.data);
 
 	local_bh_disable();
 	quic_put_port(sock_net(sk), &qs->port);
@@ -658,10 +659,11 @@ static int quic_wait_for_accept(struct sock *sk, long timeo)
 	return err;
 }
 
-static void quic_copy_sock(struct sock *nsk, struct sock *sk, struct quic_request_sock *req)
+static int quic_copy_sock(struct sock *nsk, struct sock *sk, struct quic_request_sock *req)
 {
 	struct sk_buff *skb, *tmp;
 	union quic_addr sa, da;
+	u8 *data, len;
 
 	nsk->sk_type = sk->sk_type;
 	nsk->sk_flags = sk->sk_flags;
@@ -685,6 +687,16 @@ static void quic_copy_sock(struct sock *nsk, struct sock *sk, struct quic_reques
 			quic_inq_set_owner_r(skb, nsk);
 		}
 	}
+
+	len = quic_alpn(sk)->len;
+	if (len) {
+		data = kmemdup(quic_alpn(sk)->data, len, GFP_KERNEL);
+		if (!data)
+			return -ENOMEM;
+		quic_alpn(nsk)->data = data;
+		quic_alpn(nsk)->len = len;
+	}
+	return 0;
 }
 
 static struct sock *quic_handshake_accept(struct sock *sk, int flags, int *err, bool kern)
@@ -715,7 +727,9 @@ static struct sock *quic_handshake_accept(struct sock *sk, int flags, int *err, 
 	if (error)
 		goto free;
 
-	quic_copy_sock(nsk, sk, req);
+	error = quic_copy_sock(nsk, sk, req);
+	if (error)
+		goto free;
 	error = nsk->sk_prot->bind(nsk, &req->src.sa, quic_addr_len(nsk));
 	if (error)
 		goto free;
@@ -920,14 +934,18 @@ static int quic_sock_retire_connection_id(struct sock *sk, u32 *number, u8 len)
 static int quic_sock_set_token(struct sock *sk, void *data, u32 len)
 {
 	struct quic_token *token = quic_token(sk);
+	u8 *p;
 
-	if (!len)
+	if (!len || len > 120)
 		return -EINVAL;
 
-	token->len = len;
-	kfree(token->data);
-	token->data = kmemdup(data, token->len, GFP_KERNEL);
+	p = kmemdup(data, len, GFP_KERNEL);
+	if (!p)
+		return -ENOMEM;
 
+	kfree(token->data);
+	token->data = p;
+	token->len = len;
 	return 0;
 }
 
@@ -952,17 +970,21 @@ static int quic_sock_new_token(struct sock *sk, void *data, u32 len)
 static int quic_sock_set_session_ticket(struct sock *sk, u8 *data, u32 len)
 {
 	struct quic_token *ticket = quic_ticket(sk);
+	u8 *p;
 
-	if (len < 4 + 4 + 1 + 2)
+	if (len < 4 + 4 + 1 + 2 || len > 4096)
 		return -EINVAL;
 
 	if (*data != 4)
 		return -EINVAL;
 
-	ticket->len = len;
-	kfree(ticket->data);
-	ticket->data = kmemdup(data, ticket->len, GFP_KERNEL);
+	p = kmemdup(data, len, GFP_KERNEL);
+	if (!p)
+		return -ENOMEM;
 
+	kfree(ticket->data);
+	ticket->data = p;
+	ticket->len = len;
 	return 0;
 }
 
@@ -984,6 +1006,24 @@ static int quic_sock_new_session_ticket(struct sock *sk, u8 *data, u32 len)
 		return -ENOMEM;
 
 	quic_outq_ctrl_tail(sk, skb, false);
+	return 0;
+}
+
+static int quic_sock_set_alpn(struct sock *sk, char *data, u32 len)
+{
+	struct quic_token *alpn = quic_alpn(sk);
+	u8 *p;
+
+	if (!len || len > 20)
+		return -EINVAL;
+
+	p = kmemdup(data, len, GFP_KERNEL);
+	if (!p)
+		return -ENOMEM;
+
+	kfree(alpn->data);
+	alpn->data = p;
+	alpn->len = len;
 	return 0;
 }
 
@@ -1020,14 +1060,8 @@ static int quic_setsockopt(struct sock *sk, int level, int optname,
 	case QUIC_SOCKOPT_CONGESTION_CONTROL:
 		retval = quic_cong_set_cong_alg(sk, kopt, optlen);
 		break;
-	case QUIC_SOCKOPT_TOKEN:
-		retval = quic_sock_set_token(sk, kopt, optlen);
-		break;
 	case QUIC_SOCKOPT_NEW_TOKEN:
 		retval = quic_sock_new_token(sk, kopt, optlen);
-		break;
-	case QUIC_SOCKOPT_SESSION_TICKET:
-		retval = quic_sock_set_session_ticket(sk, kopt, optlen);
 		break;
 	case QUIC_SOCKOPT_NEW_SESSION_TICKET:
 		retval = quic_sock_new_session_ticket(sk, kopt, optlen);
@@ -1060,6 +1094,15 @@ static int quic_handshake_setsockopt(struct sock *sk, int level, int optname,
 	switch (optname) {
 	case QUIC_SOCKOPT_CONTEXT:
 		retval = quic_sock_set_context(sk, kopt, optlen);
+		break;
+	case QUIC_SOCKOPT_ALPN:
+		retval = quic_sock_set_alpn(sk, kopt, optlen);
+		break;
+	case QUIC_SOCKOPT_TOKEN:
+		retval = quic_sock_set_token(sk, kopt, optlen);
+		break;
+	case QUIC_SOCKOPT_SESSION_TICKET:
+		retval = quic_sock_set_session_ticket(sk, kopt, optlen);
 		break;
 	default:
 		retval = -ENOPROTOOPT;
@@ -1129,6 +1172,19 @@ static int quic_sock_get_session_ticket(struct sock *sk, int len,
 	return 0;
 }
 
+static int quic_sock_get_alpn(struct sock *sk, int len, char __user *optval, int __user *optlen)
+{
+	struct quic_token *alpn = quic_alpn(sk);
+
+	if (len < alpn->len)
+		return -EINVAL;
+	if (put_user(alpn->len, optlen))
+		return -EFAULT;
+	if (copy_to_user(optval, alpn->data, alpn->len))
+		return -EFAULT;
+	return 0;
+}
+
 static int quic_getsockopt(struct sock *sk, int level, int optname,
 			   char __user *optval, int __user *optlen)
 {
@@ -1166,10 +1222,35 @@ static int quic_getsockopt(struct sock *sk, int level, int optname,
 static int quic_handshake_getsockopt(struct sock *sk, int level, int optname,
 				     char __user *optval, int __user *optlen)
 {
-	if (level == SOL_QUIC)
-		return -ENOPROTOOPT;
+	int retval = 0;
+	int len;
 
-	return quic_af_ops(sk)->getsockopt(sk, level, optname, optval, optlen);
+	if (level != SOL_QUIC)
+		return quic_af_ops(sk)->getsockopt(sk, level, optname, optval, optlen);
+
+	if (get_user(len, optlen))
+		return -EFAULT;
+
+	if (len < 0)
+		return -EINVAL;
+
+	lock_sock(sk);
+	switch (optname) {
+	case QUIC_SOCKOPT_ALPN:
+		retval = quic_sock_get_alpn(sk, len, optval, optlen);
+		break;
+	case QUIC_SOCKOPT_TOKEN:
+		retval = quic_sock_get_token(sk, len, optval, optlen);
+		break;
+	case QUIC_SOCKOPT_SESSION_TICKET:
+		retval = quic_sock_get_session_ticket(sk, len, optval, optlen);
+		break;
+	default:
+		retval = -ENOPROTOOPT;
+		break;
+	}
+	release_sock(sk);
+	return retval;
 }
 
 struct proto quic_prot = {

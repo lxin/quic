@@ -70,6 +70,7 @@ struct quic_sock {
 	struct quic_pnmap		pn_map;
 	struct quic_token		token;
 	struct quic_token		ticket;
+	struct quic_token		alpn;
 
 	struct quic_outqueue		outq;
 	struct quic_inqueue		inq;
@@ -163,6 +164,11 @@ static inline struct quic_token *quic_token(const struct sock *sk)
 static inline struct quic_token *quic_ticket(const struct sock *sk)
 {
 	return &quic_sk(sk)->ticket;
+}
+
+static inline struct quic_token *quic_alpn(const struct sock *sk)
+{
+	return &quic_sk(sk)->alpn;
 }
 
 static inline bool quic_is_serv(struct sock *sk)

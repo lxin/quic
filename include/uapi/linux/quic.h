@@ -95,5 +95,6 @@ struct quic_context {
 #define QUIC_SOCKOPT_NEW_TOKEN				7
 #define QUIC_SOCKOPT_SESSION_TICKET			8
 #define QUIC_SOCKOPT_NEW_SESSION_TICKET			9
+#define QUIC_SOCKOPT_ALPN				10
 
 #endif /* __uapi_quic_h__ */
