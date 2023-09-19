@@ -9,8 +9,10 @@
 #define SND_MSG_LEN 4096
 #define RCV_MSG_LEN 4096 * 16
 #define TOT_LEN 2048000000
+#define ALPN_LEN 20
 char snd_msg[SND_MSG_LEN + 1];
 char rcv_msg[RCV_MSG_LEN + 1];
+char alpn[ALPN_LEN] = "sample";
 
 static int do_server(int argc, char *argv[])
 {
@@ -52,8 +54,9 @@ loop:
 		printf("socket accept failed %d %d\n", errno, sockfd);
 		return -1;
 	}
-	parms.timeout = 15;
-	parms.alpn = "sample";
+	if (setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_ALPN, alpn, strlen(alpn) + 1))
+		return -1;
+	parms.timeout = 15000;
 	if (argc == 4)  {
 		ret = read_psk_file(argv[3], parms.names, parms.keys);
 		if (ret <= 0)
@@ -131,8 +134,9 @@ static int do_client(int argc, char *argv[])
 		return -1;
 	}
 
-	parms.timeout = 15;
-	parms.alpn = "sample";
+	if (setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_ALPN, alpn, strlen(alpn) + 1))
+		return -1;
+	parms.timeout = 15000;
 	if (argc == 4)  {
 		ret = read_psk_file(argv[3], parms.names, parms.keys);
 		if (ret <= 0)

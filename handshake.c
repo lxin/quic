@@ -33,14 +33,9 @@ enum {
 	QUIC_STATE_CONNECTED,
 };
 
-struct quic_key {
-	uint8_t key[64];
-	uint8_t keylen;
-};
-
-struct quic_cid {
-	uint8_t cid[20];
-	uint8_t cidlen;
+struct quic_data {
+	uint8_t data[128];
+	uint32_t data_len;
 };
 
 struct quic_endpoint {
@@ -54,8 +49,10 @@ struct quic_endpoint {
 	timer_t	timer;	/* timer for retransmission */
 
 	uint32_t connecting_ts[2];	/* to calculate the initial rtt */
-	struct quic_key secret[2];	/* secrets for sending and receiving */
-	struct quic_cid connid[2];	/* source and dest connection IDs */
+	struct quic_data alpn;		/* alpn from kernel socket */
+	struct quic_data token;		/* token from kernel socket */
+	struct quic_data secret[2];	/* secrets for sending and receiving */
+	struct quic_data connid[2];	/* source and dest connection IDs */
 
 	struct quic_handshake_parms *parms;
 	int (*session_new)(struct quic_endpoint *ep, ngtcp2_pkt_hd *hd);
@@ -166,8 +163,8 @@ static int quic_dcid_status_cb(ngtcp2_conn *conn, ngtcp2_connection_id_status_ty
 
 	if (type != NGTCP2_CONNECTION_ID_STATUS_TYPE_ACTIVATE)
 		return 0;
-	memcpy(ep->connid[1].cid, cid->data, cid->datalen);
-	ep->connid[1].cidlen = cid->datalen;
+	memcpy(ep->connid[1].data, cid->data, cid->datalen);
+	ep->connid[1].data_len = cid->datalen;
 	return 0;
 }
 
@@ -221,8 +218,8 @@ static int quic_session_secret_func(gnutls_session_t session, gnutls_record_encr
 							    rx_secret, secretlen))
 			return -1;
 		if (level == NGTCP2_ENCRYPTION_LEVEL_1RTT) {
-			memcpy(ep->secret[0].key, rx_secret, secretlen);
-			ep->secret[0].keylen = secretlen;
+			memcpy(ep->secret[0].data, rx_secret, secretlen);
+			ep->secret[0].data_len = secretlen;
 		}
 	}
 
@@ -231,8 +228,8 @@ static int quic_session_secret_func(gnutls_session_t session, gnutls_record_encr
 							    tx_secret, secretlen))
 			return -1;
 		if (level == NGTCP2_ENCRYPTION_LEVEL_1RTT) {
-			memcpy(ep->secret[1].key, tx_secret, secretlen);
-			ep->secret[1].keylen = secretlen;
+			memcpy(ep->secret[1].data, tx_secret, secretlen);
+			ep->secret[1].data_len = secretlen;
 		}
 	}
 
@@ -258,17 +255,21 @@ static int quic_client_connection_new(struct quic_endpoint *ep)
 	params.active_connection_id_limit = 7;
 	ngtcp2_settings_default(&settings);
 	settings.initial_ts = quic_get_timestamp();
-	settings.handshake_timeout = (ep->parms->timeout ?: 30) * NGTCP2_SECONDS;
+	settings.handshake_timeout = (ep->parms->timeout ?: 30000) * NGTCP2_MILLISECONDS;
+	if (ep->token.data_len) {
+		settings.token = ep->token.data;
+		settings.tokenlen= ep->token.data_len;
+	}
 	quic_ngtcp2_conn_callbacks_init(&callbacks);
 
 	scid.datalen = 17;
 	gnutls_rnd(GNUTLS_RND_RANDOM, scid.data, scid.datalen);
-	memcpy(ep->connid[0].cid, scid.data, scid.datalen);
-	ep->connid[0].cidlen = scid.datalen;
+	memcpy(ep->connid[0].data, scid.data, scid.datalen);
+	ep->connid[0].data_len = scid.datalen;
 	dcid.datalen = 18;
 	gnutls_rnd(GNUTLS_RND_RANDOM, dcid.data, dcid.datalen);
-	memcpy(ep->connid[1].cid, dcid.data, dcid.datalen);
-	ep->connid[1].cidlen = dcid.datalen;
+	memcpy(ep->connid[1].data, dcid.data, dcid.datalen);
+	ep->connid[1].data_len = dcid.datalen;
 	ngtcp2_path_storage_init(&ps, (void *)&ep->la, sizeof(ep->la),
 				 (void *)&ep->ra, sizeof(ep->ra), NULL);
 
@@ -295,7 +296,7 @@ static int quic_server_connection_new(struct quic_endpoint *ep, ngtcp2_pkt_hd *h
 	params.active_connection_id_limit = 7;
 	ngtcp2_settings_default(&settings);
 	settings.initial_ts = quic_get_timestamp();
-	settings.handshake_timeout = (ep->parms->timeout ?: 30) * NGTCP2_SECONDS;
+	settings.handshake_timeout = (ep->parms->timeout ?: 30000) * NGTCP2_MILLISECONDS;
 	quic_ngtcp2_conn_callbacks_init(&callbacks);
 
 	params.original_dcid = hd->dcid;
@@ -304,11 +305,11 @@ static int quic_server_connection_new(struct quic_endpoint *ep, ngtcp2_pkt_hd *h
 	settings.tokenlen = hd->tokenlen;
 	scid.datalen = 18;
 	gnutls_rnd(GNUTLS_RND_RANDOM, scid.data, scid.datalen);
-	memcpy(ep->connid[0].cid, scid.data, scid.datalen);
-	ep->connid[0].cidlen = scid.datalen;
+	memcpy(ep->connid[0].data, scid.data, scid.datalen);
+	ep->connid[0].data_len = scid.datalen;
 	dcid = hd->scid;
-	memcpy(ep->connid[1].cid, dcid.data, dcid.datalen);
-	ep->connid[1].cidlen = dcid.datalen;
+	memcpy(ep->connid[1].data, dcid.data, dcid.datalen);
+	ep->connid[1].data_len = dcid.datalen;
 	ngtcp2_path_storage_init(&ps, (void *)&ep->la, sizeof(ep->la),
 				 (void *)&ep->ra, sizeof(ep->ra), NULL);
 
@@ -387,10 +388,10 @@ static int quic_client_set_x509_session(struct quic_endpoint *ep, ngtcp2_pkt_hd 
 	if (ep->parms->peername)
 		gnutls_server_name_set(session, GNUTLS_NAME_DNS,
 				ep->parms->peername, strlen(ep->parms->peername));
-	if (ep->parms->alpn) {
+	if (ep->alpn.data_len) {
 		gnutls_datum_t alpn = {
-			.data = ep->parms->alpn,
-			.size = strlen(ep->parms->alpn),
+			.data = ep->alpn.data,
+			.size = strlen(ep->alpn.data),
 		};
 		gnutls_alpn_set_protocols(session, &alpn, 1, GNUTLS_ALPN_MANDATORY);
 	}
@@ -477,10 +478,10 @@ static int quic_client_set_psk_session(struct quic_endpoint *ep, ngtcp2_pkt_hd *
 		goto err_session;
 	gnutls_handshake_set_secret_function(session, quic_session_secret_func);
 	gnutls_credentials_set(session, GNUTLS_CRD_PSK, cred);
-	if (ep->parms->alpn) {
+	if (ep->alpn.data_len) {
 		gnutls_datum_t alpn = {
-			.data = ep->parms->alpn,
-			.size = strlen(ep->parms->alpn),
+			.data = ep->alpn.data,
+			.size = strlen(ep->alpn.data),
 		};
 		gnutls_alpn_set_protocols(session, &alpn, 1, GNUTLS_ALPN_MANDATORY);
 	}
@@ -547,15 +548,15 @@ static int quic_alpn_cb(gnutls_session_t session, unsigned int htype, unsigned w
 	gnutls_datum_t alpn;
 	int ret;
 
-	if (!ep->parms->alpn)
+	if (!ep->alpn.data_len)
 		return 0;
 
 	ret = gnutls_alpn_get_selected_protocol(session, &alpn);
 	if (ret)
 		return ret;
 
-	if (strlen(ep->parms->alpn) != alpn.size ||
-	    memcmp(ep->parms->alpn, alpn.data, alpn.size))
+	if (strlen(ep->alpn.data) != alpn.size ||
+	    memcmp(ep->alpn.data, alpn.data, alpn.size))
 		return -1;
 
 	return 0;
@@ -589,10 +590,10 @@ static int quic_server_set_x509_session(struct quic_endpoint *ep, ngtcp2_pkt_hd 
 	gnutls_handshake_set_hook_function(session, GNUTLS_HANDSHAKE_CLIENT_HELLO,
 					   GNUTLS_HOOK_POST, quic_alpn_cb);
 	gnutls_credentials_set(session, GNUTLS_CRD_CERTIFICATE, cred);
-	if (ep->parms->alpn) {
+	if (ep->alpn.data_len) {
 		gnutls_datum_t alpn = {
-			.data = ep->parms->alpn,
-			.size = strlen(ep->parms->alpn),
+			.data = ep->alpn.data,
+			.size = strlen(ep->alpn.data),
 		};
 		gnutls_alpn_set_protocols(session, &alpn, 1, GNUTLS_ALPN_MANDATORY);
 	}
@@ -664,10 +665,10 @@ static int quic_server_set_psk_session(struct quic_endpoint *ep, ngtcp2_pkt_hd *
 	gnutls_handshake_set_hook_function(session, GNUTLS_HANDSHAKE_CLIENT_HELLO,
 					   GNUTLS_HOOK_POST, quic_alpn_cb);
 	gnutls_credentials_set(session, GNUTLS_CRD_PSK, cred);
-	if (ep->parms->alpn) {
+	if (ep->alpn.data_len) {
 		gnutls_datum_t alpn = {
-			.data = ep->parms->alpn,
-			.size = strlen(ep->parms->alpn),
+			.data = ep->alpn.data,
+			.size = strlen(ep->alpn.data),
 		};
 		gnutls_alpn_set_protocols(session, &alpn, 1, GNUTLS_ALPN_MANDATORY);
 	}
@@ -825,18 +826,18 @@ static int quic_set_socket_context(struct quic_endpoint *ep, uint8_t is_serv)
 	int count;
 
 	memset(&context, 0, sizeof(context));
-	memcpy(context.source.data, ep->connid[0].cid, ep->connid[0].cidlen);
-	context.source.len = ep->connid[0].cidlen;
-	memcpy(context.dest.data, ep->connid[1].cid, ep->connid[1].cidlen);
-	context.dest.len = ep->connid[1].cidlen;
+	memcpy(context.source.data, ep->connid[0].data, ep->connid[0].data_len);
+	context.source.len = ep->connid[0].data_len;
+	memcpy(context.dest.data, ep->connid[1].data, ep->connid[1].data_len);
+	context.dest.len = ep->connid[1].data_len;
 
 	p = ngtcp2_conn_get_local_transport_params(ep->conn);
 	quic_context_copy_transport_params(ep, &context.local, p);
 	p = ngtcp2_conn_get_remote_transport_params(ep->conn);
 	quic_context_copy_transport_params(ep, &context.remote, p);
 
-	memcpy(context.recv.secret, ep->secret[0].key, ep->secret[0].keylen);
-	memcpy(context.send.secret, ep->secret[1].key, ep->secret[1].keylen);
+	memcpy(context.recv.secret, ep->secret[0].data, ep->secret[0].data_len);
+	memcpy(context.send.secret, ep->secret[1].data, ep->secret[1].data_len);
 
 	context.is_serv = is_serv;
 	if (setsockopt(ep->sockfd, SOL_QUIC, QUIC_SOCKOPT_CONTEXT, &context, sizeof(context))) {
@@ -864,6 +865,18 @@ static int quic_client_do_handshake(struct quic_endpoint *ep)
 	}
 	memcpy(&ep->ra, a, sizeof(*a));
 
+	ep->alpn.data_len = sizeof(ep->alpn.data);
+	if (getsockopt(ep->sockfd, SOL_QUIC, QUIC_SOCKOPT_ALPN, ep->alpn.data,
+		       &ep->alpn.data_len)) {
+		printf("socket getsockopt alpn failed\n");
+		return -1;
+	}
+	ep->token.data_len = sizeof(ep->token.data);
+	if (getsockopt(ep->sockfd, SOL_QUIC, QUIC_SOCKOPT_TOKEN, ep->token.data,
+		       &ep->token.data_len)) {
+		printf("socket getsockopt token failed\n");
+		return -1;
+	}
 	if (ep->session_new(ep, NULL))
 		return -1;
 
@@ -891,6 +904,12 @@ static int quic_server_do_handshake(struct quic_endpoint *ep)
 	}
 	memcpy(&ep->la, la, sizeof(*la));
 
+	ep->alpn.data_len = sizeof(ep->alpn.data);
+	if (getsockopt(ep->sockfd, SOL_QUIC, QUIC_SOCKOPT_ALPN, ep->alpn.data,
+		       &ep->alpn.data_len)) {
+		printf("socket getsockopt alpn failed\n");
+		return -1;
+	}
 	err = quic_do_handshake(ep);
 	if (err) {
 		printf("handshake failed, reason: %d\n", err);

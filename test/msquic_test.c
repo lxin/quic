@@ -538,12 +538,7 @@ RunServer(
         printf("ListenerStart failed, 0x%x!\n", Status);
         goto Error;
     }
-
-    //
-    // Continue listening for connections until the Enter key is pressed.
-    //
-    printf("Press Enter to exit.\n\n");
-    getchar();
+    sleep(100);
 
 Error:
 

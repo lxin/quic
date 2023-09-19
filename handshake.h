@@ -15,8 +15,7 @@
 #include <linux/quic.h>
 
 struct quic_handshake_parms {
-	char			*alpn;		/* alpn support */
-	uint32_t		timeout;	/* handshake timeout in seconds */
+	uint32_t		timeout;	/* handshake timeout in milliseconds */
 
 	gnutls_privkey_t	privkey;	/* private key for x509 handshake */
 	gnutls_pcert_st		*cert;		/* certificate for x509 handshake */
