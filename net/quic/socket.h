@@ -11,7 +11,7 @@
 #ifndef __net_quic_h__
 #define __net_quic_h__
 
-#include "uapi/linux/quic.h"
+#include <uapi/linux/quic.h>
 #include <net/udp_tunnel.h>
 #include "connection.h"
 #include "hashtable.h"
