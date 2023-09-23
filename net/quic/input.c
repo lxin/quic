@@ -105,11 +105,18 @@ int quic_rcv(struct sk_buff *skb)
 	skb_pull(skb, skb_transport_offset(skb));
 	af_ops = quic_af_ops_get(ip_hdr(skb)->version == 4 ? AF_INET : AF_INET6);
 
+	if (skb->len < sizeof(struct quichdr))
+		goto err;
+
 	if (!quic_hdr(skb)->form) {
-		dcid = (uint8_t *)quic_hdr(skb) + 1;
-		s_conn_id = quic_source_connection_id_lookup(dev_net(skb->dev), dcid);
-		if (s_conn_id)
+		dcid = (u8 *)quic_hdr(skb) + 1;
+		s_conn_id = quic_source_connection_id_lookup(dev_net(skb->dev),
+							     dcid, skb->len - 1);
+		if (s_conn_id) {
+			QUIC_RCV_CB(skb)->number_offset =
+				s_conn_id->common.id.len + sizeof(struct quichdr);
 			sk = s_conn_id->sk;
+		}
 	}
 	if (!sk) {
 		af_ops->get_msg_addr(&daddr, skb, 0);

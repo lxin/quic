@@ -56,7 +56,7 @@ int quic_packet_process(struct sock *sk, struct sk_buff *skb)
 	struct sk_buff *fskb;
 	int err;
 
-	pki.number_offset = qs->source.active->id.len + sizeof(struct quichdr);
+	pki.number_offset = QUIC_RCV_CB(skb)->number_offset;
 	err = quic_crypto_decrypt(&qs->crypto, skb, &pki);
 	if (err)
 		goto err;

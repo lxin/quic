@@ -41,7 +41,7 @@ static inline u32 quic_connection_id_last_number(struct quic_connection_id_set *
 	return common->id.number;
 }
 
-struct quic_source_connection_id *quic_source_connection_id_lookup(struct net *net, u8 *scid);
+struct quic_source_connection_id *quic_source_connection_id_lookup(struct net *net, u8 *scid, u32 len);
 int quic_connection_id_add(struct quic_connection_id_set *id_set,
 			   struct quic_connection_id *conn_id, struct sock *sk);
 int quic_connection_id_get(struct quic_connection_id_set *id_set, struct quic_connection_id *conn_id);

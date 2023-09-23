@@ -17,14 +17,14 @@
 #include "hashtable.h"
 #include "connection.h"
 
-struct quic_source_connection_id *quic_source_connection_id_lookup(struct net *net, u8 *scid)
+struct quic_source_connection_id *quic_source_connection_id_lookup(struct net *net, u8 *scid, u32 len)
 {
 	struct quic_hash_head *head = quic_source_connection_id_head(net, scid);
 	struct quic_source_connection_id *tmp, *s_conn_id = NULL;
 
 	spin_lock(&head->lock);
 	hlist_for_each_entry(tmp, &head->head, node) {
-		if (net == sock_net(tmp->sk) &&
+		if (net == sock_net(tmp->sk) && tmp->common.id.len <= len &&
 		    !memcmp(scid, &tmp->common.id.data, tmp->common.id.len)) {
 			s_conn_id = tmp;
 			break;
@@ -76,6 +76,8 @@ int quic_connection_id_add(struct quic_connection_id_set *id_set,
 	struct quic_hash_head *head;
 	struct list_head *list;
 
+	if (!conn_id->len || conn_id->len > 20)
+		return -EINVAL;
 	common = kzalloc(id_set->entry_size, GFP_ATOMIC);
 	if (!common)
 		return -ENOMEM;

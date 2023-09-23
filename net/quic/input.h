@@ -23,8 +23,9 @@ struct quic_inqueue {
 struct quic_rcv_cb {
 	struct udp_skb_cb udp;
 	u16 offset;
-	u8 backlog;
-	u8 stream_fin;
+	u8 number_offset;
+	u8 backlog:1;
+	u8 stream_fin:1;
 	u32 stream_id;
 	u64 stream_offset;
 };
