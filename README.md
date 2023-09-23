@@ -40,7 +40,6 @@ that the main part of the QUIC protocol is still in Kernel space.
 - Keepalive Timer
 - Stream Enhanced Management
 - IPv6 Support Needs to be Tested
-- Handle Malicous QUIC Packets
 
 ## INSTALL
 

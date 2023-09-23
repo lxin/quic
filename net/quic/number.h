@@ -27,15 +27,20 @@ static inline u32 quic_var_len(u64 n)
 	return 8;
 }
 
-static inline u64 quic_get_var(u8 **pp, u32 *plen)
+static inline u8 quic_get_var(u8 **pp, u32 *plen, u64 *val)
 {
 	union quic_num n;
-	u8 *p = *pp;
+	u8 *p = *pp, len;
 	u64 v = 0;
 
-	*plen = (u32)(1u << (*p >> 6));
+	if (!*plen)
+		return 0;
 
-	switch (*plen) {
+	len = (u8)(1u << (*p >> 6));
+	if (*plen < len)
+		return 0;
+
+	switch (len) {
 	case 1:
 		v = *p;
 		break;
@@ -56,8 +61,10 @@ static inline u64 quic_get_var(u8 **pp, u32 *plen)
 		break;
 	}
 
-	*pp = p + *plen;
-	return v;
+	*plen -= len;
+	*pp = p + len;
+	*val = v;
+	return len;
 }
 
 static inline u32 quic_get_int(u8 **pp, u32 len)
