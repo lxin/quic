@@ -277,6 +277,9 @@ static int quic_crypto_payload_decrypt(struct crypto_aead *tfm, struct sk_buff *
 		return err;
 
 	len = skb->len;
+	hlen = pki->number_offset + pki->number_len;
+	if (len - hlen < QUIC_TAG_LEN)
+		return -EINVAL;
 	nsg = skb_cow_data(skb, 0, &trailer);
 	if (nsg < 0)
 		return err;
@@ -289,7 +292,6 @@ static int quic_crypto_payload_decrypt(struct crypto_aead *tfm, struct sk_buff *
 	if (err < 0)
 		goto err;
 
-	hlen = pki->number_offset + pki->number_len;
 	memcpy(iv, rx_iv, QUIC_IV_LEN);
 	n = cpu_to_be64(pki->number);
 	for (i = 0; i < 8; i++)
@@ -321,6 +323,10 @@ static int quic_crypto_header_decrypt(struct crypto_skcipher *tfm, struct sk_buf
 	if (!req)
 		return -ENOMEM;
 
+	if (skb->len < pki->number_offset + 4 + QUIC_KEY_LEN) {
+		err = -EINVAL;
+		goto err;
+	}
 	p = (u8 *)hdr + pki->number_offset;
 	memcpy(mask, p + 4, QUIC_KEY_LEN);
 	sg_init_one(&sg, mask, QUIC_KEY_LEN);
@@ -332,6 +338,10 @@ static int quic_crypto_header_decrypt(struct crypto_skcipher *tfm, struct sk_buf
 	p = (u8 *)hdr;
 	*p = (u8)(*p ^ (mask[0] & (((*p & 0x80) == 0x80) ? 0x0f : 0x1f)));
 	pki->number_len = (*p & 0x03) + 1;
+	if (skb->len < pki->number_offset + pki->number_len) {
+		err = -EINVAL;
+		goto err;
+	}
 	p += pki->number_offset;
 	for (i = 0; i < pki->number_len; ++i)
 		*(p + i) = *((u8 *)hdr + pki->number_offset + i) ^ mask[i + 1];
@@ -341,7 +351,7 @@ static int quic_crypto_header_decrypt(struct crypto_skcipher *tfm, struct sk_buf
 
 err:
 	skcipher_request_free(req);
-	return 0;
+	return err;
 }
 
 int quic_crypto_encrypt(struct quic_crypto *crypto, struct sk_buff *skb,
