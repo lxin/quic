@@ -287,6 +287,7 @@ void quic_inq_set_param(struct sock *sk, struct quic_transport_param *p)
 	inq->max_udp_payload_size = p->max_udp_payload_size;
 	inq->max_ack_delay = p->max_ack_delay;
 	inq->ack_delay_exponent = p->ack_delay_exponent;
+	inq->max_idle_timeout = p->max_idle_timeout;
 	inq->window = p->initial_max_data;
 
 	inq->max_bytes = p->initial_max_data;
@@ -301,6 +302,8 @@ void quic_inq_get_param(struct sock *sk, struct quic_transport_param *p)
 	p->initial_max_data = inq->window;
 	p->max_ack_delay = inq->max_ack_delay;
 	p->ack_delay_exponent = inq->ack_delay_exponent;
+	p->max_idle_timeout = inq->max_idle_timeout;
+	p->max_udp_payload_size = inq->max_udp_payload_size;
 }
 
 int quic_inq_event_recv(struct sock *sk, u8 event, void *args)

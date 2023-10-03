@@ -106,6 +106,10 @@ int quic_packet_process(struct sock *sk, struct sk_buff *skb)
 	quic_timer_stop(sk, QUIC_TIMER_ACK);
 
 out:
+	/* Since a packet was successfully processed, we can reset the idle
+	 * timer.
+	 */
+	quic_timer_reset(sk, QUIC_TIMER_IDLE);
 	quic_outq_reset(&qs->outq);
 	quic_outq_flush(sk);
 	return 0;

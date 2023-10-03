@@ -43,11 +43,6 @@ struct quic_cong {
 	struct quic_cong_ops *ops;
 };
 
-static inline u32 quic_cong_rto(struct quic_cong *cong)
-{
-	return cong->rto;
-}
-
 int quic_cong_set_cong_alg(struct sock *sk, u8 *alg, unsigned int len);
 int quic_cong_get_cong_alg(struct sock *sk, int len, char __user *optval, int __user *optlen);
 void quic_cong_set_param(struct sock *sk, struct quic_transport_param *p);

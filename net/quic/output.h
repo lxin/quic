@@ -18,6 +18,7 @@ struct quic_outqueue {
 	u64 bytes;
 
 	u32 ack_delay_exponent;
+	u32 max_idle_timeout;
 	u32 max_ack_delay;
 	u32 close_errcode;
 	u8 *close_phrase;
@@ -66,11 +67,6 @@ static inline u32 quic_outq_inflight(struct quic_outqueue *outq)
 static inline void quic_outq_set_window(struct quic_outqueue *outq, u32 window)
 {
 	outq->window = window;
-}
-
-static inline u32 quic_outq_max_ack_delay(struct quic_outqueue *outq)
-{
-	return outq->max_ack_delay;
 }
 
 static inline u32 quic_outq_ack_delay_exponent(struct quic_outqueue *outq)

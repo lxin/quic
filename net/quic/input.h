@@ -18,6 +18,7 @@ struct quic_inqueue {
 
 	u32 max_udp_payload_size;
 	u32 ack_delay_exponent;
+	u32 max_idle_timeout;
 	u32 max_ack_delay;
 	u32 events;
 };
@@ -58,6 +59,11 @@ static inline u32 quic_inq_ack_delay_exponent(struct quic_inqueue *inq)
 static inline u32 quic_inq_max_udp(struct quic_inqueue *inq)
 {
 	return inq->max_udp_payload_size;
+}
+
+static inline u32 quic_inq_max_idle_timeout(struct quic_inqueue *inq)
+{
+	return inq->max_idle_timeout;
 }
 
 int quic_do_rcv(struct sock *sk, struct sk_buff *skb);

@@ -822,13 +822,14 @@ static void quic_close(struct sock *sk, long timeout)
 	struct sk_buff *skb;
 
 	lock_sock(sk);
-	quic_set_state(sk, QUIC_STATE_USER_CLOSED);
+	/* send close frame only when it's NOT idle timeout or closed by peer */
+	if (quic_is_connected(sk)) {
+		skb = quic_frame_create(sk, QUIC_FRAME_CONNECTION_CLOSE_APP, NULL);
+		if (skb)
+			quic_outq_ctrl_tail(sk, skb, false);
+	}
 
-	skb = quic_frame_create(sk, QUIC_FRAME_CONNECTION_CLOSE_APP, NULL);
-	if (!skb)
-		sk->sk_err = -ENOMEM;
-	else
-		quic_outq_ctrl_tail(sk, skb, false);
+	quic_set_state(sk, QUIC_STATE_USER_CLOSED);
 
 	quic_outq_purge(sk, &qs->outq);
 	quic_inq_purge(sk, &qs->inq);

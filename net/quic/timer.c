@@ -51,11 +51,41 @@ out:
 	sock_put(sk);
 }
 
+static void quic_timer_idle_timeout(struct timer_list *t)
+{
+	struct quic_sock *qs = from_timer(qs, t, timers[QUIC_TIMER_IDLE].timer);
+	struct quic_connection_close *close;
+	struct sock *sk = &qs->inet.sk;
+	u8 frame[100] = {};
+
+	bh_lock_sock(sk);
+	if (sock_owned_by_user(sk)) {
+		if (!mod_timer(&qs->timers[QUIC_TIMER_IDLE].timer, jiffies + (HZ / 20)))
+			sock_hold(sk);
+		goto out;
+	}
+
+	quic_set_state(sk, QUIC_STATE_USER_CLOSED);
+
+	/* Notify userspace, which is most likely waiting for a packet on the
+	 * rcv queue.
+	 */
+	close = (void *)frame;
+	close->errcode = 0;	/* Not an error, only a timer runout. */
+	quic_inq_event_recv(sk, QUIC_EVENT_CONNECTION_CLOSE, close);
+	sk->sk_state_change(sk);
+
+out:
+	bh_unlock_sock(sk);
+	sock_put(sk);
+	pr_debug("[QUIC] IDLE TIMEOUT\n");
+}
+
 void quic_timer_reset(struct sock *sk, u8 type)
 {
 	struct quic_timer *t = quic_timer(sk, type);
 
-	if (!mod_timer(&t->timer, jiffies + t->timeout))
+	if (t->timeout && !mod_timer(&t->timer, jiffies + t->timeout))
 		sock_hold(sk);
 }
 
@@ -63,7 +93,7 @@ void quic_timer_start(struct sock *sk, u8 type)
 {
 	struct quic_timer *t = quic_timer(sk, type);
 
-	if (!timer_pending(&t->timer)) {
+	if (t->timeout && !timer_pending(&t->timer)) {
 		if (!mod_timer(&t->timer, jiffies + t->timeout))
 			sock_hold(sk);
 	}
@@ -85,16 +115,21 @@ void quic_timers_init(struct sock *sk)
 	struct quic_timer *t;
 
 	t = quic_timer(sk, QUIC_TIMER_RTX);
-	t->timeout = usecs_to_jiffies(quic_cong_rto(quic_cong(sk)));
 	timer_setup(&t->timer, quic_timer_rtx_timeout, 0);
 
 	t = quic_timer(sk, QUIC_TIMER_ACK);
-	t->timeout = usecs_to_jiffies(quic_outq_max_ack_delay(quic_outq(sk)));
 	timer_setup(&t->timer, quic_timer_delay_ack_timeout, 0);
+
+	/* Initialize the idle timer's handler. The timeout value isn't known
+	 * until the socket context is set.
+	 */
+	t = quic_timer(sk, QUIC_TIMER_IDLE);
+	timer_setup(&t->timer, quic_timer_idle_timeout, 0);
 }
 
 void quic_timers_free(struct sock *sk)
 {
 	quic_timer_stop(sk, QUIC_TIMER_RTX);
 	quic_timer_stop(sk, QUIC_TIMER_ACK);
+	quic_timer_stop(sk, QUIC_TIMER_IDLE);
 }
