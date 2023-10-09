@@ -16,26 +16,8 @@ struct quic_packet {
 	u32 next_number; /* next packet number to send */
 	u32 mss;
 
-	u8 ack_eliciting:1,
-	   ack_immediate:1,
-	   non_probing:1,
-	   ipfragok:1;
+	u8  ipfragok:1;
 };
-
-static inline void quic_packet_set_ack_eliciting(struct quic_packet *packet)
-{
-	packet->ack_eliciting = 1;
-}
-
-static inline void quic_packet_set_ack_immediate(struct quic_packet *packet)
-{
-	packet->ack_immediate = 1;
-}
-
-static inline void quic_packet_set_non_probing(struct quic_packet *packet)
-{
-	packet->non_probing = 1;
-}
 
 static inline u32 quic_packet_mss(struct quic_packet *packet)
 {

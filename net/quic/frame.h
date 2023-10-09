@@ -69,7 +69,7 @@ static inline bool quic_frame_non_probing(u8 type)
 }
 
 struct sk_buff *quic_frame_create(struct sock *sk, u8 type, void *data);
-int quic_frame_process(struct sock *sk, struct sk_buff *skb);
+int quic_frame_process(struct sock *sk, struct sk_buff *skb, struct quic_packet_info *pki);
 int quic_frame_new_connection_id_ack(struct sock *sk, struct sk_buff *skb);
 
 // 20.1 Transport Error Codes

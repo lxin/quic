@@ -1088,9 +1088,8 @@ static struct quic_frame_ops quic_frame_ops[QUIC_FRAME_BASE_MAX + 1] = {
 	quic_frame_create_and_process(handshake_done),
 };
 
-int quic_frame_process(struct sock *sk, struct sk_buff *skb)
+int quic_frame_process(struct sock *sk, struct sk_buff *skb, struct quic_packet_info *pki)
 {
-	struct quic_packet *packet = quic_packet(sk);
 	int ret;
 	u8 type;
 
@@ -1112,12 +1111,12 @@ int quic_frame_process(struct sock *sk, struct sk_buff *skb)
 			return ret;
 		}
 		if (quic_frame_ack_eliciting(type)) {
-			quic_packet_set_ack_eliciting(packet);
+			pki->ack_eliciting = 1;
 			if (quic_frame_ack_immediate(type))
-				quic_packet_set_ack_immediate(packet);
+				pki->ack_immediate = 1;
 		}
 		if (quic_frame_non_probing(type))
-			quic_packet_set_non_probing(packet);
+			pki->non_probing = 1;
 
 		skb_pull(skb, ret);
 		if (skb->len <= 0)
@@ -1138,6 +1137,7 @@ struct sk_buff *quic_frame_create(struct sock *sk, u8 type, void *data)
 		pr_err("[QUIC] frame create failed %x\n", type);
 		return NULL;
 	}
-	QUIC_SND_CB(skb)->frame_type = type;
+	if (!QUIC_SND_CB(skb)->frame_type)
+		QUIC_SND_CB(skb)->frame_type = type;
 	return skb;
 }

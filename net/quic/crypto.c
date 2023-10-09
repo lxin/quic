@@ -395,17 +395,25 @@ int quic_crypto_decrypt(struct quic_crypto *crypto, struct sk_buff *skb,
 			return err;
 	}
 
-	/* Make sure the packets with old key have got processed */
-	if (crypto->key_pending && crypto->key_update_send_ts &&
-	    jiffies_to_usecs(jiffies) - crypto->key_update_send_ts >= crypto->key_update_ts) {
-		crypto->key_pending = 0;
-		crypto->key_update_send_ts = 0;
-	}
-
 	key = crypto->rx_key[pki->key_phase];
 	iv = crypto->rx_iv[pki->key_phase];
 
-	return quic_crypto_payload_decrypt(crypto->aead_tfm, skb, pki, key, iv);
+	err = quic_crypto_payload_decrypt(crypto->aead_tfm, skb, pki, key, iv);
+	if (err)
+		return err;
+
+	/* An endpoint MUST retain old keys until it has successfully unprotected a
+	 * packet sent using the new keys. An endpoint SHOULD retain old keys for
+	 * some time after unprotecting a packet sent using the new keys.
+	 */
+	if (pki->key_phase == crypto->key_phase &&
+	    crypto->key_pending && crypto->key_update_send_ts &&
+	    jiffies_to_usecs(jiffies) - crypto->key_update_send_ts >= crypto->key_update_ts) {
+		pki->key_update = 1;
+		crypto->key_pending = 0;
+		crypto->key_update_send_ts = 0;
+	}
+	return 0;
 }
 
 int quic_crypto_set_secret(struct quic_crypto *crypto, u8 *key, bool send)

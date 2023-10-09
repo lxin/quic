@@ -13,6 +13,10 @@ struct quic_packet_info {
 	u32 number_len;
 	u32 number_offset;
 	u8 key_phase:1;
+	u8 key_update:1;
+	u8 ack_eliciting:1;
+	u8 ack_immediate:1;
+	u8 non_probing:1;
 };
 
 #define QUIC_KEY_LEN	16

@@ -27,13 +27,6 @@
  * }
  */
 
-static void quic_packet_reset(struct quic_packet *packet)
-{
-	packet->ack_eliciting = 0;
-	packet->ack_immediate = 0;
-	packet->non_probing = 0;
-}
-
 void quic_packet_config(struct sock *sk)
 {
 	struct quic_sock *qs = quic_sk(sk);
@@ -51,7 +44,7 @@ void quic_packet_config(struct sock *sk)
 int quic_packet_process(struct sock *sk, struct sk_buff *skb)
 {
 	struct quic_sock *qs = quic_sk(sk);
-	struct quic_packet_info pki;
+	struct quic_packet_info pki = {};
 	union quic_addr saddr;
 	struct sk_buff *fskb;
 	int err;
@@ -68,11 +61,9 @@ int quic_packet_process(struct sock *sk, struct sk_buff *skb)
 		goto err;
 	}
 
-	quic_packet_reset(&qs->packet);
-
 	skb_pull(skb, pki.number_offset + pki.number_len);
 	skb_trim(skb, skb->len - QUIC_TAG_LEN);
-	err = quic_frame_process(sk, skb);
+	err = quic_frame_process(sk, skb, &pki);
 	if (err)
 		goto err;
 
@@ -82,8 +73,7 @@ int quic_packet_process(struct sock *sk, struct sk_buff *skb)
 	/* connection migration check: an endpoint only changes the address to which
 	 * it sends packets in response to the highest-numbered non-probing packet.
 	 */
-	if (qs->packet.non_probing &&
-	    pki.number == quic_pnmap_max_pn_seen(&qs->pn_map)) {
+	if (pki.non_probing && pki.number == quic_pnmap_max_pn_seen(&qs->pn_map)) {
 		qs->af_ops->get_msg_addr(&saddr, skb, 1);
 		if (memcmp(&saddr, quic_path_addr(&qs->dst), quic_addr_len(sk)))
 			quic_sock_change_addr(sk, &qs->dst, &saddr, quic_addr_len(sk), 0);
@@ -91,10 +81,10 @@ int quic_packet_process(struct sock *sk, struct sk_buff *skb)
 
 	consume_skb(skb);
 
-	if (!qs->packet.ack_eliciting)
+	if (!pki.ack_eliciting)
 		goto out;
 
-	if (!qs->packet.ack_immediate && !quic_pnmap_has_gap(&qs->pn_map)) {
+	if (!pki.ack_immediate && !quic_pnmap_has_gap(&qs->pn_map)) {
 		quic_timer_start(sk, QUIC_TIMER_ACK);
 		goto out;
 	}
