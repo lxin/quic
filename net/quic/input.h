@@ -68,3 +68,4 @@ int quic_inq_flow_control(struct sock *sk, struct quic_stream *stream, int len);
 void quic_inq_set_param(struct sock *sk, struct quic_transport_param *p);
 void quic_inq_get_param(struct sock *sk, struct quic_transport_param *p);
 void quic_inq_set_owner_r(struct sk_buff *skb, struct sock *sk);
+int quic_inq_event_recv(struct sock *sk, u8 event, void *args);

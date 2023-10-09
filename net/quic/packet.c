@@ -47,6 +47,7 @@ int quic_packet_process(struct sock *sk, struct sk_buff *skb)
 	struct quic_packet_info pki = {};
 	union quic_addr saddr;
 	struct sk_buff *fskb;
+	u8 key_phase;
 	int err;
 
 	pki.number_offset = QUIC_RCV_CB(skb)->number_offset;
@@ -80,6 +81,11 @@ int quic_packet_process(struct sock *sk, struct sk_buff *skb)
 	}
 
 	consume_skb(skb);
+
+	if (pki.key_update) {
+		key_phase = pki.key_phase;
+		quic_inq_event_recv(sk, QUIC_EVENT_KEY_UPDATE, &key_phase);
+	}
 
 	if (!pki.ack_eliciting)
 		goto out;

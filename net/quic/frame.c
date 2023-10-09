@@ -550,6 +550,8 @@ static int quic_frame_crypto_process(struct sock *sk, struct sk_buff *skb, u8 ty
 	kfree(ticket->data);
 	ticket->data = p;
 	ticket->len = length;
+	if (quic_inq_event_recv(sk, QUIC_EVENT_NEW_SESSION_TICKET, ticket))
+		return -ENOMEM;
 
 	len -= length;
 	return skb->len - len;
@@ -717,6 +719,8 @@ static int quic_frame_new_token_process(struct sock *sk, struct sk_buff *skb, u8
 	kfree(token->data);
 	token->data = p;
 	token->len = length;
+	if (quic_inq_event_recv(sk, QUIC_EVENT_NEW_TOKEN, token))
+		return -ENOMEM;
 
 	len -= length;
 	return skb->len - len;
@@ -757,6 +761,7 @@ static int quic_frame_path_challenge_process(struct sock *sk, struct sk_buff *sk
 
 static int quic_frame_reset_stream_process(struct sock *sk, struct sk_buff *skb, u8 type)
 {
+	struct quic_stream_update update = {};
 	u64 stream_id, errcode, finalsz;
 	struct quic_stream *stream;
 	u32 len = skb->len;
@@ -771,12 +776,18 @@ static int quic_frame_reset_stream_process(struct sock *sk, struct sk_buff *skb,
 	if (IS_ERR(stream))
 		return PTR_ERR(stream);
 
-	stream->recv.state = QUIC_STREAM_RECV_STATE_RESET_RECVD;
+	update.id = stream_id;
+	update.state = QUIC_STREAM_RECV_STATE_RESET_RECVD;
+	update.errcode = errcode;
+	if (quic_inq_event_recv(sk, QUIC_EVENT_STREAM_UPDATE, &update))
+		return -ENOMEM;
+	stream->recv.state = update.state;
 	return skb->len - len;
 }
 
 static int quic_frame_stop_sending_process(struct sock *sk, struct sk_buff *skb, u8 type)
 {
+	struct quic_stream_update update = {};
 	struct quic_stream *stream;
 	struct quic_errinfo info;
 	u64 stream_id, errcode;
@@ -798,7 +809,14 @@ static int quic_frame_stop_sending_process(struct sock *sk, struct sk_buff *skb,
 	if (!nskb)
 		return -ENOMEM;
 
-	stream->send.state = QUIC_STREAM_SEND_STATE_RESET_SENT;
+	update.id = stream_id;
+	update.state = QUIC_STREAM_SEND_STATE_RESET_SENT;
+	update.errcode = errcode;
+	if (quic_inq_event_recv(sk, QUIC_EVENT_STREAM_UPDATE, &update)) {
+		kfree_skb(nskb);
+		return -ENOMEM;
+	}
+	stream->send.state = update.state;
 	quic_outq_ctrl_tail(sk, nskb, true);
 	return skb->len - len;
 }
@@ -860,6 +878,8 @@ static int quic_frame_max_streams_uni_process(struct sock *sk, struct sk_buff *s
 	stream_id = ((max - 1) << 2) | QUIC_STREAM_TYPE_UNI_MASK;
 	if (quic_is_serv(sk))
 		stream_id |= QUIC_STREAM_TYPE_SERVER_MASK;
+	if (quic_inq_event_recv(sk, QUIC_EVENT_STREAM_MAX_STREAM, &stream_id))
+		return -ENOMEM;
 	streams->send.max_streams_uni = max;
 	streams->send.streams_uni = max;
 	sk->sk_write_space(sk);
@@ -883,6 +903,8 @@ static int quic_frame_max_streams_bidi_process(struct sock *sk, struct sk_buff *
 	stream_id = ((max - 1) << 2);
 	if (quic_is_serv(sk))
 		stream_id |= QUIC_STREAM_TYPE_SERVER_MASK;
+	if (quic_inq_event_recv(sk, QUIC_EVENT_STREAM_MAX_STREAM, &stream_id))
+		return -ENOMEM;
 	streams->send.max_streams_bidi = max;
 	streams->send.streams_bidi = max;
 	sk->sk_write_space(sk);
@@ -912,6 +934,10 @@ static int quic_frame_connection_close_process(struct sock *sk, struct sk_buff *
 			return -EINVAL;
 		strcpy(close->phrase, p);
 	}
+	close->errcode = err_code;
+	close->frame = ftype;
+	if (quic_inq_event_recv(sk, QUIC_EVENT_CONNECTION_CLOSE, close))
+		return -ENOMEM;
 
 	sk->sk_err = -EPIPE;
 	quic_set_state(sk, QUIC_STATE_USER_CLOSED);
@@ -1036,6 +1062,7 @@ static int quic_frame_path_response_process(struct sock *sk, struct sk_buff *skb
 			qs->udp_sk[!path->active] = NULL;
 			memset(&path->addr[!path->active], 0, quic_addr_len(sk));
 			quic_set_sk_addr(sk, &path->addr[path->active], true);
+			quic_inq_event_recv(sk, QUIC_EVENT_CONNECTION_MIGRATION, &local);
 		}
 	}
 	path = &qs->dst; /* dest address validation */
@@ -1045,6 +1072,7 @@ static int quic_frame_path_response_process(struct sock *sk, struct sk_buff *skb
 			path->pending = 0;
 			memset(&path->addr[!path->active], 0, quic_addr_len(sk));
 			quic_set_sk_addr(sk, &path->addr[path->active], false);
+			quic_inq_event_recv(sk, QUIC_EVENT_CONNECTION_MIGRATION, &local);
 		}
 	}
 	len -= 8;

@@ -182,6 +182,7 @@ void quic_outq_retransmit_check(struct sock *sk, u32 largest, u32 smallest,
 	u32 acked_bytes = 0, acked_number = 0, transmit_ts = 0;
 	struct quic_outqueue *outq = quic_outq(sk);
 	struct sk_buff *skb, *tmp, *first;
+	struct quic_stream_update update;
 	struct quic_stream *stream;
 	struct sk_buff_head *head;
 
@@ -199,11 +200,18 @@ void quic_outq_retransmit_check(struct sock *sk, u32 largest, u32 smallest,
 			stream->send.frags--;
 			outq->inflight -= QUIC_SND_CB(skb)->data_bytes;
 			if (!stream->send.frags && stream->send.state == QUIC_STREAM_SEND_STATE_SENT) {
-				stream->send.state = QUIC_STREAM_SEND_STATE_RECVD;
+				update.id = stream->id;
+				update.state = QUIC_STREAM_SEND_STATE_RECVD;
+				quic_inq_event_recv(sk, QUIC_EVENT_STREAM_UPDATE, &update);
+				stream->send.state = update.state;
 			}
 			acked_bytes += QUIC_SND_CB(skb)->data_bytes;
 		} else if (QUIC_SND_CB(skb)->frame_type == QUIC_FRAME_RESET_STREAM) {
-			stream->send.state = QUIC_STREAM_SEND_STATE_RESET_RECVD;
+			update.id = stream->id;
+			update.state = QUIC_STREAM_SEND_STATE_RESET_RECVD;
+			update.errcode = QUIC_SND_CB(skb)->err_code;
+			quic_inq_event_recv(sk, QUIC_EVENT_STREAM_UPDATE, &update);
+			stream->send.state = update.state;
 		}
 		if (!acked_number) {
 			acked_number = QUIC_SND_CB(skb)->packet_number;

@@ -609,6 +609,9 @@ static int quic_recvmsg(struct sock *sk, struct msghdr *msg, size_t len, int fla
 		if (event) {
 			if (skb == quic_inq(sk)->last_event)
 				quic_inq(sk)->last_event = NULL; /* no more event on list */
+			if (event == QUIC_EVENT_STREAM_UPDATE &&
+			    stream->recv.state == QUIC_STREAM_RECV_STATE_RESET_RECVD)
+				stream->recv.state = QUIC_STREAM_RECV_STATE_RESET_READ;
 			msg->msg_flags |= MSG_NOTIFICATION;
 			info.stream_flag |= QUIC_STREAM_FLAG_NOTIFICATION;
 			kfree_skb(__skb_dequeue(&sk->sk_receive_queue));
@@ -1151,6 +1154,21 @@ static int quic_sock_stream_stop_sending(struct sock *sk, struct quic_errinfo *i
 	return 0;
 }
 
+static int quic_sock_set_event(struct sock *sk, struct quic_event_option *event, u32 len)
+{
+	if (len != sizeof(*event))
+		return -EINVAL;
+	if (!event->type || event->type > QUIC_EVENT_MAX)
+		return -EINVAL;
+
+	if (event->on) {
+		quic_inq(sk)->events |=  (1 << (event->type));
+		return 0;
+	}
+	quic_inq(sk)->events &= ~(1 << event->type);
+	return 0;
+}
+
 static int quic_sock_set_connection_close(struct sock *sk, struct quic_connection_close *close, u32 len)
 {
 	u8 *data;
@@ -1205,6 +1223,9 @@ static int quic_setsockopt(struct sock *sk, int level, int optname,
 	case QUIC_SOCKOPT_KEY_UPDATE:
 		retval = quic_crypto_key_update(&qs->crypto, kopt, optlen);
 		break;
+	case QUIC_SOCKOPT_EVENT:
+		retval = quic_sock_set_event(sk, kopt, optlen);
+		break;
 	case QUIC_SOCKOPT_NEW_TOKEN:
 		retval = quic_sock_new_token(sk, kopt, optlen);
 		break;
@@ -1242,6 +1263,9 @@ static int quic_handshake_setsockopt(struct sock *sk, int level, int optname,
 	switch (optname) {
 	case QUIC_SOCKOPT_CONTEXT:
 		retval = quic_sock_set_context(sk, kopt, optlen);
+		break;
+	case QUIC_SOCKOPT_EVENT:
+		retval = quic_sock_set_event(sk, kopt, optlen);
 		break;
 	case QUIC_SOCKOPT_ALPN:
 		retval = quic_sock_set_alpn(sk, kopt, optlen);
@@ -1385,6 +1409,27 @@ static int quic_sock_stream_open(struct sock *sk, int len, char __user *optval, 
 	return 0;
 }
 
+static int quic_sock_get_event(struct sock *sk, int len, char __user *optval, int __user *optlen)
+{
+	struct quic_event_option event;
+
+	if (len < sizeof(event))
+		return -EINVAL;
+
+	len = sizeof(event);
+	if (copy_from_user(&event, optval, len))
+		return -EFAULT;
+
+	if (!event.type || event.type > QUIC_EVENT_MAX)
+		return -EINVAL;
+
+	event.on = quic_inq(sk)->events & (1 << event.type);
+	if (put_user(len, optlen) || copy_to_user(optval, &event, len))
+		return -EFAULT;
+
+	return 0;
+}
+
 static int quic_sock_get_connection_close(struct sock *sk, int len, char __user *optval, int __user *optlen)
 {
 	struct quic_outqueue *outq = quic_outq(sk);
@@ -1438,6 +1483,9 @@ static int quic_getsockopt(struct sock *sk, int level, int optname,
 	case QUIC_SOCKOPT_CONGESTION_CONTROL:
 		retval = quic_cong_get_cong_alg(sk, len, optval, optlen);
 		break;
+	case QUIC_SOCKOPT_EVENT:
+		retval = quic_sock_get_event(sk, len, optval, optlen);
+		break;
 	case QUIC_SOCKOPT_TOKEN:
 		retval = quic_sock_get_token(sk, len, optval, optlen);
 		break;
@@ -1472,6 +1520,9 @@ static int quic_handshake_getsockopt(struct sock *sk, int level, int optname,
 
 	lock_sock(sk);
 	switch (optname) {
+	case QUIC_SOCKOPT_EVENT:
+		retval = quic_sock_get_event(sk, len, optval, optlen);
+		break;
 	case QUIC_SOCKOPT_ALPN:
 		retval = quic_sock_get_alpn(sk, len, optval, optlen);
 		break;

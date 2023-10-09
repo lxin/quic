@@ -21,6 +21,7 @@ enum {
 
 #define SOL_QUIC	287
 
+/* Send or Receive Options APIs */
 enum quic_cmsg_type {
 	QUIC_SNDINFO,
 	QUIC_RCVINFO,
@@ -126,10 +127,71 @@ struct quic_connection_id_info { /* RETIRE/ACTIVE_CONNECTION_ID */
 	uint32_t dest;
 };
 
-struct quic_connection_close { /* CONNECTION_CLOSE */
-	uint32_t errcode;
-	uint8_t frame;
-	uint8_t phrase[];
+struct quic_event_option { /* EVENT */
+	uint8_t type;
+	uint8_t on;
+};
+
+/* Event APIs:
+ *
+ * - QUIC_EVENT_STREAM_UPDATE:
+ *
+ *   Only notifications with these states are sent to userspace:
+ *
+ *   QUIC_STREAM_SEND_STATE_RECVD
+ *   QUIC_STREAM_SEND_STATE_RESET_SENT
+ *   QUIC_STREAM_SEND_STATE_RESET_RECVD
+ *
+ *   QUIC_STREAM_RECV_STATE_RECV
+ *   QUIC_STREAM_RECV_STATE_SIZE_KNOWN
+ *   QUIC_STREAM_RECV_STATE_RECVD
+ *   QUIC_STREAM_RECV_STATE_RESET_RECVD
+ *
+ *   Note:
+ *   1. QUIC_STREAM_SEND_STATE_RESET_SENT update is sent only if STOP_SEDNING is received;
+ *   2. QUIC_STREAM_RECV_STATE_SIZE_KNOWN update is sent only if data comes out of order;
+ *   3. QUIC_STREAM_RECV_STATE_RECV update is sent only when the last frag hasn't arrived.
+ *
+ * - QUIC_EVENT_STREAM_MAX_STREAM:
+ *
+ *   This notification is sent when max_streams frame is received, and this is useful when
+ *   using QUIC_STREAM_FLAG_ASYNC to open a stream whose id exceeds the max stream count.
+ *   After receiving this notification, try to open this stream again.
+ *
+ * - QUIC_EVENT_CONNECTION_CLOSE
+ *
+ *   This notification is sent when receiving a close from peer where it can set the close
+ *   info with QUIC_SOCKOPT_CONNECTION_CLOSE socket option
+ *
+ * - QUIC_EVENT_CONNECTION_MIGRATION
+ *
+ *   This notification is sent when either side sucessfully changes its source address by
+ *   QUIC_SOCKOPT_CONNECTION_MIGRATION or dest address by peer's CONNECTION_MIGRATION.
+ *   The parameter tells you if it's a local or peer CONNECTION_MIGRATION, and then you
+ *   can get the new address with getsockname() or getpeername().
+ *
+ * - QUIC_EVENT_KEY_UPDATE
+ *
+ *   This notification is sent when both sides have used the new key, and the parameter
+ *   tells you which the new key phase is.
+ *
+ * - QUIC_EVENT_NEW_TOKEN and QUIC_EVENT_NEW_SESSION_TICKET
+ *
+ *   Since the handshake is in userspace, this two notifications are sent whenever the
+ *   frame of NEW_TOKEN or TLS_NEW_SESSION_TICKET_MSG is received from the peer where
+ *   it can send these frame by QUIC_SOCKOPT_NEW_TOKEN/NEW_SESSION_TICKET.
+ */
+enum quic_event_type {
+	QUIC_EVENT_NONE,
+	QUIC_EVENT_STREAM_UPDATE,
+	QUIC_EVENT_STREAM_MAX_STREAM,
+	QUIC_EVENT_CONNECTION_CLOSE,
+	QUIC_EVENT_CONNECTION_MIGRATION,
+	QUIC_EVENT_KEY_UPDATE,
+	QUIC_EVENT_NEW_TOKEN,
+	QUIC_EVENT_NEW_SESSION_TICKET,
+	QUIC_EVENT_END,
+	QUIC_EVENT_MAX = QUIC_EVENT_END - 1,
 };
 
 enum {
@@ -146,6 +208,28 @@ enum {
 	QUIC_STREAM_RECV_STATE_READ,
 	QUIC_STREAM_RECV_STATE_RESET_RECVD,
 	QUIC_STREAM_RECV_STATE_RESET_READ,
+};
+
+struct quic_stream_update {
+	uint64_t id;
+	uint32_t state;
+	uint32_t errcode; /* or known_size */
+};
+
+struct quic_connection_close { /* also used for CONNECTION_CLOSE socket option */
+	uint32_t errcode;
+	uint8_t frame;
+	uint8_t phrase[];
+};
+
+union quic_event {
+	struct quic_stream_update update;
+	uint64_t max_stream;
+	struct quic_connection_close close;
+	uint8_t local_migration;
+	uint8_t key_update_phase;
+	uint8_t new_token[0];
+	uint8_t new_session_ticket[0];
 };
 
 #endif /* __uapi_quic_h__ */

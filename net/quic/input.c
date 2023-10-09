@@ -150,8 +150,14 @@ err:
 
 static void quic_inq_recv_tail(struct sock *sk, struct quic_stream *stream, struct sk_buff *skb)
 {
+	struct quic_stream_update update = {};
+
 	if (QUIC_RCV_CB(skb)->stream_fin) {
-		stream->recv.state = QUIC_STREAM_RECV_STATE_RECVD;
+		update.id = stream->id;
+		update.state = QUIC_STREAM_RECV_STATE_RECVD;
+		update.errcode = QUIC_RCV_CB(skb)->stream_offset + skb->len;
+		quic_inq_event_recv(sk, QUIC_EVENT_STREAM_UPDATE, &update);
+		stream->recv.state = update.state;
 	}
 	stream->recv.offset += skb->len;
 	quic_inq_set_owner_r(skb, sk);
@@ -197,6 +203,7 @@ int quic_inq_reasm_tail(struct sock *sk, struct sk_buff *skb)
 	u64 stream_offset = QUIC_RCV_CB(skb)->stream_offset, offset;
 	u64 stream_id = QUIC_RCV_CB(skb)->stream->id, highest = 0;
 	struct quic_inqueue *inq = quic_inq(sk);
+	struct quic_stream_update update = {};
 	struct quic_stream *stream;
 	struct sk_buff_head *head;
 	struct sk_buff *tmp;
@@ -217,6 +224,12 @@ int quic_inq_reasm_tail(struct sock *sk, struct sk_buff *skb)
 		    stream->recv.highest + highest > stream->recv.max_bytes)
 			return -ENOBUFS;
 	}
+	if (!stream->recv.highest && !QUIC_RCV_CB(skb)->stream_fin) {
+		update.id = stream->id;
+		update.state = QUIC_STREAM_RECV_STATE_RECV;
+		if (quic_inq_event_recv(sk, QUIC_EVENT_STREAM_UPDATE, &update))
+			return -ENOMEM;
+	}
 	head = &inq->reassemble_list;
 	if (stream->recv.offset < stream_offset) {
 		skb_queue_walk(head, tmp) {
@@ -232,7 +245,12 @@ int quic_inq_reasm_tail(struct sock *sk, struct sk_buff *skb)
 			}
 		}
 		if (QUIC_RCV_CB(skb)->stream_fin) {
-			stream->recv.state = QUIC_STREAM_RECV_STATE_SIZE_KNOWN;
+			update.id = stream->id;
+			update.state = QUIC_STREAM_RECV_STATE_SIZE_KNOWN;
+			update.errcode = QUIC_RCV_CB(skb)->stream_offset + skb->len;
+			if (quic_inq_event_recv(sk, QUIC_EVENT_STREAM_UPDATE, &update))
+				return -ENOMEM;
+			stream->recv.state = update.state;
 		}
 		__skb_queue_before(head, tmp, skb);
 		stream->recv.frags++;
@@ -283,4 +301,63 @@ void quic_inq_get_param(struct sock *sk, struct quic_transport_param *p)
 	p->initial_max_data = inq->window;
 	p->max_ack_delay = inq->max_ack_delay;
 	p->ack_delay_exponent = inq->ack_delay_exponent;
+}
+
+int quic_inq_event_recv(struct sock *sk, u8 event, void *args)
+{
+	struct quic_stream *stream = NULL;
+	struct sk_buff *skb, *last;
+	int args_len = 0;
+
+	if (!event || event > QUIC_EVENT_MAX)
+		return -EINVAL;
+
+	if (!(quic_inq(sk)->events & (1 << event)))
+		return 0;
+
+	switch (event) {
+	case QUIC_EVENT_STREAM_UPDATE:
+		stream = quic_stream_find(quic_streams(sk),
+					  ((struct quic_stream_update *)args)->id);
+		if (!stream)
+			return -EINVAL;
+		args_len = sizeof(struct quic_stream_update);
+		break;
+	case QUIC_EVENT_STREAM_MAX_STREAM:
+		args_len = sizeof(u64);
+		break;
+	case QUIC_EVENT_NEW_TOKEN:
+	case QUIC_EVENT_NEW_SESSION_TICKET:
+		args_len = ((struct quic_token *)args)->len;
+		args = ((struct quic_token *)args)->data;
+		break;
+	case QUIC_EVENT_CONNECTION_CLOSE:
+		args_len = strlen(((struct quic_connection_close *)args)->phrase) +
+			   1 + sizeof(struct quic_connection_close);
+		break;
+	case QUIC_EVENT_KEY_UPDATE:
+		args_len = sizeof(u8);
+		break;
+	case QUIC_EVENT_CONNECTION_MIGRATION:
+		args_len = sizeof(u8);
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	skb = alloc_skb(1 + args_len, GFP_ATOMIC);
+	if (!skb)
+		return -ENOMEM;
+	skb_put_data(skb, &event, 1);
+	skb_put_data(skb, args, args_len);
+
+	QUIC_RCV_CB(skb)->event = event;
+	QUIC_RCV_CB(skb)->stream = stream;
+
+	/* always put event ahead of data */
+	last = quic_inq(sk)->last_event ?: (struct sk_buff *)&sk->sk_receive_queue;
+	__skb_queue_after(&sk->sk_receive_queue, last, skb);
+	quic_inq(sk)->last_event = skb;
+	sk->sk_data_ready(sk);
+	return 0;
 }
