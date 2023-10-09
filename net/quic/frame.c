@@ -430,18 +430,20 @@ static struct sk_buff *quic_frame_max_streams_bidi_create(struct sock *sk, void 
 
 static struct sk_buff *quic_frame_connection_close_create(struct sock *sk, void *data, u8 type)
 {
-	return 0;
-}
-
-static struct sk_buff *quic_frame_connection_close_app_create(struct sock *sk, void *data, u8 type)
-{
+	u32 frame_len, phrase_len = 0;
 	struct sk_buff *skb;
-	u8 *p, frame[10];
-	u32 frame_len;
+	u8 *p, frame[100];
 
 	p = quic_put_var(frame, type);
-	p = quic_put_var(p, 0);
-	p = quic_put_var(p, 0);
+	p = quic_put_var(p, quic_outq(sk)->close_errcode);
+
+	if (type == QUIC_FRAME_CONNECTION_CLOSE)
+		p = quic_put_var(p, quic_outq(sk)->close_frame);
+
+	if (quic_outq(sk)->close_phrase)
+		phrase_len = strlen(quic_outq(sk)->close_phrase) + 1;
+	p = quic_put_var(p, phrase_len);
+	p = quic_put_data(p, quic_outq(sk)->close_phrase, phrase_len);
 
 	frame_len = (u32)(p - frame);
 
@@ -890,39 +892,28 @@ out:
 
 static int quic_frame_connection_close_process(struct sock *sk, struct sk_buff *skb, u8 type)
 {
-	u64 err_code, phrase_len, ftype;
+	struct quic_connection_close *close;
+	u64 err_code, phrase_len, ftype = 0;
+	u8 *p = skb->data, frame[100] = {};
 	u32 len = skb->len;
-	u8 *p = skb->data;
 
-	if (!quic_get_var(&p, &len, &err_code) ||
-	    !quic_get_var(&p, &len, &ftype) ||
-	    !quic_get_var(&p, &len, &phrase_len) || phrase_len > len)
+	if (!quic_get_var(&p, &len, &err_code))
+		return -EINVAL;
+	if (type == QUIC_FRAME_CONNECTION_CLOSE &&
+	    !quic_get_var(&p, &len, &ftype))
 		return -EINVAL;
 
-	sk->sk_err = err_code;
-	quic_set_state(sk, QUIC_STATE_USER_CLOSED);
-
-	/*
-	 * Now that state is QUIC_STATE_USER_CLOSED, we can wake the waiting
-	 * recv thread up.
-	 */
-	sk->sk_state_change(sk);
-
-	len -= phrase_len;
-	return skb->len - len;
-}
-
-static int quic_frame_connection_close_app_process(struct sock *sk, struct sk_buff *skb, u8 type)
-{
-	u64 err_code, phrase_len;
-	u32 len = skb->len;
-	u8 *p = skb->data;
-
-	if (!quic_get_var(&p, &len, &err_code) ||
-	    !quic_get_var(&p, &len, &phrase_len) || phrase_len > len)
+	if (!quic_get_var(&p, &len, &phrase_len) || phrase_len > len)
 		return -EINVAL;
 
-	sk->sk_err = err_code;
+	close = (void *)frame;
+	if (phrase_len) {
+		if ((phrase_len > 80 || *(p + phrase_len - 1) != 0))
+			return -EINVAL;
+		strcpy(close->phrase, p);
+	}
+
+	sk->sk_err = -EPIPE;
 	quic_set_state(sk, QUIC_STATE_USER_CLOSED);
 
 	/*
@@ -1093,7 +1084,7 @@ static struct quic_frame_ops quic_frame_ops[QUIC_FRAME_BASE_MAX + 1] = {
 	quic_frame_create_and_process(path_challenge),
 	quic_frame_create_and_process(path_response),
 	quic_frame_create_and_process(connection_close),
-	quic_frame_create_and_process(connection_close_app),
+	quic_frame_create_and_process(connection_close),
 	quic_frame_create_and_process(handshake_done),
 };
 

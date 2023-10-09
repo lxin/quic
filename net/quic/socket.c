@@ -1151,6 +1151,24 @@ static int quic_sock_stream_stop_sending(struct sock *sk, struct quic_errinfo *i
 	return 0;
 }
 
+static int quic_sock_set_connection_close(struct sock *sk, struct quic_connection_close *close, u32 len)
+{
+	u8 *data;
+
+	if (len < sizeof(*close))
+		return -EINVAL;
+
+	len -= sizeof(*close);
+	if (len > 80 || close->phrase[len - 1])
+		return -EINVAL;
+	data = kmemdup(close->phrase, len, GFP_KERNEL);
+	if (!data)
+		return -ENOMEM;
+	quic_outq(sk)->close_phrase = data;
+	quic_outq(sk)->close_errcode = close->errcode;
+	return 0;
+}
+
 static int quic_setsockopt(struct sock *sk, int level, int optname,
 			   sockptr_t optval, unsigned int optlen)
 {
@@ -1177,6 +1195,9 @@ static int quic_setsockopt(struct sock *sk, int level, int optname,
 		break;
 	case QUIC_SOCKOPT_KEY_UPDATE:
 		retval = quic_crypto_key_update(&qs->crypto, kopt, optlen);
+		break;
+	case QUIC_SOCKOPT_CONNECTION_CLOSE:
+		retval = quic_sock_set_connection_close(sk, kopt, optlen);
 		break;
 	case QUIC_SOCKOPT_CONNECTION_MIGRATION:
 		retval = quic_sock_change_addr(sk, &qs->src, kopt, optlen, 1);
@@ -1364,6 +1385,30 @@ static int quic_sock_stream_open(struct sock *sk, int len, char __user *optval, 
 	return 0;
 }
 
+static int quic_sock_get_connection_close(struct sock *sk, int len, char __user *optval, int __user *optlen)
+{
+	struct quic_outqueue *outq = quic_outq(sk);
+	struct quic_connection_close *close;
+	u8 phrase_len = 0, frame[100] = {};
+
+	if (outq->close_phrase)
+		phrase_len = strlen(outq->close_phrase) + 1;
+	if (len < sizeof(close) + phrase_len)
+		return -EINVAL;
+
+	len = sizeof(close) + phrase_len;
+	close = (void *)frame;
+	close->errcode = outq->close_errcode;
+	close->frame = outq->close_frame;
+
+	if (phrase_len)
+		strcpy(close->phrase, outq->close_phrase);
+
+	if (put_user(len, optlen) || copy_to_user(optval, close, len))
+		return -EFAULT;
+	return 0;
+}
+
 static int quic_getsockopt(struct sock *sk, int level, int optname,
 			   char __user *optval, int __user *optlen)
 {
@@ -1386,6 +1431,9 @@ static int quic_getsockopt(struct sock *sk, int level, int optname,
 		break;
 	case QUIC_SOCKOPT_STREAM_OPEN:
 		retval = quic_sock_stream_open(sk, len, optval, optlen);
+		break;
+	case QUIC_SOCKOPT_CONNECTION_CLOSE:
+		retval = quic_sock_get_connection_close(sk, len, optval, optlen);
 		break;
 	case QUIC_SOCKOPT_TOKEN:
 		retval = quic_sock_get_token(sk, len, optval, optlen);

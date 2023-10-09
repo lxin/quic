@@ -19,7 +19,9 @@ struct quic_outqueue {
 
 	u32 ack_delay_exponent;
 	u32 max_ack_delay;
-
+	u32 close_errcode;
+	u8 *close_phrase;
+	u8 close_frame;
 	u8 data_blocked;
 	u8 rtx_count;
 };
@@ -48,6 +50,7 @@ static inline void quic_outq_purge(struct sock *sk, struct quic_outqueue *outq)
 	__skb_queue_purge(&sk->sk_write_queue);
 	__skb_queue_purge(&outq->retransmit_list);
 	__skb_queue_purge(&outq->control_list);
+	kfree(outq->close_phrase);
 }
 
 static inline void quic_outq_reset(struct quic_outqueue *outq)

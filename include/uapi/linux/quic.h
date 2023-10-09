@@ -126,6 +126,12 @@ struct quic_connection_id_info { /* RETIRE/ACTIVE_CONNECTION_ID */
 	uint32_t dest;
 };
 
+struct quic_connection_close { /* CONNECTION_CLOSE */
+	uint32_t errcode;
+	uint8_t frame;
+	uint8_t phrase[];
+};
+
 enum {
 	QUIC_STREAM_SEND_STATE_READY,
 	QUIC_STREAM_SEND_STATE_SEND,
