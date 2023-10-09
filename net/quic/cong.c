@@ -210,12 +210,26 @@ int quic_cong_set_cong_alg(struct sock *sk, u8 *alg, unsigned int len)
 {
 	struct quic_cong *cong = quic_cong(sk);
 
-	if (quic_is_connected(sk))
+	if (!quic_is_connected(sk))
 		return -EINVAL;
 
 	if (!len || *alg >= QUIC_CONG_ALG_MAX)
 		return -EINVAL;
 
 	cong->ops = &quic_congs[*alg];
+	return 0;
+}
+
+int quic_cong_get_cong_alg(struct sock *sk, int len, char __user *optval, int __user *optlen)
+{
+	struct quic_cong *cong = quic_cong(sk);
+	u8 alg = 0;
+
+	if (!len)
+		return -EINVAL;
+	len = 1;
+	alg = (cong->ops - &quic_congs[0]) / sizeof(struct quic_cong_ops);
+	if (put_user(len, optlen) || copy_to_user(optval, &alg, len))
+		return -EFAULT;
 	return 0;
 }

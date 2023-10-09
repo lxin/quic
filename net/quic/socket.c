@@ -1435,6 +1435,9 @@ static int quic_getsockopt(struct sock *sk, int level, int optname,
 	case QUIC_SOCKOPT_CONNECTION_CLOSE:
 		retval = quic_sock_get_connection_close(sk, len, optval, optlen);
 		break;
+	case QUIC_SOCKOPT_CONGESTION_CONTROL:
+		retval = quic_cong_get_cong_alg(sk, len, optval, optlen);
+		break;
 	case QUIC_SOCKOPT_TOKEN:
 		retval = quic_sock_get_token(sk, len, optval, optlen);
 		break;
