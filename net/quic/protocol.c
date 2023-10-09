@@ -16,6 +16,7 @@
 
 struct quic_hash_table quic_hash_tables[QUIC_HT_MAX_TABLES] __read_mostly;
 struct percpu_counter quic_sockets_allocated;
+struct workqueue_struct *quic_wq;
 
 static int quic_v6_flow_route(struct sock *sk, union quic_addr *a)
 {
@@ -516,6 +517,10 @@ static __init int quic_init(void)
 	if (quic_hash_tables_init())
 		goto err;
 
+	quic_wq = create_workqueue("quic_workqueue");
+	if (!quic_wq)
+		goto err_wq;
+
 	err = percpu_counter_init(&quic_sockets_allocated, 0, GFP_KERNEL);
 	if (err)
 		goto err_percpu_counter;
@@ -536,6 +541,8 @@ err_def_ops:
 err_protosw:
 	percpu_counter_destroy(&quic_sockets_allocated);
 err_percpu_counter:
+	destroy_workqueue(quic_wq);
+err_wq:
 	quic_hash_tables_destroy();
 err:
 	pr_err("[QUIC] init error\n");
@@ -547,6 +554,7 @@ static __exit void quic_exit(void)
 	unregister_pernet_subsys(&quic_net_ops);
 	quic_protosw_exit();
 	percpu_counter_destroy(&quic_sockets_allocated);
+	destroy_workqueue(quic_wq);
 	quic_hash_tables_destroy();
 	pr_info("[QUIC] exit\n");
 }
@@ -554,8 +562,8 @@ static __exit void quic_exit(void)
 module_init(quic_init);
 module_exit(quic_exit);
 
-MODULE_ALIAS("net-pf-" __stringify(PF_INET) "-proto-144");
-MODULE_ALIAS("net-pf-" __stringify(PF_INET6) "-proto-144");
+MODULE_ALIAS("net-pf-" __stringify(PF_INET) "-proto-261");
+MODULE_ALIAS("net-pf-" __stringify(PF_INET6) "-proto-261");
 MODULE_AUTHOR("Xin Long <lucien.xin@gmail.com>");
 MODULE_DESCRIPTION("Support for the QUIC protocol (RFC9000)");
 MODULE_LICENSE("GPL");

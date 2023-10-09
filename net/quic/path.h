@@ -15,6 +15,7 @@ struct quic_bind_port {
 };
 
 struct quic_udp_sock {
+	struct work_struct work;
 	struct hlist_node node;
 	union quic_addr addr;
 	refcount_t refcnt;

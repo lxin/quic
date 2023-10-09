@@ -37,11 +37,7 @@ void quic_get_port(struct net *net, struct quic_bind_port *port, union quic_addr
 
 	inet_get_local_port_range(net, &low, &high);
 	remaining = (high - low) + 1;
-#if KERNEL_VERSION(6, 1, 0) >= LINUX_VERSION_CODE
-	rover = prandom_u32_max(remaining) + low;
-#else
-	rover = get_random_u32_below(remaining) + low;
-#endif
+	rover = (u32)(((u64)get_random_u32() * remaining) >> 32) + low;
 	do {
 		rover++;
 		if ((rover < low) || (rover > high))
@@ -86,6 +82,7 @@ static int quic_udp_rcv(struct sock *sk, struct sk_buff *skb)
 	if (skb_linearize(skb))
 		return 0;
 
+	memset(skb->cb, 0, sizeof(skb->cb));
 	skb_set_transport_header(skb, sizeof(struct udphdr));
 	quic_rcv(skb);
 	return 0;
@@ -94,6 +91,21 @@ static int quic_udp_rcv(struct sock *sk, struct sk_buff *skb)
 static int quic_udp_err_lookup(struct sock *sk, struct sk_buff *skb)
 {
 	return -ENOENT;
+}
+
+static void quic_udp_sock_destroy(struct work_struct *work)
+{
+	struct quic_udp_sock *us = container_of(work, struct quic_udp_sock, work);
+	struct quic_hash_head *head;
+
+	head = quic_udp_sock_head(sock_net(us->sk), &us->addr);
+
+	spin_lock(&head->lock);
+	__hlist_del(&us->node);
+	spin_unlock(&head->lock);
+
+	udp_tunnel_sock_release(us->sk->sk_socket);
+	kfree(us);
 }
 
 static struct quic_udp_sock *quic_udp_sock_create(struct sock *sk, union quic_addr *a)
@@ -129,6 +141,7 @@ static struct quic_udp_sock *quic_udp_sock_create(struct sock *sk, union quic_ad
 	spin_lock(&head->lock);
 	hlist_add_head(&us->node, &head->head);
 	spin_unlock(&head->lock);
+	INIT_WORK(&us->work, quic_udp_sock_destroy);
 
 	return us;
 }
@@ -186,18 +199,6 @@ int quic_udp_sock_set(struct sock *sk, struct quic_udp_sock *udp_sk[], struct qu
 	return 0;
 }
 
-static void quic_udp_sock_destroy(struct quic_udp_sock *us)
-{
-	struct quic_hash_head *head = quic_udp_sock_head(sock_net(us->sk), &us->addr);
-
-	spin_lock(&head->lock);
-	__hlist_del(&us->node);
-	spin_unlock(&head->lock);
-
-	udp_tunnel_sock_release(us->sk->sk_socket);
-	kfree(us);
-}
-
 struct quic_udp_sock *quic_udp_sock_get(struct quic_udp_sock *us)
 {
 	if (us)
@@ -208,5 +209,5 @@ struct quic_udp_sock *quic_udp_sock_get(struct quic_udp_sock *us)
 void quic_udp_sock_put(struct quic_udp_sock *us)
 {
 	if (us && refcount_dec_and_test(&us->refcnt))
-		quic_udp_sock_destroy(us);
+		queue_work(quic_wq, &us->work);
 }

@@ -8,6 +8,8 @@
  *    Xin Long <lucien.xin@gmail.com>
  */
 
+extern struct workqueue_struct *quic_wq;
+
 struct quic_addr_family_ops {
 	sa_family_t sa_family;
 	int	addr_len;
