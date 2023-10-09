@@ -874,6 +874,7 @@ int quic_sock_change_addr(struct sock *sk, struct quic_path_addr *path, void *da
 			  u32 len, bool udp_bind)
 {
 	struct sk_buff *skb;
+	u64 number;
 	int err;
 
 	if (path->pending)
@@ -896,6 +897,12 @@ int quic_sock_change_addr(struct sock *sk, struct quic_path_addr *path, void *da
 		goto err;
 	quic_outq_ctrl_tail(sk, skb, true);
 
+	number = quic_connection_id_first_number(quic_dest(sk));
+	skb = quic_frame_create(sk, QUIC_FRAME_RETIRE_CONNECTION_ID, &number);
+	if (!skb)
+		goto err;
+	quic_outq_ctrl_tail(sk, skb, true);
+
 	skb = quic_frame_create(sk, QUIC_FRAME_PATH_CHALLENGE, path);
 	if (!skb)
 		goto err;
@@ -910,17 +917,23 @@ err:
 int quic_sock_set_context(struct sock *sk, struct quic_context *context, u32 len)
 {
 	struct quic_sock *qs = quic_sk(sk);
+	int err, state, seqno;
 	struct sk_buff *skb;
-	int err, state;
+	u64 prior = 0;
 
 	if (sizeof(*context) > len)
 		return -EINVAL;
 
-	quic_outq_set_param(sk, &context->local);
+	quic_inq_set_param(sk, &context->local);
 	quic_cong_set_param(sk, &context->local);
-	quic_streams_set_param(quic_streams(sk), &context->local, 1);
-	quic_inq_set_param(sk, &context->remote);
-	quic_streams_set_param(quic_streams(sk), &context->remote, 0);
+	quic_streams_set_param(quic_streams(sk), &context->local, 0);
+	if (quic_connection_id_set_param(&qs->dest, &context->local))
+		return -EINVAL;
+
+	quic_outq_set_param(sk, &context->remote);
+	quic_streams_set_param(quic_streams(sk), &context->remote, 1);
+	if (quic_connection_id_set_param(&qs->source, &context->remote))
+		return -EINVAL;
 
 	err = quic_connection_id_add(&qs->source, &context->source, sk);
 	if (err)
@@ -939,7 +952,6 @@ int quic_sock_set_context(struct sock *sk, struct quic_context *context, u32 len
 	quic_inq_purge(sk, quic_inq(sk));
 	if (!context->is_serv) {
 		state = QUIC_STATE_CLIENT_CONNECTED;
-		quic_packet_config(sk);
 		goto out;
 	}
 
@@ -947,60 +959,21 @@ int quic_sock_set_context(struct sock *sk, struct quic_context *context, u32 len
 	skb = quic_frame_create(sk, QUIC_FRAME_HANDSHAKE_DONE, NULL);
 	if (!skb)
 		return -ENOMEM;
-	quic_outq_ctrl_tail(sk, skb, false);
+	quic_outq_ctrl_tail(sk, skb, true);
 
 out:
+	for (seqno = 1; seqno < qs->source.max_count; seqno++) {
+		skb = quic_frame_create(sk, QUIC_FRAME_NEW_CONNECTION_ID, &prior);
+		if (!skb)
+			return -ENOMEM;
+		quic_outq_ctrl_tail(sk, skb, seqno != qs->source.max_count - 1);
+	}
 	quic_update_proto_ops(sk);
 	quic_set_state(sk, state);
 	inet_sk_set_state(sk, TCP_ESTABLISHED);
 
 	quic_unhash(sk);
 	quic_cong_cwnd_update(sk, min_t(u32, quic_packet_mss(quic_packet(sk)) * 10, 14720));
-	return 0;
-}
-
-static int quic_sock_new_connection_id(struct sock *sk, u32 *number, u8 len)
-{
-	struct quic_connection_id_set *id_set;
-	struct quic_new_connection_id nums;
-	struct sk_buff *skb;
-
-	if (len < sizeof(*number))
-		return -EINVAL;
-
-	nums.prior = *number;
-	nums.seqno = quic_connection_id_last_number(id_set);
-	if (nums.prior > nums.seqno)
-		return -EINVAL;
-
-	id_set = &quic_sk(sk)->source;
-	if (id_set->pending)
-		return -EBUSY;
-
-	skb = quic_frame_create(sk, QUIC_FRAME_NEW_CONNECTION_ID, &nums);
-	if (!skb)
-		return -ENOMEM;
-	quic_outq_data_tail(sk, skb, false);
-	id_set->pending = 1;
-	return 0;
-}
-
-static int quic_sock_retire_connection_id(struct sock *sk, u32 *number, u8 len)
-{
-	struct quic_connection_id_set *id_set;
-	struct sk_buff *skb;
-
-	if (len < sizeof(*number))
-		return -EINVAL;
-
-	id_set = &quic_sk(sk)->dest;
-	if (*number > quic_connection_id_last_number(id_set))
-		return -EINVAL;
-
-	skb = quic_frame_create(sk, QUIC_FRAME_RETIRE_CONNECTION_ID, &number);
-	if (!skb)
-		return -ENOMEM;
-	quic_outq_data_tail(sk, skb, false);
 	return 0;
 }
 
@@ -1079,6 +1052,40 @@ static int quic_sock_new_session_ticket(struct sock *sk, u8 *data, u32 len)
 		return -ENOMEM;
 
 	quic_outq_ctrl_tail(sk, skb, false);
+	return 0;
+}
+
+static int quic_sock_retire_connection_id(struct sock *sk, struct quic_connection_id_info *info, u8 len)
+{
+	struct sk_buff *skb;
+	u64 number, first;
+
+	if (len < sizeof(*info))
+		return -EINVAL;
+
+	if (info->source) {
+		number = info->source;
+		if (number > quic_connection_id_last_number(quic_source(sk)) ||
+				number <= quic_connection_id_first_number(quic_source(sk)))
+			return -EINVAL;
+		skb = quic_frame_create(sk, QUIC_FRAME_NEW_CONNECTION_ID, &number);
+		if (!skb)
+			return -ENOMEM;
+		quic_outq_ctrl_tail(sk, skb, false);
+		return 0;
+	}
+
+	number = info->dest;
+	first = quic_connection_id_first_number(quic_dest(sk));
+	if (number > quic_connection_id_last_number(quic_dest(sk)) || number <= first)
+		return -EINVAL;
+
+	for (; first < number; first++) {
+		skb = quic_frame_create(sk, QUIC_FRAME_RETIRE_CONNECTION_ID, &first);
+		if (!skb)
+			return -ENOMEM;
+		quic_outq_ctrl_tail(sk, skb, first != number - 1);
+	}
 	return 0;
 }
 
@@ -1162,12 +1169,6 @@ static int quic_setsockopt(struct sock *sk, int level, int optname,
 
 	lock_sock(sk);
 	switch (optname) {
-	case QUIC_SOCKOPT_NEW_CONNECTION_ID:
-		retval = quic_sock_new_connection_id(sk, kopt, optlen);
-		break;
-	case QUIC_SOCKOPT_RETIRE_CONNECTION_ID:
-		retval = quic_sock_retire_connection_id(sk, kopt, optlen);
-		break;
 	case QUIC_SOCKOPT_STREAM_RESET:
 		retval = quic_sock_stream_reset(sk, kopt, optlen);
 		break;
@@ -1188,6 +1189,9 @@ static int quic_setsockopt(struct sock *sk, int level, int optname,
 		break;
 	case QUIC_SOCKOPT_NEW_SESSION_TICKET:
 		retval = quic_sock_new_session_ticket(sk, kopt, optlen);
+		break;
+	case QUIC_SOCKOPT_RETIRE_CONNECTION_ID:
+		retval = quic_sock_retire_connection_id(sk, kopt, optlen);
 		break;
 	default:
 		retval = -ENOPROTOOPT;
@@ -1295,6 +1299,26 @@ static int quic_sock_get_session_ticket(struct sock *sk, int len,
 	return 0;
 }
 
+static int quic_sock_get_active_connection_id(struct sock *sk, int len,
+					      char __user *optval, int __user *optlen)
+{
+	struct quic_connection_id_info info;
+
+	if (len < sizeof(info))
+		return -EINVAL;
+
+	len = sizeof(info);
+	info.source = quic_source(sk)->active->id.number;
+	info.dest = quic_dest(sk)->active->id.number;
+
+	if (put_user(len, optlen))
+		return -EFAULT;
+	if (copy_to_user(optval, &info, len))
+		return -EFAULT;
+
+	return 0;
+}
+
 static int quic_sock_get_alpn(struct sock *sk, int len, char __user *optval, int __user *optlen)
 {
 	struct quic_token *alpn = quic_alpn(sk);
@@ -1368,6 +1392,9 @@ static int quic_getsockopt(struct sock *sk, int level, int optname,
 		break;
 	case QUIC_SOCKOPT_SESSION_TICKET:
 		retval = quic_sock_get_session_ticket(sk, len, optval, optlen);
+		break;
+	case QUIC_SOCKOPT_ACTIVE_CONNECTION_ID:
+		retval = quic_sock_get_active_connection_id(sk, len, optval, optlen);
 		break;
 	default:
 		retval = -ENOPROTOOPT;

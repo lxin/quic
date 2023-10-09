@@ -75,7 +75,6 @@ enum quic_msg_flags {	/* msg_flags in recvmsg */
 /* for testing only */
 #define QUIC_SOCKOPT_RETIRE_CONNECTION_ID		1000 /* set */
 #define QUIC_SOCKOPT_ACTIVE_CONNECTION_ID		1001 /* get */
-#define QUIC_SOCKOPT_NEW_CONNECTION_ID			1002 /* set */
 
 struct quic_connection_id {
 	uint32_t number;
@@ -83,15 +82,11 @@ struct quic_connection_id {
 	uint8_t data[20];
 };
 
-struct quic_new_connection_id {
-	uint32_t prior;
-	uint32_t seqno;
-};
-
 struct quic_transport_param {
 	uint32_t max_udp_payload_size;
 	uint32_t ack_delay_exponent;
 	uint32_t max_ack_delay;
+	uint32_t active_connection_id_limit;
 	uint32_t initial_max_data;
 	uint32_t initial_max_stream_data_bidi_local;
 	uint32_t initial_max_stream_data_bidi_remote;
@@ -124,6 +119,11 @@ enum { /* CONGESTION_CONTROL */
 struct quic_errinfo { /* STREAM_RESET and STREAM_STOP_SENDING */
 	uint64_t stream_id;
 	uint32_t errcode;
+};
+
+struct quic_connection_id_info { /* RETIRE/ACTIVE_CONNECTION_ID */
+	uint32_t source;
+	uint32_t dest;
 };
 
 enum {

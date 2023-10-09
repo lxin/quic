@@ -171,6 +171,16 @@ static inline struct quic_token *quic_alpn(const struct sock *sk)
 	return &quic_sk(sk)->alpn;
 }
 
+static inline struct quic_connection_id_set *quic_source(const struct sock *sk)
+{
+	return &quic_sk(sk)->source;
+}
+
+static inline struct quic_connection_id_set *quic_dest(const struct sock *sk)
+{
+	return &quic_sk(sk)->dest;
+}
+
 static inline bool quic_is_serv(struct sock *sk)
 {
 	return quic_state(sk) == QUIC_STATE_SERVER_CONNECTED;

@@ -76,7 +76,7 @@ int quic_connection_id_add(struct quic_connection_id_set *id_set,
 	struct quic_hash_head *head;
 	struct list_head *list;
 
-	if (!conn_id->len || conn_id->len > 20)
+	if (conn_id->len > 20)
 		return -EINVAL;
 	common = kzalloc(id_set->entry_size, GFP_ATOMIC);
 	if (!common)
@@ -122,28 +122,28 @@ int quic_connection_id_get(struct quic_connection_id_set *id_set, struct quic_co
 	return -ENOENT;
 }
 
-int quic_connection_id_set(struct quic_connection_id_set *id_set, struct quic_new_connection_id *nums,
-			   struct sock *sk, u8 *conn_id, u8 len)
+int quic_connection_id_append(struct quic_connection_id_set *id_set, u32 number, struct sock *sk,
+			      u8 *conn_id, u8 len)
 {
-	struct quic_common_connection_id *common, *tmp;
 	struct quic_connection_id conn;
-	struct list_head *list;
-	int err;
 
 	conn.len = len;
 	memcpy(conn.data, conn_id, len);
-	conn.number = nums->seqno;
-	err = quic_connection_id_add(id_set, &conn, sk);
-	if (err)
-		return err;
+	conn.number = number;
+	return quic_connection_id_add(id_set, &conn, sk);
+}
+
+void quic_connection_id_remove(struct quic_connection_id_set *id_set, u32 number)
+{
+	struct quic_common_connection_id *common, *tmp;
+	struct list_head *list;
 
 	list = &id_set->head;
 	list_for_each_entry_safe(common, tmp, list, list)
-		if (common->id.number < nums->prior)
+		if (common->id.number <= number)
 			quic_connection_id_del(common);
 
-	id_set->active = list_last_entry(list, struct quic_common_connection_id, list);
-	return 0;
+	id_set->active = list_first_entry(list, struct quic_common_connection_id, list);
 }
 
 void quic_connection_id_set_init(struct quic_connection_id_set *id_set, bool source)
@@ -160,4 +160,12 @@ void quic_connection_id_set_free(struct quic_connection_id_set *id_set)
 	list_for_each_entry_safe(common, tmp, &id_set->head, list)
 		quic_connection_id_del(common);
 	id_set->active = NULL;
+}
+
+int quic_connection_id_set_param(struct quic_connection_id_set *id_set, struct quic_transport_param *p)
+{
+	if (p->active_connection_id_limit < 2)
+		return -EINVAL;
+	id_set->max_count = p->active_connection_id_limit;
+	return 0;
 }

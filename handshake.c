@@ -809,6 +809,7 @@ static void quic_context_copy_transport_params(struct quic_endpoint *ep,
 	param->ack_delay_exponent = p->ack_delay_exponent;
 	param->max_ack_delay = p->max_ack_delay / NGTCP2_MICROSECONDS;
 	param->initial_max_data = p->initial_max_data;
+	param->active_connection_id_limit = p->active_connection_id_limit;
 	param->initial_max_stream_data_bidi_local = p->initial_max_stream_data_bidi_local;
 	param->initial_max_stream_data_bidi_remote = p->initial_max_stream_data_bidi_remote;
 	param->initial_max_stream_data_uni = p->initial_max_stream_data_uni;
