@@ -31,12 +31,12 @@ static char alpn[ALPN_LEN] = "sample";
 
 #define SND_MSG_LEN	4096
 #define RCV_MSG_LEN	4096 * 16
-#define TOT_LEN		2048000000
+#define TOT_LEN		1 * 1024 * 1024 * 1024
 
-char	snd_msg[SND_MSG_LEN + 1];
-char	rcv_msg[RCV_MSG_LEN + 1];
+char	snd_msg[SND_MSG_LEN];
+char	rcv_msg[RCV_MSG_LEN];
 
-static int quic_test_recvmsg(struct socket *sock, void *msg, int len, int *sid, int *flag)
+static int quic_test_recvmsg(struct socket *sock, void *msg, int len, u64 *sid, int *flag)
 {
 	char incmsg[CMSG_SPACE(sizeof(struct quic_rcvinfo))];
 	struct quic_rcvinfo *rinfo = CMSG_DATA(incmsg);
@@ -63,7 +63,7 @@ static int quic_test_recvmsg(struct socket *sock, void *msg, int len, int *sid, 
 	return error;
 }
 
-static int quic_test_sendmsg(struct socket *sock, const void *msg, int len, int sid, int flag)
+static int quic_test_sendmsg(struct socket *sock, const void *msg, int len, u64 sid, int flag)
 {
 	char outcmsg[CMSG_SPACE(sizeof(struct quic_sndinfo))];
 	struct quic_sndinfo *sinfo;
@@ -164,10 +164,11 @@ static int quic_test_server_handshake(struct socket *sock, struct quic_test_priv
 static int quic_test_do_client(void)
 {
 	struct quic_test_priv priv = {};
-	int i, err, flag = 0, sid = 0;
 	struct sockaddr_in ra = {};
+	uint64_t len = 0, sid = 0;
 	struct socket *sock;
-	uint64_t len = 0;
+	int err, flag = 0;
+	u32 start, end;
 
 	err = __sock_create(&init_net, PF_INET, SOCK_DGRAM, IPPROTO_QUIC, &sock, 1);
 	if (err < 0)
@@ -188,36 +189,44 @@ static int quic_test_do_client(void)
 	if (err < 0)
 		goto free;
 
-	for (i = 0; i < SND_MSG_LEN; i++)
-		snd_msg[i] = i % 10 + 48;
-	flag = QUIC_STREAM_FLAG_NEW;
-	snd_msg[i] = '\0';
+	start = jiffies_to_msecs(jiffies);
+	flag = QUIC_STREAM_FLAG_NEW; /* open stream when send first msg */
+	err = quic_test_sendmsg(sock, snd_msg, SND_MSG_LEN, sid, flag);
+	if (err < 0) {
+		printk("send %d\n", err);
+		goto free;
+	}
+	len += err;
+	flag = 0;
 	while (1) {
-		if (len) {
-			flag = 0;
-			if (len == TOT_LEN - SND_MSG_LEN)
-				flag = QUIC_STREAM_FLAG_FIN;
-		}
-		err = quic_test_sendmsg(sock, snd_msg, strlen(snd_msg), sid, flag);
+		err = quic_test_sendmsg(sock, snd_msg, SND_MSG_LEN, sid, flag);
 		if (err < 0) {
 			printk("send %d\n", err);
 			goto free;
 		}
 		len += err;
-		if (len % (SND_MSG_LEN * 1024) == 0)
-			printk("send len: %lld, stream_id: %d, flag: %d.\n", len, sid, flag);
-		if (len >= TOT_LEN)
+		if (!(len % (SND_MSG_LEN * 1024)))
+			printk("  send len: %lld, stream_id: %lld, flag: %d.\n", len, sid, flag);
+		if (len > TOT_LEN - SND_MSG_LEN)
 			break;
 	}
-	printk("send done!\n");
+	flag = QUIC_STREAM_FLAG_FIN; /* close stream when send last msg */
+	err = quic_test_sendmsg(sock, snd_msg, SND_MSG_LEN, sid, flag);
+	if (err < 0) {
+		printk("send %d\n", err);
+		goto free;
+	}
+	printk("SEND DONE: tot_len: %lld, stream_id: %lld, flag: %d.\n", len, sid, flag);
 
 	memset(rcv_msg, 0, sizeof(rcv_msg));
-	err = quic_test_recvmsg(sock, rcv_msg, sizeof(rcv_msg), &sid, &flag);
+	err = quic_test_recvmsg(sock, rcv_msg, RCV_MSG_LEN, &sid, &flag);
 	if (err < 0) {
 		printk("recv error %d\n", err);
 		goto free;
 	}
-	printk("recv: \"%s\", len: %d, stream_id: %d, flag: %d.\n", rcv_msg, err, sid, flag);
+	end = jiffies_to_msecs(jiffies);
+	start = (end - start) / 1000;
+	printk("ALL RECVD: %u MBytes/Sec\n", TOT_LEN/1024/1024/start);
 	err = 0;
 free:
 	__fput_sync(priv.filp);
@@ -228,9 +237,9 @@ static int quic_test_do_server(void)
 {
 	struct quic_test_priv priv = {};
 	struct socket *sock, *newsock;
-	int err, flag = 0, sid = 0;
 	struct sockaddr_in la = {};
-	uint64_t len = 0;
+	uint64_t len = 0, sid = 0;
+	int err, flag = 0;
 
 	err = __sock_create(&init_net, PF_INET, SOCK_DGRAM, IPPROTO_QUIC, &sock, 1);
 	if (err < 0)
@@ -250,15 +259,20 @@ static int quic_test_do_server(void)
 	err = kernel_accept(sock, &newsock, 0);
 	if (err < 0)
 		goto free;
+
+	/* attach a file for user space to operate */
 	priv.filp = sock_alloc_file(newsock, 0, NULL);
 	if (IS_ERR(priv.filp)) {
 		err = PTR_ERR(priv.filp);
 		goto free;
 	}
 
+	/* do handshake with net/handshake APIs */
 	err = quic_test_server_handshake(newsock, &priv);
 	if (err < 0)
 		goto free_flip;
+
+	printk("HANDSHAKE DONE\n");
 
 	while (1) {
 		err = quic_test_recvmsg(newsock, &rcv_msg, sizeof(rcv_msg), &sid, &flag);
@@ -268,10 +282,12 @@ static int quic_test_do_server(void)
 		}
 		len += err;
 		udelay(10);
-		printk("recv len: %lld, stream_id: %d, flag: %d.\n", len, sid, flag);
 		if (flag & QUIC_STREAM_FLAG_FIN)
 			break;
+		printk("  recv len: %lld, stream_id: %lld, flag: %d.\n", len, sid, flag);
 	}
+
+	printk("RECV DONE: tot_len %lld, stream_id: %lld, flag: %d.\n", len, sid, flag);
 
 	flag = QUIC_STREAM_FLAG_FIN;
 	strcpy(snd_msg, "recv done");
@@ -291,7 +307,7 @@ free:
 
 static int quic_test_init(void)
 {
-	printk(KERN_INFO "[QUIC_TEST] quic test start\n");
+	printk(KERN_INFO "[QUIC_TEST] Quic Test Start\n");
 	if (!strcmp(role, "client"))
 		return quic_test_do_client();
 	if (!strcmp(role, "server"))
@@ -301,7 +317,7 @@ static int quic_test_init(void)
 
 static void quic_test_exit(void)
 {
-	printk(KERN_INFO "[QUIC_TEST] quic test exit\n");
+	printk(KERN_INFO "[QUIC_TEST] Quic Test Exit\n");
 }
 
 module_init(quic_test_init);
@@ -311,10 +327,12 @@ module_param_string(role, role, ROLE_LEN, 0644);
 module_param_string(alpn, alpn, ALPN_LEN, 0644);
 module_param_string(ip, ip, IP_LEN, 0644);
 module_param_named(port, port, int, 0644);
+
 MODULE_PARM_DESC(role, "client or server");
 MODULE_PARM_DESC(ip, "server address");
 MODULE_PARM_DESC(port, "server port");
 MODULE_PARM_DESC(alpn, "alpn name");
+
 MODULE_AUTHOR("Xin Long <lucien.xin@gmail.com>");
 MODULE_DESCRIPTION("Test For Support for the QUIC protocol (RFC9000)");
 MODULE_LICENSE("GPL");
