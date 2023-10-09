@@ -2,7 +2,7 @@
 /* QUIC kernel implementation
  * (C) Copyright Red Hat Corp. 2023
  *
- * This file is part of the SCTP kernel implementation
+ * This file is part of the QUIC kernel implementation
  *
  * Written or modified by:
  *    Xin Long <lucien.xin@gmail.com>
