@@ -974,13 +974,15 @@ int quic_client_psk_tlshd(int sockfd, struct quic_handshake_parms *parms)
  * - On success, 0.
  * - On error, the error is returned.
  */
-int quic_client_x509_handshake(int sockfd)
+int quic_client_x509_handshake(int sockfd, char *pkey, char *cert)
 {
 	struct quic_handshake_parms parms = {};
 	struct quic_endpoint ep = {};
 
 	ep.sockfd = sockfd;
 	ep.parms = &parms;
+	ep.parms->names[0] = pkey;
+	ep.parms->names[1] = cert;
 	ep.session_new = quic_client_set_x509_session;
 	ep.cred_setkey = quic_client_set_x509_cred;
 
@@ -1110,7 +1112,7 @@ int quic_server_x509_tlshd(int sockfd, struct quic_handshake_parms *parms)
  * - On success, the number of bytes received.
  * - On error, -1 is returned, and errno is set to indicate the error.
  */
-int quic_recvmsg(int sockfd, void *msg, size_t len, uint32_t *sid, uint32_t *flag)
+int quic_recvmsg(int sockfd, void *msg, size_t len, uint64_t *sid, uint32_t *flag)
 {
 	char incmsg[CMSG_SPACE(sizeof(struct quic_rcvinfo))];
 	struct cmsghdr *cmsg = NULL;
@@ -1161,7 +1163,7 @@ int quic_recvmsg(int sockfd, void *msg, size_t len, uint32_t *sid, uint32_t *fla
  * - On success, return the number of bytes sent.
  * - On error, -1 is returned, and errno is set to indicate the error.
  */
-int quic_sendmsg(int sockfd, const void *msg, size_t len, uint32_t sid, uint32_t flag)
+int quic_sendmsg(int sockfd, const void *msg, size_t len, uint64_t sid, uint32_t flag)
 {
 	struct quic_sndinfo *sinfo;
 	struct msghdr outmsg;

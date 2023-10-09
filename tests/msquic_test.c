@@ -47,6 +47,7 @@ Abstract:
 #include "msquic.h"
 #include <stdio.h>
 #include <stdlib.h>
+#include <time.h>
 
 #ifndef UNREFERENCED_PARAMETER
 #define UNREFERENCED_PARAMETER(P) (void)(P)
@@ -78,7 +79,8 @@ const uint64_t IdleTimeoutMs = 1000;
 // The length of buffer sent over the streams in the protocol.
 //
 const uint32_t SendBufferLength = 4096;
-const uint64_t TotalLength = 2048000000;
+const uint64_t TotalLength = 1 * 1024 * 1024 * 1024;
+time_t StartTime, EndTime;
 
 //
 // The QUIC API/function table returned from MsQuicOpen2. It contains all the
@@ -258,7 +260,7 @@ ServerStreamCallback(
         // Data was received from the peer on the stream.
         //
         TotalRecvLength += Event->RECEIVE.TotalBufferLength;
-        printf("[strm][%p] Data received Length %lld Flag %d\n", Stream, TotalRecvLength, Event->RECEIVE.Flags);
+        printf("  [strm][%p] Data received Length %lld Flag %d\n", Stream, TotalRecvLength, Event->RECEIVE.Flags);
         break;
     case QUIC_STREAM_EVENT_PEER_SEND_SHUTDOWN:
         //
@@ -575,7 +577,7 @@ ClientStreamCallback(
         TotalSentLength += SendBufferLength;
         if (TotalSentLength >= TotalLength) {
             free(Event->SEND_COMPLETE.ClientContext);
-            printf("[strm][%p] Sent Done!\n", TotalSentLength);
+            printf("[strm][%p] Sent Done!\n", Stream);
             break;
         }
         if (TotalSentLength) {
@@ -596,14 +598,16 @@ ClientStreamCallback(
             free(SendBufferRaw);
             break;
         }
-        printf("[strm][%p] Data sent Length %lld Flag %d\n", Stream, TotalSentLength + SendBufferLength, Flag);
+	if (!((TotalSentLength + SendBufferLength) % (SendBufferLength * 1024)))
+		printf("  [strm][%p] Data sent Length %lld Flag %d\n", Stream, TotalSentLength + SendBufferLength, Flag);
         break;
     case QUIC_STREAM_EVENT_RECEIVE:
         //
         // Data was received from the peer on the stream.
         //
-        printf("[strm][%p] Data received \" %s\" Length %lld Flag %d\n", Stream,
-        (char *)Event->RECEIVE.Buffers->Buffer, Event->RECEIVE.TotalBufferLength, Event->RECEIVE.Flags);
+        time(&EndTime);
+        StartTime = EndTime - StartTime;
+        printf("[strm][%p] ALL RECVD: %u MBytes/Sec\n", Stream, TotalSentLength/1024/1024/StartTime);
         break;
     case QUIC_STREAM_EVENT_PEER_SEND_ABORTED:
         //
@@ -682,6 +686,7 @@ ClientSend(
     // the buffer. This indicates this is the last buffer on the stream and the
     // the stream is shut down (in the send direction) immediately after.
     //
+    time(&StartTime);
     if (QUIC_FAILED(Status = MsQuic->StreamSend(Stream, SendBuffer, 1, QUIC_SEND_FLAG_NONE, SendBuffer))) {
         printf("StreamSend failed, 0x%x!\n", Status);
         free(SendBufferRaw);

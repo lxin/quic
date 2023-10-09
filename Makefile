@@ -1,43 +1,34 @@
-all: lib module app sample_app
-clean: lib_clean module_clean app_clean sample_clean
+all: lib module
+install: lib_install module_install
+clean: lib_clean module_clean
 
-install: lib module
-	install -m 644 net/quic/quic.ko /lib/modules/$(shell uname -r)/extra
+lib: handshake.c
+	gcc -fPIC handshake.c -shared -o libquic.so -Iinclude/uapi/ -lngtcp2_crypto_gnutls -lngtcp2 -lgnutls
+lib_install:
 	install -m 644 include/uapi/linux/quic.h /usr/include/linux
 	install -m 644 handshake.h /usr/include/netinet/quic.h
 	install -m 644 libquic.so /usr/lib64
 	install -m 644 libquic.pc /usr/lib64/pkgconfig
-	depmod -a
-uninstall:
-	lsmod | grep -q quic && rmmod quic || :
-	rm -rf /usr/include/linux/quic.h /usr/include/netinet/quic.h
-	rm -rf /lib/modules/$(shell uname -r)/extra/quic.ko
-	rm -rf /usr/lib64/libquic.so /usr/lib64/pkgconfig/libquic.pc
-	depmod -a
-
-INCS = -Iinclude/uapi/
-LIBS = -lngtcp2_crypto_gnutls -lngtcp2 -lgnutls
-lib: handshake.c
-	gcc -fPIC handshake.c -shared -o libquic.so $(INCS) $(LIBS)
 lib_clean:
 	rm -rf libquic.so
 
 module:
-	lsmod | grep -q quic && rmmod quic || :
-	make -C /lib/modules/$(shell uname -r)/build M=$(shell pwd)/net/quic modules ROOTDIR=$(CURDIR)
-	modprobe udp_tunnel
-	modprobe ip6_udp_tunnel
-	insmod net/quic/quic.ko
+	make -C /lib/modules/$(shell uname -r)/build M=$(shell pwd)/net/quic modules ROOTDIR=$(CURDIR) CONFIG_IP_QUIC=m CONFIG_IP_QUIC_TEST=m
+module_install:
+	! [ -d /sys/module/quic ] || rmmod quic
+	install -m 644 include/uapi/linux/quic.h /usr/include/linux
+	[ -d /lib/modules/$(shell uname -r)/extra ] || mkdir /lib/modules/$(shell uname -r)/extra
+	install -m 644 net/quic/quic.ko /lib/modules/$(shell uname -r)/extra
+	! [ -f net/quic/quic_test.ko ] || install -m 644 net/quic/quic_test.ko /lib/modules/$(shell uname -r)/extra
+	depmod -a
 module_clean:
 	make -C /lib/modules/$(shell uname -r)/build M=$(shell pwd)/net/quic clean
-	lsmod | grep -q quic && rmmod quic || :
+	! [ -d /sys/module/quic ] || rmmod quic
 
-sample_app:
-	make -C sample
-sample_clean:
-	make -C sample clean
+uninstall:
+	rm -rf /usr/include/linux/quic.h /usr/include/netinet/quic.h
+	rm -rf /lib/modules/$(shell uname -r)/extra/quic.ko
+	rm -rf /lib/modules/$(shell uname -r)/extra/quic_test.ko
+	rm -rf /usr/lib64/libquic.so /usr/lib64/pkgconfig/libquic.pc
+	! [ -d /sys/module/quic ] || rmmod quic
 
-app:
-	make -C example
-app_clean:
-	make -C example clean

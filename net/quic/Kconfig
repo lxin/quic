@@ -27,5 +27,8 @@ menuconfig IP_QUIC
 
 	  If in doubt, say N.
 
+if IP_QUIC
 config IP_QUIC_TEST
-	  depends on IP_QUIC
+	depends on NET_HANDSHAKE
+	def_tristate NET_HANDSHAKE
+endif
