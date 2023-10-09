@@ -16,6 +16,7 @@
 #include <net/sock.h>
 #include "hashtable.h"
 #include "stream.h"
+#include "crypto.h"
 #include "frame.h"
 
 #define QUIC_STREAM_TYPE_CLIENT_BI	0x00
@@ -23,11 +24,7 @@
 #define QUIC_STREAM_TYPE_CLIENT_UNI	0x02
 #define QUIC_STREAM_TYPE_SERVER_UNI	0x03
 
-#define QUIC_STREAM_TYPE_SERVER_MASK	0x01
-#define QUIC_STREAM_TYPE_UNI_MASK	0x02
-#define QUIC_STREAM_TYPE_MASK		0x03
-
-struct quic_stream *quic_stream_find(struct quic_stream_table *streams, u32 stream_id)
+struct quic_stream *quic_stream_find(struct quic_stream_table *streams, u64 stream_id)
 {
 	struct quic_hash_head *head = quic_stream_head(&streams->ht, stream_id);
 	struct quic_stream *stream;
@@ -39,7 +36,7 @@ struct quic_stream *quic_stream_find(struct quic_stream_table *streams, u32 stre
 	return stream;
 }
 
-static struct quic_stream *quic_stream_add(struct quic_stream_table *streams, u32 stream_id,
+static struct quic_stream *quic_stream_add(struct quic_stream_table *streams, u64 stream_id,
 					   u8 is_serv)
 {
 	struct quic_hash_head *head;
@@ -54,9 +51,13 @@ static struct quic_stream *quic_stream_add(struct quic_stream_table *streams, u3
 		stream->recv.window = streams->recv.max_stream_data_uni;
 		stream->send.max_bytes = stream->send.window;
 		stream->recv.max_bytes = stream->recv.window;
+		if (streams->send.streams_uni <= (stream_id >> 2))
+			streams->send.streams_uni = (stream_id >> 2) + 1;
 		goto out;
 	}
 
+	if (streams->send.streams_bidi <= (stream_id >> 2))
+		streams->send.streams_bidi = (stream_id >> 2) + 1;
 	if (is_serv ^ !(stream_id & QUIC_STREAM_TYPE_SERVER_MASK)) {
 		stream->send.window = streams->send.max_stream_data_bidi_remote;
 		stream->recv.window = streams->recv.max_stream_data_bidi_local;
@@ -117,6 +118,7 @@ void quic_streams_set_param(struct quic_stream_table *streams, struct quic_trans
 		streams->send.max_stream_data_uni = p->initial_max_stream_data_uni;
 		streams->send.max_streams_bidi = p->initial_max_streams_bidi;
 		streams->send.max_streams_uni = p->initial_max_streams_uni;
+		streams->send.stream_active = -1;
 		return;
 	}
 
@@ -146,7 +148,19 @@ void quic_streams_get_param(struct quic_stream_table *streams, struct quic_trans
 	p->initial_max_streams_uni = streams->recv.max_streams_uni;
 }
 
-struct quic_stream *quic_stream_send_get(struct quic_stream_table *streams, u32 stream_id,
+bool quic_stream_id_exceeds(struct quic_stream_table *streams, u64 stream_id)
+{
+	if (stream_id & QUIC_STREAM_TYPE_UNI_MASK) {
+		if ((stream_id >> 2) >= streams->send.max_streams_uni)
+			return true;
+	} else {
+		if ((stream_id >> 2) >= streams->send.max_streams_bidi)
+			return true;
+	}
+	return false;
+}
+
+struct quic_stream *quic_stream_send_get(struct quic_stream_table *streams, u64 stream_id,
 					 u32 flag, bool is_serv)
 {
 	u8 type = (stream_id & QUIC_STREAM_TYPE_MASK);
@@ -154,32 +168,35 @@ struct quic_stream *quic_stream_send_get(struct quic_stream_table *streams, u32 
 
 	if (is_serv) {
 		if (type == QUIC_STREAM_TYPE_CLIENT_UNI)
-			return NULL;
-	}
-	if (type == QUIC_STREAM_TYPE_SERVER_UNI)
-		return NULL;
+			return ERR_PTR(-EINVAL);
+	} else if (type == QUIC_STREAM_TYPE_SERVER_UNI)
+		return ERR_PTR(-EINVAL);
 
 	stream = quic_stream_find(streams, stream_id);
 	if (stream) {
 		if (flag & QUIC_STREAM_FLAG_NEW)
-			return NULL;
+			return ERR_PTR(-EINVAL);
 		return stream;
 	}
 
 	if (!(flag & QUIC_STREAM_FLAG_NEW))
-		return NULL;
+		return ERR_PTR(-EINVAL);
 
 	if (is_serv) {
 		if (type == QUIC_STREAM_TYPE_CLIENT_BI)
-			return NULL;
+			return ERR_PTR(-EINVAL);
 	} else {
 		if (type == QUIC_STREAM_TYPE_SERVER_BI)
-			return NULL;
+			return ERR_PTR(-EINVAL);
 	}
+	if (quic_stream_id_exceeds(streams, stream_id))
+		return ERR_PTR(-EAGAIN);
+
+	streams->send.stream_active = stream_id;
 	return quic_stream_add(streams, stream_id, is_serv);
 }
 
-struct quic_stream *quic_stream_recv_get(struct quic_stream_table *streams, u32 stream_id,
+struct quic_stream *quic_stream_recv_get(struct quic_stream_table *streams, u64 stream_id,
 					 bool is_serv)
 {
 	u8 type = (stream_id & QUIC_STREAM_TYPE_MASK);
@@ -188,34 +205,18 @@ struct quic_stream *quic_stream_recv_get(struct quic_stream_table *streams, u32 
 	if (is_serv) {
 		if (type == QUIC_STREAM_TYPE_SERVER_UNI)
 			return NULL;
-	}
-	if (type == QUIC_STREAM_TYPE_CLIENT_UNI)
+	} else if (type == QUIC_STREAM_TYPE_CLIENT_UNI)
 		return NULL;
 
 	stream = quic_stream_find(streams, stream_id);
 	if (stream)
 		return stream;
-
+	if (stream_id & QUIC_STREAM_TYPE_UNI_MASK) {
+		if ((stream_id >> 2) >= streams->recv.max_streams_uni)
+			return NULL;
+	} else {
+		if ((stream_id >> 2) >= streams->recv.max_streams_bidi)
+			return NULL;
+	}
 	return quic_stream_add(streams, stream_id, is_serv);
-}
-
-void quic_stream_send_state_update(struct quic_stream *stream, u8 type)
-{
-	if (type == QUIC_FRAME_ACK) {
-		if (stream->send.state == QUIC_STREAM_SEND_STATE_RESET_SENT) {
-			stream->send.state = QUIC_STREAM_SEND_STATE_RESET_RECVD;
-			return;
-		}
-		stream->send.state = QUIC_STREAM_SEND_STATE_RECVD;
-		return;
-	}
-	if (type == QUIC_FRAME_RESET_STREAM) {
-		stream->send.state = QUIC_STREAM_SEND_STATE_RESET_SENT;
-		return;
-	}
-	if (type & QUIC_STREAM_BIT_FIN) {
-		stream->send.state = QUIC_STREAM_SEND_STATE_SENT;
-		return;
-	}
-	stream->send.state = QUIC_STREAM_SEND_STATE_SEND;
 }

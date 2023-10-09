@@ -8,24 +8,6 @@
  *    Xin Long <lucien.xin@gmail.com>
  */
 
-enum {
-	QUIC_STREAM_SEND_STATE_READY,
-	QUIC_STREAM_SEND_STATE_SEND,
-	QUIC_STREAM_SEND_STATE_SENT,
-	QUIC_STREAM_SEND_STATE_RECVD,
-	QUIC_STREAM_SEND_STATE_RESET_SENT,
-	QUIC_STREAM_SEND_STATE_RESET_RECVD,
-};
-
-enum {
-	QUIC_STREAM_RECV_STATE_RECV,
-	QUIC_STREAM_RECV_STATE_SIZE_KNOWN,
-	QUIC_STREAM_RECV_STATE_RECVD,
-	QUIC_STREAM_RECV_STATE_READ,
-	QUIC_STREAM_RECV_STATE_RESET_RECVD,
-	QUIC_STREAM_RECV_STATE_RESET_READ,
-};
-
 #define QUIC_STREAM_BIT_FIN	0x01
 #define QUIC_STREAM_BIT_LEN	0x02
 #define QUIC_STREAM_BIT_OFF	0x04
@@ -33,7 +15,7 @@ enum {
 
 struct quic_stream {
 	struct hlist_node node;
-	u32 id;
+	u64 id;
 	struct {
 		u64 max_bytes;
 		u64 window; /* congestion control in stream level? not now */
@@ -55,8 +37,6 @@ struct quic_stream {
 		u32 frags;
 		u8 state;
 	} recv;
-	u32 in_flight;
-	u64 known_size;
 };
 
 struct quic_stream_table {
@@ -66,15 +46,18 @@ struct quic_stream_table {
 		u32 max_stream_data_bidi_local;
 		u32 max_stream_data_bidi_remote;
 		u32 max_stream_data_uni;
-		u32 max_streams_bidi;
-		u32 max_streams_uni;
+		u64 max_streams_bidi;
+		u64 max_streams_uni;
+		u64 streams_bidi;
+		u64 streams_uni;
+		u64 stream_active;
 	} send;
 	struct {
 		u32 max_stream_data_bidi_local;
 		u32 max_stream_data_bidi_remote;
 		u32 max_stream_data_uni;
-		u32 max_streams_bidi;
-		u32 max_streams_uni;
+		u64 max_streams_bidi;
+		u64 max_streams_uni;
 	} recv;
 };
 
@@ -84,9 +67,9 @@ void quic_streams_set_param(struct quic_stream_table *streams, struct quic_trans
 			    u8 send);
 void quic_streams_get_param(struct quic_stream_table *streams, struct quic_transport_param *p,
 			    u8 send);
-struct quic_stream *quic_stream_send_get(struct quic_stream_table *streams, u32 stream_id,
+struct quic_stream *quic_stream_send_get(struct quic_stream_table *streams, u64 stream_id,
 					 u32 flag, bool is_serv);
-struct quic_stream *quic_stream_recv_get(struct quic_stream_table *streams, u32 stream_id,
+struct quic_stream *quic_stream_recv_get(struct quic_stream_table *streams, u64 stream_id,
 					 bool is_serv);
-struct quic_stream *quic_stream_find(struct quic_stream_table *streams, u32 stream_id);
-void quic_stream_send_state_update(struct quic_stream *stream, u8 type);
+struct quic_stream *quic_stream_find(struct quic_stream_table *streams, u64 stream_id);
+bool quic_stream_id_exceeds(struct quic_stream_table *streams, u64 stream_id);

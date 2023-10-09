@@ -25,9 +25,10 @@ struct quic_outqueue {
 };
 
 struct quic_snd_cb {
+	struct quic_stream *stream;
 	u8 rtx_count;
 	u8 frame_type;
-	u32 stream_id;
+	u32 err_code;
 	u32 data_bytes;
 	u32 transmit_ts;
 	u32 packet_number;

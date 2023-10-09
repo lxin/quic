@@ -10,6 +10,7 @@
 
 struct quic_inqueue {
 	struct sk_buff_head reassemble_list;
+	struct sk_buff *last_event;
 	u64 max_bytes;
 	u64 window;
 	u64 bytes;
@@ -18,15 +19,16 @@ struct quic_inqueue {
 	u32 max_udp_payload_size;
 	u32 ack_delay_exponent;
 	u32 max_ack_delay;
+	u32 events;
 };
 
 struct quic_rcv_cb {
-	struct udp_skb_cb udp;
+	struct quic_stream *stream;
 	u16 offset;
+	u8 event;
 	u8 number_offset;
 	u8 backlog:1;
 	u8 stream_fin:1;
-	u32 stream_id;
 	u64 stream_offset;
 };
 

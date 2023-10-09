@@ -50,7 +50,7 @@ static int quic_outq_flow_control(struct sock *sk, struct sk_buff *skb)
 		requeue = 1;
 
 	/* send flow control */
-	stream = quic_stream_find(quic_streams(sk), QUIC_SND_CB(skb)->stream_id);
+	stream = QUIC_SND_CB(skb)->stream;
 	if (stream->send.bytes + len > stream->send.max_bytes) {
 		if (!stream->send.data_blocked) {
 			nskb = quic_frame_create(sk, QUIC_FRAME_STREAM_DATA_BLOCKED, stream);
@@ -79,6 +79,7 @@ static int quic_outq_flow_control(struct sock *sk, struct sk_buff *skb)
 	}
 
 	outq->inflight += len;
+	stream->send.frags++;
 	outq->bytes += len;
 	stream->send.bytes += len;
 	return 0;
@@ -145,6 +146,18 @@ static void quic_outq_set_owner_w(struct sk_buff *skb, struct sock *sk)
 
 void quic_outq_data_tail(struct sock *sk, struct sk_buff *skb, bool cork)
 {
+	struct quic_stream *stream = QUIC_SND_CB(skb)->stream;
+
+	if (stream->send.state == QUIC_STREAM_SEND_STATE_READY)
+		stream->send.state = QUIC_STREAM_SEND_STATE_SEND;
+
+	if (QUIC_SND_CB(skb)->frame_type & QUIC_STREAM_BIT_FIN &&
+	    stream->send.state == QUIC_STREAM_SEND_STATE_SEND) {
+		if (quic_streams(sk)->send.stream_active == stream->id)
+			quic_streams(sk)->send.stream_active = -1;
+		stream->send.state = QUIC_STREAM_SEND_STATE_SENT;
+	}
+
 	quic_outq_set_owner_w(skb, sk);
 	__skb_queue_tail(&sk->sk_write_queue, skb);
 	if (!cork)
@@ -169,6 +182,7 @@ void quic_outq_retransmit_check(struct sock *sk, u32 largest, u32 smallest,
 	u32 acked_bytes = 0, acked_number = 0, transmit_ts = 0;
 	struct quic_outqueue *outq = quic_outq(sk);
 	struct sk_buff *skb, *tmp, *first;
+	struct quic_stream *stream;
 	struct sk_buff_head *head;
 
 	head = &outq->retransmit_list;
@@ -178,17 +192,23 @@ void quic_outq_retransmit_check(struct sock *sk, u32 largest, u32 smallest,
 			continue;
 		if (QUIC_SND_CB(skb)->packet_number < smallest)
 			break;
-		if (QUIC_SND_CB(skb)->frame_type == QUIC_FRAME_NEW_CONNECTION_ID)
-			quic_frame_new_connection_id_ack(sk, skb);
-		if (!QUIC_SND_CB(skb)->rtx_count &&
-		    QUIC_SND_CB(skb)->packet_number == ack_largest)
+		if (!QUIC_SND_CB(skb)->rtx_count && QUIC_SND_CB(skb)->packet_number == ack_largest)
 			quic_cong_rtt_update(sk, QUIC_SND_CB(skb)->transmit_ts, ack_delay);
+		stream = QUIC_SND_CB(skb)->stream;
+		if (QUIC_SND_CB(skb)->data_bytes) {
+			stream->send.frags--;
+			outq->inflight -= QUIC_SND_CB(skb)->data_bytes;
+			if (!stream->send.frags && stream->send.state == QUIC_STREAM_SEND_STATE_SENT) {
+				stream->send.state = QUIC_STREAM_SEND_STATE_RECVD;
+			}
+			acked_bytes += QUIC_SND_CB(skb)->data_bytes;
+		} else if (QUIC_SND_CB(skb)->frame_type == QUIC_FRAME_RESET_STREAM) {
+			stream->send.state = QUIC_STREAM_SEND_STATE_RESET_RECVD;
+		}
 		if (!acked_number) {
 			acked_number = QUIC_SND_CB(skb)->packet_number;
 			transmit_ts = QUIC_SND_CB(skb)->transmit_ts;
 		}
-		outq->inflight -= QUIC_SND_CB(skb)->data_bytes;
-		acked_bytes += QUIC_SND_CB(skb)->data_bytes;
 		if (outq->retransmit_skb == skb)
 			outq->retransmit_skb = NULL;
 		__skb_unlink(skb, head);
@@ -250,7 +270,8 @@ void quic_outq_set_param(struct sock *sk, struct quic_transport_param *p)
 	quic_timer_setup(sk, QUIC_TIMER_ACK, outq->max_ack_delay);
 
 	outq->max_bytes = p->initial_max_data;
-	sk->sk_sndbuf = 2 * p->initial_max_data;
+	if (sk->sk_sndbuf > 2 * p->initial_max_data)
+		sk->sk_sndbuf = 2 * p->initial_max_data;
 }
 
 void quic_outq_get_param(struct sock *sk, struct quic_transport_param *p)

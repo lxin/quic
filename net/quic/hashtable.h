@@ -98,7 +98,7 @@ static inline struct quic_hash_head *quic_udp_sock_head(struct net *net, union q
 	return &ht->hash[quic_ahash(net, addr) & (ht->size - 1)];
 }
 
-static inline struct quic_hash_head *quic_stream_head(struct quic_hash_table *ht, u32 stream_id)
+static inline struct quic_hash_head *quic_stream_head(struct quic_hash_table *ht, u64 stream_id)
 {
 	return &ht->hash[stream_id & (ht->size - 1)];
 }
