@@ -49,10 +49,16 @@ daemon_run ./func_test server 0.0.0.0 1234 -pkey_file:./keys/server-key.pem -cer
 # ./func_test client 127.0.0.1 1234 -pkey_file:./keys/client-key.pem -cert_file:./keys/client-cert.pem || exit 1
 daemon_stop
 
-print_start "Performance Tests"
+print_start "Performance Tests (IPv4)"
 daemon_run ./perf_test server 0.0.0.0 1234 -pkey_file:./keys/server-key.pem -cert_file:./keys/server-cert.pem
 ./perf_test client 127.0.0.1 1234 || exit 1
 # ./perf_test client 127.0.0.1 1234 -pkey_file:./keys/client-key.pem -cert_file:./keys/client-cert.pem || exit 1
+daemon_stop "perf_test"
+
+print_start "Performance Tests (IPv6)"
+daemon_run ./perf_test server :: 1234 -pkey_file:./keys/server-key.pem -cert_file:./keys/server-cert.pem
+./perf_test client ::1 1234 || exit 1
+# ./perf_test client ::1 1234 -pkey_file:./keys/client-key.pem -cert_file:./keys/client-cert.pem || exit 1
 daemon_stop "perf_test"
 
 if [ -f /usr/local/include/msquic.h -o -f /usr/include/msquic.h ]; then
@@ -85,9 +91,14 @@ if modinfo quic_test > /dev/null 2>&1; then
 	daemon_stop "perf_test"
 fi
 
-print_start "Sample Tests"
+print_start "Sample Tests (IPv4)"
 daemon_run ./sample_test server 127.0.0.1 1234 127.0.0.1 4321
 ./sample_test client 127.0.0.1 4321 127.0.0.1 1234 || exit 1
+daemon_stop
+
+print_start "Sample Tests (IPv6)"
+daemon_run ./sample_test server ::1 1234 ::1 4321
+./sample_test client ::1 4321 ::1 1234 || exit 1
 daemon_stop
 
 echo ""

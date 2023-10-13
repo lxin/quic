@@ -1,6 +1,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <errno.h>
+#include <netdb.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <arpa/inet.h>
@@ -101,11 +102,46 @@ int main(int argc, char *argv[])
 	struct quic_context ctx = server_context;
 	struct sockaddr_in sa = {}, da = {};
 	char msg[MSG_LEN + 1];
+	struct addrinfo *rp;
 	int sd, len, ret;
 
 	if (argc != 6 || (strcmp(argv[1], "server") && strcmp(argv[1], "client"))) {
 		printf("%s <server|client> <LOCAL ADDR> <LOCAL PORT> <PEER ADDR> <PEER PORT>\n", argv[0]);
 		return 1;
+	}
+
+	if (getaddrinfo(argv[2], argv[3], NULL, &rp)) {
+		printf("getaddrinfo error\n");
+		return -1;
+	}
+
+	if (rp->ai_family == AF_INET6) {
+		struct sockaddr_in6 sa = {}, da = {};
+
+		sd = socket(AF_INET6, SOCK_DGRAM, IPPROTO_QUIC);
+		if (sd < 0) {
+			printf("socket creation failed\n");
+			return -1;
+		}
+
+		sa.sin6_family = AF_INET6;
+		sa.sin6_port = htons(atoi(argv[3]));
+		inet_pton(AF_INET6, argv[2], &sa.sin6_addr);
+
+		if (bind(sd, (struct sockaddr *)&sa, sizeof(sa))) {
+			printf("socket bind failed\n");
+			return -1;
+		}
+
+		da.sin6_family = AF_INET6;
+		da.sin6_port = htons(atoi(argv[5]));
+		inet_pton(AF_INET6, argv[4], &da.sin6_addr);
+
+		if (connect(sd, (struct sockaddr *)&da, sizeof(da))) {
+			printf("socket connect failed\n");
+			return -1;
+		}
+		goto done;
 	}
 
 	sd = socket(AF_INET, SOCK_DGRAM, IPPROTO_QUIC);
@@ -131,7 +167,7 @@ int main(int argc, char *argv[])
 		printf("socket connect failed\n");
 		return -1;
 	}
-
+done:
 	/* NOTE: quic_send/recvmsg() allows get/setting stream id and flags,
 	 * comparing to send/recv():
 	 * sid = 0;

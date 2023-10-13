@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <netdb.h>
 #include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
@@ -82,17 +83,42 @@ static int read_cert_file(char *file, gnutls_pcert_st **cert)
 
 static int do_server(int argc, char *argv[])
 {
-	struct sockaddr_in la = {}, ra = {};
 	int ret, sockfd, listenfd, addrlen;
 	struct quic_handshake_parms parms;
+	struct sockaddr_storage ra = {};
+	struct sockaddr_in la = {};
 	uint64_t len = 0,  sid = 0;
 	char *mode, *pkey, *cert;
 	gnutls_pcert_st gcert;
+	struct addrinfo *rp;
 	int flag = 0;
 
 	if (argc != 6) {
 		printf("%s server <LOCAL ADDR> <LOCAL PORT> <-pkey_file:PRIVATE_KEY_FILE> <-cert_file:CERTIFICATE_FILE>\n", argv[0]);
 		return 0;
+	}
+
+	if (getaddrinfo(argv[2], argv[3], NULL, &rp)) {
+		printf("getaddrinfo error\n");
+		return -1;
+	}
+
+	if (rp->ai_family == AF_INET6) {
+		struct sockaddr_in6 la = {};
+
+		la.sin6_family = AF_INET6;
+		la.sin6_port = htons(atoi(argv[3]));
+		inet_pton(AF_INET6, argv[2], &la.sin6_addr);
+		listenfd = socket(AF_INET6, SOCK_DGRAM, IPPROTO_QUIC);
+		if (listenfd < 0) {
+			printf("socket create failed\n");
+			return -1;
+		}
+		if (bind(listenfd, (struct sockaddr *)&la, sizeof(la))) {
+			printf("socket bind failed\n");
+			return -1;
+		}
+		goto listen;
 	}
 
 	la.sin_family = AF_INET;
@@ -107,6 +133,7 @@ static int do_server(int argc, char *argv[])
 		printf("socket bind failed\n");
 		return -1;
 	}
+listen:
 	if (listen(listenfd, 1)) {
 		printf("socket listen failed\n");
 		return -1;
@@ -184,11 +211,37 @@ static int do_client(int argc, char *argv[])
         struct sockaddr_in ra = {};
 	uint64_t len = 0, sid = 0;
 	int ret, sockfd, flag;
+	struct addrinfo *rp;
 	time_t start, end;
 
 	if (argc != 4 && argc != 6) {
 		printf("%s client <PEER ADDR> <PEER PORT> [<-pkey_file:PRIVATE_KEY_FILE> <-cert_file:CERTIFICATE_FILE>]\n", argv[0]);
 		return 0;
+	}
+
+	if (getaddrinfo(argv[2], argv[3], NULL, &rp)) {
+		printf("getaddrinfo error\n");
+		return -1;
+	}
+
+	if (rp->ai_family == AF_INET6) {
+		struct sockaddr_in6 ra = {};
+
+		sockfd = socket(AF_INET6, SOCK_DGRAM, IPPROTO_QUIC);
+		if (sockfd < 0) {
+			printf("socket create failed\n");
+			return -1;
+		}
+
+		ra.sin6_family = AF_INET6;
+		ra.sin6_port = htons(atoi(argv[3]));
+		inet_pton(AF_INET6, argv[2], &ra.sin6_addr);
+
+		if (connect(sockfd, (struct sockaddr *)&ra, sizeof(ra))) {
+			printf("socket connect failed\n");
+			return -1;
+		}
+		goto handshake;
 	}
 
 	sockfd = socket(AF_INET, SOCK_DGRAM, IPPROTO_QUIC);
@@ -206,6 +259,7 @@ static int do_client(int argc, char *argv[])
 		return -1;
 	}
 
+handshake:
 	if (setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_ALPN, alpn, strlen(alpn) + 1))
 		return -1;
 
@@ -282,7 +336,7 @@ static int do_client(int argc, char *argv[])
 int main(int argc, char *argv[])
 {
 	if (argc < 2 || (strcmp(argv[1], "client") && strcmp(argv[1], "server"))) {
-		printf("%s client | server ... \n", argv[0]);
+		printf("%s client|server ... \n", argv[0]);
 		return 0;
 	}
 

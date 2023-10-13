@@ -43,7 +43,6 @@ give you a better idea what context to be set into kernel after userspace handsh
 
 ### TBD
 - Idle Connection Timer
-- IPv6 Support Needs to be Tested
 - Enable More Cipher Suites.
 
 ## INSTALL
