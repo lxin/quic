@@ -39,8 +39,6 @@ struct quic_data {
 };
 
 struct quic_endpoint {
-	struct sockaddr_in la;	/* local address */
-	struct sockaddr_in ra;	/* remote address */
 	int sockfd;		/* IPPROTO_QUIC type socket */
 
 	uint8_t state;	/* internal state */
@@ -58,6 +56,7 @@ struct quic_endpoint {
 	int (*session_new)(struct quic_endpoint *ep, ngtcp2_pkt_hd *hd);
 	int (*cred_setkey)(struct quic_endpoint *ep, void *cred);
 
+	ngtcp2_path_storage ps;	/* local and remote addresses */
 	ngtcp2_conn *conn;	/* connection structure from libngtcp2 */
 	ngtcp2_crypto_conn_ref conn_ref;	/* used in session hook */
 };
@@ -241,7 +240,6 @@ static int quic_client_connection_new(struct quic_endpoint *ep)
 	ngtcp2_transport_params params;
 	ngtcp2_callbacks callbacks;
 	ngtcp2_settings settings;
-	ngtcp2_path_storage ps;
 	ngtcp2_cid scid, dcid;
 
 	ngtcp2_transport_params_default(&params);
@@ -270,10 +268,8 @@ static int quic_client_connection_new(struct quic_endpoint *ep)
 	gnutls_rnd(GNUTLS_RND_RANDOM, dcid.data, dcid.datalen);
 	memcpy(ep->connid[1].data, dcid.data, dcid.datalen);
 	ep->connid[1].data_len = dcid.datalen;
-	ngtcp2_path_storage_init(&ps, (void *)&ep->la, sizeof(ep->la),
-				 (void *)&ep->ra, sizeof(ep->ra), NULL);
 
-	return ngtcp2_conn_client_new(&ep->conn, &dcid, &scid, &ps.path, NGTCP2_PROTO_VER_V1,
+	return ngtcp2_conn_client_new(&ep->conn, &dcid, &scid, &ep->ps.path, NGTCP2_PROTO_VER_V1,
 				      &callbacks, &settings, &params, NULL, ep);
 }
 
@@ -282,7 +278,6 @@ static int quic_server_connection_new(struct quic_endpoint *ep, ngtcp2_pkt_hd *h
 	ngtcp2_transport_params params;
 	ngtcp2_callbacks callbacks;
 	ngtcp2_settings settings;
-	ngtcp2_path_storage ps;
 	ngtcp2_cid scid, dcid;
 
 	ngtcp2_transport_params_default(&params);
@@ -310,10 +305,8 @@ static int quic_server_connection_new(struct quic_endpoint *ep, ngtcp2_pkt_hd *h
 	dcid = hd->scid;
 	memcpy(ep->connid[1].data, dcid.data, dcid.datalen);
 	ep->connid[1].data_len = dcid.datalen;
-	ngtcp2_path_storage_init(&ps, (void *)&ep->la, sizeof(ep->la),
-				 (void *)&ep->ra, sizeof(ep->ra), NULL);
 
-	return ngtcp2_conn_server_new(&ep->conn, &dcid, &scid, &ps.path, hd->version,
+	return ngtcp2_conn_server_new(&ep->conn, &dcid, &scid, &ep->ps.path, hd->version,
 				      &callbacks, &settings, &params, NULL, ep);
 }
 
@@ -688,34 +681,31 @@ err_cred:
 static void quic_handshake_read(struct quic_endpoint *ep)
 {
 	int state, ret, len, count = 0;
-	struct sockaddr_in a = {};
+	ngtcp2_sockaddr_union a = {};
 	ngtcp2_pkt_info pi = {0};
-	ngtcp2_path_storage ps;
 	ngtcp2_pkt_hd hd;
 	uint8_t buf[2048];
 
 	do {
 		state = ep->state;
 		len = sizeof(a);
-		ret = recvfrom(ep->sockfd, buf, sizeof(buf), 0, (struct sockaddr *)&a, &len);
+		ret = recvfrom(ep->sockfd, buf, sizeof(buf), 0, &a.sa, &len);
 		if (ret < 0) {
 			if (errno == EAGAIN || errno == EWOULDBLOCK)
 				continue;
 			ep->dead = 1;
 			break;
 		}
-		if (ep->conn && memcmp(&ep->ra, &a, sizeof(a))) /* not for this connection, skip */
+		if (ep->conn && memcmp(ep->ps.path.remote.addr, &a.sa, len)) /* not for this connection, skip */
 			break;
 		if (!ep->conn) {
-			memcpy(&ep->ra, &a, sizeof(a));
+			ngtcp2_addr_copy_byte(&ep->ps.path.remote, &a.sa, len);
 			if (ngtcp2_accept(&hd, buf, ret) || ep->session_new(ep, &hd)) {
 				ep->dead = 2;
 				break;
 			}
 		}
-		ngtcp2_path_storage_init(&ps, (void *)&ep->la, sizeof(a),
-					 (void *)&ep->ra, sizeof(a), NULL);
-		if (ngtcp2_conn_read_pkt(ep->conn, &ps.path, &pi, buf, ret, quic_get_timestamp())) {
+		if (ngtcp2_conn_read_pkt(ep->conn, &ep->ps.path, &pi, buf, ret, quic_get_timestamp())) {
 			ep->dead = 3;
 			break;
 		}
@@ -727,16 +717,14 @@ static void quic_handshake_write(struct quic_endpoint *ep)
 	struct itimerspec its = {};
 	uint64_t expiry, now, nsec;
 	ngtcp2_vec datav = {};
-	ngtcp2_path_storage p;
 	ngtcp2_pkt_info pi;
 	uint8_t buf[2048];
 	ngtcp2_ssize len;
 	int ret, pos = 0;
 
 	now = quic_get_timestamp();
-	ngtcp2_path_storage_zero(&p);
 	while (1) {
-		ret = ngtcp2_conn_writev_stream(ep->conn, &p.path, &pi, &buf[pos],
+		ret = ngtcp2_conn_writev_stream(ep->conn, NULL, &pi, &buf[pos],
 						sizeof(buf) - pos, &len, 0, -1, &datav, 0, now);
 		if (ret < 0)
 			break;
@@ -744,7 +732,7 @@ static void quic_handshake_write(struct quic_endpoint *ep)
 		if (!pos)
 			break;
 		if (ret == 0 || ret < 1200 || ep->state == QUIC_STATE_CONNECTED) { /* try to merge the sh and hs packets */
-			sendto(ep->sockfd, buf, pos, 0, (struct sockaddr *)&ep->ra, sizeof(ep->ra));
+			sendto(ep->sockfd, buf, pos, 0, ep->ps.path.remote.addr, ep->ps.path.remote.addrlen);
 			break;
 		}
 	}
@@ -850,21 +838,19 @@ static int quic_set_socket_context(struct quic_endpoint *ep, uint8_t is_serv)
 
 static int quic_client_do_handshake(struct quic_endpoint *ep)
 {
-	struct sockaddr_in sa, *a = &sa;
-	int state, len, err;
+	int state, err;
 
-	len = sizeof(*a);
-	if (getsockname(ep->sockfd, (struct sockaddr *)a, &len)) {
+	ngtcp2_path_storage_zero(&ep->ps);
+	ep->ps.path.local.addrlen = sizeof(ep->ps.local_addrbuf);
+	if (getsockname(ep->sockfd, ep->ps.path.local.addr, &ep->ps.path.local.addrlen)) {
 		printf("socket getsockname failed\n");
 		return -1;
 	}
-	memcpy(&ep->la, a, sizeof(*a));
-	len = sizeof(*a);
-	if (getpeername(ep->sockfd, (struct sockaddr *)a, &len)) {
+	ep->ps.path.remote.addrlen = sizeof(ep->ps.remote_addrbuf);
+	if (getpeername(ep->sockfd, ep->ps.path.remote.addr, &ep->ps.path.remote.addrlen)) {
 		printf("socket getpeername failed\n");
 		return -1;
 	}
-	memcpy(&ep->ra, a, sizeof(*a));
 
 	ep->alpn.data_len = sizeof(ep->alpn.data);
 	if (getsockopt(ep->sockfd, SOL_QUIC, QUIC_SOCKOPT_ALPN, ep->alpn.data,
@@ -895,15 +881,14 @@ out:
 
 static int quic_server_do_handshake(struct quic_endpoint *ep)
 {
-	struct sockaddr_in sa, *la = &sa;
-	int state, len, err;
+	int state, err;
 
-	len = sizeof(*la);
-	if (getsockname(ep->sockfd, (struct sockaddr *)la, &len)) {
+	ngtcp2_path_storage_zero(&ep->ps);
+	ep->ps.path.local.addrlen = sizeof(ep->ps.local_addrbuf);
+	if (getsockname(ep->sockfd, ep->ps.path.local.addr, &ep->ps.path.local.addrlen)) {
 		printf("socket getsockname failed\n");
 		return -1;
 	}
-	memcpy(&ep->la, la, sizeof(*la));
 
 	ep->alpn.data_len = sizeof(ep->alpn.data);
 	if (getsockopt(ep->sockfd, SOL_QUIC, QUIC_SOCKOPT_ALPN, ep->alpn.data,
