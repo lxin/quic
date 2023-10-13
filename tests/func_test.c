@@ -187,6 +187,7 @@ static int do_client_notification_test(int sockfd)
 	}
 	printf("test8: PASS (QUIC_EVENT_STREAM_UPDATE/QUIC_STREAM_RECV_STATE_RECV event)\n");
 
+	sleep(1);
 	ret = quic_recvmsg(sockfd, msg, sizeof(msg), &sid, &flag);
 	if (ret == -1) {
 		printf("recv error %d %d\n", ret, errno);
