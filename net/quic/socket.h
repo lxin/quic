@@ -81,6 +81,11 @@ struct quic_sock {
 	struct list_head		reqs;
 };
 
+struct quic6_sock {
+	struct quic_sock	quic;
+	struct ipv6_pinfo	inet6;
+};
+
 static inline struct quic_sock *quic_sk(const struct sock *sk)
 {
 	return (struct quic_sock *)sk;

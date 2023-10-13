@@ -6,7 +6,7 @@
 menuconfig IP_QUIC
 	tristate "QUIC: A UDP-Based Multiplexed and Secure Transport"
 	depends on INET
-	depends on IPV6 || IPV6=n
+	depends on IPV6
 	select NET_UDP_TUNNEL
 	help
 	  QUIC: A UDP-Based Multiplexed and Secure Transport

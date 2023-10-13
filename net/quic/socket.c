@@ -185,8 +185,8 @@ static int quic_handshake_bind(struct sock *sk, struct sockaddr *addr, int addr_
 	lock_sock(sk);
 
 	a = quic_path_addr(&qs->src);
-	if (a->v4.sin_port || addr->sa_family != sk->sk_family ||
-	    addr_len < quic_addr_len(sk) || !quic_addr(addr)->v4.sin_port) {
+	if (a->v4.sin_port || addr_len < quic_addr_len(sk) ||
+	    addr->sa_family != sk->sk_family || !quic_addr(addr)->v4.sin_port) {
 		err = -EINVAL;
 		goto out;
 	}
@@ -211,10 +211,14 @@ static int quic_connect(struct sock *sk, struct sockaddr *addr, int addr_len)
 static int quic_handshake_connect(struct sock *sk, struct sockaddr *addr, int addr_len)
 {
 	struct quic_sock *qs = quic_sk(sk);
+	__u32 err = -EINVAL;
 	union quic_addr *a;
-	__u32 err = 0;
 
 	lock_sock(sk);
+	if (quic_state(sk) != QUIC_STATE_USER_CLOSED ||
+	    addr_len < quic_addr_len(sk))
+		goto out;
+
 	quic_path_addr_set(&qs->dst, quic_addr(addr));
 	a = quic_path_addr(&qs->src);
 	err = quic_flow_route(sk, a);
@@ -761,6 +765,9 @@ static int quic_copy_sock(struct sock *nsk, struct sock *sk, struct quic_request
 			quic_inq_set_owner_r(skb, nsk);
 		}
 	}
+
+	if (nsk->sk_family == AF_INET6)
+		inet_sk(nsk)->pinet6 = &((struct quic6_sock *)nsk)->inet6;
 
 	len = quic_alpn(sk)->len;
 	if (len) {
@@ -1578,7 +1585,8 @@ struct proto quicv6_prot = {
 	.unhash		=  quic_unhash,
 	.backlog_rcv	=  quic_do_rcv,
 	.no_autobind	=  true,
-	.obj_size	=  sizeof(struct quic_sock),
+	.obj_size	= sizeof(struct quic6_sock),
+	.ipv6_pinfo_offset	= offsetof(struct quic6_sock, inet6),
 	.sockets_allocated	=  &quic_sockets_allocated,
 };
 
@@ -1620,6 +1628,7 @@ struct proto quicv6_handshake_prot = {
 	.unhash		=  quic_unhash,
 	.backlog_rcv	=  quic_handshake_do_rcv,
 	.no_autobind	=  true,
-	.obj_size	=  sizeof(struct quic_sock),
+	.obj_size	= sizeof(struct quic6_sock),
+	.ipv6_pinfo_offset	= offsetof(struct quic6_sock, inet6),
 	.sockets_allocated	=  &quic_sockets_allocated,
 };

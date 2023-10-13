@@ -29,12 +29,12 @@ static int quic_v6_flow_route(struct sock *sk, union quic_addr *a)
 	fl6 = &_fl.u.ip6;
 	memset(&_fl, 0x0, sizeof(_fl));
 	addr = quic_path_addr(&qs->src);
-	fl6->daddr = addr->v6.sin6_addr;
-	fl6->fl6_dport = addr->v6.sin6_port;
-
-	addr = quic_path_addr(&qs->dst);
 	fl6->saddr = addr->v6.sin6_addr;
 	fl6->fl6_sport = addr->v6.sin6_port;
+
+	addr = quic_path_addr(&qs->dst);
+	fl6->daddr = addr->v6.sin6_addr;
+	fl6->fl6_dport = addr->v6.sin6_port;
 
 	dst = ip6_dst_lookup_flow(sock_net(sk), sk, fl6, NULL);
 	if (IS_ERR(dst))
@@ -42,8 +42,8 @@ static int quic_v6_flow_route(struct sock *sk, union quic_addr *a)
 
 	if (a) {
 		a->v6.sin6_family = AF_INET6;
-		a->v6.sin6_addr = fl6->daddr;;
-		a->v6.sin6_port = fl6->fl6_dport;
+		a->v6.sin6_addr = fl6->saddr;;
+		a->v6.sin6_port = fl6->fl6_sport;
 	}
 	sk_dst_set(sk, dst);
 	return 0;
@@ -413,14 +413,14 @@ static const struct proto_ops quicv6_proto_ops = {
 static struct inet_protosw quicv6_stream_protosw = {
 	.type       = SOCK_STREAM,
 	.protocol   = IPPROTO_QUIC,
-	.prot       = &quicv6_prot,
+	.prot       = &quicv6_handshake_prot,
 	.ops        = &quicv6_proto_ops,
 };
 
 static struct inet_protosw quicv6_seqpacket_protosw = {
 	.type       = SOCK_DGRAM,
 	.protocol   = IPPROTO_QUIC,
-	.prot       = &quicv6_prot,
+	.prot       = &quicv6_handshake_prot,
 	.ops        = &quicv6_proto_ops,
 };
 
