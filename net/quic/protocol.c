@@ -297,7 +297,7 @@ out:
 	return err;
 }
 
-int quic_inet_getname(struct socket *sock, struct sockaddr *uaddr, int peer)
+static int quic_inet_getname(struct socket *sock, struct sockaddr *uaddr, int peer)
 {
 	return quic_af_ops(sock->sk)->get_sk_addr(sock, uaddr, peer);
 }

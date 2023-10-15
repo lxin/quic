@@ -243,6 +243,7 @@ static struct sk_buff *quic_frame_new_connection_id_create(struct sock *sk, void
 	p = quic_put_var(p, 16);
 	get_random_bytes(conn_id, 16);
 	p = quic_put_data(p, conn_id, 16);
+	get_random_bytes(token, 16);
 	p = quic_put_data(p, token, 16);
 	frame_len = (u32)(p - frame);
 

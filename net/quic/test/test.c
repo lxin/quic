@@ -33,8 +33,8 @@ static char alpn[ALPN_LEN] = "sample";
 #define RCV_MSG_LEN	4096 * 16
 #define TOT_LEN		1 * 1024 * 1024 * 1024
 
-char	snd_msg[SND_MSG_LEN];
-char	rcv_msg[RCV_MSG_LEN];
+static char	snd_msg[SND_MSG_LEN];
+static char	rcv_msg[RCV_MSG_LEN];
 
 static int quic_test_recvmsg(struct socket *sock, void *msg, int len, u64 *sid, int *flag)
 {

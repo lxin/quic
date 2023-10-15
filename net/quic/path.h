@@ -50,7 +50,7 @@ static inline void quic_path_addr_init(struct quic_path_addr *a, u8 addr_len)
 	a->addr_len = addr_len;
 }
 
-void quic_get_port(struct net *net, struct quic_bind_port *pp, union quic_addr *addr);
+int quic_get_port(struct net *net, struct quic_bind_port *pp, union quic_addr *addr);
 void quic_put_port(struct net *net, struct quic_bind_port *pp);
 void quic_udp_sock_put(struct quic_udp_sock *us);
 struct quic_udp_sock *quic_udp_sock_get(struct quic_udp_sock *us);

@@ -21,7 +21,7 @@
 #include "input.h"
 #include "path.h"
 
-void quic_get_port(struct net *net, struct quic_bind_port *port, union quic_addr *addr)
+int quic_get_port(struct net *net, struct quic_bind_port *port, union quic_addr *addr)
 {
 	struct quic_hash_head *head;
 	struct quic_bind_port *pp;
@@ -32,7 +32,11 @@ void quic_get_port(struct net *net, struct quic_bind_port *port, union quic_addr
 	if (rover) {
 		head = quic_bind_port_head(net, rover);
 		spin_lock_bh(&head->lock);
-		goto found;
+		port->net = net;
+		port->port = rover;
+		hlist_add_head(&port->node, &head->head);
+		spin_unlock_bh(&head->lock);
+		return 0;
 	}
 
 	inet_get_local_port_range(net, &low, &high);
@@ -49,19 +53,18 @@ void quic_get_port(struct net *net, struct quic_bind_port *port, union quic_addr
 		hlist_for_each_entry(pp, &head->head, node)
 			if ((pp->port == rover) && net_eq(net, pp->net))
 				goto next;
-		break;
+		addr->v4.sin_port = htons(rover);
+		port->net = net;
+		port->port = rover;
+		hlist_add_head(&port->node, &head->head);
+		spin_unlock_bh(&head->lock);
+		return 0;
 	next:
 		spin_unlock_bh(&head->lock);
 		cond_resched();
 	} while (--remaining > 0);
 
-	/* not found, use the random one */
-	addr->v4.sin_port = htons(rover);
-found:
-	port->net = net;
-	port->port = rover;
-	hlist_add_head(&port->node, &head->head);
-	spin_unlock_bh(&head->lock);
+	return -EADDRINUSE;
 }
 
 void quic_put_port(struct net *net, struct quic_bind_port *pp)

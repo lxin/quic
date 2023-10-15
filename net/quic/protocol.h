@@ -8,6 +8,7 @@
  *    Xin Long <lucien.xin@gmail.com>
  */
 
+extern struct percpu_counter quic_sockets_allocated;
 extern struct workqueue_struct *quic_wq;
 
 struct quic_addr_family_ops {

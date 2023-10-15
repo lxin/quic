@@ -12,7 +12,7 @@
 
 #include "socket.h"
 
-void quic_reno_cwnd_update_after_timeout(struct sock *sk, u32 packet_number, u32 transmit_ts)
+static void quic_reno_cwnd_update_after_timeout(struct sock *sk, u32 packet_number, u32 transmit_ts)
 {
 	struct quic_packet *packet = quic_packet(sk);
 	struct quic_cong *cong = quic_cong(sk);
@@ -61,8 +61,8 @@ void quic_reno_cwnd_update_after_timeout(struct sock *sk, u32 packet_number, u32
 	quic_outq_set_window(quic_outq(sk), cong->window);
 }
 
-void quic_reno_cwnd_update_after_sack(struct sock *sk, u32 acked_number, u32 transmit_ts,
-				      u32 acked_bytes)
+static void quic_reno_cwnd_update_after_sack(struct sock *sk, u32 acked_number, u32 transmit_ts,
+					     u32 acked_bytes)
 {
 	u32 inflight = quic_outq_inflight(quic_outq(sk));
 	struct quic_cong *cong = quic_cong(sk);

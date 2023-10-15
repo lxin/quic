@@ -43,7 +43,7 @@ static void quic_source_connection_id_free_rcu(struct rcu_head *head)
 	kfree(s_conn_id);
 }
 
-void quic_source_connection_id_free(struct quic_source_connection_id *s_conn_id)
+static void quic_source_connection_id_free(struct quic_source_connection_id *s_conn_id)
 {
 	u8 *data = s_conn_id->common.id.data;
 	struct quic_hash_head *head;

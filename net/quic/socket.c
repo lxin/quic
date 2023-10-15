@@ -15,8 +15,6 @@
 #include <net/inet_common.h>
 #include <linux/version.h>
 
-extern struct percpu_counter quic_sockets_allocated;
-
 bool quic_request_sock_exists(struct sock *sk, union quic_addr *sa, union quic_addr *da)
 {
 	struct quic_request_sock *req;
@@ -192,7 +190,9 @@ static int quic_handshake_bind(struct sock *sk, struct sockaddr *addr, int addr_
 	}
 
 	memcpy(a, addr, quic_addr_len(sk));
-	quic_get_port(sock_net(sk), &qs->port, a);
+	err = quic_get_port(sock_net(sk), &qs->port, a);
+	if (err)
+		goto out;
 	err = quic_udp_sock_set(sk, qs->udp_sk, &qs->src);
 	if (err)
 		goto out;
@@ -226,7 +226,9 @@ static int quic_handshake_connect(struct sock *sk, struct sockaddr *addr, int ad
 		goto out;
 	quic_set_sk_addr(sk, quic_addr(addr), false);
 	if (!a->v4.sin_port) { /* auto bind */
-		quic_get_port(sock_net(sk), &qs->port, a);
+		err = quic_get_port(sock_net(sk), &qs->port, a);
+		if (err)
+			goto out;
 		err = quic_udp_sock_set(sk, qs->udp_sk, &qs->src);
 		if (err)
 			goto out;
@@ -924,7 +926,7 @@ err:
 	return err;
 }
 
-int quic_sock_set_context(struct sock *sk, struct quic_context *context, u32 len)
+static int quic_sock_set_context(struct sock *sk, struct quic_context *context, u32 len)
 {
 	struct quic_sock *qs = quic_sk(sk);
 	int err, state, seqno;
