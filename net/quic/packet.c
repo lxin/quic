@@ -29,8 +29,8 @@
 
 void quic_packet_config(struct sock *sk)
 {
+	int mss, hlen = sizeof(struct quichdr);
 	struct quic_sock *qs = quic_sk(sk);
-	int hlen = sizeof(struct quichdr);
 
 	hlen += qs->dest.active->id.len;
 	hlen += 4;
@@ -38,7 +38,13 @@ void quic_packet_config(struct sock *sk)
 	qs->packet.overhead = hlen;
 	qs->packet.ipfragok = 0;
 
-	qs->packet.mss = quic_get_mss(sk);
+	if (quic_flow_route(sk, NULL))
+		return;
+
+	mss = dst_mtu(__sk_dst_get(sk)) - quic_encap_len(sk);
+	if (mss > quic_inq_max_udp(quic_inq(sk)))
+		mss = quic_inq_max_udp(quic_inq(sk));
+	qs->packet.mss = mss - QUIC_TAG_LEN;
 }
 
 int quic_packet_process(struct sock *sk, struct sk_buff *skb)

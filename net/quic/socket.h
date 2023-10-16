@@ -208,6 +208,5 @@ struct sock *quic_sock_lookup(struct sk_buff *skb, union quic_addr *sa, union qu
 bool quic_request_sock_exists(struct sock *sk, union quic_addr *sa, union quic_addr *da);
 int quic_request_sock_enqueue(struct sock *sk, union quic_addr *sa, union quic_addr *da);
 struct quic_request_sock *quic_request_sock_dequeue(struct sock *sk);
-int quic_get_mss(struct sock *sk);
 
 #endif /* __net_quic_h__ */

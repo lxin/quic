@@ -26,6 +26,9 @@ static int quic_v6_flow_route(struct sock *sk, union quic_addr *a)
 	struct flowi6 *fl6;
 	struct flowi _fl;
 
+	if (__sk_dst_check(sk, inet6_sk(sk)->dst_cookie))
+		return 1;
+
 	fl6 = &_fl.u.ip6;
 	memset(&_fl, 0x0, sizeof(_fl));
 	addr = quic_path_addr(&qs->src);
@@ -45,7 +48,7 @@ static int quic_v6_flow_route(struct sock *sk, union quic_addr *a)
 		a->v6.sin6_addr = fl6->saddr;;
 		a->v6.sin6_port = fl6->fl6_sport;
 	}
-	sk_dst_set(sk, dst);
+	ip6_dst_store(sk, dst, NULL, NULL);
 	return 0;
 }
 
@@ -56,6 +59,9 @@ static int quic_v4_flow_route(struct sock *sk, union quic_addr *a)
 	struct flowi4 *fl4;
 	struct rtable *rt;
 	struct flowi _fl;
+
+	if (__sk_dst_check(sk, 0))
+		return 1;
 
 	fl4 = &_fl.u.ip4;
 	memset(&_fl, 0x00, sizeof(_fl));
@@ -76,7 +82,7 @@ static int quic_v4_flow_route(struct sock *sk, union quic_addr *a)
 		a->v4.sin_addr.s_addr = fl4->saddr;
 		a->v4.sin_port = fl4->fl4_sport;
 	}
-	sk_dst_set(sk, &rt->dst);
+	sk_setup_caps(sk, &rt->dst);
 	return 0;
 }
 

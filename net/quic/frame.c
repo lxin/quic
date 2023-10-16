@@ -940,7 +940,6 @@ static int quic_frame_connection_close_process(struct sock *sk, struct sk_buff *
 	if (quic_inq_event_recv(sk, QUIC_EVENT_CONNECTION_CLOSE, close))
 		return -ENOMEM;
 
-	sk->sk_err = -EPIPE;
 	quic_set_state(sk, QUIC_STATE_USER_CLOSED);
 
 	/*

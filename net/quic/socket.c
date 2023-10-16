@@ -222,7 +222,7 @@ static int quic_handshake_connect(struct sock *sk, struct sockaddr *addr, int ad
 	quic_path_addr_set(&qs->dst, quic_addr(addr));
 	a = quic_path_addr(&qs->src);
 	err = quic_flow_route(sk, a);
-	if (err)
+	if (err < 0)
 		goto out;
 	quic_set_sk_addr(sk, quic_addr(addr), false);
 	if (!a->v4.sin_port) { /* auto bind */
@@ -235,8 +235,10 @@ static int quic_handshake_connect(struct sock *sk, struct sockaddr *addr, int ad
 		quic_set_sk_addr(sk, a, true);
 	}
 
-	if (sk_hashed(sk))
+	if (sk_hashed(sk)) {
+		err = 0;
 		goto out;
+	}
 
 	quic_set_state(sk, QUIC_STATE_USER_CONNECTING);
 	inet_sk_set_state(sk, TCP_SYN_RECV);
@@ -301,7 +303,7 @@ static int quic_handshake_sendmsg(struct sock *sk, struct msghdr *msg, size_t ms
 	hlen = quic_encap_len(sk) + MAX_HEADER;
 	quic_path_addr_set(quic_dst(sk), daddr);
 	err = quic_flow_route(sk, NULL);
-	if (err)
+	if (err < 0)
 		goto err;
 
 	skb = alloc_skb(msg_len + hlen, GFP_KERNEL);
@@ -425,26 +427,6 @@ out:
 			return err;
 	}
 }
-
-int quic_get_mss(struct sock *sk)
-{
-	int mss, max_udp = quic_inq_max_udp(quic_inq(sk));
-	struct dst_entry *dst;
-
-	dst = __sk_dst_check(sk, 0);
-	if (!dst) {
-		if (quic_flow_route(sk, NULL))
-			return -EHOSTUNREACH;
-		dst = __sk_dst_get(sk);
-	}
-
-	mss = dst_mtu(dst) - quic_encap_len(sk);
-	if (mss > max_udp)
-		mss = max_udp;
-
-	return mss - QUIC_TAG_LEN;
-}
-
 
 static struct quic_stream *quic_sock_send_stream(struct sock *sk, struct quic_sndinfo *sndinfo)
 {
@@ -962,6 +944,7 @@ static int quic_sock_set_context(struct sock *sk, struct quic_context *context, 
 
 	/* clean up all handshake packets before going to connected state */
 	quic_inq_purge(sk, quic_inq(sk));
+	sk_dst_reset(sk); /* clear the dst used in handshake */
 	if (!context->is_serv) {
 		state = QUIC_STATE_CLIENT_CONNECTED;
 		goto out;
