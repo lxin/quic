@@ -19,10 +19,18 @@ struct quic_packet_info {
 	u8 non_probing:1;
 };
 
-#define QUIC_KEY_LEN	16
+#define QUIC_KEY_LEN	32
 #define QUIC_TAG_LEN	16
 #define QUIC_IV_LEN	12
-#define QUIC_SECRET_LEN	32
+#define QUIC_SECRET_LEN	48
+
+struct quic_cipher {
+	u32 secretlen;
+	u32 keylen;
+	char *aead;
+	char *skc;
+	char *shash;
+};
 
 struct quic_crypto {
 	struct crypto_shash *secret_tfm;
@@ -30,6 +38,8 @@ struct quic_crypto {
 	u8 rx_secret[QUIC_SECRET_LEN];
 
 	struct crypto_aead *aead_tfm;
+	struct quic_cipher *cipher;
+	u32 cipher_type;
 	u8 tx_key[2][QUIC_KEY_LEN];
 	u8 tx_iv[2][QUIC_IV_LEN];
 	u8 rx_key[2][QUIC_KEY_LEN];
@@ -50,8 +60,10 @@ int quic_crypto_encrypt(struct quic_crypto *crypto, struct sk_buff *skb,
 			struct quic_packet_info *pki);
 int quic_crypto_decrypt(struct quic_crypto *crypto, struct sk_buff *skb,
 			struct quic_packet_info *pki);
-int quic_crypto_set_secret(struct quic_crypto *crypto, u8 *key, bool send);
-int quic_crypto_get_secret(struct quic_crypto *crypto, u8 *key, bool send);
+int quic_crypto_set_secret(struct quic_crypto *crypto, struct quic_crypto_secret *send,
+			   struct quic_crypto_secret *recv);
+int quic_crypto_get_secret(struct quic_crypto *crypto, struct quic_crypto_secret *send,
+			   struct quic_crypto_secret *recv);
 void quic_crypto_destroy(struct quic_crypto *crypto);
 int quic_crypto_key_update(struct quic_crypto *crypto, u8 *key, unsigned int len);
 void quic_crypto_set_key_update_ts(struct quic_crypto *crypto, u32 key_update_ts);

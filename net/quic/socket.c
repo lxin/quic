@@ -763,6 +763,7 @@ static int quic_copy_sock(struct sock *nsk, struct sock *sk, struct quic_request
 	}
 
 	quic_inq(nsk)->events = quic_inq(sk)->events;
+	quic_crypto(nsk)->cipher_type = quic_crypto(sk)->cipher_type;
 	return 0;
 }
 
@@ -935,10 +936,8 @@ static int quic_sock_set_context(struct sock *sk, struct quic_context *context, 
 	err = quic_connection_id_add(&qs->dest, &context->dest, sk);
 	if (err)
 		return err;
-	err = quic_crypto_set_secret(&qs->crypto, context->send.secret, 1);
-	if (err)
-		return err;
-	err = quic_crypto_set_secret(&qs->crypto, context->recv.secret, 0);
+
+	err = quic_crypto_set_secret(&qs->crypto, &context->send, &context->recv);
 	if (err)
 		return err;
 
@@ -1297,8 +1296,7 @@ static int quic_sock_get_context(struct sock *sk, int len, char __user *optval, 
 	quic_connection_id_get(&qs->source, &context.source);
 	quic_connection_id_get(&qs->dest, &context.dest);
 
-	quic_crypto_get_secret(&qs->crypto, context.send.secret, 1);
-	quic_crypto_get_secret(&qs->crypto, context.recv.secret, 0);
+	quic_crypto_get_secret(&qs->crypto, &context.send, &context.recv);
 
 	context.is_serv = quic_is_serv(sk);
 

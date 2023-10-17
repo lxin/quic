@@ -98,8 +98,8 @@ struct quic_transport_param {
 };
 
 struct quic_crypto_secret {
-	uint8_t type;
-	uint8_t secret[32];
+	uint32_t type;
+	uint8_t secret[48];
 };
 
 struct quic_context { /* CONTEXT */
