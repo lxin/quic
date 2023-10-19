@@ -43,7 +43,11 @@ give you a better idea what context to be set into kernel after userspace handsh
 - Support All Ciphers (AES-128-GCM, AES-256-GCM, AES-128-CCM, CHACHA20-POLY1305)
 
 ### TBD
-- Idle Connection Timer
+- Stateless Reset (rfc9000#name-stateless-reset)
+- Datagream extension (rfc9221)
+
+NOTE: As it strictly keeps LONG packets processing in userspace and SHORT packets in kernel,
+the bundling of the LONG and SHORT packets in 1-RTTs will not be supported.
 
 ## INSTALL
 

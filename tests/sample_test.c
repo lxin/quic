@@ -15,6 +15,7 @@ struct quic_context client_context = {
 		.ack_delay_exponent = 3,
 		.max_ack_delay = 25000,
 		.active_connection_id_limit = 3,
+		.max_idle_timeout = 3000000,
 		.initial_max_data = 131072,
 		.initial_max_stream_data_bidi_local = 65536,
 		.initial_max_stream_data_bidi_remote = 65536,
@@ -28,6 +29,7 @@ struct quic_context client_context = {
 		.ack_delay_exponent = 3,
 		.max_ack_delay = 25000,
 		.active_connection_id_limit = 3,
+		.max_idle_timeout = 3000000,
 		.initial_max_data = 131072,
 		.initial_max_stream_data_bidi_local = 65536,
 		.initial_max_stream_data_bidi_remote = 65536,
@@ -61,6 +63,7 @@ struct quic_context server_context = {
 		.ack_delay_exponent = 3,
 		.max_ack_delay = 25000,
 		.active_connection_id_limit = 3,
+		.max_idle_timeout = 3000000,
 		.initial_max_data = 131072,
 		.initial_max_stream_data_bidi_local = 65536,
 		.initial_max_stream_data_bidi_remote = 65536,
@@ -74,6 +77,7 @@ struct quic_context server_context = {
 		.ack_delay_exponent = 3,
 		.max_ack_delay = 25000,
 		.active_connection_id_limit = 3,
+		.max_idle_timeout = 3000000,
 		.initial_max_data = 131072,
 		.initial_max_stream_data_bidi_local = 65536,
 		.initial_max_stream_data_bidi_remote = 65536,
@@ -201,6 +205,9 @@ done:
 			return 1;
 		}
 		printf("recv: \"%s\", len: %d\n", msg, ret);
+		do {
+			ret = recv(sd, msg, sizeof(msg), 0);
+		} while (ret > 0);
 
 		close(sd);
 		return 0;
