@@ -59,4 +59,5 @@ void quic_connection_id_remove(struct quic_connection_id_set *id_set, u32 number
 int quic_connection_id_get(struct quic_connection_id_set *id_set, struct quic_connection_id *conn_id);
 void quic_connection_id_set_init(struct quic_connection_id_set *id_set, bool source);
 void quic_connection_id_set_free(struct quic_connection_id_set *id_set);
-int quic_connection_id_set_param(struct quic_connection_id_set *id_set, struct quic_transport_param *p);
+void quic_connection_id_set_param(struct quic_connection_id_set *id_set, struct quic_transport_param *p);
+void quic_connection_id_get_param(struct quic_connection_id_set *id_set, struct quic_transport_param *p);

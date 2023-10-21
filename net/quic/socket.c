@@ -920,15 +920,11 @@ static int quic_sock_set_context(struct sock *sk, struct quic_context *context, 
 		return -EINVAL;
 
 	quic_inq_set_param(sk, &context->local);
-	quic_cong_set_param(sk, &context->local);
-	quic_streams_set_param(quic_streams(sk), &context->local, 0);
-	if (quic_connection_id_set_param(&qs->dest, &context->local))
-		return -EINVAL;
-
 	quic_outq_set_param(sk, &context->remote);
-	quic_streams_set_param(quic_streams(sk), &context->remote, 1);
-	if (quic_connection_id_set_param(&qs->source, &context->remote))
-		return -EINVAL;
+	quic_cong_set_param(sk, &context->local);
+	quic_connection_id_set_param(&qs->dest, &context->local);
+	quic_connection_id_set_param(&qs->source, &context->remote);
+	quic_streams_set_param(quic_streams(sk), &context->local, &context->remote);
 
 	err = quic_connection_id_add(&qs->source, &context->source, sk);
 	if (err)
@@ -953,7 +949,7 @@ static int quic_sock_set_context(struct sock *sk, struct quic_context *context, 
 	skb = quic_frame_create(sk, QUIC_FRAME_HANDSHAKE_DONE, NULL);
 	if (!skb)
 		return -ENOMEM;
-	quic_outq_ctrl_tail(sk, skb, true);
+	quic_outq_ctrl_tail(sk, skb, qs->source.max_count > 1);
 
 out:
 	for (seqno = 1; seqno < qs->source.max_count; seqno++) {
@@ -1286,12 +1282,12 @@ static int quic_sock_get_context(struct sock *sk, int len, char __user *optval, 
 	len = sizeof(context);
 	memset(&context, 0, len);
 
+	quic_inq_get_param(sk, &context.remote);
 	quic_outq_get_param(sk, &context.local);
 	quic_cong_get_param(sk, &context.local);
-	quic_streams_get_param(quic_streams(sk), &context.local, 1);
-
-	quic_inq_get_param(sk, &context.remote);
-	quic_streams_get_param(quic_streams(sk), &context.remote, 0);
+	quic_connection_id_set_param(&qs->dest, &context.local);
+	quic_connection_id_set_param(&qs->source, &context.remote);
+	quic_streams_get_param(quic_streams(sk), &context.local, &context.remote);
 
 	quic_connection_id_get(&qs->source, &context.source);
 	quic_connection_id_get(&qs->dest, &context.dest);
