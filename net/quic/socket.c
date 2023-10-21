@@ -1571,7 +1571,9 @@ struct proto quicv6_prot = {
 	.backlog_rcv	=  quic_do_rcv,
 	.no_autobind	=  true,
 	.obj_size	= sizeof(struct quic6_sock),
+#if KERNEL_VERSION(6, 5, 0) <= LINUX_VERSION_CODE
 	.ipv6_pinfo_offset	= offsetof(struct quic6_sock, inet6),
+#endif
 	.sockets_allocated	=  &quic_sockets_allocated,
 };
 
@@ -1614,6 +1616,8 @@ struct proto quicv6_handshake_prot = {
 	.backlog_rcv	=  quic_handshake_do_rcv,
 	.no_autobind	=  true,
 	.obj_size	= sizeof(struct quic6_sock),
+#if KERNEL_VERSION(6, 5, 0) <= LINUX_VERSION_CODE
 	.ipv6_pinfo_offset	= offsetof(struct quic6_sock, inet6),
+#endif
 	.sockets_allocated	=  &quic_sockets_allocated,
 };
