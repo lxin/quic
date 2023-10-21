@@ -15,6 +15,7 @@
 #include <ngtcp2/ngtcp2.h>
 #include <gnutls/crypto.h>
 
+#include <linux/tls.h>
 #include <arpa/inet.h>
 #include <sys/time.h>
 #include <signal.h>
@@ -47,6 +48,7 @@ struct quic_endpoint {
 	timer_t	timer;	/* timer for retransmission */
 
 	uint32_t connecting_ts[2];	/* to calculate the initial rtt */
+	uint32_t cipher_type;		/* cipher type from linux/tls.h */
 	struct quic_data alpn;		/* alpn from kernel socket */
 	struct quic_data token;		/* token from kernel socket */
 	struct quic_data secret[2];	/* secrets for sending and receiving */
@@ -209,7 +211,7 @@ static int quic_session_secret_func(gnutls_session_t session, gnutls_record_encr
 	ngtcp2_conn *conn = conn_ref->get_conn(conn_ref);
 	struct quic_endpoint *ep = conn_ref->user_data;
 	ngtcp2_encryption_level level;
-	char key[64], iv[64], hp[64];
+	uint8_t key[64], iv[64], hp[64];
 
 	level = ngtcp2_crypto_gnutls_from_gnutls_record_encryption_level(l);
 	if (rx_secret) {
@@ -232,6 +234,56 @@ static int quic_session_secret_func(gnutls_session_t session, gnutls_record_encr
 		}
 	}
 
+	return 0;
+}
+
+static char priority[100] = "%DISABLE_TLS13_COMPAT_MODE:NORMAL:-VERS-ALL:+VERS-TLS1.3:+PSK:-CIPHER-ALL:+";
+
+static char *quic_get_priority(struct quic_endpoint *ep)
+{
+	switch (ep->cipher_type) {
+	case TLS_CIPHER_AES_GCM_128:
+		strcat(priority, "AES-128-GCM");
+		break;
+	case TLS_CIPHER_AES_GCM_256:
+		strcat(priority, "AES-256-GCM");
+		break;
+	case TLS_CIPHER_AES_CCM_128:
+		strcat(priority, "AES-128-CCM");
+		break;
+	case TLS_CIPHER_CHACHA20_POLY1305:
+		strcat(priority, "CHACHA20-POLY1305");
+		break;
+	default:
+		strcat(priority, "AES-128-GCM:+AES-256-GCM:+AES-128-CCM:+CHACHA20-POLY1305");
+		ep->cipher_type = 0;
+		break;
+	}
+	return priority;
+}
+
+static int quic_get_cipher_type(struct quic_endpoint *ep)
+{
+	gnutls_cipher_algorithm_t type;
+
+	type = gnutls_cipher_get(ngtcp2_conn_get_tls_native_handle(ep->conn));
+	switch (type) {
+	case GNUTLS_CIPHER_AES_128_GCM:
+		ep->cipher_type = TLS_CIPHER_AES_GCM_128;
+		break;
+	case GNUTLS_CIPHER_AES_256_GCM:
+		ep->cipher_type = TLS_CIPHER_AES_GCM_256;
+		break;
+	case GNUTLS_CIPHER_AES_128_CCM:
+		ep->cipher_type = TLS_CIPHER_AES_CCM_128;
+		break;
+	case GNUTLS_CIPHER_CHACHA20_POLY1305:
+		ep->cipher_type = TLS_CIPHER_CHACHA20_POLY1305;
+		break;
+	default:
+		printf("invalid gnutls cipher type %d\n", type);
+		return -1;
+	}
 	return 0;
 }
 
@@ -310,11 +362,6 @@ static int quic_server_connection_new(struct quic_endpoint *ep, ngtcp2_pkt_hd *h
 				      &callbacks, &settings, &params, NULL, ep);
 }
 
-#define MODES "%DISABLE_TLS13_COMPAT_MODE"
-#define CIPHERS "NORMAL:-VERS-ALL:+VERS-TLS1.3:-CIPHER-ALL:+AES-128-GCM:+PSK"
-#define GROUPS "-GROUP-ALL:+GROUP-X25519:+GROUP-SECP256R1:+GROUP-SECP384R1:+GROUP-SECP521R1"
-#define PRIORITY MODES":"CIPHERS":"GROUPS
-
 #define ARRAY_SIZE(x)	(sizeof(x) / sizeof((x)[0]))
 
 static int quic_client_x509_cb(gnutls_session_t session)
@@ -371,7 +418,7 @@ static int quic_client_set_x509_session(struct quic_endpoint *ep, ngtcp2_pkt_hd 
 	conn_ref->user_data = ep;
 	if (gnutls_init(&session, GNUTLS_CLIENT))
 		goto err_cred;
-	if (gnutls_priority_set_direct(session, PRIORITY, NULL))
+	if (gnutls_priority_set_direct(session, quic_get_priority(ep), NULL))
 		goto err_session;
 	gnutls_session_set_ptr(session, conn_ref);
 	if (ngtcp2_crypto_gnutls_configure_client_session(session))
@@ -464,7 +511,7 @@ static int quic_client_set_psk_session(struct quic_endpoint *ep, ngtcp2_pkt_hd *
 	conn_ref->user_data = ep;
 	if (gnutls_init(&session, GNUTLS_CLIENT))
 		goto err_cred;
-	if (gnutls_priority_set_direct(session, PRIORITY, NULL))
+	if (gnutls_priority_set_direct(session, quic_get_priority(ep), NULL))
 		goto err_session;
 	gnutls_session_set_ptr(session, conn_ref);
 	if (ngtcp2_crypto_gnutls_configure_client_session(session))
@@ -574,7 +621,7 @@ static int quic_server_set_x509_session(struct quic_endpoint *ep, ngtcp2_pkt_hd 
 	conn_ref->user_data = ep;
 	if (gnutls_init(&session, GNUTLS_SERVER))
 		goto err_cred;
-	if (gnutls_priority_set_direct(session, PRIORITY, NULL))
+	if (gnutls_priority_set_direct(session, quic_get_priority(ep), NULL))
 		goto err_session;
 	gnutls_session_set_ptr(session, conn_ref);
 	if (ngtcp2_crypto_gnutls_configure_server_session(session))
@@ -649,7 +696,7 @@ static int quic_server_set_psk_session(struct quic_endpoint *ep, ngtcp2_pkt_hd *
 	conn_ref->user_data = ep;
 	if (gnutls_init(&session, GNUTLS_SERVER))
 		goto err_cred;
-	if (gnutls_priority_set_direct(session, PRIORITY, NULL))
+	if (gnutls_priority_set_direct(session, quic_get_priority(ep), NULL))
 		goto err_session;
 	gnutls_session_set_ptr(session, conn_ref);
 	if (ngtcp2_crypto_gnutls_configure_server_session(session))
@@ -812,7 +859,7 @@ static int quic_set_socket_context(struct quic_endpoint *ep, uint8_t is_serv)
 	struct quic_context context;
 	const ngtcp2_cid *dest;
 	ngtcp2_cid source[3];
-	int count;
+	int count, cipher;
 
 	memset(&context, 0, sizeof(context));
 	memcpy(context.source.data, ep->connid[0].data, ep->connid[0].data_len);
@@ -825,6 +872,10 @@ static int quic_set_socket_context(struct quic_endpoint *ep, uint8_t is_serv)
 	p = ngtcp2_conn_get_remote_transport_params(ep->conn);
 	quic_context_copy_transport_params(ep, &context.remote, p);
 
+	if (!ep->cipher_type && quic_get_cipher_type(ep))
+		return -1;
+	context.recv.type = ep->cipher_type;
+	context.send.type = ep->cipher_type;
 	memcpy(context.recv.secret, ep->secret[0].data, ep->secret[0].data_len);
 	memcpy(context.send.secret, ep->secret[1].data, ep->secret[1].data_len);
 
@@ -838,7 +889,7 @@ static int quic_set_socket_context(struct quic_endpoint *ep, uint8_t is_serv)
 
 static int quic_client_do_handshake(struct quic_endpoint *ep)
 {
-	int state, err;
+	int state, err, len;
 
 	ngtcp2_path_storage_zero(&ep->ps);
 	ep->ps.path.local.addrlen = sizeof(ep->ps.local_addrbuf);
@@ -864,6 +915,11 @@ static int quic_client_do_handshake(struct quic_endpoint *ep)
 		printf("socket getsockopt token failed\n");
 		return -1;
 	}
+	len = sizeof(ep->cipher_type);
+	if (getsockopt(ep->sockfd, SOL_QUIC, QUIC_SOCKOPT_CIPHER, &ep->cipher_type, &len)) {
+		printf("socket getsockopt token failed\n");
+		return -1;
+	}
 	if (ep->session_new(ep, NULL))
 		return -1;
 
@@ -881,7 +937,7 @@ out:
 
 static int quic_server_do_handshake(struct quic_endpoint *ep)
 {
-	int state, err;
+	int state, err, len;
 
 	ngtcp2_path_storage_zero(&ep->ps);
 	ep->ps.path.local.addrlen = sizeof(ep->ps.local_addrbuf);
@@ -894,6 +950,11 @@ static int quic_server_do_handshake(struct quic_endpoint *ep)
 	if (getsockopt(ep->sockfd, SOL_QUIC, QUIC_SOCKOPT_ALPN, ep->alpn.data,
 		       &ep->alpn.data_len)) {
 		printf("socket getsockopt alpn failed\n");
+		return -1;
+	}
+	len = sizeof(ep->cipher_type);
+	if (getsockopt(ep->sockfd, SOL_QUIC, QUIC_SOCKOPT_CIPHER, &ep->cipher_type, &len)) {
+		printf("socket getsockopt token failed\n");
 		return -1;
 	}
 	err = quic_do_handshake(ep);
