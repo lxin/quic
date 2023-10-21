@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <linux/tls.h>
 #include <arpa/inet.h>
 #include <netinet/quic.h>
 
@@ -90,8 +91,8 @@ static int do_server(int argc, char *argv[])
 	uint64_t len = 0,  sid = 0;
 	char *mode, *pkey, *cert;
 	gnutls_pcert_st gcert;
+	int flag = 0, cipher;
 	struct addrinfo *rp;
-	int flag = 0;
 
 	if (argc != 6) {
 		printf("%s server <LOCAL ADDR> <LOCAL PORT> <-pkey_file:PRIVATE_KEY_FILE> <-cert_file:CERTIFICATE_FILE>\n", argv[0]);
@@ -118,6 +119,9 @@ static int do_server(int argc, char *argv[])
 			printf("socket bind failed\n");
 			return -1;
 		}
+		cipher = TLS_CIPHER_CHACHA20_POLY1305;
+		if (setsockopt(listenfd, SOL_QUIC, QUIC_SOCKOPT_CIPHER, &cipher, sizeof(cipher)))
+			return -1;
 		goto listen;
 	}
 
@@ -208,9 +212,9 @@ static int do_client(int argc, char *argv[])
 {
 	char *mode, *pkey = NULL, *cert = NULL;
 	struct quic_handshake_parms parms = {};
+	int ret, sockfd, flag, cipher;
         struct sockaddr_in ra = {};
 	uint64_t len = 0, sid = 0;
-	int ret, sockfd, flag;
 	struct addrinfo *rp;
 	time_t start, end;
 
@@ -241,6 +245,10 @@ static int do_client(int argc, char *argv[])
 			printf("socket connect failed\n");
 			return -1;
 		}
+
+		cipher = TLS_CIPHER_CHACHA20_POLY1305;
+		if (setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_CIPHER, &cipher, sizeof(cipher)))
+			return -1;
 		goto handshake;
 	}
 

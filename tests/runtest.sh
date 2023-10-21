@@ -62,17 +62,23 @@ daemon_run ./perf_test server :: 1234 -pkey_file:./keys/server-key.pem -cert_fil
 daemon_stop "perf_test"
 
 if [ -f /usr/local/include/msquic.h -o -f /usr/include/msquic.h ]; then
-	print_start "InterOperability Tests (lkquic -> msquic)"
+	print_start "InterOperability Tests (IPv4, lkquic -> msquic)"
 	make msquic_test || exit 1
 	daemon_run ./msquic_test -server -cert_file:./keys/server-cert.pem -key_file:./keys/server-key.pem
 	./perf_test client 127.0.0.1 1234 || exit 1
 	daemon_stop "msquic_test"
 
-	print_start "InterOperability Tests (msquic -> lkquic)"
+	print_start "InterOperability Tests (IPv4, msquic -> lkquic)"
 	make msquic_test || exit 1
 	daemon_run ./perf_test server 0.0.0.0 1234 -pkey_file:./keys/server-key.pem -cert_file:./keys/server-cert.pem
 	./msquic_test -client -target:127.0.0.1 || exit 1
 	daemon_stop "perf_test"
+
+	print_start "InterOperability Tests (IPv6, lkquic -> msquic)"
+	make msquic_test || exit 1
+	daemon_run ./msquic_test -server -cert_file:./keys/server-cert.pem -key_file:./keys/server-key.pem
+	./perf_test client ::1 1234 || exit 1
+	daemon_stop "msquic_test"
 fi
 
 if modinfo quic_test > /dev/null 2>&1; then

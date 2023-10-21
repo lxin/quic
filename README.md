@@ -40,10 +40,10 @@ give you a better idea what context to be set into kernel after userspace handsh
 - Stream Management
 - Connection ID Management
 - Interoperability Testing with MSQUIC
+- Support All Ciphers (AES-128-GCM, AES-256-GCM, AES-128-CCM, CHACHA20-POLY1305)
 
 ### TBD
 - Idle Connection Timer
-- Enable More Cipher Suites.
 
 ## INSTALL
 
@@ -252,5 +252,5 @@ as it receives and handles the kernel handshake request for kernel sockets.
 In kernel space, the use is pretty much like TCP sockets, other than a extra handshake up-call.
 (See [net/quic/test/test.c](https://github.com/lxin/quic/blob/main/net/quic/test/test.c) for examples)
 
-You can run the kernel test code as it shows in [Kernel Tests](https://github.com/lxin/quic/blob/main/tests/runtest.sh#L72)
+You can run the kernel test code as it shows in [Kernel Tests](https://github.com/lxin/quic/blob/main/tests/runtest.sh#L84)
 part of tests/runtest.sh

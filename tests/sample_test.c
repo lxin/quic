@@ -45,9 +45,11 @@ struct quic_context client_context = {
 		.data = "2d386f8793fe1a0",
 	},
 	.send = {
+		.type = 51, /* TLS_CIPHER_AES_GCM_128 */
 		.secret = "00575b0939d23d75ea1a28f5f8649abb",
 	},
 	.recv = {
+		.type = 51,
 		.secret = "0eb530a5596bfc1176e26fd224460e84",
 	},
 	.is_serv = 0,
@@ -89,9 +91,11 @@ struct quic_context server_context = {
 		.data = "2d386f8793fe1a0",
 	},
 	.recv = {
+		.type = 51,
 		.secret = "00575b0939d23d75ea1a28f5f8649abb",
 	},
 	.send = {
+		.type = 51,
 		.secret = "0eb530a5596bfc1176e26fd224460e84",
 	},
 	.is_serv = 1,
