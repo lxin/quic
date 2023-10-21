@@ -72,6 +72,7 @@ enum quic_msg_flags {	/* msg_flags in recvmsg */
 #define QUIC_SOCKOPT_ALPN				100 /* set and get */
 #define QUIC_SOCKOPT_TOKEN				101 /* set and get */
 #define QUIC_SOCKOPT_SESSION_TICKET			102 /* set and get */
+#define QUIC_SOCKOPT_CIPHER				103 /* set and get */
 
 /* for testing only */
 #define QUIC_SOCKOPT_RETIRE_CONNECTION_ID		1000 /* set */

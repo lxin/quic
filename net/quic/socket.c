@@ -1263,6 +1263,9 @@ static int quic_handshake_setsockopt(struct sock *sk, int level, int optname,
 	case QUIC_SOCKOPT_SESSION_TICKET:
 		retval = quic_sock_set_session_ticket(sk, kopt, optlen);
 		break;
+	case QUIC_SOCKOPT_CIPHER:
+		retval = quic_crypto_set_cipher(quic_crypto(sk), kopt, optlen);
+		break;
 	default:
 		retval = -ENOPROTOOPT;
 		break;
@@ -1517,6 +1520,9 @@ static int quic_handshake_getsockopt(struct sock *sk, int level, int optname,
 		break;
 	case QUIC_SOCKOPT_SESSION_TICKET:
 		retval = quic_sock_get_session_ticket(sk, len, optval, optlen);
+		break;
+	case QUIC_SOCKOPT_CIPHER:
+		retval = quic_crypto_get_cipher(quic_crypto(sk), len, optval, optlen);
 		break;
 	default:
 		retval = -ENOPROTOOPT;
