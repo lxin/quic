@@ -114,6 +114,23 @@ static void quic_write_space(struct sock *sk)
 	rcu_read_unlock();
 }
 
+static void quic_transport_param_init(struct sock *sk)
+{
+	struct quic_transport_param *param = quic_param(sk);
+
+	param->max_udp_payload_size = 65527;
+	param->ack_delay_exponent = 3;
+	param->max_ack_delay = 25000;
+	param->active_connection_id_limit = 7;
+	param->max_idle_timeout = 30000000;
+	param->initial_max_data = 128 * 1024;
+	param->initial_max_stream_data_bidi_local = 64 * 1024;
+	param->initial_max_stream_data_bidi_remote = 64 * 1024;
+	param->initial_max_stream_data_uni = 64 * 1024;
+	param->initial_max_streams_bidi = 100;
+	param->initial_max_streams_uni = 100;
+}
+
 static int quic_init_sock(struct sock *sk)
 {
 	struct quic_sock *qs = quic_sk(sk);
@@ -130,6 +147,8 @@ static int quic_init_sock(struct sock *sk)
 	quic_outq_init(&qs->outq);
 	quic_inq_init(&qs->inq);
 	quic_packet_init(&qs->packet);
+
+	quic_transport_param_init(sk);
 
 	sk->sk_destruct = inet_sock_destruct;
 	sk->sk_write_space = quic_write_space;
@@ -762,6 +781,7 @@ static int quic_copy_sock(struct sock *nsk, struct sock *sk, struct quic_request
 		quic_alpn(nsk)->len = len;
 	}
 
+	*quic_param(nsk) = *quic_param(sk);
 	quic_inq(nsk)->events = quic_inq(sk)->events;
 	quic_crypto(nsk)->cipher_type = quic_crypto(sk)->cipher_type;
 	return 0;
@@ -1025,6 +1045,33 @@ static int quic_sock_set_session_ticket(struct sock *sk, u8 *data, u32 len)
 	return 0;
 }
 
+#define quic_set_param_if_not_zero(param_name) \
+	if (p->param_name) \
+		param->param_name = p->param_name
+
+static int quic_sock_set_transport_param(struct sock *sk, struct quic_transport_param *p, u32 len)
+{
+	struct quic_transport_param *param = quic_param(sk);
+
+	if (len < sizeof(*param))
+		return -EINVAL;
+
+	quic_set_param_if_not_zero(max_udp_payload_size);
+	quic_set_param_if_not_zero(ack_delay_exponent);
+	quic_set_param_if_not_zero(max_ack_delay);
+	quic_set_param_if_not_zero(active_connection_id_limit);
+	quic_set_param_if_not_zero(max_idle_timeout);
+	quic_set_param_if_not_zero(initial_max_data);
+	quic_set_param_if_not_zero(initial_max_stream_data_bidi_local);
+	quic_set_param_if_not_zero(initial_max_stream_data_bidi_remote);
+	quic_set_param_if_not_zero(initial_max_stream_data_uni);
+	quic_set_param_if_not_zero(initial_max_streams_bidi);
+	quic_set_param_if_not_zero(initial_max_streams_uni);
+	quic_set_param_if_not_zero(initial_smoothed_rtt);
+
+	return 0;
+}
+
 static int quic_sock_new_session_ticket(struct sock *sk, u8 *data, u32 len)
 {
 	struct quic_token ticket;
@@ -1267,6 +1314,9 @@ static int quic_handshake_setsockopt(struct sock *sk, int level, int optname,
 	case QUIC_SOCKOPT_CIPHER:
 		retval = quic_crypto_set_cipher(quic_crypto(sk), kopt, optlen);
 		break;
+	case QUIC_SOCKOPT_TRANSPORT_PARAM:
+		retval = quic_sock_set_transport_param(sk, kopt, optlen);
+		break;
 	default:
 		retval = -ENOPROTOOPT;
 		break;
@@ -1330,6 +1380,21 @@ static int quic_sock_get_session_ticket(struct sock *sk, int len,
 	if (put_user(ticket->len, optlen))
 		return -EFAULT;
 	if (copy_to_user(optval, ticket->data, ticket->len))
+		return -EFAULT;
+	return 0;
+}
+
+static int quic_sock_get_transport_param(struct sock *sk, int len,
+					 char __user *optval, int __user *optlen)
+{
+	struct quic_transport_param *param = quic_param(sk);
+
+	if (len < sizeof(*param))
+		return -EINVAL;
+	len = sizeof(*param);
+	if (put_user(len, optlen))
+		return -EFAULT;
+	if (copy_to_user(optval, param, len))
 		return -EFAULT;
 	return 0;
 }
@@ -1524,6 +1589,9 @@ static int quic_handshake_getsockopt(struct sock *sk, int level, int optname,
 		break;
 	case QUIC_SOCKOPT_CIPHER:
 		retval = quic_crypto_get_cipher(quic_crypto(sk), len, optval, optlen);
+		break;
+	case QUIC_SOCKOPT_TRANSPORT_PARAM:
+		retval = quic_sock_get_transport_param(sk, len, optval, optlen);
 		break;
 	default:
 		retval = -ENOPROTOOPT;

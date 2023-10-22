@@ -59,15 +59,16 @@ struct quic_sock {
 
 	struct quic_connection_id_set	source;
 	struct quic_connection_id_set	dest;
+	struct quic_stream_table	streams;
+	struct quic_crypto		crypto;
+	struct quic_pnmap		pn_map;
 
 	struct quic_bind_port		port;
 	struct quic_udp_sock		*udp_sk[2];
 	struct quic_path_addr		src;
 	struct quic_path_addr		dst;
 
-	struct quic_stream_table	streams;
-	struct quic_crypto		crypto;
-	struct quic_pnmap		pn_map;
+	struct quic_transport_param	param;
 	struct quic_token		token;
 	struct quic_token		ticket;
 	struct quic_token		alpn;
@@ -184,6 +185,11 @@ static inline struct quic_connection_id_set *quic_source(const struct sock *sk)
 static inline struct quic_connection_id_set *quic_dest(const struct sock *sk)
 {
 	return &quic_sk(sk)->dest;
+}
+
+static inline struct quic_transport_param *quic_param(const struct sock *sk)
+{
+	return &quic_sk(sk)->param;
 }
 
 static inline bool quic_is_serv(struct sock *sk)
