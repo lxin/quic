@@ -47,12 +47,14 @@ struct quic_endpoint {
 	uint8_t	dead;	/* reason why handshake failed */
 	timer_t	timer;	/* timer for retransmission */
 
-	uint32_t connecting_ts[2];	/* to calculate the initial rtt */
-	uint32_t cipher_type;		/* cipher type from linux/tls.h */
+	struct quic_transport_param param;	/* transport param from kernel socket */
+	uint32_t cipher_type;		/* cipher type from kernel socket */
 	struct quic_data alpn;		/* alpn from kernel socket */
 	struct quic_data token;		/* token from kernel socket */
+
 	struct quic_data secret[2];	/* secrets for sending and receiving */
 	struct quic_data connid[2];	/* source and dest connection IDs */
+	uint32_t connecting_ts[2];	/* to calculate the initial rtt */
 
 	struct quic_handshake_parms *parms;
 	int (*session_new)(struct quic_endpoint *ep, ngtcp2_pkt_hd *hd);
@@ -287,6 +289,44 @@ static int quic_get_cipher_type(struct quic_endpoint *ep)
 	return 0;
 }
 
+static void quic_copy_to_transport_params(struct quic_endpoint *ep,
+					  const struct quic_transport_param *param,
+					  ngtcp2_transport_params *p)
+{
+	p->max_udp_payload_size = param->max_udp_payload_size;
+	p->ack_delay_exponent = param->ack_delay_exponent;
+	p->max_ack_delay = param->max_ack_delay * NGTCP2_MICROSECONDS;
+	p->max_idle_timeout = (uint64_t)param->max_idle_timeout * NGTCP2_MICROSECONDS;
+	p->initial_max_data = param->initial_max_data;
+	p->active_connection_id_limit = param->active_connection_id_limit;
+	p->initial_max_stream_data_bidi_local = param->initial_max_stream_data_bidi_local;
+	p->initial_max_stream_data_bidi_remote = param->initial_max_stream_data_bidi_remote;
+	p->initial_max_stream_data_uni = param->initial_max_stream_data_uni;
+	p->initial_max_streams_bidi = param->initial_max_streams_bidi;
+	p->initial_max_streams_uni = param->initial_max_streams_uni;
+}
+
+static void quic_copy_from_transport_params(struct quic_endpoint *ep,
+					    struct quic_transport_param *param,
+					    const ngtcp2_transport_params *p)
+{
+	param->max_udp_payload_size = p->max_udp_payload_size;
+	param->ack_delay_exponent = p->ack_delay_exponent;
+	param->max_ack_delay = p->max_ack_delay / NGTCP2_MICROSECONDS;
+	param->max_idle_timeout = p->max_idle_timeout / NGTCP2_MICROSECONDS;
+	param->initial_max_data = p->initial_max_data;
+	param->active_connection_id_limit = p->active_connection_id_limit;
+	param->initial_max_stream_data_bidi_local = p->initial_max_stream_data_bidi_local;
+	param->initial_max_stream_data_bidi_remote = p->initial_max_stream_data_bidi_remote;
+	param->initial_max_stream_data_uni = p->initial_max_stream_data_uni;
+	param->initial_max_streams_bidi = p->initial_max_streams_bidi;
+	param->initial_max_streams_uni = p->initial_max_streams_uni;
+
+	/* use the value in socket if it's set, otherwise calculate one  */
+	param->initial_smoothed_rtt = ep->param.initial_smoothed_rtt ?:
+				ep->connecting_ts[1] - ep->connecting_ts[0];
+}
+
 static int quic_client_connection_new(struct quic_endpoint *ep)
 {
 	ngtcp2_transport_params params;
@@ -295,14 +335,7 @@ static int quic_client_connection_new(struct quic_endpoint *ep)
 	ngtcp2_cid scid, dcid;
 
 	ngtcp2_transport_params_default(&params);
-	params.initial_max_stream_data_bidi_local = 64 * 1024;
-	params.initial_max_stream_data_bidi_remote = 64 * 1024;
-	params.initial_max_stream_data_uni = 64 * 1024;
-	params.initial_max_data = 128 * 1024;
-	params.initial_max_streams_bidi = 100;
-	params.initial_max_streams_uni = 100;
-	params.max_idle_timeout = 30 * NGTCP2_SECONDS;
-	params.active_connection_id_limit = 7;
+	quic_copy_to_transport_params(ep, &ep->param, &params);
 	ngtcp2_settings_default(&settings);
 	settings.initial_ts = quic_get_timestamp();
 	settings.handshake_timeout = (ep->parms->timeout ?: 30000) * NGTCP2_MILLISECONDS;
@@ -333,14 +366,7 @@ static int quic_server_connection_new(struct quic_endpoint *ep, ngtcp2_pkt_hd *h
 	ngtcp2_cid scid, dcid;
 
 	ngtcp2_transport_params_default(&params);
-	params.initial_max_stream_data_bidi_local = 64 * 1024;
-	params.initial_max_stream_data_bidi_remote = 64 * 1024;
-	params.initial_max_stream_data_uni = 64 * 1024;
-	params.initial_max_data = 16 * 1024 * 1024;
-	params.initial_max_streams_bidi = 100;
-	params.initial_max_streams_uni = 100;
-	params.max_idle_timeout = 30 * NGTCP2_SECONDS;
-	params.active_connection_id_limit = 7;
+	quic_copy_to_transport_params(ep, &ep->param, &params);
 	ngtcp2_settings_default(&settings);
 	settings.initial_ts = quic_get_timestamp();
 	settings.handshake_timeout = (ep->parms->timeout ?: 30000) * NGTCP2_MILLISECONDS;
@@ -836,24 +862,6 @@ static int quic_do_handshake(struct quic_endpoint *ep)
 	return ep->dead;
 }
 
-static void quic_context_copy_transport_params(struct quic_endpoint *ep,
-					       struct quic_transport_param *param,
-					       const ngtcp2_transport_params *p)
-{
-	param->max_udp_payload_size = p->max_udp_payload_size;
-	param->ack_delay_exponent = p->ack_delay_exponent;
-	param->max_ack_delay = p->max_ack_delay / NGTCP2_MICROSECONDS;
-	param->max_idle_timeout = p->max_idle_timeout / NGTCP2_MICROSECONDS;
-	param->initial_max_data = p->initial_max_data;
-	param->active_connection_id_limit = p->active_connection_id_limit;
-	param->initial_max_stream_data_bidi_local = p->initial_max_stream_data_bidi_local;
-	param->initial_max_stream_data_bidi_remote = p->initial_max_stream_data_bidi_remote;
-	param->initial_max_stream_data_uni = p->initial_max_stream_data_uni;
-	param->initial_max_streams_bidi = p->initial_max_streams_bidi;
-	param->initial_max_streams_uni = p->initial_max_streams_uni;
-	param->initial_smoothed_rtt = ep->connecting_ts[1] - ep->connecting_ts[0];
-}
-
 static int quic_set_socket_context(struct quic_endpoint *ep, uint8_t is_serv)
 {
 	const ngtcp2_transport_params *p;
@@ -869,9 +877,9 @@ static int quic_set_socket_context(struct quic_endpoint *ep, uint8_t is_serv)
 	context.dest.len = ep->connid[1].data_len;
 
 	p = ngtcp2_conn_get_local_transport_params(ep->conn);
-	quic_context_copy_transport_params(ep, &context.local, p);
+	quic_copy_from_transport_params(ep, &context.local, p);
 	p = ngtcp2_conn_get_remote_transport_params(ep->conn);
-	quic_context_copy_transport_params(ep, &context.remote, p);
+	quic_copy_from_transport_params(ep, &context.remote, p);
 
 	if (!ep->cipher_type && quic_get_cipher_type(ep))
 		return -1;
@@ -921,6 +929,11 @@ static int quic_client_do_handshake(struct quic_endpoint *ep)
 		printf("socket getsockopt token failed\n");
 		return -1;
 	}
+	len = sizeof(ep->param);
+	if (getsockopt(ep->sockfd, SOL_QUIC, QUIC_SOCKOPT_TRANSPORT_PARAM, &ep->param, &len)) {
+		printf("socket getsockopt token failed\n");
+		return -1;
+	}
 	if (ep->session_new(ep, NULL))
 		return -1;
 
@@ -955,6 +968,11 @@ static int quic_server_do_handshake(struct quic_endpoint *ep)
 	}
 	len = sizeof(ep->cipher_type);
 	if (getsockopt(ep->sockfd, SOL_QUIC, QUIC_SOCKOPT_CIPHER, &ep->cipher_type, &len)) {
+		printf("socket getsockopt token failed\n");
+		return -1;
+	}
+	len = sizeof(ep->param);
+	if (getsockopt(ep->sockfd, SOL_QUIC, QUIC_SOCKOPT_TRANSPORT_PARAM, &ep->param, &len)) {
 		printf("socket getsockopt token failed\n");
 		return -1;
 	}
