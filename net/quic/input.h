@@ -56,11 +56,6 @@ static inline u32 quic_inq_ack_delay_exponent(struct quic_inqueue *inq)
 	return inq->ack_delay_exponent;
 }
 
-static inline u32 quic_inq_max_udp(struct quic_inqueue *inq)
-{
-	return inq->max_udp_payload_size;
-}
-
 static inline u32 quic_inq_max_idle_timeout(struct quic_inqueue *inq)
 {
 	return inq->max_idle_timeout;

@@ -942,9 +942,9 @@ static int quic_sock_set_context(struct sock *sk, struct quic_context *context, 
 
 	quic_inq_set_param(sk, &context->local);
 	quic_outq_set_param(sk, &context->remote);
-	quic_cong_set_param(sk, &context->local);
 	quic_connection_id_set_param(&qs->dest, &context->local);
 	quic_connection_id_set_param(&qs->source, &context->remote);
+	quic_cong_set_param(sk, &context->local, &context->remote);
 	quic_streams_set_param(quic_streams(sk), &context->local, &context->remote);
 
 	err = quic_connection_id_add(&qs->source, &context->source, sk);
@@ -1338,9 +1338,9 @@ static int quic_sock_get_context(struct sock *sk, int len, char __user *optval, 
 
 	quic_inq_get_param(sk, &context.remote);
 	quic_outq_get_param(sk, &context.local);
-	quic_cong_get_param(sk, &context.local);
 	quic_connection_id_set_param(&qs->dest, &context.local);
 	quic_connection_id_set_param(&qs->source, &context.remote);
+	quic_cong_get_param(sk, &context.local, &context.remote);
 	quic_streams_get_param(quic_streams(sk), &context.local, &context.remote);
 
 	quic_connection_id_get(&qs->source, &context.source);

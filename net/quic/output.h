@@ -17,9 +17,11 @@ struct quic_outqueue {
 	u64 window;
 	u64 bytes;
 
+	u32 max_udp_payload_size;
 	u32 ack_delay_exponent;
 	u32 max_idle_timeout;
 	u32 max_ack_delay;
+
 	u32 close_errcode;
 	u8 *close_phrase;
 	u8 close_frame;
@@ -72,6 +74,11 @@ static inline void quic_outq_set_window(struct quic_outqueue *outq, u32 window)
 static inline u32 quic_outq_ack_delay_exponent(struct quic_outqueue *outq)
 {
 	return outq->ack_delay_exponent;
+}
+
+static inline u32 quic_outq_max_udp(struct quic_outqueue *outq)
+{
+	return outq->max_udp_payload_size;
 }
 
 void quic_outq_data_tail(struct sock *sk, struct sk_buff *skb, bool cork);

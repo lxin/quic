@@ -42,8 +42,8 @@ void quic_packet_config(struct sock *sk)
 		return;
 
 	mss = dst_mtu(__sk_dst_get(sk)) - quic_encap_len(sk);
-	if (mss > quic_inq_max_udp(quic_inq(sk)))
-		mss = quic_inq_max_udp(quic_inq(sk));
+	if (mss > quic_outq_max_udp(quic_outq(sk)))
+		mss = quic_outq_max_udp(quic_outq(sk));
 	qs->packet.mss = mss - QUIC_TAG_LEN;
 }
 

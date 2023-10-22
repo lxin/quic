@@ -157,16 +157,19 @@ static void quic_cong_set_rto(struct sock *sk, u32 rto)
 	quic_timer_setup(sk, QUIC_TIMER_RTX, cong->rto);
 }
 
-void quic_cong_get_param(struct sock *sk, struct quic_transport_param *p)
+void quic_cong_get_param(struct sock *sk, struct quic_transport_param *local,
+			 struct quic_transport_param *remote)
 {
-	p->initial_smoothed_rtt = quic_cong(sk)->smoothed_rtt;
+	local->initial_smoothed_rtt = quic_cong(sk)->smoothed_rtt;
+	remote->initial_smoothed_rtt = quic_cong(sk)->smoothed_rtt;
 }
 
-void quic_cong_set_param(struct sock *sk, struct quic_transport_param *p)
+void quic_cong_set_param(struct sock *sk, struct quic_transport_param *local,
+			 struct quic_transport_param *remote)
 {
 	struct quic_cong *cong = quic_cong(sk);
 
-	cong->latest_rtt = p->initial_smoothed_rtt;
+	cong->latest_rtt = local->initial_smoothed_rtt;
 	cong->smoothed_rtt = cong->latest_rtt;
 	cong->rttvar = cong->smoothed_rtt / 2;
 	quic_cong_set_rto(sk, cong->smoothed_rtt + cong->rttvar);

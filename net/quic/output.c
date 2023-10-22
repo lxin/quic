@@ -275,6 +275,7 @@ void quic_outq_set_param(struct sock *sk, struct quic_transport_param *p)
 	struct quic_outqueue *outq = quic_outq(sk);
 	u32 remote_ito, min_ito = 0;
 
+	outq->max_udp_payload_size = p->max_udp_payload_size;
 	outq->ack_delay_exponent = p->ack_delay_exponent;
 	outq->max_idle_timeout = p->max_idle_timeout;
 	outq->max_ack_delay = p->max_ack_delay;
@@ -307,4 +308,5 @@ void quic_outq_get_param(struct sock *sk, struct quic_transport_param *p)
 	p->max_ack_delay = outq->max_ack_delay;
 	p->ack_delay_exponent = outq->ack_delay_exponent;
 	p->max_idle_timeout = outq->max_idle_timeout;
+	p->max_udp_payload_size = outq->max_udp_payload_size;
 }
