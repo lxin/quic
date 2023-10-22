@@ -105,6 +105,7 @@ static int do_server(int argc, char *argv[])
 	}
 
 	if (rp->ai_family == AF_INET6) {
+		struct quic_transport_param param = {};
 		struct sockaddr_in6 la = {};
 
 		la.sin6_family = AF_INET6;
@@ -121,6 +122,10 @@ static int do_server(int argc, char *argv[])
 		}
 		cipher = TLS_CIPHER_CHACHA20_POLY1305;
 		if (setsockopt(listenfd, SOL_QUIC, QUIC_SOCKOPT_CIPHER, &cipher, sizeof(cipher)))
+			return -1;
+		param.max_udp_payload_size = 1400;
+		if (setsockopt(listenfd, SOL_QUIC, QUIC_SOCKOPT_TRANSPORT_PARAM,
+			       &param, sizeof(param)))
 			return -1;
 		goto listen;
 	}

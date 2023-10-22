@@ -44,7 +44,8 @@ give you a better idea what context to be set into kernel after userspace handsh
 
 ### TBD
 - Stateless Reset (rfc9000#name-stateless-reset)
-- Datagream extension (rfc9221)
+- Unreliable Datagram Extension (rfc9221)
+- Set initial_max_stream/data with better default values
 
 NOTE: As it strictly keeps LONG packets processing in userspace and SHORT packets in kernel,
 the bundling of the LONG and SHORT packets in 1-RTTs will not be supported.
