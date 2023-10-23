@@ -28,6 +28,7 @@ struct quic_dest_connection_id {
 struct quic_connection_id_set {
 	struct quic_common_connection_id *active;
 	struct list_head head;
+	u32 disable_active_migration;
 	u32 entry_size;
 	u32 max_count;
 	u32 count;

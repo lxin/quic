@@ -896,6 +896,9 @@ int quic_sock_change_addr(struct sock *sk, struct quic_path_addr *path, void *da
 	if (path->pending)
 		return -EINVAL;
 
+	if (udp_bind && quic_source(sk)->disable_active_migration)
+		return -EINVAL;
+
 	if (len != quic_addr_len(sk))
 		return -EINVAL;
 
@@ -1061,6 +1064,7 @@ static int quic_sock_set_transport_param(struct sock *sk, struct quic_transport_
 	quic_set_param_if_not_zero(max_ack_delay);
 	quic_set_param_if_not_zero(active_connection_id_limit);
 	quic_set_param_if_not_zero(max_idle_timeout);
+	quic_set_param_if_not_zero(disable_active_migration);
 	quic_set_param_if_not_zero(initial_max_data);
 	quic_set_param_if_not_zero(initial_max_stream_data_bidi_local);
 	quic_set_param_if_not_zero(initial_max_stream_data_bidi_remote);

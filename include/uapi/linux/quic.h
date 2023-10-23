@@ -91,6 +91,7 @@ struct quic_transport_param {
 	uint32_t max_ack_delay;
 	uint32_t active_connection_id_limit;
 	uint32_t max_idle_timeout;
+	uint32_t disable_active_migration;
 	uint32_t initial_max_data;
 	uint32_t initial_max_stream_data_bidi_local;
 	uint32_t initial_max_stream_data_bidi_remote;

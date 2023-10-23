@@ -80,7 +80,8 @@ int quic_packet_process(struct sock *sk, struct sk_buff *skb)
 	/* connection migration check: an endpoint only changes the address to which
 	 * it sends packets in response to the highest-numbered non-probing packet.
 	 */
-	if (pki.non_probing && pki.number == quic_pnmap_max_pn_seen(&qs->pn_map)) {
+	if (!quic_dest(sk)->disable_active_migration && pki.non_probing &&
+	    pki.number == quic_pnmap_max_pn_seen(&qs->pn_map)) {
 		qs->af_ops->get_msg_addr(&saddr, skb, 1);
 		if (memcmp(&saddr, quic_path_addr(&qs->dst), quic_addr_len(sk)))
 			quic_sock_change_addr(sk, &qs->dst, &saddr, quic_addr_len(sk), 0);
