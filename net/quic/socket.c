@@ -380,6 +380,8 @@ static int quic_msghdr_parse(struct sock *sk, struct msghdr *msg, struct quic_sn
 			info->stream_flag |= QUIC_STREAM_FLAG_UNI;
 		if (msg->msg_flags & MSG_DONTWAIT)
 			info->stream_flag |= QUIC_STREAM_FLAG_ASYNC;
+		if (msg->msg_flags & MSG_DATAGRAM)
+			info->stream_flag |= QUIC_STREAM_FLAG_DATAGRAM;
 		info->stream_id = -1;
 	}
 
@@ -494,19 +496,41 @@ static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 	lock_sock(sk);
 	err = quic_msghdr_parse(sk, msg, &sndinfo);
 	if (err)
+		goto err;
+
+	if (sndinfo.stream_flag & QUIC_STREAM_FLAG_DATAGRAM) {
+		if (!quic_outq_max_dgram(quic_outq(sk))) {
+			err = -EINVAL;
+			goto err;
+		}
+		if (sk_stream_wspace(sk) <= 0) {
+			timeo = sock_sndtimeo(sk, msg->msg_flags & MSG_DONTWAIT);
+			err = quic_wait_for_send(sk, 0, timeo, msg_len);
+			if (err)
+				goto err;
+		}
+		while (iov_iter_count(&msg->msg_iter) > 0) {
+			skb = quic_frame_create(sk, QUIC_FRAME_DATAGRAM_LEN, &msg->msg_iter);
+			if (!skb) {
+				err = -ENOMEM;
+				goto err;
+			}
+			quic_outq_dgram_tail(sk, skb, true);
+		}
 		goto out;
+	}
 
 	stream = quic_sock_send_stream(sk, &sndinfo);
 	if (IS_ERR(stream)) {
 		err = PTR_ERR(stream);
-		goto out;
+		goto err;
 	}
 
 	if (sk_stream_wspace(sk) <= 0) {
 		timeo = sock_sndtimeo(sk, msg->msg_flags & MSG_DONTWAIT);
 		err = quic_wait_for_send(sk, 0, timeo, msg_len);
 		if (err)
-			goto out;
+			goto err;
 	}
 
 	msginfo.stream = stream;
@@ -517,14 +541,14 @@ static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 		skb = quic_frame_create(sk, QUIC_FRAME_STREAM, &msginfo);
 		if (!skb) {
 			err = -ENOMEM;
-			goto out;
+			goto err;
 		}
 		quic_outq_data_tail(sk, skb, true);
 	}
-	quic_outq_flush(sk);
-
-	err = msg_len;
 out:
+	quic_outq_flush(sk);
+	err = msg_len;
+err:
 	release_sock(sk);
 	return err;
 }
@@ -578,10 +602,10 @@ static int quic_recvmsg(struct sock *sk, struct msghdr *msg, size_t len, int fla
 {
 	int nonblock = flags & MSG_DONTWAIT;
 #endif
-	int copy, copied = 0, freed = 0;
+	int err, copy, copied = 0, freed = 0;
+	int fin, off, event, dgram;
 	struct quic_rcvinfo info = {};
 	struct quic_stream *stream;
-	int err, fin, off, event;
 	struct sk_buff *skb;
 	long timeo;
 
@@ -606,7 +630,14 @@ static int quic_recvmsg(struct sock *sk, struct msghdr *msg, size_t len, int fla
 		copied += copy;
 		fin = QUIC_RCV_CB(skb)->stream_fin;
 		event = QUIC_RCV_CB(skb)->event;
-
+		dgram = QUIC_RCV_CB(skb)->dgram;
+		if (event) {
+			msg->msg_flags |= MSG_NOTIFICATION;
+			info.stream_flag |= QUIC_STREAM_FLAG_NOTIFICATION;
+		} else if (dgram) {
+			msg->msg_flags |= MSG_DATAGRAM;
+			info.stream_flag |= QUIC_STREAM_FLAG_DATAGRAM;
+		}
 		if (flags & MSG_PEEK)
 			break;
 		if (copy != skb->len - off) {
@@ -619,8 +650,13 @@ static int quic_recvmsg(struct sock *sk, struct msghdr *msg, size_t len, int fla
 			if (event == QUIC_EVENT_STREAM_UPDATE &&
 			    stream->recv.state == QUIC_STREAM_RECV_STATE_RESET_RECVD)
 				stream->recv.state = QUIC_STREAM_RECV_STATE_RESET_READ;
-			msg->msg_flags |= MSG_NOTIFICATION;
-			info.stream_flag |= QUIC_STREAM_FLAG_NOTIFICATION;
+			msg->msg_flags |= MSG_EOR;
+			info.stream_flag |= QUIC_STREAM_FLAG_FIN;
+			kfree_skb(__skb_dequeue(&sk->sk_receive_queue));
+			break;
+		} else if (dgram) {
+			msg->msg_flags |= MSG_EOR;
+			info.stream_flag |= QUIC_STREAM_FLAG_FIN;
 			kfree_skb(__skb_dequeue(&sk->sk_receive_queue));
 			break;
 		}
@@ -634,12 +670,12 @@ static int quic_recvmsg(struct sock *sk, struct msghdr *msg, size_t len, int fla
 		}
 
 		skb = skb_peek(&sk->sk_receive_queue);
-		if (!skb || QUIC_RCV_CB(skb)->event ||
+		if (!skb || QUIC_RCV_CB(skb)->event || QUIC_RCV_CB(skb)->dgram ||
 		    QUIC_RCV_CB(skb)->stream->id != stream->id)
 			break;
 	} while (copied < len);
 
-	if (!event) {
+	if (!event && !dgram) {
 		info.stream_id = stream->id;
 		quic_inq_flow_control(sk, stream, freed);
 	}

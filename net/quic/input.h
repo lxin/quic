@@ -29,6 +29,7 @@ struct quic_rcv_cb {
 	u16 offset;
 	u8 event;
 	u8 number_offset;
+	u8 dgram:1;
 	u8 backlog:1;
 	u8 stream_fin:1;
 	u64 stream_offset;
@@ -71,6 +72,7 @@ int quic_do_rcv(struct sock *sk, struct sk_buff *skb);
 int quic_handshake_do_rcv(struct sock *sk, struct sk_buff *skb);
 int quic_rcv(struct sk_buff *skb);
 int quic_inq_reasm_tail(struct sock *sk, struct sk_buff *skb);
+int quic_inq_dgram_tail(struct sock *sk, struct sk_buff *skb);
 int quic_inq_flow_control(struct sock *sk, struct quic_stream *stream, int len);
 void quic_inq_set_param(struct sock *sk, struct quic_transport_param *p);
 void quic_inq_get_param(struct sock *sk, struct quic_transport_param *p);

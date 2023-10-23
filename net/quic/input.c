@@ -366,3 +366,15 @@ int quic_inq_event_recv(struct sock *sk, u8 event, void *args)
 	sk->sk_data_ready(sk);
 	return 0;
 }
+
+int quic_inq_dgram_tail(struct sock *sk, struct sk_buff *skb)
+{
+	if (atomic_read(&sk->sk_rmem_alloc) + skb->len > sk->sk_rcvbuf)
+		return -ENOBUFS;
+
+	QUIC_RCV_CB(skb)->dgram = 1;
+	quic_inq_set_owner_r(skb, sk);
+	__skb_queue_tail(&sk->sk_receive_queue, skb);
+	sk->sk_data_ready(sk);
+	return 0;
+}

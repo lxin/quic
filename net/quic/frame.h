@@ -33,9 +33,9 @@ enum {
 	QUIC_FRAME_CONNECTION_CLOSE = 0x1c,
 	QUIC_FRAME_CONNECTION_CLOSE_APP = 0x1d,
 	QUIC_FRAME_HANDSHAKE_DONE = 0x1e,
-	QUIC_FRAME_BASE_MAX = QUIC_FRAME_HANDSHAKE_DONE,
 	QUIC_FRAME_DATAGRAM = 0x30, /* RFC 9221 */
 	QUIC_FRAME_DATAGRAM_LEN = 0x31,
+	QUIC_FRAME_MAX = QUIC_FRAME_DATAGRAM_LEN,
 };
 
 struct quic_msginfo {
@@ -66,6 +66,16 @@ static inline bool quic_frame_non_probing(u8 type)
 {
 	return type != QUIC_FRAME_NEW_CONNECTION_ID && type != QUIC_FRAME_PADDING &&
 	       type != QUIC_FRAME_PATH_RESPONSE && type != QUIC_FRAME_PATH_CHALLENGE;
+}
+
+static inline bool quic_frame_is_dgram(u8 type)
+{
+	return type == QUIC_FRAME_DATAGRAM || type == QUIC_FRAME_DATAGRAM_LEN;
+}
+
+static inline bool quic_frame_is_reset(u8 type)
+{
+	return type == QUIC_FRAME_RESET_STREAM;
 }
 
 struct sk_buff *quic_frame_create(struct sock *sk, u8 type, void *data);

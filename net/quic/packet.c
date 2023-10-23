@@ -29,7 +29,7 @@
 
 void quic_packet_config(struct sock *sk)
 {
-	int mss, hlen = sizeof(struct quichdr);
+	int mss, mss_dgram, hlen = sizeof(struct quichdr);
 	struct quic_sock *qs = quic_sk(sk);
 
 	hlen += qs->dest.active->id.len;
@@ -45,6 +45,13 @@ void quic_packet_config(struct sock *sk)
 	if (mss > quic_outq_max_udp(quic_outq(sk)))
 		mss = quic_outq_max_udp(quic_outq(sk));
 	qs->packet.mss = mss - QUIC_TAG_LEN;
+
+	mss_dgram = quic_outq_max_dgram(quic_outq(sk));
+	if (!mss_dgram)
+		return;
+	if (mss_dgram > mss)
+		mss_dgram = mss;
+	qs->packet.mss_dgram = mss_dgram - QUIC_TAG_LEN;
 }
 
 int quic_packet_process(struct sock *sk, struct sk_buff *skb)
@@ -207,6 +214,20 @@ int quic_packet_tail(struct sock *sk, struct sk_buff *skb)
 	struct quic_packet *packet = quic_packet(sk);
 
 	if (packet->len + skb->len > packet->mss) {
+		if (packet->len != packet->overhead)
+			return 0;
+		packet->ipfragok = 1;
+	}
+	packet->len += skb->len;
+	__skb_queue_tail(&packet->frame_list, skb);
+	return skb->len;
+}
+
+int quic_packet_tail_dgram(struct sock *sk, struct sk_buff *skb)
+{
+	struct quic_packet *packet = quic_packet(sk);
+
+	if (packet->len + skb->len > packet->mss_dgram) {
 		if (packet->len != packet->overhead)
 			return 0;
 		packet->ipfragok = 1;

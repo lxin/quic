@@ -1079,10 +1079,85 @@ static int quic_frame_path_response_process(struct sock *sk, struct sk_buff *skb
 	return skb->len - len;
 }
 
+static struct sk_buff *quic_frame_invalid_create(struct sock *sk, void *data, u8 type)
+{
+	return NULL;
+}
+
+static struct sk_buff *quic_frame_datagram_create(struct sock *sk, void *data, u8 type)
+{
+	u32 msg_len, hlen = 1, frame_len, max_frame_len;
+	struct iov_iter *msg = data;
+	struct sk_buff *skb;
+	u8 *p;
+
+	max_frame_len = quic_packet_max_payload_dgram(quic_packet(sk));
+	hlen += quic_var_len(max_frame_len);
+
+	msg_len = iov_iter_count(msg);
+	if (msg_len > max_frame_len - hlen)
+		msg_len = max_frame_len - hlen;
+
+	skb = alloc_skb(msg_len + hlen, GFP_ATOMIC);
+	if (!skb)
+		return NULL;
+
+	p = quic_put_var(skb->data, type);
+	p = quic_put_var(p, msg_len);
+	frame_len = (u32)(p - skb->data);
+
+	if (!copy_from_iter_full(p, msg_len, msg)) {
+		kfree_skb(skb);
+		return NULL;
+	}
+
+	QUIC_SND_CB(skb)->data_bytes = msg_len;
+	frame_len += msg_len;
+	skb_put(skb, frame_len);
+	return skb;
+}
+
+static int quic_frame_invalid_process(struct sock *sk, struct sk_buff *skb, u8 type)
+{
+	return -EPROTONOSUPPORT;
+}
+
+static int quic_frame_datagram_process(struct sock *sk, struct sk_buff *skb, u8 type)
+{
+	struct sk_buff *nskb;
+	u32 len = skb->len;
+	u8 *p = skb->data;
+	u64 payload_len;
+	int err;
+
+	if (!quic_inq_max_dgram(quic_inq(sk)))
+		return -EINVAL;
+
+	payload_len = skb->len;
+	if (type == QUIC_FRAME_DATAGRAM_LEN) {
+		if (!quic_get_var(&p, &len, &payload_len) || payload_len > len)
+			return -EINVAL;
+	}
+	nskb = skb_clone(skb, GFP_ATOMIC);
+	if (!nskb)
+		return -ENOMEM;
+	skb_pull(nskb, skb->len - len);
+	skb_trim(nskb, payload_len);
+
+	err = quic_inq_dgram_tail(sk, nskb);
+	if (err) {
+		kfree_skb(nskb);
+		return err;
+	}
+
+	len -= payload_len;
+	return skb->len - len;
+}
+
 #define quic_frame_create_and_process(type) \
 	{quic_frame_##type##_create, quic_frame_##type##_process}
 
-static struct quic_frame_ops quic_frame_ops[QUIC_FRAME_BASE_MAX + 1] = {
+static struct quic_frame_ops quic_frame_ops[QUIC_FRAME_MAX + 1] = {
 	quic_frame_create_and_process(padding), /* 0x00 */
 	quic_frame_create_and_process(ping),
 	quic_frame_create_and_process(ack),
@@ -1114,6 +1189,25 @@ static struct quic_frame_ops quic_frame_ops[QUIC_FRAME_BASE_MAX + 1] = {
 	quic_frame_create_and_process(connection_close),
 	quic_frame_create_and_process(connection_close),
 	quic_frame_create_and_process(handshake_done),
+	quic_frame_create_and_process(invalid),
+	quic_frame_create_and_process(invalid), /* 0x20 */
+	quic_frame_create_and_process(invalid),
+	quic_frame_create_and_process(invalid),
+	quic_frame_create_and_process(invalid),
+	quic_frame_create_and_process(invalid),
+	quic_frame_create_and_process(invalid),
+	quic_frame_create_and_process(invalid),
+	quic_frame_create_and_process(invalid),
+	quic_frame_create_and_process(invalid),
+	quic_frame_create_and_process(invalid),
+	quic_frame_create_and_process(invalid),
+	quic_frame_create_and_process(invalid),
+	quic_frame_create_and_process(invalid),
+	quic_frame_create_and_process(invalid),
+	quic_frame_create_and_process(invalid),
+	quic_frame_create_and_process(invalid),
+	quic_frame_create_and_process(datagram), /* 0x30 */
+	quic_frame_create_and_process(datagram),
 };
 
 int quic_frame_process(struct sock *sk, struct sk_buff *skb, struct quic_packet_info *pki)
@@ -1128,7 +1222,7 @@ int quic_frame_process(struct sock *sk, struct sk_buff *skb, struct quic_packet_
 		type = *(u8 *)(skb->data);
 		skb_pull(skb, 1);
 
-		if (type > QUIC_FRAME_BASE_MAX) {
+		if (type > QUIC_FRAME_MAX) {
 			pr_err_once("[QUIC] frame err: unsupported frame %x\n", type);
 			return -EPROTONOSUPPORT;
 		}
@@ -1157,7 +1251,7 @@ struct sk_buff *quic_frame_create(struct sock *sk, u8 type, void *data)
 {
 	struct sk_buff *skb;
 
-	if (type > QUIC_FRAME_BASE_MAX)
+	if (type > QUIC_FRAME_MAX)
 		return NULL;
 	pr_debug("[QUIC] frame create %u\n", type);
 	skb = quic_frame_ops[type].frame_create(sk, data, type);

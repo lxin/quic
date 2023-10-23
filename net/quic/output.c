@@ -28,13 +28,37 @@ static void quic_outq_transmit_ctrl(struct sock *sk)
 			quic_packet_transmit(sk);
 			quic_packet_config(sk);
 			ret = quic_packet_tail(sk, skb);
-			if (ret <= 0) {
-				__skb_queue_head(head, skb);
-				break;
-			}
+			WARN_ON_ONCE(!ret);
 		}
 		skb = __skb_dequeue(head);
 	}
+}
+
+static int quic_outq_transmit_dgram(struct sock *sk)
+{
+	struct quic_outqueue *outq = quic_outq(sk);
+	struct sk_buff_head *head;
+	struct sk_buff *skb;
+	int ret = 0;
+
+	head = &outq->datagram_list;
+	skb = __skb_dequeue(head);
+	while (skb) {
+		if (outq->inflight + skb->len > outq->window) {
+			__skb_queue_head(head, skb);
+			return 1;
+		}
+		outq->inflight += QUIC_SND_CB(skb)->data_bytes;
+		ret = quic_packet_tail_dgram(sk, skb);
+		if (!ret) {
+			quic_packet_transmit(sk);
+			quic_packet_config(sk);
+			ret = quic_packet_tail_dgram(sk, skb);
+			WARN_ON_ONCE(!ret);
+		}
+		skb = __skb_dequeue(head);
+	}
+	return 0;
 }
 
 static int quic_outq_flow_control(struct sock *sk, struct sk_buff *skb)
@@ -100,10 +124,7 @@ static void quic_outq_transmit_data(struct sock *sk)
 			quic_packet_transmit(sk);
 			quic_packet_config(sk);
 			ret = quic_packet_tail(sk, skb);
-			if (ret <= 0) {
-				__skb_queue_head(head, skb);
-				break;
-			}
+			WARN_ON_ONCE(!ret);
 		}
 		skb = __skb_dequeue(head);
 	}
@@ -115,10 +136,10 @@ void quic_outq_flush(struct sock *sk)
 	u32 number = quic_packet_next_number(packet);
 
 	quic_packet_config(sk);
-
 	quic_outq_transmit_ctrl(sk);
 
-	quic_outq_transmit_data(sk);
+	if (!quic_outq_transmit_dgram(sk))
+		quic_outq_transmit_data(sk);
 
 	if (!quic_packet_empty(packet))
 		quic_packet_transmit(sk);
@@ -164,6 +185,14 @@ void quic_outq_data_tail(struct sock *sk, struct sk_buff *skb, bool cork)
 		quic_outq_flush(sk);
 }
 
+void quic_outq_dgram_tail(struct sock *sk, struct sk_buff *skb, bool cork)
+{
+	quic_outq_set_owner_w(skb, sk);
+	__skb_queue_tail(&quic_outq(sk)->datagram_list, skb);
+	if (!cork)
+		quic_outq_flush(sk);
+}
+
 void quic_outq_ctrl_tail(struct sock *sk, struct sk_buff *skb, bool cork)
 {
 	__skb_queue_tail(&quic_outq(sk)->control_list, skb);
@@ -184,41 +213,47 @@ void quic_outq_retransmit_check(struct sock *sk, u32 largest, u32 smallest,
 	struct sk_buff *skb, *tmp, *first;
 	struct quic_stream_update update;
 	struct quic_stream *stream;
+	struct quic_snd_cb *snd_cb;
 	struct sk_buff_head *head;
 
 	head = &outq->retransmit_list;
 	first = skb_peek(head);
 	skb_queue_reverse_walk_safe(head, skb, tmp) {
-		if (QUIC_SND_CB(skb)->packet_number > largest)
+		snd_cb = QUIC_SND_CB(skb);
+		if (snd_cb->packet_number > largest)
 			continue;
-		if (QUIC_SND_CB(skb)->packet_number < smallest)
+		if (snd_cb->packet_number < smallest)
 			break;
-		if (!QUIC_SND_CB(skb)->rtx_count && QUIC_SND_CB(skb)->packet_number == ack_largest)
-			quic_cong_rtt_update(sk, QUIC_SND_CB(skb)->transmit_ts, ack_delay);
-		stream = QUIC_SND_CB(skb)->stream;
-		if (QUIC_SND_CB(skb)->data_bytes) {
+		if (!snd_cb->rtx_count && snd_cb->packet_number == ack_largest)
+			quic_cong_rtt_update(sk, snd_cb->transmit_ts, ack_delay);
+		if (outq->retransmit_skb == skb)
+			outq->retransmit_skb = NULL;
+		if (!acked_number) {
+			acked_number = snd_cb->packet_number;
+			transmit_ts = snd_cb->transmit_ts;
+		}
+		stream = snd_cb->stream;
+		if (snd_cb->data_bytes) {
+			outq->inflight -= snd_cb->data_bytes;
+			acked_bytes += snd_cb->data_bytes;
+			if (!stream)
+				goto unlink;
 			stream->send.frags--;
-			outq->inflight -= QUIC_SND_CB(skb)->data_bytes;
-			if (!stream->send.frags && stream->send.state == QUIC_STREAM_SEND_STATE_SENT) {
-				update.id = stream->id;
-				update.state = QUIC_STREAM_SEND_STATE_RECVD;
-				quic_inq_event_recv(sk, QUIC_EVENT_STREAM_UPDATE, &update);
-				stream->send.state = update.state;
-			}
-			acked_bytes += QUIC_SND_CB(skb)->data_bytes;
-		} else if (QUIC_SND_CB(skb)->frame_type == QUIC_FRAME_RESET_STREAM) {
+			if (stream->send.frags || stream->send.state != QUIC_STREAM_SEND_STATE_SENT)
+				goto unlink;
 			update.id = stream->id;
-			update.state = QUIC_STREAM_SEND_STATE_RESET_RECVD;
-			update.errcode = QUIC_SND_CB(skb)->err_code;
+			update.state = QUIC_STREAM_SEND_STATE_RECVD;
 			quic_inq_event_recv(sk, QUIC_EVENT_STREAM_UPDATE, &update);
 			stream->send.state = update.state;
 		}
-		if (!acked_number) {
-			acked_number = QUIC_SND_CB(skb)->packet_number;
-			transmit_ts = QUIC_SND_CB(skb)->transmit_ts;
+		if (quic_frame_is_reset(snd_cb->frame_type)) {
+			update.id = stream->id;
+			update.state = QUIC_STREAM_SEND_STATE_RESET_RECVD;
+			update.errcode = snd_cb->err_code;
+			quic_inq_event_recv(sk, QUIC_EVENT_STREAM_UPDATE, &update);
+			stream->send.state = update.state;
 		}
-		if (outq->retransmit_skb == skb)
-			outq->retransmit_skb = NULL;
+unlink:
 		__skb_unlink(skb, head);
 		kfree_skb(skb);
 	}
@@ -236,6 +271,8 @@ void quic_outq_retransmit_check(struct sock *sk, u32 largest, u32 smallest,
 void quic_outq_retransmit(struct sock *sk)
 {
 	struct quic_outqueue *outq = quic_outq(sk);
+	u32 packet_number, transmit_ts;
+	struct quic_snd_cb *snd_cb;
 	struct sk_buff_head *head;
 	struct sk_buff *skb;
 
@@ -248,10 +285,21 @@ void quic_outq_retransmit(struct sock *sk)
 		return;
 	}
 
+next:
 	skb = outq->retransmit_skb ?: skb_peek(head);
 	if (!skb)
-		return;
+		return quic_outq_flush(sk);
 	__skb_unlink(skb, head);
+
+	snd_cb = QUIC_SND_CB(skb);
+	transmit_ts = snd_cb->transmit_ts;
+	packet_number = snd_cb->packet_number;
+	if (quic_frame_is_dgram(snd_cb->frame_type)) { /* no need to retransmit dgram frame */
+		outq->inflight -= snd_cb->data_bytes;
+		kfree_skb(skb);
+		quic_cong_cwnd_update_after_timeout(sk, packet_number, transmit_ts);
+		goto next;
+	}
 
 	quic_packet_config(sk);
 	quic_packet_tail(sk, skb);
@@ -260,13 +308,11 @@ void quic_outq_retransmit(struct sock *sk)
 	outq->retransmit_skb = skb;
 	outq->rtx_count++;
 
-	QUIC_SND_CB(skb)->rtx_count++;
-	if (QUIC_SND_CB(skb)->rtx_count >= QUIC_RTX_MAX)
-		pr_warn("[QUIC] %s packet %u timeout\n", __func__,
-			QUIC_SND_CB(skb)->packet_number);
+	snd_cb->rtx_count++;
+	if (snd_cb->rtx_count >= QUIC_RTX_MAX)
+		pr_warn("[QUIC] %s packet %u timeout\n", __func__, snd_cb->packet_number);
 	quic_timer_start(sk, QUIC_TIMER_RTX);
-	quic_cong_cwnd_update_after_timeout(sk, QUIC_SND_CB(skb)->packet_number,
-					    QUIC_SND_CB(skb)->transmit_ts);
+	quic_cong_cwnd_update_after_timeout(sk, packet_number, transmit_ts);
 }
 
 void quic_outq_set_param(struct sock *sk, struct quic_transport_param *p)

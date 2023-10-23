@@ -10,6 +10,7 @@
 
 struct quic_outqueue {
 	struct sk_buff_head control_list;
+	struct sk_buff_head datagram_list;
 	struct sk_buff_head retransmit_list;
 	struct sk_buff *retransmit_skb;
 	u64 max_bytes;
@@ -46,6 +47,7 @@ struct quic_snd_cb {
 static inline void quic_outq_init(struct quic_outqueue *outq)
 {
 	skb_queue_head_init(&outq->control_list);
+	skb_queue_head_init(&outq->datagram_list);
 	skb_queue_head_init(&outq->retransmit_list);
 }
 
@@ -53,6 +55,7 @@ static inline void quic_outq_purge(struct sock *sk, struct quic_outqueue *outq)
 {
 	__skb_queue_purge(&sk->sk_write_queue);
 	__skb_queue_purge(&outq->retransmit_list);
+	__skb_queue_purge(&outq->datagram_list);
 	__skb_queue_purge(&outq->control_list);
 	kfree(outq->close_phrase);
 }
@@ -87,6 +90,7 @@ static inline u32 quic_outq_max_dgram(struct quic_outqueue *outq)
 	return outq->max_datagram_frame_size;
 }
 
+void quic_outq_dgram_tail(struct sock *sk, struct sk_buff *skb, bool cork);
 void quic_outq_data_tail(struct sock *sk, struct sk_buff *skb, bool cork);
 void quic_outq_ctrl_tail(struct sock *sk, struct sk_buff *skb, bool cork);
 void quic_outq_rtx_tail(struct sock *sk, struct sk_buff *skb);
