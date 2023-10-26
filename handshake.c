@@ -299,6 +299,7 @@ static void quic_copy_to_transport_params(struct quic_endpoint *ep,
 	p->max_idle_timeout = (uint64_t)param->max_idle_timeout * NGTCP2_MICROSECONDS;
 	p->active_connection_id_limit = param->active_connection_id_limit;
 	p->disable_active_migration = param->disable_active_migration;
+	p->max_datagram_frame_size = param->max_datagram_frame_size;
 	p->initial_max_data = param->initial_max_data;
 	p->initial_max_stream_data_bidi_local = param->initial_max_stream_data_bidi_local;
 	p->initial_max_stream_data_bidi_remote = param->initial_max_stream_data_bidi_remote;
@@ -317,6 +318,7 @@ static void quic_copy_from_transport_params(struct quic_endpoint *ep,
 	param->max_idle_timeout = p->max_idle_timeout / NGTCP2_MICROSECONDS;
 	param->active_connection_id_limit = p->active_connection_id_limit;
 	param->disable_active_migration = p->disable_active_migration;
+	param->max_datagram_frame_size = p->max_datagram_frame_size;
 	param->initial_max_data = p->initial_max_data;
 	param->initial_max_stream_data_bidi_local = p->initial_max_stream_data_bidi_local;
 	param->initial_max_stream_data_bidi_remote = p->initial_max_stream_data_bidi_remote;
