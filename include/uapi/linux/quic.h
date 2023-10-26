@@ -37,6 +37,7 @@ enum {	/* used in stream_flag of struct quic_sndinfo or quic_rcvinfo */
 	QUIC_STREAM_FLAG_UNI = (1 << 2),	/* getsockopt to open next uni stream with stream_id == -1 */
 	QUIC_STREAM_FLAG_ASYNC = (1 << 3),	/* getsockopt or sendmsg to open stream */
 	QUIC_STREAM_FLAG_NOTIFICATION = (1 << 4), /* recvmsg (MSG_NOTIFICATION in msg_flags) */
+	QUIC_STREAM_FLAG_DATAGRAM = (1 << 5), /* sendmsg or recvmsg (like MSG_DATAGRAM in msg_flags) */
 };
 
 struct quic_sndinfo {	/* sendmsg or setsockopt(QUIC_SOCKOPT_STREAM_OPEN) */
@@ -49,9 +50,10 @@ struct quic_rcvinfo {	/* recvmsg */
 	uint32_t stream_flag;
 };
 
-enum quic_msg_flags {	/* msg_flags in recvmsg */
+enum quic_msg_flags {	/* msg_flags in send/recvmsg */
 	MSG_NOTIFICATION = 0x8000,
 	MSG_STREAM_UNI = 0x800,
+	MSG_DATAGRAM = 0x10,
 #define MSG_NOTIFICATION MSG_NOTIFICATION
 };
 
@@ -92,6 +94,7 @@ struct quic_transport_param {
 	uint32_t active_connection_id_limit;
 	uint32_t max_idle_timeout;
 	uint32_t disable_active_migration;
+	uint32_t max_datagram_frame_size;
 	uint32_t initial_max_data;
 	uint32_t initial_max_stream_data_bidi_local;
 	uint32_t initial_max_stream_data_bidi_remote;

@@ -16,6 +16,7 @@ struct quic_inqueue {
 	u64 bytes;
 	u64 highest;
 
+	u32 max_datagram_frame_size;
 	u32 max_udp_payload_size;
 	u32 ack_delay_exponent;
 	u32 max_idle_timeout;
@@ -59,6 +60,11 @@ static inline u32 quic_inq_ack_delay_exponent(struct quic_inqueue *inq)
 static inline u32 quic_inq_max_idle_timeout(struct quic_inqueue *inq)
 {
 	return inq->max_idle_timeout;
+}
+
+static inline u32 quic_inq_max_dgram(struct quic_inqueue *inq)
+{
+	return inq->max_datagram_frame_size;
 }
 
 int quic_do_rcv(struct sock *sk, struct sk_buff *skb);

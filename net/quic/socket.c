@@ -1065,6 +1065,7 @@ static int quic_sock_set_transport_param(struct sock *sk, struct quic_transport_
 	quic_set_param_if_not_zero(active_connection_id_limit);
 	quic_set_param_if_not_zero(max_idle_timeout);
 	quic_set_param_if_not_zero(disable_active_migration);
+	quic_set_param_if_not_zero(max_datagram_frame_size);
 	quic_set_param_if_not_zero(initial_max_data);
 	quic_set_param_if_not_zero(initial_max_stream_data_bidi_local);
 	quic_set_param_if_not_zero(initial_max_stream_data_bidi_remote);

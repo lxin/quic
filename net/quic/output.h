@@ -17,6 +17,7 @@ struct quic_outqueue {
 	u64 window;
 	u64 bytes;
 
+	u32 max_datagram_frame_size;
 	u32 max_udp_payload_size;
 	u32 ack_delay_exponent;
 	u32 max_idle_timeout;
@@ -79,6 +80,11 @@ static inline u32 quic_outq_ack_delay_exponent(struct quic_outqueue *outq)
 static inline u32 quic_outq_max_udp(struct quic_outqueue *outq)
 {
 	return outq->max_udp_payload_size;
+}
+
+static inline u32 quic_outq_max_dgram(struct quic_outqueue *outq)
+{
+	return outq->max_datagram_frame_size;
 }
 
 void quic_outq_data_tail(struct sock *sk, struct sk_buff *skb, bool cork);
