@@ -29,26 +29,25 @@ NOTE: [tests/simple_test.c](https://github.com/lxin/quic/blob/main/tests/sample_
 give you a better idea what context to be set into kernel after userspace handshake.
 
 ### Completed
-- Data (re)transmission and SACK
-- Flow Control
-- RTT Measurement
-- Rekeying
-- Connection Migration
-- Congestion Control
-- Support both X509 Certificate and PSK mode
-- Handshake APIs for tlshd use (NFS/SMB)
-- Stream Management
-- Connection ID Management
+- Data (re)transmission and SACK *(rfc9000)*
+- Flow Control *(rfc9000)*
+- Stream and Connection ID Management *(rfc9000)*
+- Connection Migration *(rfc9000)*
+- Rekeying *(rfc9001)*
+- Support All Four Ciphers *(rfc9001)*
+- Both X509 Certificate and PSK modes *(rfc9001)*
+- RTT Measurement *(rfc9002)*
+- Congestion Control *(rfc9002)*
+- Unreliable Datagram Extension *(rfc9221)*
+- Handshake APIs for tlshd Use *(NFS/SMB over QUIC)*
 - Interoperability Testing with MSQUIC
-- Support All Ciphers (AES-128-GCM, AES-256-GCM, AES-128-CCM, CHACHA20-POLY1305)
 
 ### TBD
 - Stateless Reset (rfc9000#name-stateless-reset)
-- Unreliable Datagram Extension (rfc9221)
-- Set initial_max_stream/data with better default values
+- Use a better default value for initial_max_data
 
 NOTE: As it strictly keeps LONG packets processing in userspace and SHORT packets in kernel,
-the bundling of the LONG and SHORT packets in 1-RTTs will not be supported.
+bundling the LONG with SHORT packets in the 1st 1-RTT packet will not be supported.
 
 ## INSTALL
 

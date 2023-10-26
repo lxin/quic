@@ -729,9 +729,10 @@ static int do_client_close_test(int sockfd)
 static int do_client_connection_test(int sockfd)
 {
 	struct quic_connection_id_info info = {};
+	int ret, optlen, port, alg, flag;
 	struct sockaddr_in addr = {};
-	int ret, optlen, port, alg;
 	char opt[100] = {};
+	uint64_t sid = 0;
 
 	printf("CONNECTION TEST:\n");
 
@@ -1157,6 +1158,28 @@ static int do_client_connection_test(int sockfd)
 		return -1;
 	}
 	printf("test32: PASS (not allowed to set new_session_ticket msg with an null value)\n");
+
+	flag = QUIC_STREAM_FLAG_DATAGRAM;
+	strcpy(msg, "client datagram");
+	ret = quic_sendmsg(sockfd, msg, strlen(msg), sid, flag);
+	if (ret == -1) {
+		printf("send error %d %d\n", ret, errno);
+		return -1;
+	}
+	ret = quic_recvmsg(sockfd, msg, sizeof(msg), &sid, &flag);
+	if (ret == -1) {
+		printf("recv error %d %d\n", ret, errno);
+		return -1;
+	}
+	if (strcmp(msg, "client datagram")) {
+		printf("test33: FAIL\n");
+		return -1;
+	}
+	if (!(flag & QUIC_STREAM_FLAG_DATAGRAM)) {
+		printf("test33: FAIL %d\n", flag);
+		return -1;
+	}
+	printf("test33: PASS (send and recv datagram)\n");
 	return 0;
 }
 
@@ -1882,6 +1905,11 @@ static int do_server_test(int sockfd)
 			}
 		}
 
+		if (!strcmp(msg, "client datagram")) {
+			flag = QUIC_STREAM_FLAG_DATAGRAM;
+			goto reply;
+		}
+
 		if (!strcmp(msg, "client close")) {
 			struct quic_connection_close *info;
 			char opt[100] = {};
@@ -1905,6 +1933,7 @@ static int do_server_test(int sockfd)
 			flag |= QUIC_STREAM_FLAG_NEW;
 			sid  |= QUIC_STREAM_TYPE_SERVER_MASK;
 		}
+reply:
 		/* echo reply */
 		ret = quic_sendmsg(sockfd, msg, strlen(msg), sid, flag);
 		if (ret == -1) {
@@ -1925,6 +1954,7 @@ reset:
 static int do_client(int argc, char *argv[])
 {
 	char *mode, *psk, *pkey = NULL, *cert = NULL;
+	struct quic_transport_param param = {};
         struct sockaddr_in ra = {};
 	int ret, sockfd, cipher;
 
@@ -1947,6 +1977,10 @@ static int do_client(int argc, char *argv[])
 		printf("socket connect failed\n");
 		return -1;
 	}
+
+	param.max_datagram_frame_size = 1400;
+	if (setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_TRANSPORT_PARAM, &param, sizeof(param)))
+		return -1;
 
 	if (argc < 5)
 		goto x509;
@@ -1986,6 +2020,7 @@ done:
 
 static int do_server(int argc, char *argv[])
 {
+	struct quic_transport_param param = {};
 	int listenfd, sockfd, addrlen, cipher;
 	struct sockaddr_in la = {}, ra = {};
 	char *mode, *psk, *pkey, *cert;
@@ -2018,6 +2053,10 @@ static int do_server(int argc, char *argv[])
 		printf("socket accept failed %d %d\n", errno, sockfd);
 		return -1;
 	}
+
+	param.max_datagram_frame_size = 1400;
+	if (setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_TRANSPORT_PARAM, &param, sizeof(param)))
+		return -1;
 
 	mode = strtok(argv[4], ":");
 	if (!strcmp(mode, "-psk_file")) {
