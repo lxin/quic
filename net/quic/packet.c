@@ -64,11 +64,12 @@ int quic_packet_process(struct sock *sk, struct sk_buff *skb)
 	int err;
 
 	pki.number_offset = QUIC_RCV_CB(skb)->number_offset;
+	pki.number_max = quic_pnmap_max_pn_seen(&qs->pn_map);
 	err = quic_crypto_decrypt(&qs->crypto, skb, &pki);
 	if (err)
 		goto err;
 
-	pr_debug("[QUIC] %s number: %u serv: %d\n", __func__, pki.number, quic_is_serv(sk));
+	pr_debug("[QUIC] %s number: %llu serv: %d\n", __func__, pki.number, quic_is_serv(sk));
 	err = quic_pnmap_check(&qs->pn_map, pki.number);
 	if (err) {
 		err = -EINVAL;
@@ -122,7 +123,7 @@ out:
 	quic_outq_flush(sk);
 	return 0;
 err:
-	pr_warn("[QUIC] %s pktn: %d err: %d serv: %u\n", __func__, pki.number, err, quic_is_serv(sk));
+	pr_warn("[QUIC] %s pktn: %llu err: %d serv: %u\n", __func__, pki.number, err, quic_is_serv(sk));
 	kfree_skb(skb);
 	return err;
 }
@@ -173,7 +174,7 @@ static struct sk_buff *quic_packet_create(struct sock *sk, struct quic_packet_in
 			fskb =  __skb_dequeue(head);
 			continue;
 		}
-		pr_debug("[QUIC] %s offset: %llu number: %u\n", __func__,
+		pr_debug("[QUIC] %s offset: %llu number: %llu\n", __func__,
 			 QUIC_SND_CB(fskb)->stream_offset, pki->number);
 		quic_outq_rtx_tail(sk, fskb);
 		QUIC_SND_CB(fskb)->packet_number = pki->number;
@@ -184,11 +185,35 @@ static struct sk_buff *quic_packet_create(struct sock *sk, struct quic_packet_in
 	return skb;
 }
 
+static int quic_packet_number_check(struct sock *sk)
+{
+	struct quic_packet *packet = quic_packet(sk);
+
+	if (packet->next_number + 1 <= QUIC_PN_MAP_MAX_PN)
+		return 0;
+
+	__skb_queue_purge(&packet->frame_list);
+	if (quic_state(sk) != QUIC_STATE_USER_CLOSED) {
+		struct quic_connection_close *close;
+		u8 frame[10] = {};
+
+		quic_set_state(sk, QUIC_STATE_USER_CLOSED);
+		close = (void *)frame;
+		close->errcode = 0;
+		quic_inq_event_recv(sk, QUIC_EVENT_CONNECTION_CLOSE, close);
+	}
+	return -EPIPE;
+}
+
 void quic_packet_transmit(struct sock *sk)
 {
 	struct quic_packet_info pki;
 	struct sk_buff *skb;
 	int err;
+
+	err = quic_packet_number_check(sk);
+	if (err)
+		goto err;
 
 	skb = quic_packet_create(sk, &pki);
 	if (!skb) {

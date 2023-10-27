@@ -9,7 +9,8 @@
  */
 
 struct quic_packet_info {
-	u32 number;
+	s64 number;
+	s64 number_max;
 	u32 number_len;
 	u32 number_offset;
 	u8 key_phase:1;

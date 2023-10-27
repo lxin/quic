@@ -133,7 +133,7 @@ static void quic_outq_transmit_data(struct sock *sk)
 void quic_outq_flush(struct sock *sk)
 {
 	struct quic_packet *packet = quic_packet(sk);
-	u32 number = quic_packet_next_number(packet);
+	s64 number = quic_packet_next_number(packet);
 
 	quic_packet_config(sk);
 	quic_outq_transmit_ctrl(sk);
@@ -205,16 +205,17 @@ void quic_outq_rtx_tail(struct sock *sk, struct sk_buff *skb)
 	__skb_queue_tail(&quic_outq(sk)->retransmit_list, skb);
 }
 
-void quic_outq_retransmit_check(struct sock *sk, u32 largest, u32 smallest,
-				u32 ack_largest, u32 ack_delay)
+void quic_outq_retransmit_check(struct sock *sk, s64 largest, s64 smallest,
+				s64 ack_largest, u32 ack_delay)
 {
-	u32 acked_bytes = 0, acked_number = 0, transmit_ts = 0;
 	struct quic_outqueue *outq = quic_outq(sk);
+	u32 acked_bytes = 0, transmit_ts = 0;
 	struct sk_buff *skb, *tmp, *first;
 	struct quic_stream_update update;
 	struct quic_stream *stream;
 	struct quic_snd_cb *snd_cb;
 	struct sk_buff_head *head;
+	s64 acked_number = 0;
 
 	head = &outq->retransmit_list;
 	first = skb_peek(head);
@@ -271,10 +272,11 @@ unlink:
 void quic_outq_retransmit(struct sock *sk)
 {
 	struct quic_outqueue *outq = quic_outq(sk);
-	u32 packet_number, transmit_ts;
 	struct quic_snd_cb *snd_cb;
 	struct sk_buff_head *head;
 	struct sk_buff *skb;
+	s64 packet_number;
+	u32 transmit_ts;
 
 	head = &outq->retransmit_list;
 	if (outq->rtx_count >= QUIC_RTX_MAX) {
@@ -310,7 +312,7 @@ next:
 
 	snd_cb->rtx_count++;
 	if (snd_cb->rtx_count >= QUIC_RTX_MAX)
-		pr_warn("[QUIC] %s packet %u timeout\n", __func__, snd_cb->packet_number);
+		pr_warn("[QUIC] %s packet %llu timeout\n", __func__, snd_cb->packet_number);
 	quic_timer_start(sk, QUIC_TIMER_RTX);
 	quic_cong_cwnd_update_after_timeout(sk, packet_number, transmit_ts);
 }

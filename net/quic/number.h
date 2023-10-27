@@ -160,3 +160,19 @@ static inline u8 *quic_put_data(u8 *p, u8 *data, u32 len)
 	memcpy(p, data, len);
 	return p + len;
 }
+
+static inline s64 quic_get_num(s64 max_pkt_num, s64 pkt_num, u32 n)
+{
+	s64 expected = max_pkt_num + 1;
+	s64 win = (s64)1 << (n * 8);
+	s64 hwin = win / 2;
+	s64 mask = win - 1;
+	s64 cand;
+
+	cand = (expected & ~mask) | pkt_num;
+	if (cand <= expected - hwin)
+		return cand + win;
+	if (cand > expected + hwin && cand >= win)
+		return cand - win;
+	return cand;
+}

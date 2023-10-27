@@ -361,6 +361,7 @@ static int quic_crypto_header_decrypt(struct crypto_skcipher *tfm, struct sk_buf
 		*(p + i) = *((u8 *)hdr + pki->number_offset + i) ^ mask[0][i + 1];
 
 	pki->number = quic_get_int(&p, pki->number_len);
+	pki->number = quic_get_num(pki->number_max, pki->number, pki->number_len);
 	pki->key_phase = hdr->key;
 
 err:

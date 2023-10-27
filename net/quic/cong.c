@@ -12,7 +12,7 @@
 
 #include "socket.h"
 
-static void quic_reno_cwnd_update_after_timeout(struct sock *sk, u32 packet_number, u32 transmit_ts)
+static void quic_reno_cwnd_update_after_timeout(struct sock *sk, s64 packet_number, u32 transmit_ts)
 {
 	struct quic_packet *packet = quic_packet(sk);
 	struct quic_cong *cong = quic_cong(sk);
@@ -61,7 +61,7 @@ static void quic_reno_cwnd_update_after_timeout(struct sock *sk, u32 packet_numb
 	quic_outq_set_window(quic_outq(sk), cong->window);
 }
 
-static void quic_reno_cwnd_update_after_sack(struct sock *sk, u32 acked_number, u32 transmit_ts,
+static void quic_reno_cwnd_update_after_sack(struct sock *sk, s64 acked_number, u32 transmit_ts,
 					     u32 acked_bytes)
 {
 	u32 inflight = quic_outq_inflight(quic_outq(sk));
@@ -125,12 +125,12 @@ static struct quic_cong_ops quic_congs[] = {
 	},
 };
 
-void quic_cong_cwnd_update_after_timeout(struct sock *sk, u32 packet_number, u32 transmit_ts)
+void quic_cong_cwnd_update_after_timeout(struct sock *sk, s64 packet_number, u32 transmit_ts)
 {
 	quic_cong(sk)->ops->quic_cwnd_update_after_timeout(sk, packet_number, transmit_ts);
 }
 
-void quic_cong_cwnd_update_after_sack(struct sock *sk, u32 acked_number, u32 transmit_ts,
+void quic_cong_cwnd_update_after_sack(struct sock *sk, s64 acked_number, u32 transmit_ts,
 				      u32 acked_bytes)
 {
 	quic_cong(sk)->ops->quic_cwnd_update_after_sack(sk, acked_number, transmit_ts,

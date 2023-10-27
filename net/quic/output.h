@@ -38,7 +38,7 @@ struct quic_snd_cb {
 	u32 err_code;
 	u32 data_bytes;
 	u32 transmit_ts;
-	u32 packet_number;
+	s64 packet_number;
 	u64 stream_offset; /* for debug only */
 };
 
@@ -96,7 +96,7 @@ void quic_outq_ctrl_tail(struct sock *sk, struct sk_buff *skb, bool cork);
 void quic_outq_rtx_tail(struct sock *sk, struct sk_buff *skb);
 void quic_outq_flush(struct sock *sk);
 void quic_outq_retransmit(struct sock *sk);
-void quic_outq_retransmit_check(struct sock *sk, u32 largest, u32 smallest,
-				u32 ack_largest, u32 ack_delay);
+void quic_outq_retransmit_check(struct sock *sk, s64 largest, s64 smallest,
+				s64 ack_largest, u32 ack_delay);
 void quic_outq_set_param(struct sock *sk, struct quic_transport_param *p);
 void quic_outq_get_param(struct sock *sk, struct quic_transport_param *p);

@@ -19,8 +19,8 @@ enum quic_cong_state {
 };
 
 struct quic_cong_ops {
-	void (*quic_cwnd_update_after_timeout)(struct sock *sk, u32 packet_number, u32 transmit_ts);
-	void (*quic_cwnd_update_after_sack)(struct sock *sk, u32 acked_number, u32 transmit_ts,
+	void (*quic_cwnd_update_after_timeout)(struct sock *sk, s64 packet_number, u32 transmit_ts);
+	void (*quic_cwnd_update_after_sack)(struct sock *sk, s64 acked_number, u32 transmit_ts,
 					    u32 acked_bytes);
 };
 
@@ -31,8 +31,8 @@ struct quic_cong {
 	u32 latest_rtt;
 	u32 smoothed_rtt;
 
-	u32 last_sent_number;
-	u32 max_acked_number;
+	s64 last_sent_number;
+	s64 max_acked_number;
 	u32 max_acked_transmit_ts;
 	u32 window;
 	u32 prior_window;
@@ -51,6 +51,6 @@ void quic_cong_get_param(struct sock *sk, struct quic_transport_param *local,
 			 struct quic_transport_param *remote);
 void quic_cong_rtt_update(struct sock *sk, u32 transmit_ts, u32 ack_delay);
 void quic_cong_cwnd_update(struct sock *sk, u32 window);
-void quic_cong_cwnd_update_after_timeout(struct sock *sk, u32 packet_number, u32 transmit_ts);
-void quic_cong_cwnd_update_after_sack(struct sock *sk, u32 acked_number, u32 transmit_ts,
+void quic_cong_cwnd_update_after_timeout(struct sock *sk, s64 packet_number, u32 transmit_ts);
+void quic_cong_cwnd_update_after_sack(struct sock *sk, s64 acked_number, u32 transmit_ts,
 				      u32 acked_bytes);

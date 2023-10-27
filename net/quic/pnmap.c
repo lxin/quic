@@ -20,7 +20,7 @@
 #define QUIC_PN_MAP_SIZE 1024
 
 static int quic_pnmap_grow(struct quic_pnmap *map, u16 size);
-static void quic_pnmap_update(struct quic_pnmap *map, u32 pn);
+static void quic_pnmap_update(struct quic_pnmap *map, s64 pn);
 
 struct quic_pnmap *quic_pnmap_init(struct quic_pnmap *map)
 {
@@ -36,11 +36,11 @@ struct quic_pnmap *quic_pnmap_init(struct quic_pnmap *map)
 		bitmap_zero(map->pn_map, map->len);
 	}
 
-	map->base_pn = 0;
-	map->cum_ack_point = U32_MAX;
-	map->min_pn_seen = U32_MAX;
-	map->max_pn_seen = U32_MAX;
-	map->last_max_pn_seen = U32_MAX;
+	map->base_pn = QUIC_PN_MAP_BASE_PN;
+	map->cum_ack_point = map->base_pn - 1;
+	map->min_pn_seen = map->base_pn + QUIC_PN_MAP_SIZE;
+	map->max_pn_seen = map->base_pn - 1;
+	map->last_max_pn_seen = map->base_pn - 1;
 
 	map->max_pn_ts = jiffies_to_usecs(jiffies);
 	map->last_max_pn_ts = map->max_pn_ts;
@@ -54,9 +54,9 @@ void quic_pnmap_free(struct quic_pnmap *map)
 	kfree(map->pn_map);
 }
 
-int quic_pnmap_check(const struct quic_pnmap *map, u32 pn)
+int quic_pnmap_check(const struct quic_pnmap *map, s64 pn)
 {
-	u32 gap;
+	u16 gap;
 
 	if (pn < map->base_pn)
 		return 1;
@@ -64,12 +64,13 @@ int quic_pnmap_check(const struct quic_pnmap *map, u32 pn)
 	if (pn >= map->base_pn + QUIC_PN_MAP_SIZE)
 		return -1;
 
+	WARN_ON_ONCE(pn > QUIC_PN_MAP_MAX_PN);
 	gap = pn - map->base_pn;
 
 	return gap < map->len && test_bit(gap, map->pn_map);
 }
 
-int quic_pnmap_mark(struct quic_pnmap *map, u32 pn)
+int quic_pnmap_mark(struct quic_pnmap *map, s64 pn)
 {
 	u16 gap, zero_bit;
 
@@ -81,7 +82,7 @@ int quic_pnmap_mark(struct quic_pnmap *map, u32 pn)
 	if (gap >= map->len && !quic_pnmap_grow(map, gap + 1))
 		return -ENOMEM;
 
-	if (map->max_pn_seen == U32_MAX || map->max_pn_seen < pn) {
+	if (map->max_pn_seen < pn) {
 		map->max_pn_seen = pn;
 		map->max_pn_ts = jiffies_to_usecs(jiffies);
 	}
@@ -115,7 +116,7 @@ out:
 }
 
 struct quic_pnmap_iter {
-	u32 start;
+	s64 start;
 };
 
 static int quic_pnmap_next_gap_ack(const struct quic_pnmap *map, struct quic_pnmap_iter *iter,
@@ -139,7 +140,7 @@ static int quic_pnmap_next_gap_ack(const struct quic_pnmap *map, struct quic_pnm
 	return 1;
 }
 
-static void quic_pnmap_update(struct quic_pnmap *map, u32 pn)
+static void quic_pnmap_update(struct quic_pnmap *map, s64 pn)
 {
 	u32 current_ts = jiffies_to_usecs(jiffies);
 	u16 zero_bit, offset;
