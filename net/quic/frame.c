@@ -612,7 +612,7 @@ static int quic_frame_ack_process(struct sock *sk, struct sk_buff *skb, u8 type)
 
 	if (!quic_get_var(&p, &len, &largest) ||
 	    !quic_get_var(&p, &len, &delay) ||
-	    !quic_get_var(&p, &len, &count) || count > 16 ||
+	    !quic_get_var(&p, &len, &count) || count > QUIC_PN_MAX_GABS ||
 	    !quic_get_var(&p, &len, &range))
 		return -EINVAL;
 
