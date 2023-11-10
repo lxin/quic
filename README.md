@@ -10,10 +10,10 @@ is still in Kernel space.
 ## Implementation
 
 ### General Idea
-- **Userspace Handshake based on ngtcp2 and gnutls**: Since only gnutls released version supports
-QUIC APIs, we choose ngtcp2 over gnutls instead of openssl as the userspace part. The userspace
+- **Userspace Handshake with gnutls**: Since gnutls released version supports QUIC APIs, we
+choose gnutls library and reuse some code from ngtcp2 as the userspace part. The userspace
 handshake part for the in-kernel QUIC is in
-[handshake.c](https://github.com/lxin/quic/tree/main/handshake.c).
+[handshake/](https://github.com/lxin/quic/tree/main/handshake).
 
 - **In-Kernel QUIC Implementation**: This is the main code part, and instead of creating a ULP
 layer, it creates IPPROTO_QUIC socket(similar to IPPROTO_MPTCP) running over UDP TUNNEL, where
@@ -21,7 +21,7 @@ it only processes SHORT packets when it is in connected state and passes LONG pa
 to userspace when it is in connecting/handshaking state. The kernel part for the rest of QUIC
 protocol is in [net/quic/](https://github.com/lxin/quic/tree/main/net/quic).
 
-- **Kernel Use like NFS and SMB over QUIC**: Handshake request will be sent from kernel via
+- **Kernel Consumer like NFS and SMB over QUIC**: Handshake request will be sent from kernel via
 [handshake netlink](https://docs.kernel.org/networking/tls-handshake.html) to Userspace. tlshd
 in [ktls-utils](https://github.com/lxin/ktls-utils) will handle the handshake request for QUIC.
 
@@ -43,32 +43,16 @@ give you a better idea what context to be set into kernel after userspace handsh
 - Interoperability Testing with MSQUIC
 
 ### TBD
+- Address Verify in Handshake
 - Stateless Reset (rfc9000#name-stateless-reset)
-- Use a better default value for initial_max_data
-
-NOTE: As it strictly keeps LONG packets processing in userspace and SHORT packets in kernel,
-bundling the LONG with SHORT packets in the 1st 1-RTT packet will not be supported.
+- Nick suggests moving Long Packets to Kernel module
 
 ## INSTALL
-
-### Build and Install ngtcp2
-    # dnf install -y autoconf automake pkg-config libtool gnutls-devel gcc
-    # cd ~/
-    # git clone https://github.com/ngtcp2/ngtcp2.git
-    # cd ngtcp2/
-
-    (IMPORTANT: use v0.18.0, as the latest version sends new connection id too early)
-    # git checkout v0.18.0
-
-    # autoreconf -i
-    # ./configure --with-gnutls --prefix=/usr
-    # make -j$(nproc) check
-    # make install
 
 ### Build QUIC Kernel Module and Libquic:
     (IMPORTANT: please use the latest kernel (>=6.5) if you want to use QUIC from kernel space)
 
-    # dnf install -y kernel-devel dwarves
+    # dnf install -y kernel-devel dwarves gnutls-devel gcc
     # cd ~/
     # git clone https://github.com/lxin/quic.git
     # cd quic/
@@ -125,15 +109,15 @@ bundling the LONG with SHORT packets in the 1st 1-RTT packet will not be support
 
 #### build libquic for userspace handshake
     # make lib
-    gcc -fPIC handshake.c -shared -o libquic.so -Iinclude/uapi/ -lngtcp2_crypto_gnutls -lngtcp2 -lgnutls
+    gcc -fPIC handshake/*.c -shared -o handshake/libquic.so -Iinclude/uapi/ -lgnutls
 
     # make lib_install
-    install -m 644 handshake.h /usr/include/netinet/quic.h
-    install -m 644 libquic.so /usr/lib64
-    install -m 644 libquic.pc /usr/lib64/pkgconfig
+    install -m 644 handshake/quic.h /usr/include/netinet/quic.h
+    install -m 644 handshake/libquic.so /usr/lib64
+    install -m 644 handshake/libquic.pc /usr/lib64/pkgconfig
 
 #### run selftests
-    (IMPORTANT: run tests to make sure all works well)
+    (NOTE: run tests to make sure all works well)
 
     # cd tests/
     # make
@@ -144,10 +128,10 @@ bundling the LONG with SHORT packets in the 1st 1-RTT packet will not be support
     # make run
     ...
 
-### Build and Install tlshd (For Kernel Use):
-    (NOTE: you can skip this if you don't want to use QUIC from kernel)
+### Build and Install tlshd (For Kernel Consumer):
+    (NOTE: you can skip this if you don't want to use QUIC in kernel space)
 
-    # dnf install -y keyutils-libs-devel glib2-devel libnl3-devel
+    # dnf install -y automake keyutils-libs-devel glib2-devel libnl3-devel
 
     (IMPORTANT: disable selinux, as selinux may stop quic.ko being loaded automatically and
                 also not allow to use getpeername() in tlshd)
@@ -166,6 +150,7 @@ bundling the LONG with SHORT packets in the 1st 1-RTT packet will not be support
     (IMPORTANT: configure certficates, for testing you can use the certficates unders tests/keys/
                 generated during running the tests, for example)
     # cat /etc/tlshd.conf
+      ...
       [authenticate.client]
       #x509.truststore= <pathname>
       x509.certificate=/root/quic/tests/keys/client-cert.pem
@@ -193,18 +178,42 @@ bundling the LONG with SHORT packets in the 1st 1-RTT packet will not be support
 
 ## USAGE
 
-### Use In User Space
+### Simple APIs Use in User Space
 
-  - these APIs are provided (see [tests/func_test.c](https://github.com/lxin/quic/blob/main/tests/func_test.c) for how APIs are used):
+  - these APIs are provided (see [tests/func_test.c](https://github.com/lxin/quic/blob/main/tests/func_test.c#L2084) for how APIs are used),
+    and used as easily as TCP or SCTP socket, except with a handshake call(like kTLS):
 
-        int quic_client_x509_handshake(int sockfd);
-        int quic_server_x509_handshake(int sockfd, char *pkey, char *cert);
+                Client				    Server
+             ------------------------------------------------------------------
+             sockfd = socket(IPPROTO_QUIC)	listenfd = socket(IPPROTO_QUIC)
+             bind(sockfd)			bind(listenfd)
+             					listen(listenfd)
+             connect(sockfd)
+             					sockfd = accecpt(listenfd)
+             quic_client_handshake()		quic_server_handshake()
+          
+             sendmsg(sockfd)			recvmsg(sockfd);
+             close(sockfd)			close(sockfd)
 
-        int quic_client_psk_handshake(int sockfd, char *psk);
-        int quic_server_psk_handshake(int sockfd, char *psk);
+        /* PSK mode:
+         * - pkey_file is psk file
+         * - cert_file is null
+         *
+         * Certificate mode:
+         * - pkey_file is private key file, can be null for client
+         * - cert_file is certificate file, can be null for client
+         */
+        int quic_client_handshake(int sockfd, char *pkey_file, char *cert_file);
+        int quic_server_handshake(int sockfd, char *pkey_file, char *cert_file);
 
-        int quic_sendmsg(int sockfd, const void *msg, size_t len, uint32_t sid, uint32_t flag);
-        int quic_recvmsg(int sockfd, void *msg, size_t len, uint32_t *sid, uint32_t *flag);
+        /* quic_sendmsg() and quic_recvmsg() allow you to send and recv message with stream_id
+         * and stream_flags, they wrap sendmsg() and recvmsg().
+         *
+         * setsockopt() and getsockopt() can give you more control on QUIC use, see func_test
+         * more details.
+         */
+        int quic_sendmsg(int sockfd, const void *msg, size_t len, uint64_t sid, uint32_t flag);
+        int quic_recvmsg(int sockfd, void *msg, size_t len, uint64_t *sid, uint32_t *flag);
 
   - include the header file in func_test.c:
 
@@ -214,30 +223,30 @@ bundling the LONG with SHORT packets in the 1st 1-RTT packet will not be support
 
         # gcc func_test.c -o func_test -lquic
 
-### APIs for tlshd in ktls-utils
+### APIs with more TLS Handshake Paramerters
 
-  - these APIs are provided (see [tests/perf_test.c](https://github.com/lxin/quic/blob/main/tests/perf_test.c) for how APIs are used):
+  - these APIs are provided (see [tests/perf_test.c](https://github.com/lxin/quic/blob/main/tests/perf_test.c#L349) for how APIs are used):
 
         struct quic_handshake_parms {
-            uint32_t		timeout;	/* handshake timeout in milliseconds */
-
-            gnutls_privkey_t	privkey;	/* private key for x509 handshake */
-            gnutls_pcert_st	*cert;		/* certificate for x509 handshake */
-            char 		*peername;	/* - server name for client side x509 handshake or,
-            					 * - psk identity name chosen during PSK handshake
-            					 */
-            char		*names[10];	/* psk identifies in PSK handshake */
-            gnutls_datum_t	keys[10];	/* - psk keys in PSK handshake, or,
-            					 * - certificates received in x509 handshake
-            					 */
-            uint32_t		num_keys;	/* keys total numbers */
+        	uint32_t		timeout;	/* handshake timeout in milliseconds */
+        
+        	gnutls_privkey_t	privkey;	/* private key for x509 handshake */
+        	gnutls_pcert_st		*cert;		/* certificate for x509 handshake */
+        	char 			*peername;	/* - server name for client side x509 handshake or,
+        						 * - psk identity name chosen during PSK handshake
+        						 */
+        	uint8_t			cert_req;	/* certificat request, server only
+        						 * 0: IGNORE, 1: REQUEST, 2: REQUIRE
+        						 */
+        	char			*names[10];	/* psk identifies in PSK handshake */
+        	gnutls_datum_t		keys[10];	/* - psk keys in PSK handshake, or,
+        						 * - certificates received in x509 handshake
+        						 */
+        	uint32_t		num_keys;	/* keys total numbers */
         };
 
-        int quic_client_x509_tlshd(int sockfd, struct quic_handshake_parms *parms);
-        int quic_server_x509_tlshd(int sockfd, struct quic_handshake_parms *parms);
-
-        int quic_client_psk_tlshd(int sockfd, struct quic_handshake_parms *parms);
-        int quic_server_psk_tlshd(int sockfd, struct quic_handshake_parms *parms);
+        int quic_client_handshake_parms(int sockfd, struct quic_handshake_parms *parms);
+        int quic_server_handshake_parms(int sockfd, struct quic_handshake_parms *parms);
 
   - include the header file in perf_test.c:
 
@@ -250,10 +259,10 @@ bundling the LONG with SHORT packets in the 1st 1-RTT packet will not be support
 ### Use in Kernel Space
 
 NOTE: tlshd service must be installed and started, see
-[build and install tlshd (For Kernel Use)](https://github.com/lxin/quic#build-and-install-tlshd-for-kernel-use)),
+[build and install tlshd (For Kernel Consumer)](https://github.com/lxin/quic#build-and-install-tlshd-for-kernel-consumer)),
 as it receives and handles the kernel handshake request for kernel sockets.
 
-In kernel space, the use is pretty much like TCP sockets, other than a extra handshake up-call.
+In kernel space, the use is pretty much like TCP sockets, except a extra handshake up-call.
 (See [net/quic/test/test.c](https://github.com/lxin/quic/blob/main/net/quic/test/test.c) for examples)
 
 You can run the kernel test code as it shows in [Kernel Tests](https://github.com/lxin/quic/blob/main/tests/runtest.sh#L84)
