@@ -26,6 +26,7 @@ struct quic_inqueue {
 
 struct quic_rcv_cb {
 	struct quic_stream *stream;
+	union quic_addr *saddr;
 	u16 offset;
 	u8 event;
 	u8 number_offset;

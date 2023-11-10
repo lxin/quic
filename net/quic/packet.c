@@ -58,7 +58,7 @@ int quic_packet_process(struct sock *sk, struct sk_buff *skb)
 {
 	struct quic_sock *qs = quic_sk(sk);
 	struct quic_packet_info pki = {};
-	union quic_addr saddr;
+	union quic_addr *saddr;
 	struct sk_buff *fskb;
 	u8 key_phase;
 	int err;
@@ -90,9 +90,9 @@ int quic_packet_process(struct sock *sk, struct sk_buff *skb)
 	 */
 	if (!quic_dest(sk)->disable_active_migration && pki.non_probing &&
 	    pki.number == quic_pnmap_max_pn_seen(&qs->pn_map)) {
-		qs->af_ops->get_msg_addr(&saddr, skb, 1);
-		if (memcmp(&saddr, quic_path_addr(&qs->dst), quic_addr_len(sk)))
-			quic_sock_change_addr(sk, &qs->dst, &saddr, quic_addr_len(sk), 0);
+		saddr = QUIC_RCV_CB(skb)->saddr;
+		if (memcmp(saddr, quic_path_addr(&qs->dst), quic_addr_len(sk)))
+			quic_sock_change_addr(sk, &qs->dst, saddr, quic_addr_len(sk), 0);
 	}
 
 	consume_skb(skb);

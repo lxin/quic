@@ -90,11 +90,15 @@ out:
 
 int quic_do_rcv(struct sock *sk, struct sk_buff *skb)
 {
+	union quic_addr saddr;
+
 	if (!quic_is_connected(sk)) {
 		kfree_skb(skb);
 		return 0;
 	}
 
+	QUIC_RCV_CB(skb)->saddr = &saddr;
+	quic_get_msg_addr(sk, &saddr, skb, 1);
 	return quic_packet_process(sk, skb);
 }
 

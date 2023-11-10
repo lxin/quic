@@ -312,16 +312,11 @@ static void quic_unhash(struct sock *sk)
 
 static int quic_handshake_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 {
-	union quic_addr *daddr = msg->msg_name;
 	struct sk_buff *skb;
 	int hlen, err;
 
-	if (!daddr)
-		return -EINVAL;
-
 	lock_sock(sk);
 	hlen = quic_encap_len(sk) + MAX_HEADER;
-	quic_path_addr_set(quic_dst(sk), daddr);
 	err = quic_flow_route(sk, NULL);
 	if (err < 0)
 		goto err;
@@ -970,6 +965,29 @@ err:
 	return err;
 }
 
+static int quic_context_data_process(struct sock *sk, void *data, u32 len)
+{
+	struct sk_buff *skb;
+
+	if (len <= 8 || len - 4 != *((u32 *)data))
+		return -EINVAL;
+
+	data += 4;
+	len -= 4;
+	pr_debug("%s: %u %4phN %d\n", __func__, len, data, quic_is_serv(sk));
+
+	skb = alloc_skb(len, GFP_KERNEL);
+	if (!skb)
+		return -ENOMEM;
+	skb_put_data(skb, data, len);
+
+	skb_reset_transport_header(skb);
+	QUIC_RCV_CB(skb)->number_offset = quic_source(sk)->active->id.len + sizeof(struct quichdr);
+	QUIC_RCV_CB(skb)->saddr = quic_path_addr(quic_dst(sk));
+
+	return quic_packet_process(sk, skb);
+}
+
 static int quic_sock_set_context(struct sock *sk, struct quic_context *context, u32 len)
 {
 	struct quic_sock *qs = quic_sk(sk);
@@ -1010,20 +1028,24 @@ static int quic_sock_set_context(struct sock *sk, struct quic_context *context, 
 	skb = quic_frame_create(sk, QUIC_FRAME_HANDSHAKE_DONE, NULL);
 	if (!skb)
 		return -ENOMEM;
-	quic_outq_ctrl_tail(sk, skb, qs->source.max_count > 1);
+	quic_outq_ctrl_tail(sk, skb, true);
 
 out:
 	for (seqno = 1; seqno < qs->source.max_count; seqno++) {
 		skb = quic_frame_create(sk, QUIC_FRAME_NEW_CONNECTION_ID, &prior);
 		if (!skb)
 			return -ENOMEM;
-		quic_outq_ctrl_tail(sk, skb, seqno != qs->source.max_count - 1);
+		quic_outq_ctrl_tail(sk, skb, true);
 	}
 	quic_update_proto_ops(sk);
 	quic_set_state(sk, state);
 	inet_sk_set_state(sk, TCP_ESTABLISHED);
-
 	quic_unhash(sk);
+
+	len -= sizeof(*context);
+	if (!len || quic_context_data_process(sk, context + 1, len))
+		quic_outq_flush(sk);
+
 	quic_cong_cwnd_update(sk, min_t(u32, quic_packet_mss(quic_packet(sk)) * 10, 14720));
 	return 0;
 }
