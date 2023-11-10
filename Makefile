@@ -2,19 +2,19 @@ all: lib module
 install: lib_install module_install
 clean: lib_clean module_clean
 
-lib: handshake.c
-	gcc -fPIC handshake.c -shared -o libquic.so -Iinclude/uapi/ -lngtcp2_crypto_gnutls -lngtcp2 -lgnutls
-lib_install:
+lib: handshake/*.c handshake/*.h
+	gcc -fPIC handshake/*.c -shared -o handshake/libquic.so -Iinclude/uapi/ -lgnutls
+lib_install: lib
 	install -m 644 include/uapi/linux/quic.h /usr/include/linux
-	install -m 644 handshake.h /usr/include/netinet/quic.h
-	install -m 644 libquic.so /usr/lib64
-	install -m 644 libquic.pc /usr/lib64/pkgconfig
+	install -m 644 handshake/quic.h /usr/include/netinet/quic.h
+	install -m 644 handshake/libquic.so /usr/lib64
+	install -m 644 handshake/libquic.pc /usr/lib64/pkgconfig
 lib_clean:
-	rm -rf libquic.so
+	rm -rf handshake/libquic.so
 
 module:
 	make -C /lib/modules/$(shell uname -r)/build M=$(shell pwd)/net/quic modules ROOTDIR=$(CURDIR) CONFIG_IP_QUIC=m CONFIG_IP_QUIC_TEST=m
-module_install:
+module_install: module
 	! [ -d /sys/module/quic ] || rmmod quic
 	install -m 644 include/uapi/linux/quic.h /usr/include/linux
 	[ -d /lib/modules/$(shell uname -r)/extra ] || mkdir /lib/modules/$(shell uname -r)/extra

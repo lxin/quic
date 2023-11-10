@@ -22,6 +22,9 @@ struct quic_handshake_parms {
 	char 			*peername;	/* - server name for client side x509 handshake or,
 						 * - psk identity name chosen during PSK handshake
 						 */
+	uint8_t			cert_req;	/* certificat request, server only
+						 * 0: IGNORE, 1: REQUEST, 2: REQUIRE
+						 */
 	char			*names[10];	/* psk identifies in PSK handshake */
 	gnutls_datum_t		keys[10];	/* - psk keys in PSK handshake, or,
 						 * - certificates received in x509 handshake
@@ -29,17 +32,11 @@ struct quic_handshake_parms {
 	uint32_t		num_keys;	/* keys total numbers */
 };
 
-int quic_client_x509_tlshd(int sockfd, struct quic_handshake_parms *parms);
-int quic_server_x509_tlshd(int sockfd, struct quic_handshake_parms *parms);
+int quic_client_handshake_parms(int sockfd, struct quic_handshake_parms *parms);
+int quic_server_handshake_parms(int sockfd, struct quic_handshake_parms *parms);
 
-int quic_client_psk_tlshd(int sockfd, struct quic_handshake_parms *parms);
-int quic_server_psk_tlshd(int sockfd, struct quic_handshake_parms *parms);
-
-int quic_client_x509_handshake(int sockfd, char *pkey, char *cert);
-int quic_server_x509_handshake(int sockfd, char *pkey, char *cert);
-
-int quic_client_psk_handshake(int sockfd, char *psk);
-int quic_server_psk_handshake(int sockfd, char *psk);
+int quic_client_handshake(int sockfd, char *pkey_file, char *cert_file);
+int quic_server_handshake(int sockfd, char *pkey_file, char *cert_file);
 
 int quic_sendmsg(int sockfd, const void *msg, size_t len, uint64_t sid, uint32_t flag);
 int quic_recvmsg(int sockfd, void *msg, size_t len, uint64_t *sid, uint32_t *flag);

@@ -84,8 +84,8 @@ static int read_cert_file(char *file, gnutls_pcert_st **cert)
 
 static int do_server(int argc, char *argv[])
 {
+	struct quic_handshake_parms parms = {};
 	int ret, sockfd, listenfd, addrlen;
-	struct quic_handshake_parms parms;
 	struct sockaddr_storage ra = {};
 	struct sockaddr_in la = {};
 	uint64_t len = 0,  sid = 0;
@@ -177,7 +177,7 @@ loop:
 		return -1;
 	}
 	parms.timeout = 15000;
-	if (quic_server_x509_tlshd(sockfd, &parms))
+	if (quic_server_handshake_parms(sockfd, &parms))
 		return -1;
 
 	printf("HANDSHAKE DONE: received cert number: '%d'\n", parms.num_keys);
@@ -218,8 +218,9 @@ static int do_client(int argc, char *argv[])
 	char *mode, *pkey = NULL, *cert = NULL;
 	struct quic_handshake_parms parms = {};
 	int ret, sockfd, flag, cipher;
-        struct sockaddr_in ra = {};
+	struct sockaddr_in ra = {};
 	uint64_t len = 0, sid = 0;
+	gnutls_pcert_st gcert;
 	struct addrinfo *rp;
 	time_t start, end;
 
@@ -278,7 +279,6 @@ handshake:
 
 	/* start doing handshake with tlshd API */
 	if (argc == 6) {
-		gnutls_pcert_st gcert;
 		parms.cert = &gcert;
 
 		mode = strtok(argv[4], ":");
@@ -297,7 +297,7 @@ handshake:
 		}
 	}
 	parms.timeout = 15000;
-	if (quic_client_x509_tlshd(sockfd, &parms))
+	if (quic_client_handshake_parms(sockfd, &parms))
 		return -1;
 
 	printf("HANDSHAKE DONE: received cert number: '%d'.\n", parms.num_keys);

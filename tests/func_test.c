@@ -1953,7 +1953,7 @@ reset:
 
 static int do_client(int argc, char *argv[])
 {
-	char *mode, *psk, *pkey = NULL, *cert = NULL;
+	char *mode, *pkey = NULL, *cert = NULL;
 	struct quic_transport_param param = {};
         struct sockaddr_in ra = {};
 	int ret, sockfd, cipher;
@@ -1982,19 +1982,15 @@ static int do_client(int argc, char *argv[])
 	if (setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_TRANSPORT_PARAM, &param, sizeof(param)))
 		return -1;
 
+	cipher = TLS_CIPHER_AES_GCM_256;
 	if (argc < 5)
-		goto x509;
+		goto start;
 
 	mode = strtok(argv[4], ":");
 	if (!strcmp(mode, "-psk_file")) {
 		cipher = TLS_CIPHER_AES_CCM_128;
-		if (setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_CIPHER, &cipher, sizeof(cipher)))
-			return -1;
-
-		psk = strtok(NULL, ":");
-		if (quic_client_psk_handshake(sockfd, psk))
-			return -1;
-		goto done;
+		pkey = strtok(NULL, ":");
+		goto start;
 	}
 
 	if (strcmp(mode, "-pkey_file"))
@@ -2006,12 +2002,11 @@ static int do_client(int argc, char *argv[])
 		return -1;
 	cert = strtok(NULL, ":");
 
-x509:
-	cipher = TLS_CIPHER_AES_GCM_256;
+start:
 	if (setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_CIPHER, &cipher, sizeof(cipher)))
 		return -1;
 
-	if (quic_client_x509_handshake(sockfd, pkey, cert))
+	if (quic_client_handshake(sockfd, pkey, cert))
 		return -1;
 done:
 	printf("HANDSHAKE DONE\n");
@@ -2023,7 +2018,7 @@ static int do_server(int argc, char *argv[])
 	struct quic_transport_param param = {};
 	int listenfd, sockfd, addrlen, cipher;
 	struct sockaddr_in la = {}, ra = {};
-	char *mode, *psk, *pkey, *cert;
+	char *mode, *pkey, *cert;
 
 	if (argc < 5) {
 		printf("%s server <LOCAL ADDR> <LOCAL PORT> <-psk_file:PSK_FILE> | <-pkey_file:PRIVATE_KEY_FILE> <-cert_file:CERTIFICATE_FILE>\n", argv[0]);
@@ -2061,13 +2056,8 @@ static int do_server(int argc, char *argv[])
 	mode = strtok(argv[4], ":");
 	if (!strcmp(mode, "-psk_file")) {
 		cipher = TLS_CIPHER_AES_CCM_128;
-		if (setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_CIPHER, &cipher, sizeof(cipher)))
-			return -1;
-
-		psk = strtok(NULL, ":");
-		if (quic_server_psk_handshake(sockfd, psk))
-			return -1;
-		goto done;
+		pkey = strtok(NULL, ":");
+		goto start;
 	}
 
 	if (strcmp(mode, "-pkey_file"))
@@ -2078,12 +2068,13 @@ static int do_server(int argc, char *argv[])
 	if (strcmp(mode, "-cert_file"))
 		return -1;
 	cert = strtok(NULL, ":");
-
 	cipher = TLS_CIPHER_AES_GCM_256;
+
+start:
 	if (setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_CIPHER, &cipher, sizeof(cipher)))
 		return -1;
 
-	if (quic_server_x509_handshake(sockfd, pkey, cert))
+	if (quic_server_handshake(sockfd, pkey, cert))
 		return -1;
 done:
 	printf("HANDSHAKE DONE\n");
