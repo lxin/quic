@@ -43,9 +43,9 @@ struct quic_stream_table {
 	struct quic_hash_table ht;
 
 	struct {
-		u32 max_stream_data_bidi_local;
-		u32 max_stream_data_bidi_remote;
-		u32 max_stream_data_uni;
+		u64 max_stream_data_bidi_local;
+		u64 max_stream_data_bidi_remote;
+		u64 max_stream_data_uni;
 		u64 max_streams_bidi;
 		u64 max_streams_uni;
 		u64 streams_bidi;
@@ -53,9 +53,9 @@ struct quic_stream_table {
 		u64 stream_active;
 	} send;
 	struct {
-		u32 max_stream_data_bidi_local;
-		u32 max_stream_data_bidi_remote;
-		u32 max_stream_data_uni;
+		u64 max_stream_data_bidi_local;
+		u64 max_stream_data_bidi_remote;
+		u64 max_stream_data_uni;
 		u64 max_streams_bidi;
 		u64 max_streams_uni;
 	} recv;

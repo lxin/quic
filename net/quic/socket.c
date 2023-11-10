@@ -129,6 +129,7 @@ static void quic_transport_param_init(struct sock *sk)
 	param->initial_max_stream_data_uni = 64 * 1024;
 	param->initial_max_streams_bidi = 100;
 	param->initial_max_streams_uni = 100;
+	param->initial_smoothed_rtt = 333000;
 }
 
 static int quic_init_sock(struct sock *sk)
@@ -1100,7 +1101,6 @@ static int quic_sock_set_transport_param(struct sock *sk, struct quic_transport_
 	quic_set_param_if_not_zero(max_ack_delay);
 	quic_set_param_if_not_zero(active_connection_id_limit);
 	quic_set_param_if_not_zero(max_idle_timeout);
-	quic_set_param_if_not_zero(disable_active_migration);
 	quic_set_param_if_not_zero(max_datagram_frame_size);
 	quic_set_param_if_not_zero(initial_max_data);
 	quic_set_param_if_not_zero(initial_max_stream_data_bidi_local);
@@ -1109,6 +1109,8 @@ static int quic_sock_set_transport_param(struct sock *sk, struct quic_transport_
 	quic_set_param_if_not_zero(initial_max_streams_bidi);
 	quic_set_param_if_not_zero(initial_max_streams_uni);
 	quic_set_param_if_not_zero(initial_smoothed_rtt);
+	quic_set_param_if_not_zero(disable_active_migration);
+	quic_set_param_if_not_zero(validate_address);
 
 	return 0;
 }

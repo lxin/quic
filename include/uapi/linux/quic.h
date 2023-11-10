@@ -88,20 +88,21 @@ struct quic_connection_id {
 };
 
 struct quic_transport_param {
-	uint32_t max_udp_payload_size;
-	uint32_t ack_delay_exponent;
-	uint32_t max_ack_delay;
-	uint32_t active_connection_id_limit;
-	uint32_t max_idle_timeout;
-	uint32_t disable_active_migration;
-	uint32_t max_datagram_frame_size;
-	uint32_t initial_max_data;
-	uint32_t initial_max_stream_data_bidi_local;
-	uint32_t initial_max_stream_data_bidi_remote;
-	uint32_t initial_max_stream_data_uni;
-	uint32_t initial_max_streams_bidi;
-	uint32_t initial_max_streams_uni;
-	uint32_t initial_smoothed_rtt;
+	uint64_t max_udp_payload_size;
+	uint64_t ack_delay_exponent;
+	uint64_t max_ack_delay;
+	uint64_t active_connection_id_limit;
+	uint64_t max_idle_timeout;
+	uint64_t max_datagram_frame_size;
+	uint64_t initial_max_data;
+	uint64_t initial_max_stream_data_bidi_local;
+	uint64_t initial_max_stream_data_bidi_remote;
+	uint64_t initial_max_stream_data_uni;
+	uint64_t initial_max_streams_bidi;
+	uint64_t initial_max_streams_uni;
+	uint64_t initial_smoothed_rtt;
+	uint8_t disable_active_migration;
+	uint8_t validate_address;
 };
 
 struct quic_crypto_secret {
