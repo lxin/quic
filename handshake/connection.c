@@ -246,6 +246,7 @@ static int quic_conn_destroy(struct quic_conn *conn)
 		conn->errcode = errno;
 	}
 
+	gnutls_deinit(conn->session);
 	ret = conn->errcode;
 	free(conn);
 	return -ret;

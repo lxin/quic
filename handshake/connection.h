@@ -26,7 +26,7 @@
 #include "quic.h"
 
 struct quic_data {
-	uint8_t data[128];
+	uint8_t data[144];
 	uint32_t datalen;
 };
 
@@ -101,6 +101,7 @@ struct quic_conn {
 	struct quic_key hs_key[2];
 
 	struct quic_handshake_parms *parms;
+	struct quic_data priority;
 	struct quic_data token;
 	struct quic_data alpn;
 	uint32_t cipher;

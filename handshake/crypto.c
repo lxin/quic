@@ -211,6 +211,15 @@ err:
 	return rv;
 }
 
+static int dataum_copy(gnutls_datum_t *dest, const gnutls_datum_t *source)
+{
+	dest->data = malloc(source->size);
+	if (!dest->data)
+		return -ENOMEM;
+	dest->size = source->size;
+	return 0;
+}
+
 static int client_x509_verify(gnutls_session_t session)
 {
 	struct quic_conn *conn = gnutls_session_get_ptr(session);
@@ -228,10 +237,17 @@ static int client_x509_verify(gnutls_session_t session)
 		return -1;
 	if (parms->num_keys > ARRAY_SIZE(parms->keys))
 		parms->num_keys = ARRAY_SIZE(parms->keys);
-	for (i = 0; i < parms->num_keys; i++)
-		parms->keys[0] = peercerts[i];
-
+	for (i = 0; i < parms->num_keys; i++) {
+		if (dataum_copy(&parms->keys[i], &peercerts[i]))
+			goto err;
+	}
 	return 0;
+err:
+	for (i = 0; i < parms->num_keys; i++) {
+		free(parms->keys[i].data);
+		parms->keys[i].size = 0;
+	}
+	return -1;
 }
 
 static int client_set_x509_cred(struct quic_conn *conn, void *cred)
@@ -419,29 +435,33 @@ static int crypto_gnutls_configure_session(gnutls_session_t session)
 		GNUTLS_EXT_FLAG_TLS | GNUTLS_EXT_FLAG_CLIENT_HELLO | GNUTLS_EXT_FLAG_EE);
 }
 
-static char priority[100] = "%DISABLE_TLS13_COMPAT_MODE:NORMAL:-VERS-ALL:+VERS-TLS1.3:+PSK:-CIPHER-ALL:+";
+static char priority[] = "%DISABLE_TLS13_COMPAT_MODE:NORMAL:-VERS-ALL:+VERS-TLS1.3:+PSK:-CIPHER-ALL:+";
 
 static char *get_priority(struct quic_conn *conn)
 {
+	char *p = conn->priority.data;
+
+	memcpy(p, priority, strlen(priority));
 	switch (conn->cipher) {
 	case TLS_CIPHER_AES_GCM_128:
-		strcat(priority, "AES-128-GCM");
+		strcat(p, "AES-128-GCM");
 		break;
 	case TLS_CIPHER_AES_GCM_256:
-		strcat(priority, "AES-256-GCM");
+		strcat(p, "AES-256-GCM");
 		break;
 	case TLS_CIPHER_AES_CCM_128:
-		strcat(priority, "AES-128-CCM");
+		strcat(p, "AES-128-CCM");
 		break;
 	case TLS_CIPHER_CHACHA20_POLY1305:
-		strcat(priority, "CHACHA20-POLY1305");
+		strcat(p, "CHACHA20-POLY1305");
 		break;
 	default:
-		strcat(priority, "AES-128-GCM:+AES-256-GCM:+AES-128-CCM:+CHACHA20-POLY1305");
+		strcat(p, "AES-128-GCM:+AES-256-GCM:+AES-128-CCM:+CHACHA20-POLY1305");
 		conn->cipher = 0;
 		break;
 	}
-	return priority;
+	conn->priority.datalen = strlen(p) + 1;
+	return p;
 }
 
 int quic_crypto_client_set_x509_session(struct quic_conn *conn)
@@ -564,10 +584,17 @@ static int server_x509_verify(gnutls_session_t session)
 		return -1;
 	if (parms->num_keys > ARRAY_SIZE(parms->keys))
 		parms->num_keys = ARRAY_SIZE(parms->keys);
-	for (i = 0; i < parms->num_keys; i++)
-		parms->keys[0] = peercerts[i];
-
+	for (i = 0; i < parms->num_keys; i++) {
+		if (dataum_copy(&parms->keys[i], &peercerts[i]))
+			goto err;
+	}
 	return 0;
+err:
+	for (i = 0; i < parms->num_keys; i++) {
+		free(parms->keys[i].data);
+		parms->keys[i].size = 0;
+	}
+	return -1;
 }
 
 static int server_set_x509_cred(struct quic_conn *conn, void *cred)
