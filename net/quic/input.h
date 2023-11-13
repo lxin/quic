@@ -10,6 +10,8 @@
 
 struct quic_inqueue {
 	struct sk_buff_head reassemble_list;
+	struct sk_buff_head handshake_list;
+	struct sk_buff_head backlog_list;
 	struct sk_buff *last_event;
 	u64 max_bytes;
 	u64 window;
@@ -28,12 +30,15 @@ struct quic_rcv_cb {
 	struct quic_stream *stream;
 	union quic_addr *saddr;
 	u16 offset;
-	u8 event;
 	u8 number_offset;
+	u8 event;
+	u8 level;
 	u8 dgram:1;
 	u8 backlog:1;
 	u8 stream_fin:1;
+	u8 handshake:1;
 	u64 stream_offset;
+	u64 crypto_offset;
 };
 
 #define QUIC_RCV_CB(__skb)	((struct quic_rcv_cb *)&((__skb)->cb[0]))
@@ -41,12 +46,16 @@ struct quic_rcv_cb {
 static inline void quic_inq_init(struct quic_inqueue *inq)
 {
 	skb_queue_head_init(&inq->reassemble_list);
+	skb_queue_head_init(&inq->handshake_list);
+	skb_queue_head_init(&inq->backlog_list);
 }
 
 static inline void quic_inq_purge(struct sock *sk, struct quic_inqueue *inq)
 {
 	__skb_queue_purge(&sk->sk_receive_queue);
 	__skb_queue_purge(&inq->reassemble_list);
+	__skb_queue_purge(&inq->handshake_list);
+	__skb_queue_purge(&inq->backlog_list);
 }
 
 static inline u32 quic_inq_max_ack_delay(struct quic_inqueue *inq)
@@ -70,7 +79,6 @@ static inline u32 quic_inq_max_dgram(struct quic_inqueue *inq)
 }
 
 int quic_do_rcv(struct sock *sk, struct sk_buff *skb);
-int quic_handshake_do_rcv(struct sock *sk, struct sk_buff *skb);
 int quic_rcv(struct sk_buff *skb);
 int quic_inq_reasm_tail(struct sock *sk, struct sk_buff *skb);
 int quic_inq_dgram_tail(struct sock *sk, struct sk_buff *skb);
@@ -79,3 +87,4 @@ void quic_inq_set_param(struct sock *sk, struct quic_transport_param *p);
 void quic_inq_get_param(struct sock *sk, struct quic_transport_param *p);
 void quic_inq_set_owner_r(struct sk_buff *skb, struct sock *sk);
 int quic_inq_event_recv(struct sock *sk, u8 event, void *args);
+int quic_inq_handshake_tail(struct sock *sk, struct sk_buff *skb);

@@ -34,6 +34,18 @@ static struct tls_vec *tls_vec(struct tls_vec *vec, u8 *data, u32 len)
 	return vec;
 }
 
+static int tls_crypto_hkdf_extract(struct crypto_shash *tfm, struct tls_vec *srt,
+				   struct tls_vec *hash, struct tls_vec *key)
+{
+	int err;
+
+	err = crypto_shash_setkey(tfm, srt->data, srt->len);
+	if (err)
+		return err;
+
+	return crypto_shash_tfm_digest(tfm, hash->data, hash->len, key->data);
+}
+
 static int tls_crypto_hkdf_expand(struct crypto_shash *tfm, struct tls_vec *srt,
 				  struct tls_vec *label, struct tls_vec *hash, struct tls_vec *key)
 {
@@ -116,7 +128,7 @@ static int quic_crypto_keys_derive(struct crypto_shash *tfm, struct tls_vec *s, 
 
 static int quic_crypto_tx_keys_derive_and_install(struct quic_crypto *crypto)
 {
-	struct tls_vec srt = {NULL, 0}, k, iv, hp_k, *hp;
+	struct tls_vec srt = {NULL, 0}, k, iv, hp_k = {}, *hp;
 	u32 keylen, ivlen = QUIC_IV_LEN;
 	int err;
 
@@ -128,13 +140,13 @@ static int quic_crypto_tx_keys_derive_and_install(struct quic_crypto *crypto)
 	err = quic_crypto_keys_derive(crypto->secret_tfm, &srt, &k, &iv, hp);
 	if (err)
 		return err;
-	pr_debug("[QUIC] ap tx keys: %16phN, %12phN, %16phN\n", k.data, iv.data, hp_k.data);
+	pr_debug("[QUIC] tx keys: %16phN, %12phN, %16phN\n", k.data, iv.data, hp_k.data);
 	return 0;
 }
 
 static int quic_crypto_rx_keys_derive_and_install(struct quic_crypto *crypto)
 {
-	struct tls_vec srt = {NULL, 0}, k, iv, hp_k, *hp;
+	struct tls_vec srt = {NULL, 0}, k, iv, hp_k = {}, *hp;
 	u32 keylen, ivlen = QUIC_IV_LEN;
 	int err;
 
@@ -146,7 +158,7 @@ static int quic_crypto_rx_keys_derive_and_install(struct quic_crypto *crypto)
 	err = quic_crypto_keys_derive(crypto->secret_tfm, &srt, &k, &iv, hp);
 	if (err)
 		return err;
-	pr_debug("[QUIC] ap rx keys: %16phN, %12phN, %16phN\n", k.data, iv.data, hp_k.data);
+	pr_debug("[QUIC] rx keys: %16phN, %12phN, %16phN\n", k.data, iv.data, hp_k.data);
 	return 0;
 }
 
@@ -287,7 +299,7 @@ static int quic_crypto_payload_decrypt(struct crypto_aead *tfm, struct sk_buff *
 	if (err)
 		return err;
 
-	len = skb->len;
+	len = pki->length + pki->number_offset;
 	hlen = pki->number_offset + pki->number_len;
 	if (len - hlen < QUIC_TAG_LEN)
 		return -EINVAL;
@@ -337,7 +349,7 @@ static int quic_crypto_header_decrypt(struct crypto_skcipher *tfm, struct sk_buf
 	if (!req)
 		return -ENOMEM;
 
-	if (skb->len < pki->number_offset + 4 + 16) {
+	if (pki->length + pki->number_offset < pki->number_offset + 4 + 16) {
 		err = -EINVAL;
 		goto err;
 	}
@@ -352,7 +364,7 @@ static int quic_crypto_header_decrypt(struct crypto_skcipher *tfm, struct sk_buf
 	p = (u8 *)hdr;
 	*p = (u8)(*p ^ (mask[0][0] & (((*p & 0x80) == 0x80) ? 0x0f : 0x1f)));
 	pki->number_len = (*p & 0x03) + 1;
-	if (skb->len < pki->number_offset + pki->number_len) {
+	if (pki->length + pki->number_offset < pki->number_offset + pki->number_len) {
 		err = -EINVAL;
 		goto err;
 	}
@@ -472,18 +484,29 @@ int quic_crypto_decrypt(struct quic_crypto *crypto, struct sk_buff *skb,
 	return 0;
 }
 
-int quic_crypto_set_secret(struct quic_crypto *crypto, struct quic_crypto_secret *send,
-			   struct quic_crypto_secret *recv)
+int quic_crypto_set_secret(struct quic_crypto *crypto, struct quic_crypto_secret *srt)
 {
 	struct quic_cipher *cipher;
 	void *tfm;
 	int err;
 
-	if (send->type != recv->type ||
-	    send->type < QUIC_CIPHER_MIN || send->type > QUIC_CIPHER_MAX)
+	if (srt->type < QUIC_CIPHER_MIN || srt->type > QUIC_CIPHER_MAX)
 		return -EINVAL;
 
-	cipher = &ciphers[send->type - QUIC_CIPHER_MIN];
+	cipher = &ciphers[srt->type - QUIC_CIPHER_MIN];
+	if (!srt->send) {
+		if (!crypto->cipher)
+			return -EINVAL;
+		memcpy(crypto->rx_secret, srt->secret, cipher->secretlen);
+		err = quic_crypto_rx_keys_derive_and_install(crypto);
+		if (err)
+			goto err;
+		return 0;
+	}
+
+	if (crypto->cipher)
+		return -EINVAL;
+
 	tfm = crypto_alloc_shash(cipher->shash, 0, 0);
 	if (IS_ERR(tfm))
 		return PTR_ERR(tfm);
@@ -503,32 +526,27 @@ int quic_crypto_set_secret(struct quic_crypto *crypto, struct quic_crypto_secret
 	}
 	crypto->aead_tfm = tfm;
 	crypto->cipher = cipher;
+	crypto->cipher_type = srt->type;
 
-	memcpy(crypto->tx_secret, send->secret, crypto->cipher->secretlen);
+	memcpy(crypto->tx_secret, srt->secret, cipher->secretlen);
 	err = quic_crypto_tx_keys_derive_and_install(crypto);
 	if (err)
 		goto err;
-	memcpy(crypto->rx_secret, recv->secret, crypto->cipher->secretlen);
-	err = quic_crypto_rx_keys_derive_and_install(crypto);
-	if (err)
-		goto err;
-	crypto->cipher_type = send->type;
 	return 0;
 err:
 	quic_crypto_destroy(crypto);
 	return err;
 }
 
-int quic_crypto_get_secret(struct quic_crypto *crypto, struct quic_crypto_secret *send,
-			   struct quic_crypto_secret *recv)
+int quic_crypto_get_secret(struct quic_crypto *crypto, struct quic_crypto_secret *srt)
 {
+	u8 *secret;
+
 	if (!crypto->cipher)
 		return -EINVAL;
-
-	send->type = crypto->cipher_type;
-	recv->type = crypto->cipher_type;
-	memcpy(send->secret, crypto->tx_secret, crypto->cipher->secretlen);
-	memcpy(send->secret, crypto->rx_secret, crypto->cipher->secretlen);
+	srt->type = crypto->cipher_type;
+	secret = srt->send ? crypto->tx_secret : crypto->rx_secret;
+	memcpy(srt->secret, secret, crypto->cipher->secretlen);
 	return 0;
 }
 
@@ -612,4 +630,58 @@ void quic_crypto_destroy(struct quic_crypto *crypto)
 	crypto->secret_tfm = NULL;
 	crypto->skc_tfm = NULL;
 	crypto->aead_tfm = NULL;
+}
+
+#define QUIC_INITIAL_SALT_V1    \
+	"\x38\x76\x2c\xf7\xf5\x59\x34\xb3\x4d\x17\x9a\xe6\xa4\xc8\x0c\xad\xcc\xbb\x7f\x0a"
+
+int quic_crypto_initial_keys_install(struct quic_crypto *crypto,
+				     struct quic_connection_id *conn_id, bool is_serv)
+{
+	struct tls_vec salt, s, k, l, dcid, z = {NULL, 0};
+	struct quic_crypto_secret srt = {};
+	struct crypto_shash *tfm;
+	u8 secret[32];
+	char *tl, *rl;
+	int err;
+
+	tfm = crypto_alloc_shash("hmac(sha256)", 0, 0);
+	if (IS_ERR(tfm))
+		return PTR_ERR(tfm);
+	if (is_serv) {
+		rl = "client in";
+		tl = "server in";
+	} else {
+		tl = "client in";
+		rl = "server in";
+	}
+	tls_vec(&salt, QUIC_INITIAL_SALT_V1, sizeof(QUIC_INITIAL_SALT_V1) - 1);
+	tls_vec(&dcid, conn_id->data, conn_id->len);
+	tls_vec(&s, secret, 32);
+	err = tls_crypto_hkdf_extract(tfm, &salt, &dcid, &s);
+	if (err)
+		goto out;
+
+	tls_vec(&l, tl, 9);
+	tls_vec(&k, srt.secret, 32);
+	srt.type = TLS_CIPHER_AES_GCM_128;
+	srt.send = 1;
+	err = tls_crypto_hkdf_expand(tfm, &s, &l, &z, &k);
+	if (err)
+		goto out;
+	err = quic_crypto_set_secret(crypto, &srt);
+	if (err)
+		goto out;
+
+	tls_vec(&l, rl, 9);
+	tls_vec(&k, srt.secret, 32);
+	srt.type = TLS_CIPHER_AES_GCM_128;
+	srt.send = 0;
+	err = tls_crypto_hkdf_expand(tfm, &s, &l, &z, &k);
+	if (err)
+		goto out;
+	err = quic_crypto_set_secret(crypto, &srt);
+out:
+	crypto_free_shash(tfm);
+	return err;
 }

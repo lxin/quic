@@ -10,14 +10,16 @@
 
 struct quic_packet {
 	struct sk_buff_head frame_list;
+	struct sk_buff *head;
 	u32 overhead;
 	u32 len;
 
-	s64 next_number; /* next packet number to send */
 	u32 mss_dgram;
 	u32 mss;
 
 	u8  ipfragok:1;
+	u8  count;
+	u8  level;
 };
 
 static inline u32 quic_packet_mss(struct quic_packet *packet)
@@ -35,11 +37,6 @@ static inline u32 quic_packet_max_payload_dgram(struct quic_packet *packet)
 	return packet->mss_dgram - packet->overhead;
 }
 
-static inline s64 quic_packet_next_number(struct quic_packet *packet)
-{
-	return packet->next_number;
-}
-
 static inline bool quic_packet_empty(struct quic_packet *packet)
 {
 	return skb_queue_empty(&packet->frame_list);
@@ -48,11 +45,12 @@ static inline bool quic_packet_empty(struct quic_packet *packet)
 static inline void quic_packet_init(struct quic_packet *packet)
 {
 	skb_queue_head_init(&packet->frame_list);
-	packet->next_number = QUIC_PN_MAP_BASE_PN;
 }
 
-void quic_packet_config(struct sock *sk);
+void quic_packet_config(struct sock *sk, u8 level);
 void quic_packet_transmit(struct sock *sk);
+int quic_packet_route(struct sock *sk, union quic_addr *a);
 int quic_packet_process(struct sock *sk, struct sk_buff *skb);
 int quic_packet_tail(struct sock *sk, struct sk_buff *skb);
 int quic_packet_tail_dgram(struct sock *sk, struct sk_buff *skb);
+void quic_packet_flush(struct sock *sk);

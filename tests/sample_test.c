@@ -1,224 +1,106 @@
+#include <sys/socket.h>
+#include <arpa/inet.h>
 #include <string.h>
+#include <unistd.h>
+#include <stdlib.h>
 #include <stdio.h>
 #include <errno.h>
-#include <netdb.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <arpa/inet.h>
-#include <linux/quic.h>
 
-#define MSG_LEN	4096
+#include <netinet/quic.h>
 
-struct quic_context client_context = {
-	.local = {
-		.max_udp_payload_size = 65527,
-		.ack_delay_exponent = 3,
-		.max_ack_delay = 25000,
-		.active_connection_id_limit = 3,
-		.max_idle_timeout = 3000000,
-		.initial_max_data = 131072,
-		.initial_max_stream_data_bidi_local = 65536,
-		.initial_max_stream_data_bidi_remote = 65536,
-		.initial_max_stream_data_uni = 65536,
-		.initial_max_streams_bidi = 100,
-		.initial_max_streams_uni = 100,
-		.initial_smoothed_rtt = 333000,
-	},
-	.remote = {
-		.max_udp_payload_size = 65527,
-		.ack_delay_exponent = 3,
-		.max_ack_delay = 25000,
-		.active_connection_id_limit = 3,
-		.max_idle_timeout = 3000000,
-		.initial_max_data = 131072,
-		.initial_max_stream_data_bidi_local = 65536,
-		.initial_max_stream_data_bidi_remote = 65536,
-		.initial_max_stream_data_uni = 65536,
-		.initial_max_streams_bidi = 100,
-		.initial_max_streams_uni = 100,
-		.initial_smoothed_rtt = 333000,
-	},
-	.source = {
-		.len = 15,
-		.data = "7c4d1be2dbab5af",
-	},
-	.dest = {
-		.len = 15,
-		.data = "2d386f8793fe1a0",
-	},
-	.send = {
-		.type = 51, /* TLS_CIPHER_AES_GCM_128 */
-		.secret = "00575b0939d23d75ea1a28f5f8649abb",
-	},
-	.recv = {
-		.type = 51,
-		.secret = "0eb530a5596bfc1176e26fd224460e84",
-	},
-	.is_serv = 0,
-};
-
-struct quic_context server_context = {
-	.remote = {
-		.max_udp_payload_size = 65527,
-		.ack_delay_exponent = 3,
-		.max_ack_delay = 25000,
-		.active_connection_id_limit = 3,
-		.max_idle_timeout = 3000000,
-		.initial_max_data = 131072,
-		.initial_max_stream_data_bidi_local = 65536,
-		.initial_max_stream_data_bidi_remote = 65536,
-		.initial_max_stream_data_uni = 65536,
-		.initial_max_streams_bidi = 100,
-		.initial_max_streams_uni = 100,
-		.initial_smoothed_rtt = 333000,
-	},
-	.local = {
-		.max_udp_payload_size = 65527,
-		.ack_delay_exponent = 3,
-		.max_ack_delay = 25000,
-		.active_connection_id_limit = 3,
-		.max_idle_timeout = 3000000,
-		.initial_max_data = 131072,
-		.initial_max_stream_data_bidi_local = 65536,
-		.initial_max_stream_data_bidi_remote = 65536,
-		.initial_max_stream_data_uni = 65536,
-		.initial_max_streams_bidi = 100,
-		.initial_max_streams_uni = 100,
-		.initial_smoothed_rtt = 333000,
-	},
-	.dest = {
-		.len = 15,
-		.data = "7c4d1be2dbab5af",
-	},
-	.source = {
-		.len = 15,
-		.data = "2d386f8793fe1a0",
-	},
-	.recv = {
-		.type = 51,
-		.secret = "00575b0939d23d75ea1a28f5f8649abb",
-	},
-	.send = {
-		.type = 51,
-		.secret = "0eb530a5596bfc1176e26fd224460e84",
-	},
-	.is_serv = 1,
-};
-
-int main(int argc, char *argv[])
+static int do_client(int argc, char *argv[])
 {
-	struct quic_context ctx = server_context;
-	struct sockaddr_in sa = {}, da = {};
-	char msg[MSG_LEN + 1];
-	struct addrinfo *rp;
-	int sd, len, ret;
+        struct sockaddr_in ra = {};
+	int ret, sockfd;
+	char msg[50];
 
-	if (argc != 6 || (strcmp(argv[1], "server") && strcmp(argv[1], "client"))) {
-		printf("%s <server|client> <LOCAL ADDR> <LOCAL PORT> <PEER ADDR> <PEER PORT>\n", argv[0]);
+	if (argc < 3) {
+		printf("%s client <PEER ADDR> <PEER PORT>\n", argv[0]);
+		return 0;
+	}
+
+	sockfd = socket(AF_INET, SOCK_DGRAM, IPPROTO_QUIC);
+	if (sockfd < 0) {
+		printf("socket create failed\n");
+		return -1;
+	}
+
+        ra.sin_family = AF_INET;
+        ra.sin_port = htons(atoi(argv[3]));
+        inet_pton(AF_INET, argv[2], &ra.sin_addr.s_addr);
+
+	if (connect(sockfd, (struct sockaddr *)&ra, sizeof(ra))) {
+		printf("socket connect failed\n");
+		return -1;
+	}
+
+	if (quic_client_handshake(sockfd, NULL, NULL))
+		return -1;
+
+	/* NOTE: quic_send/recvmsg() allows get/setting stream id and flags,
+	 * comparing to send/recv():
+	 * sid = 0;
+	 * flag = QUIC_STREAM_FLAG_NEW | QUIC_STREAM_FLAG_FIN;
+	 * quic_sendmsg(sockfd, msg, strlen(msg), sid, flag);
+	 * quic_recvmsg(sockfd, msg, sizeof(msg), &sid, &flag);
+	 */
+	strcpy(msg, "hello quic server!");
+	ret = send(sockfd, msg, strlen(msg), MSG_SYN | MSG_FIN);
+	if (ret == -1) {
+		printf("send error %d %d\n", ret, errno);
+		return -1;
+	}
+	printf("send %d\n", ret);
+
+	ret = recv(sockfd, msg, sizeof(msg), 0);
+	if (ret == -1) {
+		printf("recv error %d %d\n", ret, errno);
 		return 1;
 	}
+	printf("recv: \"%s\", len: %d\n", msg, ret);
 
-	if (getaddrinfo(argv[2], argv[3], NULL, &rp)) {
-		printf("getaddrinfo error\n");
-		return -1;
-	}
+	close(sockfd);
+	return 0;
+}
 
-	if (rp->ai_family == AF_INET6) {
-		struct sockaddr_in6 sa = {}, da = {};
+static int do_server(int argc, char *argv[])
+{
+	int listenfd, sockfd, addrlen, ret;
+	struct sockaddr_in sa = {};
+	char msg[50];
 
-		sd = socket(AF_INET6, SOCK_DGRAM, IPPROTO_QUIC);
-		if (sd < 0) {
-			printf("socket creation failed\n");
-			return -1;
-		}
-
-		sa.sin6_family = AF_INET6;
-		sa.sin6_port = htons(atoi(argv[3]));
-		inet_pton(AF_INET6, argv[2], &sa.sin6_addr);
-
-		if (bind(sd, (struct sockaddr *)&sa, sizeof(sa))) {
-			printf("socket bind failed\n");
-			return -1;
-		}
-
-		da.sin6_family = AF_INET6;
-		da.sin6_port = htons(atoi(argv[5]));
-		inet_pton(AF_INET6, argv[4], &da.sin6_addr);
-
-		if (connect(sd, (struct sockaddr *)&da, sizeof(da))) {
-			printf("socket connect failed\n");
-			return -1;
-		}
-		goto done;
-	}
-
-	sd = socket(AF_INET, SOCK_DGRAM, IPPROTO_QUIC);
-	if (sd < 0) {
-		printf("socket creation failed\n");
-		return -1;
+	if (argc < 5) {
+		printf("%s server <LOCAL ADDR> <LOCAL PORT> <PRIVATE_KEY_FILE> <CERTIFICATE_FILE>\n", argv[0]);
+		return 0;
 	}
 
 	sa.sin_family = AF_INET;
 	sa.sin_port = htons(atoi(argv[3]));
 	inet_pton(AF_INET, argv[2], &sa.sin_addr.s_addr);
-
-	if (bind(sd, (struct sockaddr *)&sa, sizeof(sa))) {
+	listenfd = socket(AF_INET, SOCK_DGRAM, IPPROTO_QUIC);
+	if (listenfd < 0) {
+		printf("socket create failed\n");
+		return -1;
+	}
+	if (bind(listenfd, (struct sockaddr *)&sa, sizeof(sa))) {
 		printf("socket bind failed\n");
 		return -1;
 	}
-
-	da.sin_family = AF_INET;
-	da.sin_port = htons(atoi(argv[5]));
-	inet_pton(AF_INET, argv[4], &da.sin_addr.s_addr);
-
-	if (connect(sd, (struct sockaddr *)&da, sizeof(da))) {
-		printf("socket connect failed\n");
+	if (listen(listenfd, 1)) {
+		printf("socket listen failed\n");
 		return -1;
 	}
-done:
-	/* NOTE: quic_send/recvmsg() allows get/setting stream id and flags,
-	 * comparing to send/recv():
-	 * sid = 0;
-	 * flag = QUIC_STREAM_FLAG_NEW | QUIC_STREAM_FLAG_FIN;
-	 * quic_sendmsg(sd, msg, strlen(msg), sid, flag);
-	 * quic_recvmsg(sd, msg, sizeof(msg), &sid, &flag);
-	*/
-
-	if (!strcmp(argv[1], "client")) {
-		struct quic_context ctx = client_context;
-
-		if (setsockopt(sd, SOL_QUIC, QUIC_SOCKOPT_CONTEXT, &ctx, sizeof(ctx))) {
-			printf("set sockopt failed\n");
-			return -1;
-		}
-		strcpy(msg, "hello quic server!");
-		ret = send(sd, msg, strlen(msg), MSG_SYN | MSG_FIN);
-		if (ret == -1) {
-			printf("send error %d %d\n", ret, errno);
-			return -1;
-		}
-		printf("send %d\n", ret);
-
-		ret = recv(sd, msg, sizeof(msg), 0);
-		if (ret == -1) {
-			printf("recv error %d %d\n", ret, errno);
-			return 1;
-		}
-		printf("recv: \"%s\", len: %d\n", msg, ret);
-		do {
-			ret = recv(sd, msg, sizeof(msg), 0);
-		} while (ret > 0);
-
-		close(sd);
-		return 0;
-	}
-
-	if (setsockopt(sd, SOL_QUIC, QUIC_SOCKOPT_CONTEXT, &ctx, sizeof(ctx))) {
-		printf("set sockopt failed\n");
+	addrlen = sizeof(sa);
+	sockfd = accept(listenfd, (struct sockaddr *)&sa, &addrlen);
+	if (sockfd < 0) {
+		printf("socket accept failed %d %d\n", errno, sockfd);
 		return -1;
 	}
 
-	ret = recv(sd, msg, sizeof(msg), 0);
+	if (quic_server_handshake(sockfd, argv[4], argv[5]))
+		return -1;
+
+	ret = recv(sockfd, msg, sizeof(msg), 0);
 	if (ret == -1) {
 		printf("recv error %d %d\n", ret, errno);
 		return 1;
@@ -226,17 +108,27 @@ done:
 	printf("recv: \"%s\", len: %d\n", msg, ret);
 
 	strcpy(msg, "hello quic client!");
-	ret = send(sd, msg, strlen(msg), MSG_SYN | MSG_FIN);
+	ret = send(sockfd, msg, strlen(msg), MSG_SYN | MSG_FIN);
 	if (ret == -1) {
 		printf("send error %d %d\n", ret, errno);
 		return -1;
 	}
 	printf("send %d\n", ret);
 
-	do {
-		ret = recv(sd, msg, sizeof(msg), 0);
-	} while (ret > 0);
-
-	close(sd);
+	close(sockfd);
+	close(listenfd);
 	return 0;
+}
+
+int main(int argc, char *argv[])
+{
+	if (argc < 2 || (strcmp(argv[1], "server") && strcmp(argv[1], "client"))) {
+		printf("%s server|client ...\n", argv[0]);
+		return 0;
+	}
+
+	if (!strcmp(argv[1], "client"))
+		return do_client(argc, argv);
+
+	return do_server(argc, argv);
 }

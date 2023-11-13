@@ -2,8 +2,8 @@ all: lib module
 install: lib_install module_install
 clean: lib_clean module_clean
 
-lib: handshake/*.c handshake/*.h
-	gcc -fPIC handshake/*.c -shared -o handshake/libquic.so -Iinclude/uapi/ -lgnutls
+lib: handshake/connection.c handshake/crypto.c handshake/connection.h
+	gcc -fPIC handshake/connection.c handshake/crypto.c -shared -o handshake/libquic.so -Iinclude/uapi/ -lgnutls
 lib_install: lib
 	install -m 644 include/uapi/linux/quic.h /usr/include/linux
 	install -m 644 handshake/quic.h /usr/include/netinet/quic.h

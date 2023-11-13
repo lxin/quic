@@ -139,10 +139,6 @@ static inline u8 *quic_put_int(u8 *p, u64 num, u8 len)
 		n.be16 = htons(n.u16);
 		memcpy(p, &n.be16, 2);
 		return p + 2;
-	case 3:
-		n.be32 = htonl(n.u32);
-		memcpy(p, ((u8 *)&n.be32) + 1, 3);
-		return p + 3;
 	case 4:
 		n.be32 = htonl(n.u32);
 		memcpy(p, &n.be32, 4);

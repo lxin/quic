@@ -36,6 +36,8 @@ struct quic_pnmap *quic_pnmap_init(struct quic_pnmap *map)
 		bitmap_zero(map->pn_map, map->len);
 	}
 
+	map->next_number = QUIC_PN_MAP_BASE_PN;
+
 	map->base_pn = QUIC_PN_MAP_BASE_PN;
 	map->cum_ack_point = map->base_pn - 1;
 	map->min_pn_seen = map->base_pn + QUIC_PN_MAP_SIZE;

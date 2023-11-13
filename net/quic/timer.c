@@ -16,6 +16,7 @@ static void quic_timer_delay_ack_timeout(struct timer_list *t)
 	struct quic_sock *qs = from_timer(qs, t, timers[QUIC_TIMER_ACK].timer);
 	struct sock *sk = &qs->inet.sk;
 	struct sk_buff *skb;
+	u8 level = 0;
 
 	bh_lock_sock(sk);
 	if (sock_owned_by_user(sk)) {
@@ -24,7 +25,7 @@ static void quic_timer_delay_ack_timeout(struct timer_list *t)
 		goto out;
 	}
 
-	skb = quic_frame_create(sk, QUIC_FRAME_ACK, NULL);
+	skb = quic_frame_create(sk, QUIC_FRAME_ACK, &level);
 	if (skb)
 		quic_outq_ctrl_tail(sk, skb, false);
 
@@ -65,7 +66,7 @@ static void quic_timer_idle_timeout(struct timer_list *t)
 		goto out;
 	}
 
-	quic_set_state(sk, QUIC_STATE_USER_CLOSED);
+	inet_sk_set_state(sk, QUIC_SS_CLOSED);
 
 	/* Notify userspace, which is most likely waiting for a packet on the
 	 * rcv queue.
@@ -112,19 +113,23 @@ void quic_timer_setup(struct sock *sk, u8 type, u32 timeout)
 
 void quic_timers_init(struct sock *sk)
 {
+	struct quic_transport_param *p = quic_param(sk);
 	struct quic_timer *t;
 
 	t = quic_timer(sk, QUIC_TIMER_RTX);
 	timer_setup(&t->timer, quic_timer_rtx_timeout, 0);
+	quic_timer_setup(sk, QUIC_TIMER_RTX, p->initial_smoothed_rtt);
 
 	t = quic_timer(sk, QUIC_TIMER_ACK);
 	timer_setup(&t->timer, quic_timer_delay_ack_timeout, 0);
+	quic_timer_setup(sk, QUIC_TIMER_ACK, p->max_ack_delay);
 
 	/* Initialize the idle timer's handler. The timeout value isn't known
 	 * until the socket context is set.
 	 */
 	t = quic_timer(sk, QUIC_TIMER_IDLE);
 	timer_setup(&t->timer, quic_timer_idle_timeout, 0);
+	quic_timer_setup(sk, QUIC_TIMER_IDLE, p->max_idle_timeout);
 }
 
 void quic_timers_free(struct sock *sk)

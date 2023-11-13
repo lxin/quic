@@ -26,6 +26,7 @@
  */
 struct quic_pnmap {
 	unsigned long *pn_map;
+	s64 next_number; /* next packet number to send */
 	u16 len;
 
 	s64 base_pn;
@@ -59,6 +60,11 @@ static inline s64 quic_pnmap_min_pn_seen(const struct quic_pnmap *map)
 static inline s64 quic_pnmap_max_pn_seen(const struct quic_pnmap *map)
 {
 	return map->max_pn_seen;
+}
+
+static inline s64 quic_pnmap_next_number(const struct quic_pnmap *map)
+{
+	return map->next_number;
 }
 
 static inline s64 quic_pnmap_base_pn(const struct quic_pnmap *map)

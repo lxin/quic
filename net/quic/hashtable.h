@@ -31,6 +31,27 @@ static inline struct quichdr *quic_hdr(struct sk_buff *skb)
 	return (struct quichdr *)skb_transport_header(skb);
 }
 
+struct quichshdr {
+#if defined(__LITTLE_ENDIAN_BITFIELD)
+	__u8 pnl:2,
+	     reserved:2,
+	     type:2,
+	     fixed:1,
+	     form:1;
+#elif defined(__BIG_ENDIAN_BITFIELD)
+	__u8 form:1,
+	     fixed:1,
+	     type:2,
+	     reserved:2,
+	     pnl:2;
+#endif
+};
+
+static inline struct quichshdr *quic_hshdr(struct sk_buff *skb)
+{
+	return (struct quichshdr *)skb_transport_header(skb);
+}
+
 union quic_addr {
 	struct sockaddr_in6 v6;
 	struct sockaddr_in v4;

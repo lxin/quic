@@ -97,14 +97,9 @@ if modinfo quic_test > /dev/null 2>&1; then
 	daemon_stop "perf_test"
 fi
 
-print_start "Sample Tests (IPv4)"
-daemon_run ./sample_test server 127.0.0.1 1234 127.0.0.1 4321
-./sample_test client 127.0.0.1 4321 127.0.0.1 1234 || exit 1
-daemon_stop
-
-print_start "Sample Tests (IPv6)"
-daemon_run ./sample_test server ::1 1234 ::1 4321
-./sample_test client ::1 4321 ::1 1234 || exit 1
+print_start "Sample Tests"
+daemon_run ./sample_test server 127.0.0.1 1234 ./keys/server-key.pem ./keys/server-cert.pem
+./sample_test client 127.0.0.1 1234 || exit 1
 daemon_stop
 
 echo ""

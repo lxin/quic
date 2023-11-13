@@ -9,9 +9,9 @@
  */
 
 struct quic_outqueue {
-	struct sk_buff_head control_list;
-	struct sk_buff_head datagram_list;
 	struct sk_buff_head retransmit_list;
+	struct sk_buff_head datagram_list;
+	struct sk_buff_head control_list;
 	struct sk_buff *retransmit_skb;
 	u64 max_bytes;
 	u64 inflight;
@@ -33,6 +33,7 @@ struct quic_outqueue {
 
 struct quic_snd_cb {
 	struct quic_stream *stream;
+	u8 level;
 	u8 rtx_count;
 	u8 frame_type;
 	u32 err_code;
@@ -96,7 +97,7 @@ void quic_outq_ctrl_tail(struct sock *sk, struct sk_buff *skb, bool cork);
 void quic_outq_rtx_tail(struct sock *sk, struct sk_buff *skb);
 void quic_outq_flush(struct sock *sk);
 void quic_outq_retransmit(struct sock *sk);
-void quic_outq_retransmit_check(struct sock *sk, s64 largest, s64 smallest,
-				s64 ack_largest, u32 ack_delay);
+void quic_outq_retransmit_check(struct sock *sk, u8 level, s64 largest,
+				s64 smallest, s64 ack_largest, u32 ack_delay);
 void quic_outq_set_param(struct sock *sk, struct quic_transport_param *p);
 void quic_outq_get_param(struct sock *sk, struct quic_transport_param *p);

@@ -13,6 +13,7 @@ struct quic_packet_info {
 	s64 number_max;
 	u32 number_len;
 	u32 number_offset;
+	u64 length;
 	u8 key_phase:1;
 	u8 key_update:1;
 	u8 ack_eliciting:1;
@@ -49,6 +50,8 @@ struct quic_crypto {
 	struct crypto_skcipher *skc_tfm;
 	u8 tx_hp_key[QUIC_KEY_LEN];
 	u8 rx_hp_key[QUIC_KEY_LEN];
+	u32 send_offset;
+	u32 recv_offset;
 
 	u32 key_update_ts;
 	u32 key_update_send_ts;
@@ -57,14 +60,14 @@ struct quic_crypto {
 	   key_pending:1;
 };
 
+int quic_crypto_initial_keys_install(struct quic_crypto *crypto,
+				     struct quic_connection_id *conn_id, bool is_serv);
 int quic_crypto_encrypt(struct quic_crypto *crypto, struct sk_buff *skb,
 			struct quic_packet_info *pki);
 int quic_crypto_decrypt(struct quic_crypto *crypto, struct sk_buff *skb,
 			struct quic_packet_info *pki);
-int quic_crypto_set_secret(struct quic_crypto *crypto, struct quic_crypto_secret *send,
-			   struct quic_crypto_secret *recv);
-int quic_crypto_get_secret(struct quic_crypto *crypto, struct quic_crypto_secret *send,
-			   struct quic_crypto_secret *recv);
+int quic_crypto_set_secret(struct quic_crypto *crypto, struct quic_crypto_secret *srt);
+int quic_crypto_get_secret(struct quic_crypto *crypto, struct quic_crypto_secret *srt);
 int quic_crypto_set_cipher(struct quic_crypto *crypto, u32 *cipher, u32 len);
 int quic_crypto_get_cipher(struct quic_crypto *crypto, int len,
 			   char __user *optval, int __user *optlen);

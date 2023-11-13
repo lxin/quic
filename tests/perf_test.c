@@ -167,6 +167,7 @@ loop:
 		return -1;
 	}
 
+	printf("accept %d\n", sockfd);
 	if (setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_ALPN, alpn, strlen(alpn) + 1))
 		return -1;
 
@@ -189,7 +190,7 @@ loop:
 			return 1;
 		}
 		len += ret;
-		usleep(10);
+		usleep(20);
 		if (flag & QUIC_STREAM_FLAG_FIN)
 			break;
 		printf("  recv len: %lld, stream_id: %lld, flag: %d.\n", len, sid, flag);

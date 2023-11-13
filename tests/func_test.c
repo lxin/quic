@@ -16,8 +16,8 @@ static int do_client_notification_test(int sockfd)
 	struct quic_errinfo errinfo = {};
 	struct quic_event_option event;
 	struct sockaddr_in addr = {};
+	struct quic_stream_info info;
 	int ret, flag, optlen, port;
-	struct quic_sndinfo info;
 	char opt[100] = {};
 	union quic_event *ev;
 	uint64_t sid;
@@ -239,7 +239,7 @@ static int do_client_notification_test(int sockfd)
 	info.stream_id = 600;
 	ret = getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_STREAM_OPEN, &info, &optlen); /* stream_id: 600 */
 	if (ret != -1 || errno != EAGAIN) {
-		printf("test13: FAIL %d %d\n", ret, errno);
+		printf("test13: FAIL %d err %d\n", ret, errno);
 		return -1;
 	}
 	sleep(1);
@@ -1185,8 +1185,8 @@ static int do_client_connection_test(int sockfd)
 
 static int do_client_stream_test(int sockfd)
 {
+	struct quic_stream_info info = {};
 	struct quic_errinfo errinfo = {};
-	struct quic_sndinfo info = {};
 	int ret, flag, optlen;
 	uint64_t sid = 0;
 

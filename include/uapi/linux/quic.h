@@ -23,8 +23,8 @@ enum {
 
 /* Send or Receive Options APIs */
 enum quic_cmsg_type {
-	QUIC_SNDINFO,
-	QUIC_RCVINFO,
+	QUIC_STREAM_INFO,
+	QUIC_HANDSHAKE_INFO,
 };
 
 #define QUIC_STREAM_TYPE_SERVER_MASK	0x01
@@ -40,12 +40,18 @@ enum {	/* used in stream_flag of struct quic_sndinfo or quic_rcvinfo */
 	QUIC_STREAM_FLAG_DATAGRAM = (1 << 5), /* sendmsg or recvmsg (like MSG_DATAGRAM in msg_flags) */
 };
 
-struct quic_sndinfo {	/* sendmsg or setsockopt(QUIC_SOCKOPT_STREAM_OPEN) */
-	uint64_t stream_id;
-	uint32_t stream_flag;
+enum quic_crypto_level {
+	QUIC_CRYPTO_STREAM,
+	QUIC_CRYPTO_INITIAL,
+	QUIC_CRYPTO_HANDSHAKE,
+	QUIC_CRYPTO_MAX,
 };
 
-struct quic_rcvinfo {	/* recvmsg */
+struct quic_handshake_info { /* sendmsg or recvmsg */
+	uint8_t	crypto_level;
+};
+
+struct quic_stream_info { /* sendmsg or setsockopt(QUIC_SOCKOPT_STREAM_OPEN) */
 	uint64_t stream_id;
 	uint32_t stream_flag;
 };
@@ -58,7 +64,7 @@ enum quic_msg_flags {	/* msg_flags in send/recvmsg */
 };
 
 /* Socket Options APIs */
-#define QUIC_SOCKOPT_CONTEXT				0  /* set and get */
+#define QUIC_SOCKOPT_EVENT				0  /* set and get */
 #define QUIC_SOCKOPT_STREAM_OPEN			1  /* get */
 #define QUIC_SOCKOPT_STREAM_RESET			2  /* set */
 #define QUIC_SOCKOPT_STREAM_STOP_SENDING		3  /* set */
@@ -66,16 +72,17 @@ enum quic_msg_flags {	/* msg_flags in send/recvmsg */
 #define QUIC_SOCKOPT_CONNECTION_MIGRATION		5  /* set */
 #define QUIC_SOCKOPT_CONGESTION_CONTROL			6  /* set and get */
 #define QUIC_SOCKOPT_KEY_UPDATE				7  /* set */
-#define QUIC_SOCKOPT_NEW_TOKEN				8  /* set */
-#define QUIC_SOCKOPT_NEW_SESSION_TICKET			9  /* set */
-#define QUIC_SOCKOPT_EVENT				10 /* set and get */
+#define QUIC_SOCKOPT_TRANSPORT_PARAM			8  /* set and get */
+#define QUIC_SOCKOPT_NEW_TOKEN				9  /* set */
+#define QUIC_SOCKOPT_NEW_SESSION_TICKET			10 /* set */
 
 /* used to provide parameters for handshake from kernel, so only valid prior to handshake */
 #define QUIC_SOCKOPT_ALPN				100 /* set and get */
-#define QUIC_SOCKOPT_TOKEN				101 /* set and get */
-#define QUIC_SOCKOPT_SESSION_TICKET			102 /* set and get */
-#define QUIC_SOCKOPT_CIPHER				103 /* set and get */
-#define QUIC_SOCKOPT_TRANSPORT_PARAM			104 /* set and get */
+#define QUIC_SOCKOPT_CIPHER				101 /* set and get */
+#define QUIC_SOCKOPT_CRYPTO_SECRET			102 /* set and get */
+#define QUIC_SOCKOPT_TRANSPORT_PARAM_EXT		103 /* set and get */
+#define QUIC_SOCKOPT_TOKEN				104 /* set and get */
+#define QUIC_SOCKOPT_SESSION_TICKET			105 /* set and get */
 
 /* for testing only */
 #define QUIC_SOCKOPT_RETIRE_CONNECTION_ID		1000 /* set */
@@ -88,6 +95,7 @@ struct quic_connection_id {
 };
 
 struct quic_transport_param {
+	struct quic_connection_id orig_dcid;
 	uint64_t max_udp_payload_size;
 	uint64_t ack_delay_exponent;
 	uint64_t max_ack_delay;
@@ -106,18 +114,10 @@ struct quic_transport_param {
 };
 
 struct quic_crypto_secret {
-	uint32_t type;
+	uint8_t level; /* stream or handshake */
+	uint16_t send; /* send or recv */
+	uint32_t type; /* TLS_CIPHER_* */
 	uint8_t secret[48];
-};
-
-struct quic_context { /* CONTEXT */
-	struct quic_transport_param	local;
-	struct quic_transport_param	remote;
-	struct quic_connection_id	source;
-	struct quic_connection_id	dest;
-	struct quic_crypto_secret	send;
-	struct quic_crypto_secret	recv;
-	uint8_t				is_serv;
 };
 
 enum { /* CONGESTION_CONTROL */

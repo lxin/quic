@@ -12,6 +12,7 @@ struct quic_bind_port {
 	unsigned short		port;
 	struct hlist_node	node;
 	struct net		*net;
+	u8			serv:1;
 };
 
 struct quic_udp_sock {

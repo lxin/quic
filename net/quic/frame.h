@@ -41,6 +41,7 @@ enum {
 struct quic_msginfo {
 	struct quic_stream *stream;
 	struct iov_iter *msg;
+	u8 level;
 	u32 flag;
 };
 
@@ -81,6 +82,10 @@ static inline bool quic_frame_is_reset(u8 type)
 struct sk_buff *quic_frame_create(struct sock *sk, u8 type, void *data);
 int quic_frame_process(struct sock *sk, struct sk_buff *skb, struct quic_packet_info *pki);
 int quic_frame_new_connection_id_ack(struct sock *sk, struct sk_buff *skb);
+int quic_frame_set_transport_params_ext(struct sock *sk, struct quic_transport_param *params, u8 *data, u32 len);
+int quic_frame_get_transport_params_ext(struct sock *sk, struct quic_transport_param *params, u8 *data, u32 *len);
+int quic_frame_handshake_process(struct sock *sk, struct sk_buff *skb, struct quic_packet_info *pki);
+struct sk_buff *quic_frame_handshake_create(struct sock *sk, u8 type, void *data);
 
 // 20.1 Transport Error Codes
 enum quic_transport_error {
@@ -108,4 +113,27 @@ enum quic_transport_error {
 	 * cryptographic handshake are described in Section 4.8 of [QUIC-TLS].
 	 */
 	QUIC_TRANS_ERR_CRYPTO,
+};
+
+enum quic_transport_param_id {
+	QUIC_TRANSPORT_PARAM_ORIGINAL_DESTINATION_CONNECTION_ID = 0x0000,
+	QUIC_TRANSPORT_PARAM_MAX_IDLE_TIMEOUT = 0x0001,
+	QUIC_TRANSPORT_PARAM_STATELESS_RESET_TOKEN = 0x0002,
+	QUIC_TRANSPORT_PARAM_MAX_UDP_PAYLOAD_SIZE = 0x0003,
+	QUIC_TRANSPORT_PARAM_INITIAL_MAX_DATA = 0x0004,
+	QUIC_TRANSPORT_PARAM_INITIAL_MAX_STREAM_DATA_BIDI_LOCAL = 0x0005,
+	QUIC_TRANSPORT_PARAM_INITIAL_MAX_STREAM_DATA_BIDI_REMOTE = 0x0006,
+	QUIC_TRANSPORT_PARAM_INITIAL_MAX_STREAM_DATA_UNI = 0x0007,
+	QUIC_TRANSPORT_PARAM_INITIAL_MAX_STREAMS_BIDI = 0x0008,
+	QUIC_TRANSPORT_PARAM_INITIAL_MAX_STREAMS_UNI = 0x0009,
+	QUIC_TRANSPORT_PARAM_ACK_DELAY_EXPONENT = 0x000a,
+	QUIC_TRANSPORT_PARAM_MAX_ACK_DELAY = 0x000b,
+	QUIC_TRANSPORT_PARAM_DISABLE_ACTIVE_MIGRATION = 0x000c,
+	QUIC_TRANSPORT_PARAM_PREFERRED_ADDRESS = 0x000d,
+	QUIC_TRANSPORT_PARAM_ACTIVE_CONNECTION_ID_LIMIT = 0x000e,
+	QUIC_TRANSPORT_PARAM_INITIAL_SOURCE_CONNECTION_ID = 0x000f,
+	QUIC_TRANSPORT_PARAM_RETRY_SOURCE_CONNECTION_ID = 0x0010,
+	QUIC_TRANSPORT_PARAM_MAX_DATAGRAM_FRAME_SIZE = 0x0020,
+	QUIC_TRANSPORT_PARAM_GREASE_QUIC_BIT = 0x2ab2,
+	QUIC_TRANSPORT_PARAM_VERSION_INFORMATION = 0x11,
 };

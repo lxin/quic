@@ -33,17 +33,18 @@ extern struct proto quic_handshake_prot;
 extern struct proto quicv6_handshake_prot;
 
 enum quic_state {
-	QUIC_STATE_USER_CLOSED,
-	QUIC_STATE_USER_LISTEN,
-	QUIC_STATE_USER_CONNECTING,
-	QUIC_STATE_CLIENT_CONNECTED,
-	QUIC_STATE_SERVER_CONNECTED,
+	QUIC_SS_CLOSED		= TCP_CLOSE,
+	QUIC_SS_LISTENING	= TCP_LISTEN,
+	QUIC_SS_ESTABLISHING	= TCP_SYN_RECV,
+	QUIC_SS_ESTABLISHED	= TCP_ESTABLISHED,
 };
 
 struct quic_request_sock {
-	struct list_head	list;
-	union quic_addr		src;
-	union quic_addr		dst;
+	struct list_head		list;
+	union quic_addr			src;
+	union quic_addr			dst;
+	struct quic_connection_id	dcid;
+	struct quic_connection_id	scid;
 };
 
 struct quic_token {
@@ -55,13 +56,11 @@ struct quic_sock {
 	struct inet_sock		inet;
 	struct quic_addr_family_ops	*af_ops; /* inet4 or inet6 */
 
-	enum quic_state			state;
-
 	struct quic_connection_id_set	source;
 	struct quic_connection_id_set	dest;
 	struct quic_stream_table	streams;
-	struct quic_crypto		crypto;
-	struct quic_pnmap		pn_map;
+	struct quic_crypto		crypto[QUIC_CRYPTO_MAX];
+	struct quic_pnmap		pn_map[QUIC_CRYPTO_MAX];
 
 	struct quic_bind_port		port;
 	struct quic_udp_sock		*udp_sk[2];
@@ -97,16 +96,6 @@ static inline struct quic_addr_family_ops *quic_af_ops(const struct sock *sk)
 	return quic_sk(sk)->af_ops;
 }
 
-static inline enum quic_state quic_state(const struct sock *sk)
-{
-	return quic_sk(sk)->state;
-}
-
-static inline void quic_set_state(struct sock *sk, enum quic_state state)
-{
-	quic_sk(sk)->state = state;
-}
-
 static inline struct quic_path_addr *quic_src(const struct sock *sk)
 {
 	return &quic_sk(sk)->src;
@@ -137,14 +126,14 @@ static inline struct quic_cong *quic_cong(const struct sock *sk)
 	return &quic_sk(sk)->cong;
 }
 
-static inline struct quic_crypto *quic_crypto(const struct sock *sk)
+static inline struct quic_crypto *quic_crypto(const struct sock *sk, u8 level)
 {
-	return &quic_sk(sk)->crypto;
+	return &quic_sk(sk)->crypto[level];
 }
 
-static inline struct quic_pnmap *quic_pnmap(const struct sock *sk)
+static inline struct quic_pnmap *quic_pnmap(const struct sock *sk, u8 level)
 {
-	return &quic_sk(sk)->pn_map;
+	return &quic_sk(sk)->pn_map[level];
 }
 
 static inline struct quic_stream_table *quic_streams(const struct sock *sk)
@@ -192,27 +181,37 @@ static inline struct quic_transport_param *quic_param(const struct sock *sk)
 	return &quic_sk(sk)->param;
 }
 
-static inline bool quic_is_serv(struct sock *sk)
+static inline struct quic_bind_port *quic_port(const struct sock *sk)
 {
-	return quic_state(sk) == QUIC_STATE_SERVER_CONNECTED;
+	return &quic_sk(sk)->port;
 }
 
-static inline bool quic_is_connected(struct sock *sk)
+static inline bool quic_is_serv(const struct sock *sk)
 {
-	return quic_state(sk) == QUIC_STATE_SERVER_CONNECTED ||
-	       quic_state(sk) == QUIC_STATE_CLIENT_CONNECTED;
+	return quic_port(sk)->serv;
+}
+
+static inline bool quic_is_established(struct sock *sk)
+{
+	return sk->sk_state == QUIC_SS_ESTABLISHED;
 }
 
 static inline bool quic_is_listen(struct sock *sk)
 {
-	return quic_state(sk) == QUIC_STATE_USER_LISTEN;
+	return sk->sk_state == QUIC_SS_LISTENING;
+}
+
+static inline bool quic_is_closed(struct sock *sk)
+{
+	return sk->sk_state == QUIC_SS_CLOSED;
 }
 
 int quic_sock_change_addr(struct sock *sk, struct quic_path_addr *path, void *data,
 			  u32 len, bool udp_bind);
-struct sock *quic_sock_lookup(struct sk_buff *skb, union quic_addr *sa, union quic_addr *da);
+int quic_request_sock_enqueue(struct sock *sk, union quic_addr *sa, union quic_addr *da,
+			      struct quic_connection_id *dcid, struct quic_connection_id *scid);
 bool quic_request_sock_exists(struct sock *sk, union quic_addr *sa, union quic_addr *da);
-int quic_request_sock_enqueue(struct sock *sk, union quic_addr *sa, union quic_addr *da);
+struct sock *quic_sock_lookup(struct sk_buff *skb, union quic_addr *sa, union quic_addr *da);
 struct quic_request_sock *quic_request_sock_dequeue(struct sock *sk);
 
 #endif /* __net_quic_h__ */

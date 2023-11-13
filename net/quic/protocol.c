@@ -288,7 +288,7 @@ static int quic_inet_listen(struct socket *sock, int backlog)
 
 	sk->sk_max_ack_backlog = backlog;
 	if (!backlog) {
-		quic_set_state(sk, QUIC_STATE_USER_CLOSED);
+		inet_sk_set_state(sk, QUIC_SS_CLOSED);
 		sk->sk_prot->unhash(sk);
 		goto out;
 	}
@@ -296,7 +296,7 @@ static int quic_inet_listen(struct socket *sock, int backlog)
 	if (!hlist_unhashed(&quic_sk(sk)->inet.sk.sk_node))
 		goto out;
 
-	quic_set_state(sk, QUIC_STATE_USER_LISTEN);
+	inet_sk_set_state(sk, QUIC_SS_LISTENING);
 	err = sk->sk_prot->hash(sk);
 out:
 	release_sock(sk);
@@ -384,14 +384,14 @@ static const struct proto_ops quic_proto_ops = {
 static struct inet_protosw quic_stream_protosw = {
 	.type       = SOCK_STREAM,
 	.protocol   = IPPROTO_QUIC,
-	.prot       = &quic_handshake_prot,
+	.prot       = &quic_prot,
 	.ops        = &quic_proto_ops,
 };
 
 static struct inet_protosw quic_seqpacket_protosw = {
 	.type       = SOCK_DGRAM,
 	.protocol   = IPPROTO_QUIC,
-	.prot       = &quic_handshake_prot,
+	.prot       = &quic_prot,
 	.ops        = &quic_proto_ops,
 };
 
@@ -419,14 +419,14 @@ static const struct proto_ops quicv6_proto_ops = {
 static struct inet_protosw quicv6_stream_protosw = {
 	.type       = SOCK_STREAM,
 	.protocol   = IPPROTO_QUIC,
-	.prot       = &quicv6_handshake_prot,
+	.prot       = &quicv6_prot,
 	.ops        = &quicv6_proto_ops,
 };
 
 static struct inet_protosw quicv6_seqpacket_protosw = {
 	.type       = SOCK_DGRAM,
 	.protocol   = IPPROTO_QUIC,
-	.prot       = &quicv6_handshake_prot,
+	.prot       = &quicv6_prot,
 	.ops        = &quicv6_proto_ops,
 };
 
@@ -434,13 +434,13 @@ static int quic_protosw_init(void)
 {
 	int err;
 
-	err = proto_register(&quic_handshake_prot, 1);
+	err = proto_register(&quic_prot, 1);
 	if (err)
 		return err;
 
-	err = proto_register(&quicv6_handshake_prot, 1);
+	err = proto_register(&quicv6_prot, 1);
 	if (err) {
-		proto_unregister(&quic_handshake_prot);
+		proto_unregister(&quic_prot);
 		return err;
 	}
 
@@ -456,11 +456,11 @@ static void quic_protosw_exit(void)
 {
 	inet_unregister_protosw(&quic_seqpacket_protosw);
 	inet_unregister_protosw(&quic_stream_protosw);
-	proto_unregister(&quic_handshake_prot);
+	proto_unregister(&quic_prot);
 
 	inet6_unregister_protosw(&quicv6_seqpacket_protosw);
 	inet6_unregister_protosw(&quicv6_stream_protosw);
-	proto_unregister(&quicv6_handshake_prot);
+	proto_unregister(&quicv6_prot);
 }
 
 static int __net_init quic_net_init(struct net *net)

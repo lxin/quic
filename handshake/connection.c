@@ -130,12 +130,6 @@ static int read_cert_file(char *file, gnutls_pcert_st **cert)
 	return ret;
 }
 
-static void generate_id(struct quic_connection_id *conn_id, int conn_id_len)
-{
-	conn_id->len = conn_id_len;
-	gnutls_rnd(GNUTLS_RND_RANDOM, conn_id->data, conn_id_len);
-}
-
 static void timer_handler(union sigval arg)
 {
 	struct quic_conn *conn = arg.sival_ptr;
@@ -143,23 +137,41 @@ static void timer_handler(union sigval arg)
 	conn->errcode = ETIMEDOUT;
 }
 
+static int set_nonblocking(int sockfd, uint8_t nonblocking)
+{
+	int flags = fcntl(sockfd, F_GETFL, 0);
+
+	if (flags == -1) {
+		print_error("fcntl");
+		return -1;
+	}
+
+	if (nonblocking)
+		flags |= O_NONBLOCK;
+	else
+		flags &= ~O_NONBLOCK;
+
+	if (fcntl(sockfd, F_SETFL, flags) == -1) {
+		print_error("fcntl");
+		return -1;
+	}
+	return 0;
+}
+
 static int setup_timer(struct quic_conn *conn)
 {
 	uint64_t msec = conn->parms->timeout;
-	struct timeval ntv = {1, 0};
-	int len = sizeof(conn->tv);
 	struct itimerspec its = {};
 	struct sigevent sev = {};
+
+	if (set_nonblocking(conn->sockfd, 1))
+		return -1;
 
 	sev.sigev_notify = SIGEV_THREAD;
 	sev.sigev_notify_function = timer_handler;
 	sev.sigev_value.sival_ptr = conn;
 	timer_create(CLOCK_REALTIME, &sev, &conn->timer);
 
-	if (getsockopt(conn->sockfd, SOL_SOCKET, SO_RCVTIMEO, &conn->tv, &len))
-		return -1;
-	if (setsockopt(conn->sockfd, SOL_SOCKET, SO_RCVTIMEO, &ntv, sizeof(ntv)))
-		return -1;
 	its.it_value.tv_sec  = msec / 1000;
 	its.it_value.tv_nsec = (msec % 1000) * 1000000;
 	timer_settime(conn->timer, 0, &its, NULL);
@@ -168,10 +180,7 @@ static int setup_timer(struct quic_conn *conn)
 
 static int delete_timer(struct quic_conn *conn)
 {
-	int len = sizeof(conn->tv);
-
-	if (setsockopt(conn->sockfd, SOL_SOCKET, SO_RCVTIMEO, &conn->tv, len))
-		return -1;
+	set_nonblocking(conn->sockfd, 0);
 	timer_delete(conn->timer);
 	return 0;
 }
@@ -180,22 +189,11 @@ static int get_transport_param(struct quic_conn *conn)
 {
 	int len, sockfd = conn->sockfd;
 
-	len = sizeof(conn->context.local);
-	if (getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_TRANSPORT_PARAM, &conn->context.local, &len)) {
-		print_error("socket getsockopt token failed\n");
-		return -1;
-	}
 	len = sizeof(conn->cipher);
 	if (getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_CIPHER, &conn->cipher, &len)) {
 		print_error("socket getsockopt token failed\n");
 		return -1;
 	}
-	len = sizeof(conn->token.data);
-	if (getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_TOKEN, &conn->token.data, &len)) {
-		print_error("socket getsockopt token failed\n");
-		return -1;
-	}
-	conn->token.datalen = len;
 	len = sizeof(conn->alpn.data);
 	if (getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_ALPN, conn->alpn.data, &len)) {
 		print_error("socket getsockopt alpn failed\n");
@@ -204,6 +202,23 @@ static int get_transport_param(struct quic_conn *conn)
 	conn->alpn.datalen = len;
 	conn->sockfd = sockfd;
 	return 0;
+}
+
+static int quic_conn_destroy(struct quic_conn *conn)
+{
+	struct quic_frame *frame = conn->send_list;
+	int ret;
+
+	while (frame) {
+		conn->send_list = frame->next;
+		free(frame);
+		frame = conn->send_list;
+	}
+	delete_timer(conn);
+	gnutls_deinit(conn->session);
+	ret = conn->errcode;
+	free(conn);
+	return -ret;
 }
 
 static struct quic_conn *quic_conn_create(int sockfd, struct quic_handshake_parms *parms, uint8_t server)
@@ -217,76 +232,136 @@ static struct quic_conn *quic_conn_create(int sockfd, struct quic_handshake_parm
 	memset(conn, 0, sizeof(*conn));
 	conn->parms = parms;
 	conn->sockfd = sockfd;
-	conn->context.is_serv = server;
 
 	if (get_transport_param(conn))
-		return NULL;
+		goto err;
 
 	if (setup_timer(conn))
-		return NULL;
+		goto err;
 
 	return conn;
+err:
+	quic_conn_destroy(conn);
+	return NULL;
 }
 
-static int quic_conn_destroy(struct quic_conn *conn)
+static int quic_conn_sendmsg(int sockfd, struct quic_frame *frame)
 {
-	int ret, datalen = conn->ctxdata.buflen;
+	char outcmsg[CMSG_SPACE(sizeof(struct quic_handshake_info))];
+	struct quic_handshake_info *info;
+	struct msghdr outmsg;
+	struct cmsghdr *cmsg;
+	struct iovec iov;
+	int flags = 0;
+	uint8_t *p;
 
-	delete_timer(conn);
+	outmsg.msg_name = NULL;
+	outmsg.msg_namelen = 0;
+	outmsg.msg_iov = &iov;
+	iov.iov_base = (void *)frame->data.buf;
+	iov.iov_len = frame->data.buflen;
+	outmsg.msg_iovlen = 1;
 
-	if (datalen)
-		datalen += 4;
+	outmsg.msg_control = outcmsg;
+	outmsg.msg_controllen = sizeof(outcmsg);
+	outmsg.msg_flags = 0;
+	if (frame->next)
+		flags = MSG_MORE;
 
-	quic_packet_purge_lists(conn);
+	cmsg = CMSG_FIRSTHDR(&outmsg);
+	cmsg->cmsg_level = IPPROTO_QUIC;
+	cmsg->cmsg_type = QUIC_HANDSHAKE_INFO;
+	cmsg->cmsg_len = CMSG_LEN(sizeof(*info));
 
-	if (!conn->errcode &&
-	    setsockopt(conn->sockfd, SOL_QUIC, QUIC_SOCKOPT_CONTEXT,
-		       &conn->context, sizeof(conn->context) + datalen)) {
-		print_error("socket setsockopt context failed\n");
-		conn->errcode = errno;
+	info = (struct quic_handshake_info *)CMSG_DATA(cmsg);
+	info->crypto_level = frame->level;
+
+	return sendmsg(sockfd, &outmsg, flags);
+}
+
+static int quic_conn_recvmsg(int sockfd, struct quic_frame *frame)
+{
+	char incmsg[CMSG_SPACE(sizeof(struct quic_handshake_info))];
+	struct quic_handshake_info info;
+	struct cmsghdr *cmsg = NULL;
+	struct msghdr inmsg;
+	struct iovec iov;
+	int error;
+
+	frame->data.buflen = 0;
+	memset(&inmsg, 0, sizeof(inmsg));
+
+	iov.iov_base = frame->data.buf;
+	iov.iov_len = sizeof(frame->data.buf);
+
+	inmsg.msg_name = NULL;
+	inmsg.msg_namelen = 0;
+	inmsg.msg_iov = &iov;
+	inmsg.msg_iovlen = 1;
+	inmsg.msg_control = incmsg;
+	inmsg.msg_controllen = sizeof(incmsg);
+
+	error = recvmsg(sockfd, &inmsg, 0);
+	if (error < 0)
+		return error;
+	frame->data.buflen = error;
+
+	for (cmsg = CMSG_FIRSTHDR(&inmsg); cmsg != NULL; cmsg = CMSG_NXTHDR(&inmsg, cmsg))
+		if (IPPROTO_QUIC == cmsg->cmsg_level && QUIC_HANDSHAKE_INFO == cmsg->cmsg_type)
+			break;
+	if (cmsg) {
+		memcpy(&info, CMSG_DATA(cmsg), sizeof(info));
+		frame->level = info.crypto_level;
 	}
 
-	gnutls_deinit(conn->session);
-	ret = conn->errcode;
-	free(conn);
-	return -ret;
+	return error;
 }
 
 static void quic_conn_do_handshake(struct quic_conn *conn)
 {
-	struct quic_buf *packet = &conn->packet;
 	int ret, sockfd = conn->sockfd;
+	struct timeval tv = {1, 0};
+	struct quic_frame *frame;
+	fd_set readfds;
 
-	while (!conn->errcode) {
-		ret = recv(sockfd, packet->buf, sizeof(packet->buf), 0);
-		if (ret <= 0) {
-			if (errno == EAGAIN || errno == EWOULDBLOCK) {
-				quic_packet_sent_timeout(conn);
-				goto send;
-			}
+	FD_ZERO(&readfds);
+	FD_SET(sockfd, &readfds);
+
+	while (!quic_conn_handshake_completed(conn)) {
+		ret = select(sockfd + 1, &readfds, NULL,  NULL, &tv);
+		if (ret < 0) {
 			conn->errcode = errno;
-			break;
+			return;
 		}
-		packet->buflen = ret;
-		print_debug("v %s RECV: %d\n", __func__, packet->buflen);
-		ret = quic_packet_process(conn, packet);
-		if (ret) {
-			conn->errcode = -ret;
-			break;
+		frame = &conn->frame;
+		while (!quic_conn_handshake_completed(conn)) {
+			ret = quic_conn_recvmsg(sockfd, frame);
+			if (ret <= 0) {
+				if (errno == EAGAIN || errno == EWOULDBLOCK)
+					break;
+				conn->errcode = errno;
+				return;
+			}
+			print_debug("v %s RECV: %d %d\n", __func__, frame->data.buflen, frame->level);
+			ret = quic_crypto_read_write_crypto_data(conn, frame->level, frame->data.buf,
+								 frame->data.buflen);
+			if (ret) {
+				conn->errcode = -ret;
+				return;
+			}
 		}
-		if (quic_conn_handshake_completed(conn))
-			break;
-	send:
-		if (quic_packet_create(conn, packet) > 0) {
-			print_debug("^ %s SEND: %d\n", __func__, packet->buflen);
-			ret = send(sockfd, packet->buf, packet->buflen, 0);
+
+		frame = conn->send_list;
+		while (frame) {
+			print_debug("^ %s SEND: %d %d\n", __func__, frame->data.buflen, frame->level);
+			ret = quic_conn_sendmsg(sockfd, frame);
 			if (ret < 0) {
 				conn->errcode = errno;
-				break;
+				return;
 			}
-			packet->buflen = 0;
-			if (quic_packet_send_more(conn))
-				goto send;
+			conn->send_list = frame->next;
+			free(frame);
+			frame = conn->send_list;
 		}
 	}
 }
@@ -302,7 +377,7 @@ static void quic_conn_do_handshake(struct quic_conn *conn)
  */
 int quic_client_handshake_parms(int sockfd, struct quic_handshake_parms *parms)
 {
-	struct quic_buf *packet;
+	struct quic_frame *frame;
 	struct quic_conn *conn;
 	int ret, level;
 
@@ -317,30 +392,24 @@ int quic_client_handshake_parms(int sockfd, struct quic_handshake_parms *parms)
 		goto out;
 	}
 
-	generate_id(&conn->context.source, 17);
-	generate_id(&conn->context.dest, 18);
-	ret = quic_crypto_derive_initial_keys(conn, conn->context.dest.data,
-					      conn->context.dest.len);
-	if (ret) {
-		conn->errcode = -ret;
-		goto out;
-	}
-	level = GNUTLS_ENCRYPTION_LEVEL_INITIAL;
+	level = QUIC_CRYPTO_INITIAL;
 	ret = quic_crypto_read_write_crypto_data(conn, level, NULL, 0);
 	if (ret) {
 		conn->errcode = -ret;
 		goto out;
 	}
 
-	packet = &conn->packet;
-	if (quic_packet_create(conn, packet) > 0) {
-		print_debug("^ %s SEND: %d\n", __func__, packet->buflen);
-		ret = send(sockfd, packet->buf, packet->buflen, 0);
+	frame = conn->send_list;
+	while (frame) {
+		print_debug("^ %s SEND: %d %d\n", __func__, frame->data.buflen, frame->level);
+		ret = quic_conn_sendmsg(sockfd, frame);
 		if (ret < 0) {
 			conn->errcode = errno;
 			goto out;
 		}
-		packet->buflen = 0;
+		conn->send_list = frame->next;
+		free(frame);
+		frame = conn->send_list;
 	}
 
 	quic_conn_do_handshake(conn);
@@ -359,7 +428,6 @@ out:
  */
 int quic_server_handshake_parms(int sockfd, struct quic_handshake_parms *parms)
 {
-	struct quic_buf *packet;
 	struct quic_conn *conn;
 	int ret;
 
@@ -373,8 +441,6 @@ int quic_server_handshake_parms(int sockfd, struct quic_handshake_parms *parms)
 		conn->errcode = -ret;
 		goto out;
 	}
-
-	generate_id(&conn->context.source, 17);
 
 	quic_conn_do_handshake(conn);
 out:
@@ -471,9 +537,9 @@ start:
  */
 int quic_recvmsg(int sockfd, void *msg, size_t len, uint64_t *sid, uint32_t *flag)
 {
-	char incmsg[CMSG_SPACE(sizeof(struct quic_rcvinfo))];
+	char incmsg[CMSG_SPACE(sizeof(struct quic_stream_info))];
+	struct quic_stream_info info;
 	struct cmsghdr *cmsg = NULL;
-	struct quic_rcvinfo rinfo;
 	struct msghdr inmsg;
 	struct iovec iov;
 	int error;
@@ -498,13 +564,13 @@ int quic_recvmsg(int sockfd, void *msg, size_t len, uint64_t *sid, uint32_t *fla
 		return error;
 
 	for (cmsg = CMSG_FIRSTHDR(&inmsg); cmsg != NULL; cmsg = CMSG_NXTHDR(&inmsg, cmsg))
-		if (IPPROTO_QUIC == cmsg->cmsg_level && QUIC_RCVINFO == cmsg->cmsg_type)
+		if (IPPROTO_QUIC == cmsg->cmsg_level && QUIC_STREAM_INFO == cmsg->cmsg_type)
 			break;
-	if (cmsg)
-		memcpy(&rinfo, CMSG_DATA(cmsg), sizeof(struct quic_rcvinfo));
-
-	*sid = rinfo.stream_id;
-	*flag = rinfo.stream_flag;
+	if (cmsg) {
+		memcpy(&info, CMSG_DATA(cmsg), sizeof(struct quic_stream_info));
+		*sid = info.stream_id;
+		*flag = info.stream_flag;
+	}
 	return error;
 }
 
@@ -522,11 +588,11 @@ int quic_recvmsg(int sockfd, void *msg, size_t len, uint64_t *sid, uint32_t *fla
  */
 int quic_sendmsg(int sockfd, const void *msg, size_t len, uint64_t sid, uint32_t flag)
 {
-	struct quic_sndinfo *sinfo;
+	char outcmsg[CMSG_SPACE(sizeof(struct quic_stream_info))];
+	struct quic_stream_info *info;
 	struct msghdr outmsg;
 	struct cmsghdr *cmsg;
 	struct iovec iov;
-	char outcmsg[CMSG_SPACE(sizeof(*sinfo))];
 
 	outmsg.msg_name = NULL;
 	outmsg.msg_namelen = 0;
@@ -542,13 +608,12 @@ int quic_sendmsg(int sockfd, const void *msg, size_t len, uint64_t sid, uint32_t
 	cmsg = CMSG_FIRSTHDR(&outmsg);
 	cmsg->cmsg_level = IPPROTO_QUIC;
 	cmsg->cmsg_type = 0;
-	cmsg->cmsg_len = CMSG_LEN(sizeof(struct quic_sndinfo));
+	cmsg->cmsg_len = CMSG_LEN(sizeof(*info));
 
 	outmsg.msg_controllen = cmsg->cmsg_len;
-	sinfo = (struct quic_sndinfo *)CMSG_DATA(cmsg);
-	memset(sinfo, 0, sizeof(struct quic_sndinfo));
-	sinfo->stream_id = sid;
-	sinfo->stream_flag = flag;
+	info = (struct quic_stream_info *)CMSG_DATA(cmsg);
+	info->stream_id = sid;
+	info->stream_flag = flag;
 
 	return sendmsg(sockfd, &outmsg, 0);
 }

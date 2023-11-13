@@ -28,13 +28,14 @@
 static struct sk_buff *quic_frame_ack_create(struct sock *sk, void *data, u8 type)
 {
 	struct quic_gap_ack_block gabs[QUIC_PN_MAX_GABS];
-	struct quic_pnmap *map = quic_pnmap(sk);
 	u32 frame_len, num_gabs, range, pn_ts;
+	u8 *p, level = *((u8 *)data);
+	struct quic_pnmap *map;
 	u64 largest, smallest;
 	struct sk_buff *skb;
 	int i;
-	u8 *p;
 
+	map = quic_pnmap(sk, level);
 	num_gabs = quic_pnmap_num_gabs(map, gabs);
 	frame_len = sizeof(type) + sizeof(u32) * 4;
 	frame_len += sizeof(struct quic_gap_ack_block) * num_gabs;
@@ -66,6 +67,7 @@ static struct sk_buff *quic_frame_ack_create(struct sock *sk, void *data, u8 typ
 	}
 	frame_len = (u32)(p - skb->data);
 	skb_put(skb, frame_len);
+	QUIC_SND_CB(skb)->level = level;
 
 	return skb;
 }
@@ -191,19 +193,47 @@ static struct sk_buff *quic_frame_handshake_done_create(struct sock *sk, void *d
 
 static struct sk_buff *quic_frame_crypto_create(struct sock *sk, void *data, u8 type)
 {
-	struct quic_token *ticket = data;
+	struct quic_msginfo *info = data;
+	u32 msg_len, hlen, max_frame_len;
+	struct quic_crypto *crypto;
 	struct sk_buff *skb;
 	u8 *p;
 
-	skb = alloc_skb(ticket->len + 8, GFP_ATOMIC);
+	if (!info->level) {
+		struct quic_token *ticket = quic_ticket(sk);
+
+		skb = alloc_skb(ticket->len + 8, GFP_ATOMIC);
+		if (!skb)
+			return NULL;
+		p = quic_put_var(skb->data, type);
+		p = quic_put_var(p, 0);
+		p = quic_put_var(p, ticket->len);
+		p = quic_put_data(p, ticket->data, ticket->len);
+		skb_put(skb, (u32)(p - skb->data));
+
+		return skb;
+	}
+
+	quic_packet_config(sk, info->level);
+	max_frame_len = quic_packet_max_payload(quic_packet(sk));
+	crypto = quic_crypto(sk, info->level);
+	msg_len = iov_iter_count(info->msg);
+	if (msg_len > max_frame_len)
+		msg_len = max_frame_len;
+	hlen = 1 + quic_var_len(msg_len) + quic_var_len(crypto->send_offset);
+	skb = alloc_skb(msg_len + hlen, GFP_ATOMIC);
 	if (!skb)
 		return NULL;
 	p = quic_put_var(skb->data, type);
-	p = quic_put_var(p, 0);
-	p = quic_put_var(p, ticket->len);
-	p = quic_put_data(p, ticket->data, ticket->len);
-	skb_put(skb, (u32)(p - skb->data));
-
+	p = quic_put_var(p, crypto->send_offset);
+	p = quic_put_var(p, msg_len);
+	if (!copy_from_iter_full(p, msg_len, info->msg)) {
+		kfree_skb(skb);
+		return NULL;
+	}
+	skb_put(skb, msg_len + hlen);
+	crypto->send_offset += msg_len;
+	QUIC_SND_CB(skb)->level = info->level;
 	return skb;
 }
 
@@ -533,27 +563,47 @@ static struct sk_buff *quic_frame_streams_blocked_bidi_create(struct sock *sk, v
 
 static int quic_frame_crypto_process(struct sock *sk, struct sk_buff *skb, u8 type)
 {
-	struct quic_token *ticket = quic_ticket(sk);
+	struct sk_buff *nskb;
 	u64 offset, length;
 	u32 len = skb->len;
 	u8 *p = skb->data;
+	int err;
 
-	if (!quic_get_var(&p, &len, &offset) || offset)
+	if (!quic_get_var(&p, &len, &offset))
 		return -EINVAL;
 	if (!quic_get_var(&p, &len, &length) || length > len)
 		return -EINVAL;
-	if (*p != 4) /* for TLS NEWSESSION_TICKET message only */
-		return -EINVAL;
 
-	p = kmemdup(p, length, GFP_ATOMIC);
-	if (!p)
-		return -ENOMEM;
-	kfree(ticket->data);
-	ticket->data = p;
-	ticket->len = length;
-	if (quic_inq_event_recv(sk, QUIC_EVENT_NEW_SESSION_TICKET, ticket))
-		return -ENOMEM;
+	if (!QUIC_RCV_CB(skb)->level) {
+		struct quic_token *ticket = quic_ticket(sk);
 
+		if (*p != 4) /* for TLS NEWSESSION_TICKET message only */
+			return -EINVAL;
+
+		p = kmemdup(p, length, GFP_ATOMIC);
+		if (!p)
+			return -ENOMEM;
+		kfree(ticket->data);
+		ticket->data = p;
+		ticket->len = length;
+		if (quic_inq_event_recv(sk, QUIC_EVENT_NEW_SESSION_TICKET, ticket))
+			return -ENOMEM;
+		goto out;
+	}
+
+	nskb = skb_clone(skb, GFP_ATOMIC);
+	if (!nskb)
+		return -ENOMEM;
+	skb_pull(nskb, p - skb->data);
+	skb_trim(nskb, length);
+	QUIC_RCV_CB(nskb)->crypto_offset = offset;
+
+	err = quic_inq_handshake_tail(sk, nskb);
+	if (err) {
+		kfree_skb(nskb);
+		return err;
+	}
+out:
 	len -= length;
 	return skb->len - len;
 }
@@ -607,9 +657,10 @@ static int quic_frame_stream_process(struct sock *sk, struct sk_buff *skb, u8 ty
 static int quic_frame_ack_process(struct sock *sk, struct sk_buff *skb, u8 type)
 {
 	u64 largest, smallest, range, delay, count, gap, i;
+	u8 *p = skb->data, level;
 	u32 len = skb->len;
-	u8 *p = skb->data;
 
+	level = QUIC_RCV_CB(skb)->level;
 	if (!quic_get_var(&p, &len, &largest) ||
 	    !quic_get_var(&p, &len, &delay) ||
 	    !quic_get_var(&p, &len, &count) || count > QUIC_PN_MAX_GABS ||
@@ -617,7 +668,7 @@ static int quic_frame_ack_process(struct sock *sk, struct sk_buff *skb, u8 type)
 		return -EINVAL;
 
 	smallest = largest - range;
-	quic_outq_retransmit_check(sk, largest, smallest, largest, delay);
+	quic_outq_retransmit_check(sk, level, largest, smallest, largest, delay);
 
 	for (i = 0; i < count; i++) {
 		if (!quic_get_var(&p, &len, &gap) ||
@@ -625,7 +676,7 @@ static int quic_frame_ack_process(struct sock *sk, struct sk_buff *skb, u8 type)
 			return -EINVAL;
 		largest = smallest - gap - 2;
 		smallest = largest - range;
-		quic_outq_retransmit_check(sk, largest, smallest, 0, 0);
+		quic_outq_retransmit_check(sk, level, largest, smallest, 0, 0);
 	}
 
 	if (type == QUIC_FRAME_ACK_ECN) { /* TODO */
@@ -729,6 +780,8 @@ static int quic_frame_new_token_process(struct sock *sk, struct sk_buff *skb, u8
 
 static int quic_frame_handshake_done_process(struct sock *sk, struct sk_buff *skb, u8 type)
 {
+	quic_outq_retransmit_check(sk, QUIC_CRYPTO_INITIAL, QUIC_PN_MAP_MAX_PN, 0, 0, 0);
+	quic_outq_retransmit_check(sk, QUIC_CRYPTO_HANDSHAKE, QUIC_PN_MAP_MAX_PN, 0, 0, 0);
 	return 0; /* no content */
 }
 
@@ -940,7 +993,7 @@ static int quic_frame_connection_close_process(struct sock *sk, struct sk_buff *
 	if (quic_inq_event_recv(sk, QUIC_EVENT_CONNECTION_CLOSE, close))
 		return -ENOMEM;
 
-	quic_set_state(sk, QUIC_STATE_USER_CLOSED);
+	inet_sk_set_state(sk, QUIC_SS_CLOSED);
 
 	/*
 	 * Now that state is QUIC_STATE_USER_CLOSED, we can wake the waiting
@@ -1212,24 +1265,26 @@ static struct quic_frame_ops quic_frame_ops[QUIC_FRAME_MAX + 1] = {
 
 int quic_frame_process(struct sock *sk, struct sk_buff *skb, struct quic_packet_info *pki)
 {
-	int ret;
+	int ret, len = pki->length;
 	u8 type;
 
-	if (!skb->len)
+	if (!len)
 		return -EINVAL;
 
-	while (1) {
+	while (len > 0) {
 		type = *(u8 *)(skb->data);
 		skb_pull(skb, 1);
+		len--;
 
 		if (type > QUIC_FRAME_MAX) {
-			pr_err_once("[QUIC] frame err: unsupported frame %x\n", type);
+			pr_err_once("[QUIC] %s unsupported frame %x\n", __func__, type);
 			return -EPROTONOSUPPORT;
 		}
-		pr_debug("[QUIC] frame process %x\n", type);
+		pr_debug("[QUIC] %s type: %x level: %d\n", __func__, type, QUIC_RCV_CB(skb)->level);
 		ret = quic_frame_ops[type].frame_process(sk, skb, type);
 		if (ret < 0) {
-			pr_warn("[QUIC] frame err %x %d\n", type, ret);
+			pr_warn("[QUIC] %s type: %x level: %d err: %d\n", __func__, type,
+				QUIC_RCV_CB(skb)->level, ret);
 			return ret;
 		}
 		if (quic_frame_ack_eliciting(type)) {
@@ -1241,8 +1296,7 @@ int quic_frame_process(struct sock *sk, struct sk_buff *skb, struct quic_packet_
 			pki->non_probing = 1;
 
 		skb_pull(skb, ret);
-		if (skb->len <= 0)
-			break;
+		len -= ret;
 	}
 	return 0;
 }
@@ -1253,13 +1307,203 @@ struct sk_buff *quic_frame_create(struct sock *sk, u8 type, void *data)
 
 	if (type > QUIC_FRAME_MAX)
 		return NULL;
-	pr_debug("[QUIC] frame create %u\n", type);
 	skb = quic_frame_ops[type].frame_create(sk, data, type);
 	if (!skb) {
 		pr_err("[QUIC] frame create failed %x\n", type);
 		return NULL;
 	}
+	pr_debug("[QUIC] %s type: %u len: %u\n", __func__, type, skb->len);
 	if (!QUIC_SND_CB(skb)->frame_type)
 		QUIC_SND_CB(skb)->frame_type = type;
 	return skb;
+}
+
+static int quic_get_param(u64 *pdest, u8 **pp, u32 *plen)
+{
+	u64 valuelen;
+
+	if (!quic_get_var(pp, plen, &valuelen))
+		return -1;
+
+	if (*plen < valuelen)
+		return -1;
+
+	if (!quic_get_var(pp, plen, pdest))
+		return -1;
+	return 0;
+}
+
+int quic_frame_set_transport_params_ext(struct sock *sk, struct quic_transport_param *params, u8 *data, u32 len)
+{
+	u64 type, valuelen;
+	u8 *p = data;
+
+	params->max_udp_payload_size = 65527;
+	params->ack_delay_exponent = 3;
+	params->max_ack_delay = 25000;
+	params->active_connection_id_limit = 2;
+
+	while (len > 0) {
+		if (!quic_get_var(&p, &len, &type))
+			return -1;
+
+		switch (type) {
+		case QUIC_TRANSPORT_PARAM_INITIAL_MAX_STREAM_DATA_BIDI_LOCAL:
+			if (quic_get_param(&params->initial_max_stream_data_bidi_local, &p, &len))
+				return -1;
+			break;
+		case QUIC_TRANSPORT_PARAM_INITIAL_MAX_STREAM_DATA_BIDI_REMOTE:
+			if (quic_get_param(&params->initial_max_stream_data_bidi_remote, &p, &len))
+				return -1;
+			break;
+		case QUIC_TRANSPORT_PARAM_INITIAL_MAX_STREAM_DATA_UNI:
+			if (quic_get_param(&params->initial_max_stream_data_uni, &p, &len))
+				return -1;
+			break;
+		case QUIC_TRANSPORT_PARAM_INITIAL_MAX_DATA:
+			if (quic_get_param(&params->initial_max_data, &p, &len))
+				return -1;
+			break;
+		case QUIC_TRANSPORT_PARAM_INITIAL_MAX_STREAMS_BIDI:
+			if (quic_get_param(&params->initial_max_streams_bidi, &p, &len))
+				return -1;
+			if (params->initial_max_streams_bidi > QUIC_MAX_STREAMS)
+				return -1;
+			break;
+		case QUIC_TRANSPORT_PARAM_INITIAL_MAX_STREAMS_UNI:
+			if (quic_get_param(&params->initial_max_streams_uni, &p, &len))
+				return -1;
+			if (params->initial_max_streams_uni > QUIC_MAX_STREAMS)
+				return -1;
+			break;
+		case QUIC_TRANSPORT_PARAM_MAX_IDLE_TIMEOUT:
+			if (quic_get_param(&params->max_idle_timeout, &p, &len))
+				return -1;
+			params->max_idle_timeout *= 1000;
+			break;
+		case QUIC_TRANSPORT_PARAM_MAX_UDP_PAYLOAD_SIZE:
+			if (quic_get_param(&params->max_udp_payload_size, &p, &len))
+				return -1;
+			break;
+		case QUIC_TRANSPORT_PARAM_ACK_DELAY_EXPONENT:
+			if (quic_get_param(&params->ack_delay_exponent, &p, &len))
+				return -1;
+			if (params->ack_delay_exponent > 20)
+				return -1;
+			break;
+		case QUIC_TRANSPORT_PARAM_DISABLE_ACTIVE_MIGRATION:
+			if (!quic_get_var(&p, &len, &valuelen))
+				return -1;
+			if (valuelen)
+				return -1;
+			params->disable_active_migration = 1;
+			break;
+		case QUIC_TRANSPORT_PARAM_MAX_ACK_DELAY:
+			if (quic_get_param(&params->max_ack_delay, &p, &len))
+				return -1;
+			if (params->max_ack_delay >= 16384)
+				return -1;
+			params->max_ack_delay *= 1000;
+			break;
+		case QUIC_TRANSPORT_PARAM_ACTIVE_CONNECTION_ID_LIMIT:
+			if (quic_get_param(&params->active_connection_id_limit, &p, &len))
+				return -1;
+			break;
+		case QUIC_TRANSPORT_PARAM_MAX_DATAGRAM_FRAME_SIZE:
+			if (quic_get_param(&params->max_datagram_frame_size, &p, &len))
+				return -1;
+			break;
+		default:
+			/* Ignore unknown parameter */
+			if (!quic_get_var(&p, &len, &valuelen))
+				return -1;
+			if (len < valuelen)
+				return -1;
+			len -= valuelen;
+			p += valuelen;
+			break;
+		}
+	}
+	return 0;
+}
+
+static u8 *quic_put_conn_id(u8 *p, enum quic_transport_param_id id, struct quic_connection_id *conn_id)
+{
+	p = quic_put_var(p, id);
+	p = quic_put_var(p, conn_id->len);
+	p = quic_put_data(p, conn_id->data, conn_id->len);
+	return p;
+}
+
+static u8 *quic_put_param(u8 *p, enum quic_transport_param_id id, u64 value)
+{
+	p = quic_put_var(p, id);
+	p = quic_put_var(p, quic_var_len(value));
+	return quic_put_var(p, value);
+}
+
+int quic_frame_get_transport_params_ext(struct sock *sk, struct quic_transport_param *params, u8 *data, u32 *len)
+{
+	u8 *p = data;
+
+	if (quic_is_serv(sk)) {
+		p = quic_put_conn_id(p, QUIC_TRANSPORT_PARAM_ORIGINAL_DESTINATION_CONNECTION_ID,
+				     &quic_param(sk)->orig_dcid);
+	}
+	p = quic_put_conn_id(p, QUIC_TRANSPORT_PARAM_INITIAL_SOURCE_CONNECTION_ID,
+			     &quic_source(sk)->active->id);
+	if (params->initial_max_stream_data_bidi_local) {
+		p = quic_put_param(p, QUIC_TRANSPORT_PARAM_INITIAL_MAX_STREAM_DATA_BIDI_LOCAL,
+				   params->initial_max_stream_data_bidi_local);
+	}
+	if (params->initial_max_stream_data_bidi_remote) {
+		p = quic_put_param(p, QUIC_TRANSPORT_PARAM_INITIAL_MAX_STREAM_DATA_BIDI_REMOTE,
+				   params->initial_max_stream_data_bidi_remote);
+	}
+	if (params->initial_max_stream_data_uni) {
+		p = quic_put_param(p, QUIC_TRANSPORT_PARAM_INITIAL_MAX_STREAM_DATA_UNI,
+				   params->initial_max_stream_data_uni);
+	}
+	if (params->initial_max_data) {
+		p = quic_put_param(p, QUIC_TRANSPORT_PARAM_INITIAL_MAX_DATA,
+				   params->initial_max_data);
+	}
+	if (params->initial_max_streams_bidi) {
+		p = quic_put_param(p, QUIC_TRANSPORT_PARAM_INITIAL_MAX_STREAMS_BIDI,
+				   params->initial_max_streams_bidi);
+	}
+	if (params->initial_max_streams_uni) {
+		p = quic_put_param(p, QUIC_TRANSPORT_PARAM_INITIAL_MAX_STREAMS_UNI,
+				   params->initial_max_streams_uni);
+	}
+	if (params->max_udp_payload_size != 65527) {
+		p = quic_put_param(p, QUIC_TRANSPORT_PARAM_MAX_UDP_PAYLOAD_SIZE,
+				   params->max_udp_payload_size);
+	}
+	if (params->ack_delay_exponent != 3) {
+		p = quic_put_param(p, QUIC_TRANSPORT_PARAM_ACK_DELAY_EXPONENT,
+				   params->ack_delay_exponent);
+	}
+	if (params->disable_active_migration) {
+		p = quic_put_var(p, QUIC_TRANSPORT_PARAM_DISABLE_ACTIVE_MIGRATION);
+		p = quic_put_var(p, 0);
+	}
+	if (params->max_ack_delay != 25000) {
+		p = quic_put_param(p, QUIC_TRANSPORT_PARAM_MAX_ACK_DELAY,
+				   params->max_ack_delay / 1000);
+	}
+	if (params->max_idle_timeout) {
+		p = quic_put_param(p, QUIC_TRANSPORT_PARAM_MAX_IDLE_TIMEOUT,
+				   params->max_idle_timeout / 1000);
+	}
+	if (params->active_connection_id_limit && params->active_connection_id_limit != 2) {
+		p = quic_put_param(p, QUIC_TRANSPORT_PARAM_ACTIVE_CONNECTION_ID_LIMIT,
+				   params->active_connection_id_limit);
+	}
+	if (params->max_datagram_frame_size) {
+		p = quic_put_param(p, QUIC_TRANSPORT_PARAM_MAX_DATAGRAM_FRAME_SIZE,
+				   params->max_datagram_frame_size);
+	}
+	*len = p - data;
+	return 0;
 }

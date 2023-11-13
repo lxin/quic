@@ -11,6 +11,7 @@
  */
 
 #include "socket.h"
+#include "number.h"
 #include "frame.h"
 
 static void quic_inq_rfree(struct sk_buff *skb)
@@ -51,12 +52,34 @@ out:
 	return ret;
 }
 
-int quic_handshake_do_rcv(struct sock *sk, struct sk_buff *skb)
+static int quic_get_msg_connection_id(struct sk_buff *skb, struct quic_connection_id *dcid,
+				      struct quic_connection_id *scid)
 {
-	union quic_addr da, sa;
+	u8 *p = (u8 *)quic_hshdr(skb) + 1;
+	int len = skb->len;
 
-	if (!quic_is_listen(sk))
-		goto out;
+	if (len-- < 1)
+		return -EINVAL;
+	p += 4;
+	dcid->len = quic_get_int(&p, 1);
+	if (dcid->len > len)
+		return -EINVAL;
+	memcpy(dcid->data, p, dcid->len);
+	len -= dcid->len;
+	if (len-- < 1)
+		return -EINVAL;
+	p += dcid->len;
+	scid->len = quic_get_int(&p, 1);
+	if (scid->len > len)
+		return -EINVAL;
+	memcpy(scid->data, p, scid->len);
+	return 0;
+}
+
+static int quic_do_listen_rcv(struct sock *sk, struct sk_buff *skb)
+{
+	struct quic_connection_id dcid = {}, scid = {};
+	union quic_addr da, sa;
 
 	quic_af_ops(sk)->get_msg_addr(&da, skb, 0);
 	quic_af_ops(sk)->get_msg_addr(&sa, skb, 1);
@@ -67,12 +90,13 @@ int quic_handshake_do_rcv(struct sock *sk, struct sk_buff *skb)
 	    quic_new_sock_do_rcv(sk, skb, &da, &sa))
 		return 0;
 
-	if (!quic_hdr(skb)->form) {
+	if (!quic_hshdr(skb)->form || quic_hshdr(skb)->type ||
+	     quic_get_msg_connection_id(skb, &dcid, &scid)) {
 		kfree_skb(skb);
 		return -EINVAL;
 	}
 
-	if (quic_request_sock_enqueue(sk, &da, &sa)) {
+	if (quic_request_sock_enqueue(sk, &da, &sa, &dcid, &scid)) {
 		kfree_skb(skb);
 		return -ENOMEM;
 	}
@@ -82,8 +106,8 @@ out:
 		return -ENOBUFS;
 	}
 
-	quic_inq_set_owner_r(skb, sk);
-	__skb_queue_tail(&sk->sk_receive_queue, skb);
+	quic_inq_set_owner_r(skb, sk); /* handle it later when accepting the sock */
+	__skb_queue_tail(&quic_inq(sk)->backlog_list, skb);
 	sk->sk_data_ready(sk);
 	return 0;
 }
@@ -92,11 +116,13 @@ int quic_do_rcv(struct sock *sk, struct sk_buff *skb)
 {
 	union quic_addr saddr;
 
-	if (!quic_is_connected(sk)) {
+	if (quic_is_listen(sk))
+		return quic_do_listen_rcv(sk, skb);
+
+	if (quic_is_closed(sk)) {
 		kfree_skb(skb);
 		return 0;
 	}
-
 	QUIC_RCV_CB(skb)->saddr = &saddr;
 	quic_get_msg_addr(sk, &saddr, skb, 1);
 	return quic_packet_process(sk, skb);
@@ -117,17 +143,15 @@ int quic_rcv(struct sk_buff *skb)
 	if (skb->len < sizeof(struct quichdr))
 		goto err;
 
-	if (!quic_hdr(skb)->form) {
+	if (!quic_hdr(skb)->form) { /* search scid hashtable for post-handshake packets */
 		dcid = (u8 *)quic_hdr(skb) + 1;
 		s_conn_id = quic_source_connection_id_lookup(dev_net(skb->dev),
 							     dcid, skb->len - 1);
-		if (s_conn_id) {
-			QUIC_RCV_CB(skb)->number_offset =
-				s_conn_id->common.id.len + sizeof(struct quichdr);
-			sk = s_conn_id->sk;
-		}
-	}
-	if (!sk) {
+		if (!s_conn_id)
+			goto err;
+		QUIC_RCV_CB(skb)->number_offset = s_conn_id->common.id.len + sizeof(struct quichdr);
+		sk = s_conn_id->sk;
+	} else { /* search sock hashtable for all handshake packets */
 		af_ops->get_msg_addr(&daddr, skb, 0);
 		af_ops->get_msg_addr(&saddr, skb, 1);
 		sk = quic_sock_lookup(skb, &daddr, &saddr);
@@ -142,7 +166,7 @@ int quic_rcv(struct sk_buff *skb)
 			goto err;
 		}
 	} else {
-		sk->sk_backlog_rcv(sk, skb);
+		sk->sk_backlog_rcv(sk, skb); /* quic_do_rcv */
 	}
 	bh_unlock_sock(sk);
 	return 0;
@@ -280,6 +304,60 @@ int quic_inq_reasm_tail(struct sock *sk, struct sk_buff *skb)
 		__skb_unlink(skb, head);
 		stream->recv.frags--;
 		quic_inq_recv_tail(sk, stream, skb);
+	}
+	return 0;
+}
+
+int quic_inq_handshake_tail(struct sock *sk, struct sk_buff *skb)
+{
+	u64 crypto_offset = QUIC_RCV_CB(skb)->crypto_offset;
+	u8 level = QUIC_RCV_CB(skb)->level;
+	struct quic_crypto *crypto;
+	struct sk_buff_head *head;
+	struct sk_buff *tmp;
+
+	crypto = quic_crypto(sk, level);
+	pr_debug("[QUIC] %s recv_offset: %u offset: %llu level: %u\n", __func__,
+		 crypto->recv_offset, crypto_offset, level);
+	if (crypto->recv_offset > crypto_offset) {
+		kfree_skb(skb);
+		return 0;
+	}
+	head = &quic_inq(sk)->handshake_list;
+	if (crypto->recv_offset < crypto_offset) {
+		skb_queue_walk(head, tmp) {
+			if (QUIC_RCV_CB(tmp)->level < level)
+				continue;
+			if (QUIC_RCV_CB(tmp)->level > level)
+				break;
+			if (QUIC_RCV_CB(tmp)->crypto_offset > crypto_offset)
+				break;
+			if (QUIC_RCV_CB(tmp)->crypto_offset == crypto_offset) { /* dup */
+				kfree_skb(skb);
+				return 0;
+			}
+		}
+		__skb_queue_before(head, tmp, skb);
+		return 0;
+	}
+
+	quic_inq_set_owner_r(skb, sk);
+	__skb_queue_tail(&sk->sk_receive_queue, skb);
+	sk->sk_data_ready(sk);
+	crypto->recv_offset += skb->len;
+
+	skb_queue_walk_safe(head, skb, tmp) {
+		if (QUIC_RCV_CB(skb)->level < level)
+			continue;
+		if (QUIC_RCV_CB(skb)->level > level)
+			break;
+		if (QUIC_RCV_CB(skb)->crypto_offset > crypto->recv_offset)
+			break;
+		__skb_unlink(skb, head);
+		quic_inq_set_owner_r(skb, sk);
+		__skb_queue_tail(&sk->sk_receive_queue, skb);
+		sk->sk_data_ready(sk);
+		crypto->recv_offset += skb->len;
 	}
 	return 0;
 }
