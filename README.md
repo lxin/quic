@@ -10,23 +10,66 @@ is still in Kernel space.
 ## Implementation
 
 ### General Idea
-- **Userspace Handshake with gnutls**: Since gnutls released version supports QUIC APIs, we
-choose gnutls library and reuse some code from ngtcp2 as the userspace part. The userspace
-handshake part for the in-kernel QUIC is in
+
+- **What's in Userspace**: Only TLS Handshake Messages processing and creating via gnutls,
+these messages are sent and received via sendmsg/recvmsg() with crypto level in cmsg. See:
 [handshake/](https://github.com/lxin/quic/tree/main/handshake).
 
-- **In-Kernel QUIC Implementation**: This is the main code part, and instead of creating a ULP
-layer, it creates IPPROTO_QUIC socket(similar to IPPROTO_MPTCP) running over UDP TUNNEL, where
-it only processes SHORT packets when it is in connected state and passes LONG packets directly
-to userspace when it is in connecting/handshaking state. The kernel part for the rest of QUIC
-protocol is in [net/quic/](https://github.com/lxin/quic/tree/main/net/quic).
+- **What's in Kernel**: All QUIC protocol except TLS Handshake Messages processing and creating
+is implemented in kernel. Instead of a ULP layer, it creates IPPROTO_QUIC type socket (similar
+to IPPROTO_MPTCP) running over UDP TUNNEL. See:
+[net/quic/](https://github.com/lxin/quic/tree/main/net/quic).
 
-- **Kernel Consumer like NFS and SMB over QUIC**: Handshake request will be sent from kernel via
+- **How Kernel Consumers Use It**: Kernel users can send Handshake request from kernel via
 [handshake netlink](https://docs.kernel.org/networking/tls-handshake.html) to Userspace. tlshd
 in [ktls-utils](https://github.com/lxin/ktls-utils) will handle the handshake request for QUIC.
 
-NOTE: [tests/simple_test.c](https://github.com/lxin/quic/blob/main/tests/sample_test.c) can
-give you a better idea what context to be set into kernel after userspace handshake.
+### Infrastructures
+
+- Handshake:
+
+        +-----------------------------------------------------------------------------------+
+        |                               GNUTLS USER LIBRARY                                 |
+        +---------+-+---------------------+-+------------------------+-+--------------------+
+           TLS HANDSHAKE MSGS       TLS TRANSPORT PARAMS EXT     TLS SECRETS
+           [sendmsg/recvmsg()       [setsockopt/getsockopt()     [setsockopt/getsockopt()
+            with cmsg quic_          with optname QUIC_SOCKOPT_   with optname QUIC_SOCKOPT_
+            handshake_info]          TRANSPORT_PARAM_EXT]         CRYPTO_SECRET]
+                  | ^                     | ^                        | ^
+        Userspace | |                     | |                        | |
+        ----------+-+---------------------+-+------------------------+-+---------------------
+        Kernel    | |                     | |                        | |
+                  v |                     v |                        v |
+            QUIC CRYPTO FRAMES       QUIC TRANSPORT PARAMS       QUIC KEYS
+            [create or parse quic    [encode or decode quic      [derive quic key iv hp_key
+             long packet and quic     tranport params from        for send/recv of handshake
+             crypto frame]            tls tranport params ext]    and application data]
+        +-----------------------------------------------------------------------------------+
+        |    QUIC CONNECTION     |      PACKET      |      FRAME       |      CRYPTO        |
+        +-----------------------------------------------------------------------------------+
+        |                               UDP TUNNEL KERNEL APIs                              |
+        +-----------------------------------------------------------------------------------+
+
+- Post-Handshake:
+
+           APPLICATION DATA                QUIC PRIMITIVES
+           [sendmsg/recvmsg()              [setsockopt/getsockopt()
+            with cmsg quic_                 with optname like QUIC_SOCKOPT
+            stream_info]                    _KEY_UPDATE and _STREAM_RESET ...]
+                  | ^                            | ^
+        Userspace | |                            | |
+        ----------+-+----------------------------+-+------------------------------
+        Kernel    | |                            | |
+                  v |                            v |
+            QUIC STREAM FRAMES              QUIC CONTROL FRAMES
+            [quic short packet and          [quic short packet and
+             stream frame creating           corresponding ctrl frames
+             and processing]                 creating and processing]
+        +------------------------------------------------------------------------+
+        | QUIC CONNECTION | STREAM | PACKET | FRAME | CRYPTO | FLOW | CONGESTION |
+        +------------------------------------------------------------------------+
+        |                           UDP TUNNEL KERNEL APIs                       |
+        +------------------------------------------------------------------------+
 
 ### Completed
 - Data (re)transmission and SACK *(rfc9000)*
@@ -44,8 +87,9 @@ give you a better idea what context to be set into kernel after userspace handsh
 
 ### TBD
 - Address Verify in Handshake
+- Session Ticket & 0-RTT
+- QUICv2 (rfc9369)
 - Stateless Reset (rfc9000#name-stateless-reset)
-- Nick suggests moving Long Packets to Kernel module
 
 ## INSTALL
 
@@ -163,6 +207,7 @@ give you a better idea what context to be set into kernel after userspace handsh
 
     # systemctl enable tlshd
     # systemctl restart tlshd
+    (re-run the selftests in 'run selftests' section)
 
 ### Build and Install MSQUIC (Optional For Testing):
     (NOTE: you can skip this if you don't want to run the interoperability tests with MSQUIC)
@@ -175,25 +220,28 @@ give you a better idea what context to be set into kernel after userspace handsh
     # cmake -G 'Unix Makefiles' ..
     # cmake --build .
     # make install
+    (re-run the selftests in 'run selftests' section)
 
 ## USAGE
 
 ### Simple APIs Use in User Space
 
-  - these APIs are provided (see [tests/func_test.c](https://github.com/lxin/quic/blob/main/tests/func_test.c#L2084) for how APIs are used),
+  - these APIs are provided (see [tests/sample_test.c](https://github.com/lxin/quic/blob/main/tests/sample_test.c) for how APIs are used),
     and used as easily as TCP or SCTP socket, except with a handshake call(like kTLS):
 
                 Client				    Server
              ------------------------------------------------------------------
-             sockfd = socket(IPPROTO_QUIC)	listenfd = socket(IPPROTO_QUIC)
-             bind(sockfd)			bind(listenfd)
-             					listen(listenfd)
+             sockfd = socket(IPPROTO_QUIC)      listenfd = socket(IPPROTO_QUIC)
+             bind(sockfd)                       bind(listenfd)
+                                                listen(listenfd)
              connect(sockfd)
-             					sockfd = accecpt(listenfd)
-             quic_client_handshake()		quic_server_handshake()
+             quic_client_handshake()
+                                                sockfd = accecpt(listenfd)
+                                                quic_server_handshake()
           
-             sendmsg(sockfd)			recvmsg(sockfd);
-             close(sockfd)			close(sockfd)
+             sendmsg(sockfd)                    recvmsg(sockfd)
+             close(sockfd)                      close(sockfd)
+                                                close(listenfd)
 
         /* PSK mode:
          * - pkey_file is psk file
@@ -206,24 +254,24 @@ give you a better idea what context to be set into kernel after userspace handsh
         int quic_client_handshake(int sockfd, char *pkey_file, char *cert_file);
         int quic_server_handshake(int sockfd, char *pkey_file, char *cert_file);
 
-        /* quic_sendmsg() and quic_recvmsg() allow you to send and recv message with stream_id
-         * and stream_flags, they wrap sendmsg() and recvmsg().
+        /* quic_sendmsg() and quic_recvmsg() allow you to send and recv messages with
+         * stream_id and stream_flags, they wrap sendmsg() and recvmsg().
          *
-         * setsockopt() and getsockopt() can give you more control on QUIC use, see func_test
-         * more details.
+         * setsockopt() and getsockopt() can give you more control on QUIC use, see
+         * tests/func_test.c more details.
          */
         int quic_sendmsg(int sockfd, const void *msg, size_t len, uint64_t sid, uint32_t flag);
         int quic_recvmsg(int sockfd, void *msg, size_t len, uint64_t *sid, uint32_t *flag);
 
-  - include the header file in func_test.c:
+  - include the header file in c file like sample_test.c:
 
         #include <netinet/quic.h>
 
   - then build it by:
 
-        # gcc func_test.c -o func_test -lquic
+        # gcc sample_test.c -o sample_test -lquic
 
-### APIs with more TLS Handshake Paramerters
+### APIs with more TLS Handshake Parameters
 
   - these APIs are provided (see [tests/perf_test.c](https://github.com/lxin/quic/blob/main/tests/perf_test.c#L349) for how APIs are used):
 
@@ -248,7 +296,7 @@ give you a better idea what context to be set into kernel after userspace handsh
         int quic_client_handshake_parms(int sockfd, struct quic_handshake_parms *parms);
         int quic_server_handshake_parms(int sockfd, struct quic_handshake_parms *parms);
 
-  - include the header file in perf_test.c:
+  - include the header file in c file like perf_test.c:
 
         #include <netinet/quic.h>
 
@@ -264,6 +312,21 @@ as it receives and handles the kernel handshake request for kernel sockets.
 
 In kernel space, the use is pretty much like TCP sockets, except a extra handshake up-call.
 (See [net/quic/test/test.c](https://github.com/lxin/quic/blob/main/net/quic/test/test.c) for examples)
+
+            Client				    Server
+         ---------------------------------------------------------------------------
+         __sock_create(IPPROTO_QUIC, &sock)     __sock_create(IPPROTO_QUIC, &sock)
+         kernel_bind(sock)                      kernel_bind(sock)
+                                                kernel_listen(sock)
+         kernel_connect(sock)
+         tls_client_hello_x509(args:{sock})
+                                                kernel_accept(sock, &newsock)
+                                                tls_server_hello_x509(args:{newsock})
+         
+         kernel_sendmsg(sock)                   kernel_recvmsg(newsock)
+         sock_release(sock)                     sock_release(newsock)
+                                                sock_release(sock)
+
 
 You can run the kernel test code as it shows in [Kernel Tests](https://github.com/lxin/quic/blob/main/tests/runtest.sh#L84)
 part of tests/runtest.sh
