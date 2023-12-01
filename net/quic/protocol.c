@@ -18,10 +18,8 @@ struct quic_hash_table quic_hash_tables[QUIC_HT_MAX_TABLES] __read_mostly;
 struct percpu_counter quic_sockets_allocated;
 struct workqueue_struct *quic_wq;
 
-static int quic_v6_flow_route(struct sock *sk, union quic_addr *a)
+static int quic_v6_flow_route(struct sock *sk, union quic_addr *da, union quic_addr *sa)
 {
-	struct quic_sock *qs = quic_sk(sk);
-	union quic_addr *addr;
 	struct dst_entry *dst;
 	struct flowi6 *fl6;
 	struct flowi _fl;
@@ -31,31 +29,25 @@ static int quic_v6_flow_route(struct sock *sk, union quic_addr *a)
 
 	fl6 = &_fl.u.ip6;
 	memset(&_fl, 0x0, sizeof(_fl));
-	addr = quic_path_addr(&qs->src);
-	fl6->saddr = addr->v6.sin6_addr;
-	fl6->fl6_sport = addr->v6.sin6_port;
-
-	addr = quic_path_addr(&qs->dst);
-	fl6->daddr = addr->v6.sin6_addr;
-	fl6->fl6_dport = addr->v6.sin6_port;
+	fl6->saddr = sa->v6.sin6_addr;
+	fl6->fl6_sport = sa->v6.sin6_port;
+	fl6->daddr = da->v6.sin6_addr;
+	fl6->fl6_dport = da->v6.sin6_port;
 
 	dst = ip6_dst_lookup_flow(sock_net(sk), sk, fl6, NULL);
 	if (IS_ERR(dst))
 		return PTR_ERR(dst);
 
-	if (a) {
-		a->v6.sin6_family = AF_INET6;
-		a->v6.sin6_addr = fl6->saddr;;
-		a->v6.sin6_port = fl6->fl6_sport;
+	if (!sa->v6.sin6_family) {
+		sa->v6.sin6_family = AF_INET6;
+		sa->v6.sin6_addr = fl6->saddr;;
 	}
 	ip6_dst_store(sk, dst, NULL, NULL);
 	return 0;
 }
 
-static int quic_v4_flow_route(struct sock *sk, union quic_addr *a)
+static int quic_v4_flow_route(struct sock *sk, union quic_addr *da, union quic_addr *sa)
 {
-	struct quic_sock *qs = quic_sk(sk);
-	union quic_addr *addr;
 	struct flowi4 *fl4;
 	struct rtable *rt;
 	struct flowi _fl;
@@ -65,69 +57,54 @@ static int quic_v4_flow_route(struct sock *sk, union quic_addr *a)
 
 	fl4 = &_fl.u.ip4;
 	memset(&_fl, 0x00, sizeof(_fl));
-	addr = quic_path_addr(&qs->src);
-	fl4->saddr = addr->v4.sin_addr.s_addr;
-	fl4->fl4_sport = addr->v4.sin_port;
-
-	addr = quic_path_addr(&qs->dst);
-	fl4->daddr = addr->v4.sin_addr.s_addr;
-	fl4->fl4_dport = addr->v4.sin_port;
+	fl4->saddr = sa->v4.sin_addr.s_addr;
+	fl4->fl4_sport = sa->v4.sin_port;
+	fl4->daddr = da->v4.sin_addr.s_addr;
+	fl4->fl4_dport = da->v4.sin_port;
 
 	rt = ip_route_output_key(sock_net(sk), fl4);
 	if (IS_ERR(rt))
 		return PTR_ERR(rt);
 
-	if (a) {
-		a->v4.sin_family = AF_INET;
-		a->v4.sin_addr.s_addr = fl4->saddr;
-		a->v4.sin_port = fl4->fl4_sport;
+	if (!sa->v4.sin_family) {
+		sa->v4.sin_family = AF_INET;
+		sa->v4.sin_addr.s_addr = fl4->saddr;
 	}
 	sk_setup_caps(sk, &rt->dst);
 	return 0;
 }
 
-static void quic_v4_lower_xmit(struct sock *sk, struct sk_buff *skb)
+static void quic_v4_lower_xmit(struct sock *sk, struct sk_buff *skb, union quic_addr *da,
+			       union quic_addr *sa)
 {
-	struct quic_sock *qs = quic_sk(sk);
-	union quic_addr *saddr, *daddr;
-	struct inet_sock *inet;
 	struct dst_entry *dst;
 	__be16 df = 0;
 
-	saddr = quic_path_addr(&qs->src);
-	daddr = quic_path_addr(&qs->dst);
-
 	pr_debug("[QUIC] %s: skb: %p len: %d | path: %pI4:%d -> %pI4:%d\n", __func__, skb, skb->len,
-		 &saddr->v4.sin_addr.s_addr, ntohs(saddr->v4.sin_port),
-		 &daddr->v4.sin_addr.s_addr, ntohs(daddr->v4.sin_port));
+		 &sa->v4.sin_addr.s_addr, ntohs(sa->v4.sin_port),
+		 &da->v4.sin_addr.s_addr, ntohs(da->v4.sin_port));
 
 	dst = sk_dst_get(sk);
 	if (ip_dont_fragment(sk, dst) && !skb->ignore_df)
 		df = htons(IP_DF);
 
-	inet = inet_sk(sk);
-	udp_tunnel_xmit_skb((struct rtable *)dst, sk, skb, saddr->v4.sin_addr.s_addr,
-			    daddr->v4.sin_addr.s_addr, inet->tos, ip4_dst_hoplimit(dst), df,
-			    saddr->v4.sin_port, daddr->v4.sin_port, false, false);
+	udp_tunnel_xmit_skb((struct rtable *)dst, sk, skb, sa->v4.sin_addr.s_addr,
+			    da->v4.sin_addr.s_addr, inet_sk(sk)->tos, ip4_dst_hoplimit(dst), df,
+			    sa->v4.sin_port, da->v4.sin_port, false, false);
 }
 
-static void quic_v6_lower_xmit(struct sock *sk, struct sk_buff *skb)
+static void quic_v6_lower_xmit(struct sock *sk, struct sk_buff *skb, union quic_addr *da,
+			       union quic_addr *sa)
 {
-	struct quic_sock *qs = quic_sk(sk);
-	union quic_addr *saddr, *daddr;
-	struct dst_entry *dst;
-
-	saddr = quic_path_addr(&qs->src);
-	daddr = quic_path_addr(&qs->dst);
+	struct dst_entry *dst = sk_dst_get(sk);
 
 	pr_debug("[QUIC] %s: skb: %p len: %d | path: %pI6:%d -> %pI6:%d\n", __func__, skb, skb->len,
-		 &saddr->v6.sin6_addr, ntohs(saddr->v6.sin6_port),
-		 &daddr->v6.sin6_addr, ntohs(daddr->v6.sin6_port));
+		 &sa->v6.sin6_addr, ntohs(sa->v6.sin6_port),
+		 &da->v6.sin6_addr, ntohs(da->v6.sin6_port));
 
-	dst = sk_dst_get(sk);
-	udp_tunnel6_xmit_skb(dst, sk, skb, NULL, &saddr->v6.sin6_addr,
-			     &daddr->v6.sin6_addr, inet6_sk(sk)->tclass, ip6_dst_hoplimit(dst),
-			     0, saddr->v6.sin6_port, daddr->v6.sin6_port, false);
+	udp_tunnel6_xmit_skb(dst, sk, skb, NULL, &sa->v6.sin6_addr, &da->v6.sin6_addr,
+			     inet6_sk(sk)->tclass, ip6_dst_hoplimit(dst), 0,
+			     sa->v6.sin6_port, da->v6.sin6_port, false);
 }
 
 static void quic_v4_udp_conf_init(struct udp_port_cfg *udp_conf, union quic_addr *a)
@@ -282,6 +259,8 @@ static int quic_inet_connect(struct socket *sock, struct sockaddr *addr, int add
 static int quic_inet_listen(struct socket *sock, int backlog)
 {
 	struct sock *sk = sock->sk;
+	struct quic_token *token;
+	u8 rand_data[16];
 	int err = 0;
 
 	lock_sock(sk);
@@ -295,6 +274,16 @@ static int quic_inet_listen(struct socket *sock, int backlog)
 
 	if (!hlist_unhashed(&quic_sk(sk)->inet.sk.sk_node))
 		goto out;
+
+	token = quic_token(sk);
+	get_random_bytes(rand_data, 16);
+	kfree(token->data);
+	token->data = kmemdup(rand_data, 16, GFP_KERNEL);
+	if (!token->data) {
+		err = -ENOMEM;
+		goto out;
+	}
+	token->len = 16;
 
 	inet_sk_set_state(sk, QUIC_SS_LISTENING);
 	err = sk->sk_prot->hash(sk);
@@ -343,15 +332,16 @@ void quic_udp_conf_init(struct sock *sk, struct udp_port_cfg *udp_conf, union qu
 	quic_af_ops(sk)->udp_conf_init(udp_conf, a);
 }
 
-void quic_lower_xmit(struct sock *sk, struct sk_buff *skb)
+void quic_lower_xmit(struct sock *sk, struct sk_buff *skb, union quic_addr *da,
+		     union quic_addr *sa)
 {
 	skb_set_owner_w(skb, sk);
-	quic_af_ops(sk)->lower_xmit(sk, skb);
+	quic_af_ops(sk)->lower_xmit(sk, skb, da, sa);
 }
 
-int quic_flow_route(struct sock *sk, union quic_addr *a)
+int quic_flow_route(struct sock *sk, union quic_addr *da, union quic_addr *sa)
 {
-	return quic_af_ops(sk)->flow_route(sk, a);
+	return quic_af_ops(sk)->flow_route(sk, da, sa);
 }
 
 void quic_update_proto_ops(struct sock *sk)

@@ -105,16 +105,22 @@ static struct sk_buff *quic_frame_padding_create(struct sock *sk, void *data, u8
 
 static struct sk_buff *quic_frame_new_token_create(struct sock *sk, void *data, u8 type)
 {
-	struct quic_token *token = data;
 	struct sk_buff *skb;
-	u8 *p;
+	u8 buf[64], *p;
+	u32 len;
 
-	skb = alloc_skb(token->len + 4, GFP_ATOMIC);
+	p = buf;
+	p = quic_put_int(p, 0, 1); /* regular token */
+	p = quic_put_data(p, quic_token(sk)->data, quic_token(sk)->len);
+	p = quic_put_data(p, (u8 *)quic_path_addr(quic_dst(sk)), quic_addr_len(sk));
+	len = p - buf;
+
+	skb = alloc_skb(len + 4, GFP_ATOMIC);
 	if (!skb)
 		return NULL;
 	p = quic_put_var(skb->data, type);
-	p = quic_put_var(p, token->len);
-	p = quic_put_data(p, token->data, token->len);
+	p = quic_put_var(p, len);
+	p = quic_put_data(p, buf, len);
 	skb_put(skb, (u32)(p - skb->data));
 
 	return skb;
@@ -1448,6 +1454,10 @@ int quic_frame_get_transport_params_ext(struct sock *sk, struct quic_transport_p
 
 	if (quic_is_serv(sk)) {
 		p = quic_put_conn_id(p, QUIC_TRANSPORT_PARAM_ORIGINAL_DESTINATION_CONNECTION_ID,
+				     &quic_param(sk)->orig_dcid);
+	}
+	if (quic_port(sk)->retry) {
+		p = quic_put_conn_id(p, QUIC_TRANSPORT_PARAM_RETRY_SOURCE_CONNECTION_ID,
 				     &quic_param(sk)->orig_dcid);
 	}
 	p = quic_put_conn_id(p, QUIC_TRANSPORT_PARAM_INITIAL_SOURCE_CONNECTION_ID,

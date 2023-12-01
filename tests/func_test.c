@@ -541,12 +541,7 @@ static int do_client_notification_test(int sockfd)
 		printf("test25: FAIL %d %d\n", flag, msg[0]);
 		return -1;
 	}
-	ev = (void *)&msg[1];
-	memcpy(opt, ev->new_token, ret - 1);
-	if (strcmp(opt, "1234567890")) {
-		printf("test25: FAIL %s %d\n", opt, ret - 1);
-		return -1;
-	}
+	memset(msg, 0, sizeof(msg));
 	ret = quic_recvmsg(sockfd, msg, sizeof(msg), &sid, &flag);
 	if (ret == -1) {
 		printf("recv error %d %d\n", ret, errno);
@@ -1106,7 +1101,7 @@ static int do_client_connection_test(int sockfd)
 
 	optlen = sizeof(opt);
 	ret = getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_TOKEN, opt, &optlen);
-	if (ret == -1 || strcmp(opt, "1234567890")) {
+	if (ret == -1 || !optlen) {
 		printf("socket setsockopt key update failed %s\n", opt);
 		return -1;
 	}
@@ -1130,6 +1125,7 @@ static int do_client_connection_test(int sockfd)
 	printf("test28: PASS (peer new_session_ticket is done)\n");
 
 	optlen = sizeof(opt);
+	memset(opt, 0, optlen);
 	ret = getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_SESSION_TICKET, opt, &optlen);
 	if (ret == -1 || strcmp(&opt[1], "1234567890123456789")) {
 		printf("socket setsockopt key update failed %s\n", opt);
@@ -1152,12 +1148,12 @@ static int do_client_connection_test(int sockfd)
 	}
 	printf("test31: PASS (not allowed to set new_session_ticket msg with an null value)\n");
 
-	ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_NEW_TOKEN, NULL, 0);
+	ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_TOKEN, NULL, 0);
 	if (ret != -1) {
 		printf("test32: FAIL\n");
 		return -1;
 	}
-	printf("test32: PASS (not allowed to set new_session_ticket msg with an null value)\n");
+	printf("test32: PASS (not allowed to set token with an null value on client)\n");
 
 	flag = QUIC_STREAM_FLAG_DATAGRAM;
 	strcpy(msg, "client datagram");
@@ -1885,9 +1881,7 @@ static int do_server_test(int sockfd)
 		}
 
 		if (!strcmp(msg, "client new_token")) {
-			char token[] = "1234567890";
-
-			ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_NEW_TOKEN, token, strlen(token));
+			ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_TOKEN, NULL, 0);
 			if (ret == -1) {
 				printf("socket setsockopt new token failed\n");
 				return -1;

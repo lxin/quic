@@ -15,6 +15,54 @@
 #include "number.h"
 #include "frame.h"
 
+static int quic_packet_handshake_retry_process(struct sock *sk, struct sk_buff *skb)
+{
+	struct quic_connection_id dcid, scid;
+	u32 len = skb->len, dlen, slen;
+	u8 *p = skb->data, tag[16];
+
+	p++;
+	len--;
+	p += 4;
+	len -= 4;
+	/* DCID */
+	if (len-- < 1)
+		goto err;
+	dlen = quic_get_int(&p, 1);
+	if (len < dlen || dlen > 20)
+		goto err;
+	dcid.len = dlen;
+	memcpy(dcid.data, p, dlen);
+	len -= dlen;
+	p += dlen;
+	/* SCID */
+	if (len-- < 1)
+		goto err;
+	slen = quic_get_int(&p, 1);
+	if (len < slen || slen > 20)
+		goto err;
+	scid.len = slen;
+	memcpy(scid.data, p, slen);
+	len -= slen;
+	p += slen;
+	if (len < 16)
+		goto err;
+	if (quic_crypto_get_retry_tag(skb, &scid, tag) || memcmp(tag, p + len - 16, 16))
+		goto err;
+	quic_token(sk)->data = kmemdup(p, len - 16, GFP_ATOMIC);
+	quic_token(sk)->len = len - 16;
+
+	quic_crypto_initial_keys_install(quic_crypto(sk, QUIC_CRYPTO_INITIAL), &scid, 0);
+	quic_dest(sk)->active->id = scid;
+	quic_outq_retransmit(sk);
+
+	consume_skb(skb);
+	return 0;
+err:
+	kfree_skb(skb);
+	return -EINVAL;
+}
+
 static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb)
 {
 	struct quic_packet_info pki = {};
@@ -50,6 +98,8 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb)
 				__skb_queue_tail(&quic_inq(sk)->backlog_list, skb);
 				return 0;
 			}
+		} else if (hshdr->type == 3) {
+			return quic_packet_handshake_retry_process(sk, skb);
 		} else
 			goto err;
 		/* DCID */
@@ -338,12 +388,14 @@ static struct sk_buff *quic_packet_create(struct sock *sk, struct quic_packet_in
 	return skb;
 }
 
-int quic_packet_route(struct sock *sk, union quic_addr *a)
+int quic_packet_route(struct sock *sk)
 {
 	struct quic_packet *packet = quic_packet(sk);
 	int err, mss, mss_dgram, max_udp;;
 
-	err = quic_flow_route(sk, a);
+	packet->da = quic_path_addr(quic_dst(sk));
+	packet->sa = quic_path_addr(quic_src(sk));
+	err = quic_flow_route(sk, packet->da, packet->sa);
 	if (err)
 		return err;
 
@@ -382,7 +434,7 @@ void quic_packet_config(struct sock *sk, u8 level)
 	packet->ipfragok = !level;
 	packet->level = level;
 
-	quic_packet_route(sk, NULL);
+	quic_packet_route(sk);
 }
 
 static int quic_packet_number_check(struct sock *sk)
@@ -434,14 +486,14 @@ void quic_packet_transmit(struct sock *sk)
 		NAPI_GRO_CB(packet->head)->last = skb;
 		if (packet->head->len >= packet->mss || !level) {
 			packet->count++;
-			quic_lower_xmit(sk, packet->head);
+			quic_lower_xmit(sk, packet->head, packet->da, packet->sa);
 			packet->head = NULL;
 		}
 		return;
 	}
 	if (packet->head->len + skb->len >= packet->mss || !level) {
 		packet->count++;
-		quic_lower_xmit(sk, packet->head);
+		quic_lower_xmit(sk, packet->head, packet->da, packet->sa);
 		packet->head = skb;
 		NAPI_GRO_CB(packet->head)->last = skb;
 		return;
@@ -472,7 +524,7 @@ void quic_packet_flush(struct sock *sk)
 
 	if (packet->head) {
 		packet->count++;
-		quic_lower_xmit(sk, packet->head);
+		quic_lower_xmit(sk, packet->head, packet->da, packet->sa);
 		packet->head = NULL;
 	}
 	if (packet->count) {
@@ -507,4 +559,61 @@ int quic_packet_tail_dgram(struct sock *sk, struct sk_buff *skb)
 	packet->len += skb->len;
 	__skb_queue_tail(&packet->frame_list, skb);
 	return skb->len;
+}
+
+static struct sk_buff *quic_packet_retry_create(struct sock *sk, struct quic_request_sock *req)
+{
+	u8 *p, token[64], tag[16];
+	int len, hlen, tokenlen;
+	struct quichshdr *hdr;
+	struct sk_buff *skb;
+
+	p = token;
+	p = quic_put_int(p, 1, 1); /* retry token */
+	p = quic_put_data(p, quic_token(sk)->data, quic_token(sk)->len);
+	p = quic_put_data(p, (u8 *)&req->da, quic_addr_len(sk)); /* make it simple for now */
+	tokenlen = p - token;
+
+	len = 1 + 4 + 1 + req->scid.len + 1 + req->dcid.len + tokenlen + 16;
+	hlen = quic_encap_len(sk) + MAX_HEADER;
+	skb = alloc_skb(hlen + len, GFP_ATOMIC);
+	if (!skb)
+		return NULL;
+	skb_reserve(skb, hlen + len);
+
+	hdr = skb_push(skb, len);
+	hdr->form = 1;
+	hdr->fixed = 1;
+	hdr->type = 3;
+	hdr->reserved = 0;
+	hdr->pnl = 0;
+	skb_reset_transport_header(skb);
+
+	p = (u8 *)hdr + 1;
+	p = quic_put_int(p, 1, 4);
+	p = quic_put_int(p, req->scid.len, 1);
+	p = quic_put_data(p, req->scid.data, req->scid.len);
+	p = quic_put_int(p, req->dcid.len, 1);
+	p = quic_put_data(p, req->dcid.data, req->dcid.len);
+	p = quic_put_data(p, token, tokenlen);
+	if (quic_crypto_get_retry_tag(skb, &req->dcid, tag)) {
+		kfree_skb(skb);
+		return NULL;
+	}
+	p = quic_put_data(p, tag, 16);
+
+	return skb;
+}
+
+int quic_packet_retry_transmit(struct sock *sk, struct quic_request_sock *req)
+{
+	struct sk_buff *skb;
+
+	if (quic_flow_route(sk, &req->da, &req->sa))
+		return -EINVAL;
+	skb = quic_packet_retry_create(sk, req);
+	if (!skb)
+		return -ENOMEM;
+	quic_lower_xmit(sk, skb, &req->da, &req->sa);
+	return 0;
 }

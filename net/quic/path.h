@@ -13,6 +13,7 @@ struct quic_bind_port {
 	struct hlist_node	node;
 	struct net		*net;
 	u8			serv:1;
+	u8			retry:1;
 };
 
 struct quic_udp_sock {

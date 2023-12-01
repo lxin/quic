@@ -11,6 +11,8 @@
 struct quic_packet {
 	struct sk_buff_head frame_list;
 	struct sk_buff *head;
+	union quic_addr *da;
+	union quic_addr *sa;
 	u32 overhead;
 	u32 len;
 
@@ -21,6 +23,8 @@ struct quic_packet {
 	u8  count;
 	u8  level;
 };
+
+struct quic_request_sock;
 
 static inline u32 quic_packet_mss(struct quic_packet *packet)
 {
@@ -49,8 +53,9 @@ static inline void quic_packet_init(struct quic_packet *packet)
 
 void quic_packet_config(struct sock *sk, u8 level);
 void quic_packet_transmit(struct sock *sk);
-int quic_packet_route(struct sock *sk, union quic_addr *a);
+int quic_packet_route(struct sock *sk);
 int quic_packet_process(struct sock *sk, struct sk_buff *skb);
 int quic_packet_tail(struct sock *sk, struct sk_buff *skb);
 int quic_packet_tail_dgram(struct sock *sk, struct sk_buff *skb);
 void quic_packet_flush(struct sock *sk);
+int quic_packet_retry_transmit(struct sock *sk, struct quic_request_sock *req);

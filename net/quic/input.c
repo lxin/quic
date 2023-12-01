@@ -52,8 +52,8 @@ out:
 	return ret;
 }
 
-static int quic_get_msg_connection_id(struct sk_buff *skb, struct quic_connection_id *dcid,
-				      struct quic_connection_id *scid)
+static int quic_get_connid_and_token(struct sk_buff *skb, struct quic_connection_id *dcid,
+				     struct quic_connection_id *scid, struct quic_token *token)
 {
 	u8 *p = (u8 *)quic_hshdr(skb) + 1;
 	int len = skb->len;
@@ -73,30 +73,55 @@ static int quic_get_msg_connection_id(struct sk_buff *skb, struct quic_connectio
 	if (scid->len > len)
 		return -EINVAL;
 	memcpy(scid->data, p, scid->len);
+	len -= scid->len;
+	p += scid->len;
+	if (len-- < 1)
+		return -EINVAL;
+	token->len = quic_get_int(&p, 1);
+	if (token->len > len)
+		return -EINVAL;
+	if (token->len)
+		token->data = p;
 	return 0;
 }
 
 static int quic_do_listen_rcv(struct sock *sk, struct sk_buff *skb)
 {
-	struct quic_connection_id dcid = {}, scid = {};
-	union quic_addr da, sa;
+	u8 *p = (u8 *)quic_hshdr(skb) + 1;
+	struct quic_request_sock req = {};
+	struct quic_token token;
 
-	quic_af_ops(sk)->get_msg_addr(&da, skb, 0);
-	quic_af_ops(sk)->get_msg_addr(&sa, skb, 1);
-	if (quic_request_sock_exists(sk, &da, &sa))
+	quic_af_ops(sk)->get_msg_addr(&req.sa, skb, 0);
+	quic_af_ops(sk)->get_msg_addr(&req.da, skb, 1);
+	if (quic_request_sock_exists(sk, &req.sa, &req.da))
 		goto out;
 
 	if (QUIC_RCV_CB(skb)->backlog &&
-	    quic_new_sock_do_rcv(sk, skb, &da, &sa))
+	    quic_new_sock_do_rcv(sk, skb, &req.sa, &req.da))
 		return 0;
 
 	if (!quic_hshdr(skb)->form || quic_hshdr(skb)->type ||
-	     quic_get_msg_connection_id(skb, &dcid, &scid)) {
+	     quic_get_connid_and_token(skb, &req.dcid, &req.scid, &token)) {
 		kfree_skb(skb);
 		return -EINVAL;
 	}
 
-	if (quic_request_sock_enqueue(sk, &da, &sa, &dcid, &scid)) {
+	if (quic_param(sk)->validate_address) {
+		if (!token.len) {
+			consume_skb(skb);
+			return quic_packet_retry_transmit(sk, &req);
+		}
+		p = token.data;
+		if (token.len != 1 + 16 + quic_addr_len(sk) ||
+		    memcmp(p + 1, quic_token(sk)->data, 16) ||
+		    memcmp(p + 16 + 1, &req.da, quic_addr_len(sk))) {
+			kfree_skb(skb);
+			return -EINVAL;
+		}
+		req.retry = *p;
+	}
+
+	if (quic_request_sock_enqueue(sk, &req)) {
 		kfree_skb(skb);
 		return -ENOMEM;
 	}

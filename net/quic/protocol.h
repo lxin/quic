@@ -17,8 +17,9 @@ struct quic_addr_family_ops {
 	int	iph_len;
 
 	void	(*udp_conf_init)(struct udp_port_cfg *udp_config, union quic_addr *addr);
-	int	(*flow_route)(struct sock *sk, union quic_addr *a);
-	void	(*lower_xmit)(struct sock *sk, struct sk_buff *skb);
+	int	(*flow_route)(struct sock *sk, union quic_addr *da, union quic_addr *sa);
+	void	(*lower_xmit)(struct sock *sk, struct sk_buff *skb, union quic_addr *da,
+			      union quic_addr *sa);
 
 	void	(*get_msg_addr)(union quic_addr *addr, struct sk_buff *skb, bool src);
 	void	(*set_sk_addr)(struct sock *sk, union quic_addr *addr, bool src);
@@ -38,7 +39,8 @@ void quic_set_sk_addr(struct sock *sk, union quic_addr *a, bool src);
 void quic_get_sk_addr(struct socket *sock, struct sockaddr *a, bool peer);
 void quic_get_msg_addr(struct sock *sk, union quic_addr *addr, struct sk_buff *skb, bool src);
 void quic_udp_conf_init(struct sock *sk, struct udp_port_cfg *udp_conf, union quic_addr *a);
-void quic_lower_xmit(struct sock *sk, struct sk_buff *skb);
-int quic_flow_route(struct sock *sk, union quic_addr *a);
+void quic_lower_xmit(struct sock *sk, struct sk_buff *skb, union quic_addr *da,
+		     union quic_addr *sa);
+int quic_flow_route(struct sock *sk, union quic_addr *da, union quic_addr *sa);
 void quic_update_proto_ops(struct sock *sk);
 struct quic_addr_family_ops *quic_af_ops_get(sa_family_t family);

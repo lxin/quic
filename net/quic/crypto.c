@@ -223,8 +223,8 @@ err:
 	return err;
 }
 
-static void *quic_crypto_aead_mem_alloc(struct crypto_aead *tfm, u8 **iv,
-					struct aead_request **req,
+static void *quic_crypto_aead_mem_alloc(struct crypto_aead *tfm, u32 ctx_size,
+					u8 **iv, struct aead_request **req,
 					struct scatterlist **sg, int nsg)
 {
 	unsigned int iv_size, req_size;
@@ -234,7 +234,8 @@ static void *quic_crypto_aead_mem_alloc(struct crypto_aead *tfm, u8 **iv,
 	iv_size = crypto_aead_ivsize(tfm);
 	req_size = sizeof(**req) + crypto_aead_reqsize(tfm);
 
-	len = iv_size;
+	len = ctx_size;
+	len += iv_size;
 	len += crypto_aead_alignmask(tfm) & ~(crypto_tfm_ctx_alignment() - 1);
 	len = ALIGN(len, crypto_tfm_ctx_alignment());
 	len += req_size;
@@ -245,7 +246,7 @@ static void *quic_crypto_aead_mem_alloc(struct crypto_aead *tfm, u8 **iv,
 	if (!mem)
 		return NULL;
 
-	*iv = (u8 *)PTR_ALIGN(mem, crypto_aead_alignmask(tfm) + 1);
+	*iv = (u8 *)PTR_ALIGN(mem + ctx_size, crypto_aead_alignmask(tfm) + 1);
 	*req = (struct aead_request *)PTR_ALIGN(*iv + iv_size,
 			crypto_tfm_ctx_alignment());
 	*sg = (struct scatterlist *)PTR_ALIGN((u8 *)*req + req_size,
@@ -281,7 +282,7 @@ static int quic_crypto_payload_encrypt(struct crypto_aead *tfm, struct sk_buff *
 	pskb_put(skb, trailer, QUIC_TAG_LEN);
 	hdr->key = pki->key_phase;
 
-	ctx = quic_crypto_aead_mem_alloc(tfm, &iv, &req, &sg, nsg);
+	ctx = quic_crypto_aead_mem_alloc(tfm, 0, &iv, &req, &sg, nsg);
 	if (!ctx)
 		return err;
 
@@ -334,7 +335,7 @@ static int quic_crypto_payload_decrypt(struct crypto_aead *tfm, struct sk_buff *
 	nsg = skb_cow_data(skb, 0, &trailer);
 	if (nsg < 0)
 		return err;
-	ctx = quic_crypto_aead_mem_alloc(tfm, &iv, &req, &sg, nsg);
+	ctx = quic_crypto_aead_mem_alloc(tfm, 0, &iv, &req, &sg, nsg);
 	if (!ctx)
 		return err;
 
@@ -691,6 +692,7 @@ int quic_crypto_initial_keys_install(struct quic_crypto *crypto,
 	if (err)
 		goto out;
 
+	crypto->cipher = NULL;
 	tls_vec(&l, tl, 9);
 	tls_vec(&k, srt.secret, 32);
 	srt.type = TLS_CIPHER_AES_GCM_128;
@@ -713,4 +715,50 @@ int quic_crypto_initial_keys_install(struct quic_crypto *crypto,
 out:
 	crypto_free_shash(tfm);
 	return err;
+}
+
+#define QUIC_RETRY_KEY_V1 "\xbe\x0c\x69\x0b\x9f\x66\x57\x5a\x1d\x76\x6b\x54\xe3\x68\xc8\x4e"
+#define QUIC_RETRY_NONCE_V1 "\x46\x15\x99\xd3\x5d\x63\x2b\xf2\x23\x98\x25\xbb"
+
+int quic_crypto_get_retry_tag(struct sk_buff *skb, struct quic_connection_id *odcid, u8 *tag)
+{
+	u8 *pseudo_retry, *p, *iv, *key;
+	struct aead_request *req;
+	struct crypto_aead *tfm;
+	struct scatterlist *sg;
+	int err, plen;
+
+	tfm = crypto_alloc_aead("gcm(aes)", 0, 0);
+	if (IS_ERR(tfm))
+		return PTR_ERR(tfm);
+	err = crypto_aead_setauthsize(tfm, QUIC_TAG_LEN);
+	if (err)
+		goto err;
+	key = QUIC_RETRY_KEY_V1;
+	err = crypto_aead_setkey(tfm, key, 16);
+	if (err)
+		goto err;
+
+	pseudo_retry = quic_crypto_aead_mem_alloc(tfm, 128, &iv, &req, &sg, 1);
+	if (!pseudo_retry)
+		goto err;
+
+	p = pseudo_retry;
+	p = quic_put_int(p, odcid->len, 1);
+	p = quic_put_data(p, odcid->data, odcid->len);
+	p = quic_put_data(p, skb->data, skb->len - 16);
+	plen = p - pseudo_retry;
+	sg_init_one(sg, pseudo_retry, plen + 16);
+
+	memcpy(iv, QUIC_RETRY_NONCE_V1, 12);
+	aead_request_set_tfm(req, tfm);
+	aead_request_set_ad(req, plen);
+	aead_request_set_crypt(req, sg, sg, 0, iv);
+	err = crypto_aead_encrypt(req);
+
+	memcpy(tag, pseudo_retry + plen, 16);
+	kfree(pseudo_retry);
+err:
+	crypto_free_aead(tfm);
+	return  err;
 }

@@ -39,17 +39,18 @@ enum quic_state {
 	QUIC_SS_ESTABLISHED	= TCP_ESTABLISHED,
 };
 
-struct quic_request_sock {
-	struct list_head		list;
-	union quic_addr			src;
-	union quic_addr			dst;
-	struct quic_connection_id	dcid;
-	struct quic_connection_id	scid;
-};
-
 struct quic_token {
 	u32 len;
 	void *data;
+};
+
+struct quic_request_sock {
+	struct list_head		list;
+	union quic_addr			da;
+	union quic_addr			sa;
+	struct quic_connection_id	dcid;
+	struct quic_connection_id	scid;
+	u8				retry;
 };
 
 struct quic_sock {
@@ -208,10 +209,9 @@ static inline bool quic_is_closed(struct sock *sk)
 
 int quic_sock_change_addr(struct sock *sk, struct quic_path_addr *path, void *data,
 			  u32 len, bool udp_bind);
-int quic_request_sock_enqueue(struct sock *sk, union quic_addr *sa, union quic_addr *da,
-			      struct quic_connection_id *dcid, struct quic_connection_id *scid);
 bool quic_request_sock_exists(struct sock *sk, union quic_addr *sa, union quic_addr *da);
 struct sock *quic_sock_lookup(struct sk_buff *skb, union quic_addr *sa, union quic_addr *da);
 struct quic_request_sock *quic_request_sock_dequeue(struct sock *sk);
+int quic_request_sock_enqueue(struct sock *sk, struct quic_request_sock *req);
 
 #endif /* __net_quic_h__ */
