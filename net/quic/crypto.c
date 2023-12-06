@@ -162,36 +162,64 @@ static int quic_crypto_rx_keys_derive_and_install(struct quic_crypto *crypto)
 	return 0;
 }
 
+static void *quic_crypto_skcipher_mem_alloc(struct crypto_skcipher *tfm, u32 mask_size,
+					    u8 **iv, struct skcipher_request **req)
+{
+	unsigned int iv_size, req_size;
+	unsigned int len;
+	u8 *mem;
+
+	iv_size = crypto_skcipher_ivsize(tfm);
+	req_size = sizeof(**req) + crypto_skcipher_reqsize(tfm);
+
+	len = mask_size;
+	len += iv_size;
+	len += crypto_skcipher_alignmask(tfm) & ~(crypto_tfm_ctx_alignment() - 1);
+	len = ALIGN(len, crypto_tfm_ctx_alignment());
+	len += req_size;
+
+	mem = kzalloc(len, GFP_ATOMIC);
+	if (!mem)
+		return NULL;
+
+	*iv = (u8 *)PTR_ALIGN(mem + mask_size, crypto_skcipher_alignmask(tfm) + 1);
+	*req = (struct skcipher_request *)PTR_ALIGN(*iv + iv_size,
+			crypto_tfm_ctx_alignment());
+
+	return (void *)mem;
+}
+
 static int quic_crypto_header_encrypt(struct crypto_skcipher *tfm, struct sk_buff *skb,
 				      struct quic_packet_info *pki, u8 *tx_hp_key, u32 keylen,
 				      bool chacha)
 {
 	struct skcipher_request *req;
-	u8 mask[2][16] = {}, *p;
+	u8 *mask, *iv, *p;
 	struct scatterlist sg;
 	int err, i;
 
 	err = crypto_skcipher_setkey(tfm, tx_hp_key, keylen);
 	if (err)
 		return err;
-	req = skcipher_request_alloc(tfm, 0);
-	if (!req)
+	mask = quic_crypto_skcipher_mem_alloc(tfm, 16, &iv, &req);
+	if (!mask)
 		return -ENOMEM;
 
-	memcpy(mask[chacha], skb->data + pki->number_offset + 4, 16);
-	sg_init_one(&sg, mask[0], 16);
-	skcipher_request_set_crypt(req, &sg, &sg, 16, mask[1]);
+	memcpy((chacha ? iv : mask), skb->data + pki->number_offset + 4, 16);
+	sg_init_one(&sg, mask, 16);
+	skcipher_request_set_tfm(req, tfm);
+	skcipher_request_set_crypt(req, &sg, &sg, 16, iv);
 	err = crypto_skcipher_encrypt(req);
 	if (err)
 		goto err;
 
 	p = skb->data;
-	*p = (u8)(*p ^ (mask[0][0] & (((*p & 0x80) == 0x80) ? 0x0f : 0x1f)));
+	*p = (u8)(*p ^ (mask[0] & (((*p & 0x80) == 0x80) ? 0x0f : 0x1f)));
 	p = skb->data + pki->number_offset;
 	for (i = 1; i <= pki->number_len; i++)
-		*p++ ^= mask[0][i];
+		*p++ ^= mask[i];
 err:
-	skcipher_request_free(req);
+	kfree(mask);
 	return err;
 }
 
@@ -338,15 +366,15 @@ static int quic_crypto_header_decrypt(struct crypto_skcipher *tfm, struct sk_buf
 {
 	struct quichdr *hdr = quic_hdr(skb);
 	struct skcipher_request *req;
-	u8 mask[2][16] = {}, *p;
+	u8 *mask, *iv, *p;
 	struct scatterlist sg;
 	int err, i;
 
 	err = crypto_skcipher_setkey(tfm, rx_hp_key, keylen);
 	if (err)
 		return err;
-	req = skcipher_request_alloc(tfm, 0);
-	if (!req)
+	mask = quic_crypto_skcipher_mem_alloc(tfm, 16, &iv, &req);
+	if (!mask)
 		return -ENOMEM;
 
 	if (pki->length + pki->number_offset < pki->number_offset + 4 + 16) {
@@ -354,15 +382,16 @@ static int quic_crypto_header_decrypt(struct crypto_skcipher *tfm, struct sk_buf
 		goto err;
 	}
 	p = (u8 *)hdr + pki->number_offset;
-	memcpy(mask[chacha], p + 4, 16);
-	sg_init_one(&sg, mask[0], 16);
-	skcipher_request_set_crypt(req, &sg, &sg, 16, mask[1]);
+	memcpy((chacha ? iv : mask), p + 4, 16);
+	sg_init_one(&sg, mask, 16);
+	skcipher_request_set_tfm(req, tfm);
+	skcipher_request_set_crypt(req, &sg, &sg, 16, iv);
 	err = crypto_skcipher_encrypt(req);
 	if (err)
 		goto err;
 
 	p = (u8 *)hdr;
-	*p = (u8)(*p ^ (mask[0][0] & (((*p & 0x80) == 0x80) ? 0x0f : 0x1f)));
+	*p = (u8)(*p ^ (mask[0] & (((*p & 0x80) == 0x80) ? 0x0f : 0x1f)));
 	pki->number_len = (*p & 0x03) + 1;
 	if (pki->length + pki->number_offset < pki->number_offset + pki->number_len) {
 		err = -EINVAL;
@@ -370,14 +399,14 @@ static int quic_crypto_header_decrypt(struct crypto_skcipher *tfm, struct sk_buf
 	}
 	p += pki->number_offset;
 	for (i = 0; i < pki->number_len; ++i)
-		*(p + i) = *((u8 *)hdr + pki->number_offset + i) ^ mask[0][i + 1];
+		*(p + i) = *((u8 *)hdr + pki->number_offset + i) ^ mask[i + 1];
 
 	pki->number = quic_get_int(&p, pki->number_len);
 	pki->number = quic_get_num(pki->number_max, pki->number, pki->number_len);
 	pki->key_phase = hdr->key;
 
 err:
-	skcipher_request_free(req);
+	kfree(mask);
 	return err;
 }
 
