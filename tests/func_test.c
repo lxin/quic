@@ -1134,14 +1134,14 @@ static int do_client_connection_test(int sockfd)
 	printf("test29: PASS (get new_session_ticket msg from socket)\n");
 
 	opt[0] = 1;
-	ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_NEW_SESSION_TICKET, opt, strlen(opt));
+	ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_SESSION_TICKET, opt, strlen(opt));
 	if (ret != -1) {
 		printf("test30: FAIL\n");
 		return -1;
 	}
 	printf("test30: PASS (not allowed to set new_session_ticket msg with an wrong format value)\n");
 
-	ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_NEW_SESSION_TICKET, NULL, 0);
+	ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_SESSION_TICKET, NULL, 0);
 	if (ret != -1) {
 		printf("test31: FAIL\n");
 		return -1;
@@ -1892,7 +1892,7 @@ static int do_server_test(int sockfd)
 			char ticket[] = "01234567890123456789";
 
 			ticket[0] = 4;
-			ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_NEW_SESSION_TICKET, ticket, strlen(ticket));
+			ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_SESSION_TICKET, ticket, strlen(ticket));
 			if (ret == -1) {
 				printf("socket setsockopt new session ticket failed\n");
 				return -1;

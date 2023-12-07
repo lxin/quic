@@ -73,7 +73,6 @@ enum quic_msg_flags {	/* msg_flags in send/recvmsg */
 #define QUIC_SOCKOPT_CONGESTION_CONTROL			6  /* set and get */
 #define QUIC_SOCKOPT_KEY_UPDATE				7  /* set */
 #define QUIC_SOCKOPT_TRANSPORT_PARAM			8  /* set and get */
-#define QUIC_SOCKOPT_NEW_SESSION_TICKET			9 /* set */
 
 /* used to provide parameters for handshake from kernel, so only valid prior to handshake */
 #define QUIC_SOCKOPT_ALPN				100 /* set and get */

@@ -1014,6 +1014,8 @@ static int quic_sock_set_token(struct sock *sk, void *data, u32 len)
 static int quic_sock_set_session_ticket(struct sock *sk, u8 *data, u32 len)
 {
 	struct quic_token *ticket = quic_ticket(sk);
+	struct quic_msginfo msginfo = {};
+	struct sk_buff *skb;
 	u8 *p;
 
 	if (len < 4 + 4 + 1 + 2 || len > 4096)
@@ -1029,6 +1031,15 @@ static int quic_sock_set_session_ticket(struct sock *sk, u8 *data, u32 len)
 	kfree(ticket->data);
 	ticket->data = p;
 	ticket->len = len;
+
+	if (!quic_is_serv(sk))
+		return 0;
+
+	skb = quic_frame_create(sk, QUIC_FRAME_CRYPTO, &msginfo);
+	if (!skb)
+		return -ENOMEM;
+
+	quic_outq_ctrl_tail(sk, skb, false);
 	return 0;
 }
 
@@ -1143,33 +1154,6 @@ rcv_backlog:
 		quic_outq_ctrl_tail(sk, skb, true);
 	}
 	quic_cong_cwnd_update(sk, min_t(u32, quic_packet_mss(quic_packet(sk)) * 10, 14720));
-	return 0;
-}
-
-static int quic_sock_new_session_ticket(struct sock *sk, u8 *data, u32 len)
-{
-	struct quic_token *ticket = quic_ticket(sk);
-	struct quic_msginfo msginfo = {};
-	struct sk_buff *skb;
-	u8 *p;
-
-	if (len < 4 + 4 + 1 + 2)
-		return -EINVAL;
-
-	if (*data != 4) /* for TLS NEWSESSION_TICKET message only */
-		return -EINVAL;
-
-	p = kmemdup(data, len, GFP_KERNEL);
-	if (!p)
-		return -ENOMEM;
-	kfree(ticket->data);
-	ticket->data = p;
-	ticket->len = len;
-	skb = quic_frame_create(sk, QUIC_FRAME_CRYPTO, &msginfo);
-	if (!skb)
-		return -ENOMEM;
-
-	quic_outq_ctrl_tail(sk, skb, false);
 	return 0;
 }
 
@@ -1339,9 +1323,6 @@ static int quic_setsockopt(struct sock *sk, int level, int optname,
 		break;
 	case QUIC_SOCKOPT_KEY_UPDATE:
 		retval = quic_crypto_key_update(quic_crypto(sk, 0), kopt, optlen);
-		break;
-	case QUIC_SOCKOPT_NEW_SESSION_TICKET:
-		retval = quic_sock_new_session_ticket(sk, kopt, optlen);
 		break;
 	case QUIC_SOCKOPT_RETIRE_CONNECTION_ID:
 		retval = quic_sock_retire_connection_id(sk, kopt, optlen);
