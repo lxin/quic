@@ -71,24 +71,17 @@ in [ktls-utils](https://github.com/lxin/ktls-utils) will handle the handshake re
         |                           UDP TUNNEL KERNEL APIs                       |
         +------------------------------------------------------------------------+
 
-### Completed
-- Data (re)transmission and SACK *(rfc9000)*
-- Flow Control *(rfc9000)*
-- Stream and Connection ID Management *(rfc9000)*
-- Connection Migration *(rfc9000)*
-- Rekeying *(rfc9001)*
-- Support All Four Ciphers *(rfc9001)*
-- Both X509 Certificate and PSK modes *(rfc9001)*
-- RTT Measurement *(rfc9002)*
-- Congestion Control *(rfc9002)*
-- Unreliable Datagram Extension *(rfc9221)*
-- Handshake APIs for tlshd Use *(NFS/SMB over QUIC)*
-- Interoperability Testing with MSQUIC
+### RFCs (Most Features Supported)
+- RFC9000 - *QUIC: A UDP-Based Multiplexed and Secure Transport*
+- RFC9001 - *Using TLS to Secure QUIC*
+- RFC9002 - *QUIC Loss Detection and Congestion Control*
+- RFC9221 - *An Unreliable Datagram Extension to QUIC*
+- RFC9287 - *Greasing the QUIC Bit*
+- RFC9369 - *QUIC Version 2*
+- Handshake APIs for tlshd Use - *NFS/SMB over QUIC*
 
 ### TBD
-- Address Verify in Handshake
 - Session Ticket & 0-RTT
-- QUICv2 (rfc9369)
 - Stateless Reset (rfc9000#name-stateless-reset)
 
 ## INSTALL
