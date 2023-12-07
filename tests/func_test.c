@@ -2012,7 +2012,7 @@ static int do_server(int argc, char *argv[])
 	struct quic_transport_param param = {};
 	int listenfd, sockfd, addrlen, cipher;
 	struct sockaddr_in la = {}, ra = {};
-	char *mode, *pkey, *cert;
+	char *mode, *pkey, *cert = NULL;
 
 	if (argc < 5) {
 		printf("%s server <LOCAL ADDR> <LOCAL PORT> <-psk_file:PSK_FILE> | <-pkey_file:PRIVATE_KEY_FILE> <-cert_file:CERTIFICATE_FILE>\n", argv[0]);
