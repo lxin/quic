@@ -1404,6 +1404,13 @@ int quic_frame_set_transport_params_ext(struct sock *sk, struct quic_transport_p
 				return -1;
 			params->disable_active_migration = 1;
 			break;
+		case QUIC_TRANSPORT_PARAM_GREASE_QUIC_BIT:
+			if (!quic_get_var(&p, &len, &valuelen))
+				return -1;
+			if (valuelen)
+				return -1;
+			params->grease_quic_bit = 1;
+			break;
 		case QUIC_TRANSPORT_PARAM_MAX_ACK_DELAY:
 			if (quic_get_param(&params->max_ack_delay, &p, &len))
 				return -1;
@@ -1496,6 +1503,10 @@ int quic_frame_get_transport_params_ext(struct sock *sk, struct quic_transport_p
 	}
 	if (params->disable_active_migration) {
 		p = quic_put_var(p, QUIC_TRANSPORT_PARAM_DISABLE_ACTIVE_MIGRATION);
+		p = quic_put_var(p, 0);
+	}
+	if (params->grease_quic_bit) {
+		p = quic_put_var(p, QUIC_TRANSPORT_PARAM_GREASE_QUIC_BIT);
 		p = quic_put_var(p, 0);
 	}
 	if (params->max_ack_delay != 25000) {

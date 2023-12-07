@@ -23,6 +23,7 @@ struct quic_outqueue {
 	u32 ack_delay_exponent;
 	u32 max_idle_timeout;
 	u32 max_ack_delay;
+	u8 grease_quic_bit;
 
 	u32 close_errcode;
 	u8 *close_phrase;

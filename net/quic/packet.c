@@ -240,6 +240,9 @@ int quic_packet_process(struct sock *sk, struct sk_buff *skb)
 	if (quic_hdr(skb)->form)
 		return quic_packet_handshake_process(sk, skb);
 
+	if (!quic_hdr(skb)->fixed && !quic_inq(sk)->grease_quic_bit)
+		goto err;
+
 	if (!quic_is_established(sk)) {
 		__skb_queue_tail(&quic_inq(sk)->backlog_list, skb);
 		return 0;
@@ -343,7 +346,7 @@ static struct sk_buff *quic_packet_handshake_create(struct sock *sk, struct quic
 		type = QUIC_PACKET_HANDSHAKE;
 	hdr = skb_push(skb, len);
 	hdr->form = 1;
-	hdr->fixed = 1;
+	hdr->fixed = !quic_outq(sk)->grease_quic_bit;
 	hdr->type = quic_version_put_type(quic_param(sk)->version, type);
 	hdr->reserved = 0;
 	hdr->pnl = 0x3;
@@ -414,7 +417,7 @@ static struct sk_buff *quic_packet_create(struct sock *sk, struct quic_packet_in
 
 	hdr = skb_push(skb, len);
 	hdr->form = 0;
-	hdr->fixed = 1;
+	hdr->fixed = !quic_outq(sk)->grease_quic_bit;
 	hdr->spin = 0;
 	hdr->reserved = 0;
 	hdr->pnl = 0x3;
@@ -642,7 +645,7 @@ static struct sk_buff *quic_packet_retry_create(struct sock *sk, struct quic_req
 
 	hdr = skb_push(skb, len);
 	hdr->form = 1;
-	hdr->fixed = 1;
+	hdr->fixed = !quic_outq(sk)->grease_quic_bit;
 	hdr->type = quic_version_put_type(req->version, QUIC_PACKET_RETRY);
 	hdr->reserved = 0;
 	hdr->pnl = 0;
@@ -693,7 +696,7 @@ static struct sk_buff *quic_packet_version_create(struct sock *sk, struct quic_r
 
 	hdr = skb_push(skb, len);
 	hdr->form = 1;
-	hdr->fixed = 1;
+	hdr->fixed = !quic_outq(sk)->grease_quic_bit;
 	hdr->type = 0;
 	hdr->reserved = 0;
 	hdr->pnl = 0;

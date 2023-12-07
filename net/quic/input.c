@@ -408,6 +408,7 @@ void quic_inq_set_param(struct sock *sk, struct quic_transport_param *p)
 	inq->max_ack_delay = p->max_ack_delay;
 	inq->ack_delay_exponent = p->ack_delay_exponent;
 	inq->max_idle_timeout = p->max_idle_timeout;
+	inq->grease_quic_bit = p->grease_quic_bit;
 	inq->window = p->initial_max_data;
 
 	inq->max_bytes = p->initial_max_data;

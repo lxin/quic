@@ -113,6 +113,7 @@ struct quic_transport_param {
 	uint64_t initial_smoothed_rtt;
 	uint8_t disable_active_migration;
 	uint8_t validate_address;
+	uint8_t grease_quic_bit;
 	uint32_t version;
 };
 
