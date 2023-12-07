@@ -106,12 +106,27 @@ out:
 	return err;
 }
 
+#define KEY_LABEL_V1		"quic key"
+#define IV_LABEL_V1		"quic iv"
+#define HP_KEY_LABEL_V1		"quic hp"
+
+#define KEY_LABEL_V2		"quicv2 key"
+#define IV_LABEL_V2		"quicv2 iv"
+#define HP_KEY_LABEL_V2		"quicv2 hp"
+
 static int quic_crypto_keys_derive(struct crypto_shash *tfm, struct tls_vec *s, struct tls_vec *k,
-				   struct tls_vec *i, struct tls_vec *hp_k)
+				   struct tls_vec *i, struct tls_vec *hp_k, u32 version)
 {
-	struct tls_vec hp_k_l = {"quic hp", 7}, k_l = {"quic key", 8}, i_l = {"quic iv", 7};
+	struct tls_vec hp_k_l = {HP_KEY_LABEL_V1, 7}, k_l = {KEY_LABEL_V1, 8};
+	struct tls_vec i_l = {IV_LABEL_V1, 7};
 	struct tls_vec z = {NULL, 0};
 	int err;
+
+	if (version == QUIC_VERSION_V2) {
+		tls_vec(&hp_k_l, HP_KEY_LABEL_V2, 9);
+		tls_vec(&k_l, KEY_LABEL_V2, 10);
+		tls_vec(&i_l, IV_LABEL_V2, 9);
+	}
 
 	err = tls_crypto_hkdf_expand(tfm, s, &k_l, &z, k);
 	if (err)
@@ -137,7 +152,7 @@ static int quic_crypto_tx_keys_derive_and_install(struct quic_crypto *crypto)
 	tls_vec(&k, crypto->tx_key[crypto->key_phase], keylen);
 	tls_vec(&iv, crypto->tx_iv[crypto->key_phase], ivlen);
 	hp = crypto->key_pending ? NULL : tls_vec(&hp_k, crypto->tx_hp_key, keylen);
-	err = quic_crypto_keys_derive(crypto->secret_tfm, &srt, &k, &iv, hp);
+	err = quic_crypto_keys_derive(crypto->secret_tfm, &srt, &k, &iv, hp, crypto->version);
 	if (err)
 		return err;
 	pr_debug("[QUIC] tx keys: %16phN, %12phN, %16phN\n", k.data, iv.data, hp_k.data);
@@ -155,7 +170,7 @@ static int quic_crypto_rx_keys_derive_and_install(struct quic_crypto *crypto)
 	tls_vec(&k, crypto->rx_key[crypto->key_phase], keylen);
 	tls_vec(&iv, crypto->rx_iv[crypto->key_phase], ivlen);
 	hp = crypto->key_pending ? NULL : tls_vec(&hp_k, crypto->rx_hp_key, keylen);
-	err = quic_crypto_keys_derive(crypto->secret_tfm, &srt, &k, &iv, hp);
+	err = quic_crypto_keys_derive(crypto->secret_tfm, &srt, &k, &iv, hp, crypto->version);
 	if (err)
 		return err;
 	pr_debug("[QUIC] rx keys: %16phN, %12phN, %16phN\n", k.data, iv.data, hp_k.data);
@@ -514,7 +529,7 @@ int quic_crypto_decrypt(struct quic_crypto *crypto, struct sk_buff *skb,
 	return 0;
 }
 
-int quic_crypto_set_secret(struct quic_crypto *crypto, struct quic_crypto_secret *srt)
+int quic_crypto_set_secret(struct quic_crypto *crypto, struct quic_crypto_secret *srt, u32 version)
 {
 	struct quic_cipher *cipher;
 	void *tfm;
@@ -537,6 +552,7 @@ int quic_crypto_set_secret(struct quic_crypto *crypto, struct quic_crypto_secret
 	if (crypto->cipher)
 		return -EINVAL;
 
+	crypto->version = version;
 	tfm = crypto_alloc_shash(cipher->shash, 0, 0);
 	if (IS_ERR(tfm))
 		return PTR_ERR(tfm);
@@ -580,14 +596,20 @@ int quic_crypto_get_secret(struct quic_crypto *crypto, struct quic_crypto_secret
 	return 0;
 }
 
+#define LABEL_V1	"quic ku"
+#define LABEL_V2	"quicv2 ku"
+
 int quic_crypto_key_update(struct quic_crypto *crypto, u8 *key, unsigned int len)
 {
 	u8 tx_secret[QUIC_SECRET_LEN], rx_secret[QUIC_SECRET_LEN];
-	struct tls_vec l = {"quic ku", 7}, z = {NULL, 0}, k, srt;
+	struct tls_vec l = {LABEL_V1, 7}, z = {NULL, 0}, k, srt;
 	int err, secret_len = crypto->cipher->secretlen;
 
 	if (crypto->key_pending)
 		return -EINVAL;
+
+	if (crypto->version == QUIC_VERSION_V2)
+		tls_vec(&l, LABEL_V2, 9);
 
 	crypto->key_pending = 1;
 	memcpy(tx_secret, crypto->tx_secret, secret_len);
@@ -664,15 +686,17 @@ void quic_crypto_destroy(struct quic_crypto *crypto)
 
 #define QUIC_INITIAL_SALT_V1    \
 	"\x38\x76\x2c\xf7\xf5\x59\x34\xb3\x4d\x17\x9a\xe6\xa4\xc8\x0c\xad\xcc\xbb\x7f\x0a"
+#define QUIC_INITIAL_SALT_V2    \
+	"\x0d\xed\xe3\xde\xf7\x00\xa6\xdb\x81\x93\x81\xbe\x6e\x26\x9d\xcb\xf9\xbd\x2e\xd9"
 
-int quic_crypto_initial_keys_install(struct quic_crypto *crypto,
-				     struct quic_connection_id *conn_id, bool is_serv)
+int quic_crypto_initial_keys_install(struct quic_crypto *crypto, struct quic_connection_id *conn_id,
+				     u32 version, bool is_serv)
 {
 	struct tls_vec salt, s, k, l, dcid, z = {NULL, 0};
 	struct quic_crypto_secret srt = {};
 	struct crypto_shash *tfm;
+	char *tl, *rl, *sal;
 	u8 secret[32];
-	char *tl, *rl;
 	int err;
 
 	tfm = crypto_alloc_shash("hmac(sha256)", 0, 0);
@@ -685,7 +709,11 @@ int quic_crypto_initial_keys_install(struct quic_crypto *crypto,
 		tl = "client in";
 		rl = "server in";
 	}
-	tls_vec(&salt, QUIC_INITIAL_SALT_V1, sizeof(QUIC_INITIAL_SALT_V1) - 1);
+	crypto->version = version;
+	sal = QUIC_INITIAL_SALT_V1;
+	if (version == QUIC_VERSION_V2)
+		sal = QUIC_INITIAL_SALT_V2;
+	tls_vec(&salt, sal, 20);
 	tls_vec(&dcid, conn_id->data, conn_id->len);
 	tls_vec(&s, secret, 32);
 	err = tls_crypto_hkdf_extract(tfm, &salt, &dcid, &s);
@@ -700,7 +728,7 @@ int quic_crypto_initial_keys_install(struct quic_crypto *crypto,
 	err = tls_crypto_hkdf_expand(tfm, &s, &l, &z, &k);
 	if (err)
 		goto out;
-	err = quic_crypto_set_secret(crypto, &srt);
+	err = quic_crypto_set_secret(crypto, &srt, version);
 	if (err)
 		goto out;
 
@@ -711,16 +739,20 @@ int quic_crypto_initial_keys_install(struct quic_crypto *crypto,
 	err = tls_crypto_hkdf_expand(tfm, &s, &l, &z, &k);
 	if (err)
 		goto out;
-	err = quic_crypto_set_secret(crypto, &srt);
+	err = quic_crypto_set_secret(crypto, &srt, version);
 out:
 	crypto_free_shash(tfm);
 	return err;
 }
 
 #define QUIC_RETRY_KEY_V1 "\xbe\x0c\x69\x0b\x9f\x66\x57\x5a\x1d\x76\x6b\x54\xe3\x68\xc8\x4e"
-#define QUIC_RETRY_NONCE_V1 "\x46\x15\x99\xd3\x5d\x63\x2b\xf2\x23\x98\x25\xbb"
+#define QUIC_RETRY_KEY_V2 "\x8f\xb4\xb0\x1b\x56\xac\x48\xe2\x60\xfb\xcb\xce\xad\x7c\xcc\x92"
 
-int quic_crypto_get_retry_tag(struct sk_buff *skb, struct quic_connection_id *odcid, u8 *tag)
+#define QUIC_RETRY_NONCE_V1 "\x46\x15\x99\xd3\x5d\x63\x2b\xf2\x23\x98\x25\xbb"
+#define QUIC_RETRY_NONCE_V2 "\xd8\x69\x69\xbc\x2d\x7c\x6d\x99\x90\xef\xb0\x4a"
+
+int quic_crypto_get_retry_tag(struct sk_buff *skb, struct quic_connection_id *odcid,
+			      u32 version, u8 *tag)
 {
 	u8 *pseudo_retry, *p, *iv, *key;
 	struct aead_request *req;
@@ -735,6 +767,8 @@ int quic_crypto_get_retry_tag(struct sk_buff *skb, struct quic_connection_id *od
 	if (err)
 		goto err;
 	key = QUIC_RETRY_KEY_V1;
+	if (version == QUIC_VERSION_V2)
+		key = QUIC_RETRY_KEY_V2;
 	err = crypto_aead_setkey(tfm, key, 16);
 	if (err)
 		goto err;
@@ -751,6 +785,8 @@ int quic_crypto_get_retry_tag(struct sk_buff *skb, struct quic_connection_id *od
 	sg_init_one(sg, pseudo_retry, plen + 16);
 
 	memcpy(iv, QUIC_RETRY_NONCE_V1, 12);
+	if (version == QUIC_VERSION_V2)
+		memcpy(iv, QUIC_RETRY_NONCE_V2, 12);
 	aead_request_set_tfm(req, tfm);
 	aead_request_set_ad(req, plen);
 	aead_request_set_crypt(req, sg, sg, 0, iv);

@@ -24,6 +24,21 @@ struct quic_packet {
 	u8  level;
 };
 
+#define QUIC_PACKET_INITIAL_V1		0
+#define QUIC_PACKET_0RTT_V1		1
+#define QUIC_PACKET_HANDSHAKE_V1		2
+#define QUIC_PACKET_RETRY_V1		3
+
+#define QUIC_PACKET_INITIAL_V2		1
+#define QUIC_PACKET_0RTT_V2		2
+#define QUIC_PACKET_HANDSHAKE_V2		3
+#define QUIC_PACKET_RETRY_V2		0
+
+#define QUIC_PACKET_INITIAL		QUIC_PACKET_INITIAL_V1
+#define QUIC_PACKET_0RTT		QUIC_PACKET_0RTT_V1
+#define QUIC_PACKET_HANDSHAKE		QUIC_PACKET_HANDSHAKE_V1
+#define QUIC_PACKET_RETRY		QUIC_PACKET_RETRY_V1
+
 struct quic_request_sock;
 
 static inline u32 quic_packet_mss(struct quic_packet *packet)
@@ -59,3 +74,4 @@ int quic_packet_tail(struct sock *sk, struct sk_buff *skb);
 int quic_packet_tail_dgram(struct sock *sk, struct sk_buff *skb);
 void quic_packet_flush(struct sock *sk);
 int quic_packet_retry_transmit(struct sock *sk, struct quic_request_sock *req);
+int quic_packet_version_transmit(struct sock *sk, struct quic_request_sock *req);

@@ -129,6 +129,7 @@ static void quic_transport_param_init(struct sock *sk)
 	param->initial_max_streams_bidi = 100;
 	param->initial_max_streams_uni = 100;
 	param->initial_smoothed_rtt = 333000;
+	param->version = QUIC_VERSION_V1;
 }
 
 static int quic_init_sock(struct sock *sk)
@@ -265,7 +266,8 @@ static int quic_connect(struct sock *sk, struct sockaddr *addr, int addr_len)
 		goto out;
 	quic_param(sk)->orig_dcid = conn_id;
 	err = quic_crypto_initial_keys_install(quic_crypto(sk, QUIC_CRYPTO_INITIAL),
-					       &quic_dest(sk)->active->id, 0);
+					       &quic_dest(sk)->active->id,
+					       quic_param(sk)->version, 0);
 	if (err)
 		goto out;
 
@@ -818,10 +820,12 @@ static int quic_accept_sock_init(struct sock *sk, struct quic_request_sock *req)
 	if (err)
 		goto out;
 	quic_param(sk)->orig_dcid = req->dcid;
+	quic_param(sk)->version = req->version;
 	err = quic_connection_id_add(quic_dest(sk), &req->scid, sk);
 	if (err)
 		goto out;
-	err = quic_crypto_initial_keys_install(quic_crypto(sk, 1), &req->dcid, 1);
+	err = quic_crypto_initial_keys_install(quic_crypto(sk, QUIC_CRYPTO_INITIAL),
+					       &req->dcid, quic_param(sk)->version, 1);
 	if (err)
 		goto out;
 	quic_port(sk)->serv = 1;
@@ -1054,6 +1058,7 @@ static int quic_sock_set_transport_param(struct sock *sk, struct quic_transport_
 	quic_set_param_if_not_zero(initial_smoothed_rtt);
 	quic_set_param_if_not_zero(disable_active_migration);
 	quic_set_param_if_not_zero(validate_address);
+	quic_set_param_if_not_zero(version);
 
 	return 0;
 }
@@ -1084,7 +1089,8 @@ static int quic_sock_set_crypto_secret(struct sock *sk, struct quic_crypto_secre
 	if (len != sizeof(*secret))
 		return -EINVAL;
 
-	err = quic_crypto_set_secret(quic_crypto(sk, secret->level), secret);
+	err = quic_crypto_set_secret(quic_crypto(sk, secret->level), secret,
+				     quic_param(sk)->version);
 	if (err)
 		return err;
 

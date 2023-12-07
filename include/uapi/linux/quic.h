@@ -93,6 +93,9 @@ struct quic_connection_id {
 	uint8_t data[20];
 };
 
+#define QUIC_VERSION_V1			0x1
+#define QUIC_VERSION_V2			0x6b3343cf
+
 struct quic_transport_param {
 	struct quic_connection_id orig_dcid;
 	uint64_t max_udp_payload_size;
@@ -110,6 +113,7 @@ struct quic_transport_param {
 	uint64_t initial_smoothed_rtt;
 	uint8_t disable_active_migration;
 	uint8_t validate_address;
+	uint32_t version;
 };
 
 struct quic_crypto_secret {

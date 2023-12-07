@@ -87,7 +87,7 @@ static int quic_get_connid_and_token(struct sk_buff *skb, struct quic_connection
 
 static int quic_do_listen_rcv(struct sock *sk, struct sk_buff *skb)
 {
-	u8 *p = (u8 *)quic_hshdr(skb) + 1;
+	u8 *p = (u8 *)quic_hshdr(skb) + 1, type;
 	struct quic_request_sock req = {};
 	struct quic_token token;
 
@@ -100,8 +100,20 @@ static int quic_do_listen_rcv(struct sock *sk, struct sk_buff *skb)
 	    quic_new_sock_do_rcv(sk, skb, &req.sa, &req.da))
 		return 0;
 
-	if (!quic_hshdr(skb)->form || quic_hshdr(skb)->type ||
-	     quic_get_connid_and_token(skb, &req.dcid, &req.scid, &token)) {
+	if (quic_get_connid_and_token(skb, &req.dcid, &req.scid, &token)) {
+		kfree_skb(skb);
+		return -EINVAL;
+	}
+
+	req.version = quic_get_int(&p, 4);
+	if (!quic_version_supported(req.version)) {
+		consume_skb(skb);
+		/* version negotication */
+		return quic_packet_version_transmit(sk, &req);
+	}
+
+	type = quic_version_get_type(req.version, quic_hshdr(skb)->type);
+	if (type != QUIC_PACKET_INITIAL) {
 		kfree_skb(skb);
 		return -EINVAL;
 	}

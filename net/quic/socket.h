@@ -51,6 +51,7 @@ struct quic_request_sock {
 	struct quic_connection_id	dcid;
 	struct quic_connection_id	scid;
 	u8				retry;
+	u32				version;
 };
 
 struct quic_sock {
@@ -205,6 +206,57 @@ static inline bool quic_is_listen(struct sock *sk)
 static inline bool quic_is_closed(struct sock *sk)
 {
 	return sk->sk_state == QUIC_SS_CLOSED;
+}
+
+static inline bool quic_version_supported(uint32_t version)
+{
+	return version == QUIC_VERSION_V1 || version == QUIC_VERSION_V2;
+}
+
+static inline u8 quic_version_get_type(uint32_t version, u8 type)
+{
+	if (!quic_version_supported(version))
+		return -1;
+
+	if (version == QUIC_VERSION_V1)
+		return type;
+
+	switch (type) {
+	case QUIC_PACKET_INITIAL_V2:
+		return QUIC_PACKET_INITIAL;
+	case QUIC_PACKET_0RTT_V2:
+		return QUIC_PACKET_0RTT;
+	case QUIC_PACKET_HANDSHAKE_V2:
+		return QUIC_PACKET_HANDSHAKE;
+	case QUIC_PACKET_RETRY_V2:
+		return QUIC_PACKET_RETRY;
+	default:
+		return -1;
+	}
+	return -1;
+}
+
+static inline u8 quic_version_put_type(uint32_t version, u8 type)
+{
+	if (!quic_version_supported(version))
+		return -1;
+
+	if (version == QUIC_VERSION_V1)
+		return type;
+
+	switch (type) {
+	case QUIC_PACKET_INITIAL:
+		return QUIC_PACKET_INITIAL_V2;
+	case QUIC_PACKET_0RTT:
+		return QUIC_PACKET_0RTT_V2;
+	case QUIC_PACKET_HANDSHAKE:
+		return QUIC_PACKET_HANDSHAKE_V2;
+	case QUIC_PACKET_RETRY:
+		return QUIC_PACKET_RETRY_V2;
+	default:
+		return -1;
+	}
+	return -1;
 }
 
 int quic_sock_change_addr(struct sock *sk, struct quic_path_addr *path, void *data,

@@ -241,6 +241,7 @@ static int do_client(int argc, char *argv[])
 	}
 
 	if (rp->ai_family == AF_INET6) {
+		struct quic_transport_param param = {};
 		struct sockaddr_in6 ra = {};
 
 		sockfd = socket(AF_INET6, SOCK_DGRAM, IPPROTO_QUIC);
@@ -252,6 +253,11 @@ static int do_client(int argc, char *argv[])
 		ra.sin6_family = AF_INET6;
 		ra.sin6_port = htons(atoi(argv[3]));
 		inet_pton(AF_INET6, argv[2], &ra.sin6_addr);
+
+		param.version = 5; /* invalid version to trigger version negotiation */
+		if (setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_TRANSPORT_PARAM,
+			       &param, sizeof(param)))
+			return -1;
 
 		if (connect(sockfd, (struct sockaddr *)&ra, sizeof(ra))) {
 			printf("socket connect failed\n");

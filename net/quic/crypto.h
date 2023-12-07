@@ -52,6 +52,7 @@ struct quic_crypto {
 	u8 rx_hp_key[QUIC_KEY_LEN];
 	u32 send_offset;
 	u32 recv_offset;
+	u32 version;
 
 	u32 key_update_ts;
 	u32 key_update_send_ts;
@@ -60,13 +61,13 @@ struct quic_crypto {
 	   key_pending:1;
 };
 
-int quic_crypto_initial_keys_install(struct quic_crypto *crypto,
-				     struct quic_connection_id *conn_id, bool is_serv);
+int quic_crypto_initial_keys_install(struct quic_crypto *crypto, struct quic_connection_id *conn_id,
+				     u32 version, bool is_serv);
 int quic_crypto_encrypt(struct quic_crypto *crypto, struct sk_buff *skb,
 			struct quic_packet_info *pki);
 int quic_crypto_decrypt(struct quic_crypto *crypto, struct sk_buff *skb,
 			struct quic_packet_info *pki);
-int quic_crypto_set_secret(struct quic_crypto *crypto, struct quic_crypto_secret *srt);
+int quic_crypto_set_secret(struct quic_crypto *crypto, struct quic_crypto_secret *srt, u32 version);
 int quic_crypto_get_secret(struct quic_crypto *crypto, struct quic_crypto_secret *srt);
 int quic_crypto_set_cipher(struct quic_crypto *crypto, u32 *cipher, u32 len);
 int quic_crypto_get_cipher(struct quic_crypto *crypto, int len,
@@ -74,4 +75,5 @@ int quic_crypto_get_cipher(struct quic_crypto *crypto, int len,
 void quic_crypto_destroy(struct quic_crypto *crypto);
 int quic_crypto_key_update(struct quic_crypto *crypto, u8 *key, unsigned int len);
 void quic_crypto_set_key_update_ts(struct quic_crypto *crypto, u32 key_update_ts);
-int quic_crypto_get_retry_tag(struct sk_buff *skb, struct quic_connection_id *odcid, u8 *tag);
+int quic_crypto_get_retry_tag(struct sk_buff *skb, struct quic_connection_id *odcid,
+			      u32 version, u8 *tag);
