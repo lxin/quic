@@ -30,7 +30,7 @@ struct quic_data {
 	uint32_t datalen;
 };
 
-#define MAX_BUFLEN	2048
+#define MAX_BUFLEN	4096
 
 struct quic_buf {
 	uint32_t buflen;
@@ -51,7 +51,11 @@ struct quic_conn {
 	int sockfd;
 
 	gnutls_session_t session;
-	uint8_t completed;
+	struct quic_buf ticket;
+	uint8_t recv_ticket:1;
+	uint8_t completed:1;
+	uint8_t cert_req:2;
+	uint8_t is_serv:1;
 	uint8_t errcode;
 	timer_t timer;
 

@@ -452,7 +452,6 @@ int quic_inq_event_recv(struct sock *sk, u8 event, void *args)
 		args_len = sizeof(u64);
 		break;
 	case QUIC_EVENT_NEW_TOKEN:
-	case QUIC_EVENT_NEW_SESSION_TICKET:
 		args_len = ((struct quic_token *)args)->len;
 		args = ((struct quic_token *)args)->data;
 		break;

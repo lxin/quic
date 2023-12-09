@@ -157,13 +157,16 @@ static int secret_func(gnutls_session_t session,
 	struct quic_crypto_secret secret = {};
 	int len = sizeof(secret);
 
+	if (conn->completed)
+		return 0;
+
 	secret.level = get_crypto_level(level);
 	secret.type = tls_cipher_type_get(gnutls_cipher_get(session));
 	if (tx_secret) {
 		secret.send = 1;
 		memcpy(secret.secret, tx_secret, secretlen);
 		if (setsockopt(conn->sockfd, SOL_QUIC, QUIC_SOCKOPT_CRYPTO_SECRET, &secret, len)) {
-			print_error("socket setsockopt crypto_secret failed\n");
+			print_error("socket setsockopt tx crypto_secret failed %d\n", level);
 			return -1;
 		}
 	}
@@ -171,11 +174,15 @@ static int secret_func(gnutls_session_t session,
 		secret.send = 0;
 		memcpy(secret.secret, rx_secret, secretlen);
 		if (setsockopt(conn->sockfd, SOL_QUIC, QUIC_SOCKOPT_CRYPTO_SECRET, &secret, len)) {
-			print_error("socket setsockopt crypto_secret failed\n");
+			print_error("socket setsockopt rx crypto_secret failed %d\n", level);
 			return -1;
 		}
-		if (secret.level == QUIC_CRYPTO_STREAM)
-			conn->completed = 1;
+		if (secret.level == QUIC_CRYPTO_STREAM) {
+			if (conn->is_serv)
+				gnutls_session_ticket_send(session, 1, 0);
+			if (!conn->recv_ticket)
+				conn->completed = 1;
+		}
 	}
 	print_debug("  %s: %d %d %d\n", __func__, secret.level, !!tx_secret, !!rx_secret);
 	return 0;
@@ -227,12 +234,15 @@ static int read_func(gnutls_session_t session, gnutls_record_encryption_level_t 
 	struct quic_frame *frame;
 	uint32_t len = datalen;
 
+	if (htype == GNUTLS_HANDSHAKE_KEY_UPDATE)
+		return 0;
+
 	while (len > 0) {
 		frame = malloc(sizeof(*frame));
 		memset(frame, 0, sizeof(*frame));
 		frame->data.buflen = len;
-		if (len > 1024)
-			frame->data.buflen = 1024;
+		if (len > 1200)
+			frame->data.buflen = 1200;
 		memcpy(frame->data.buf, data, frame->data.buflen);
 
 		frame->level = get_crypto_level(level);
@@ -293,6 +303,30 @@ static char *get_priority(struct quic_conn *conn)
 	return p;
 }
 
+static int session_ticket_recv(gnutls_session_t session, unsigned int htype, unsigned when,
+			       unsigned int incoming, const gnutls_datum_t *msg)
+{
+	struct quic_conn *conn = gnutls_session_get_ptr(session);
+	gnutls_datum_t ticket;
+	int ret;
+
+	if (htype != GNUTLS_HANDSHAKE_NEW_SESSION_TICKET)
+		return 0;
+
+	conn->completed = 1;
+	ret = gnutls_session_get_data2(session, &ticket);
+	if (ret)
+		return ret;
+
+	ret = setsockopt(conn->sockfd, SOL_QUIC, QUIC_SOCKOPT_SESSION_TICKET,
+			 ticket.data, ticket.size);
+	if (ret) {
+		print_debug("setsocket set session ticket %d\n", ticket.size);
+		return ret;
+	}
+	return 0;
+}
+
 int quic_crypto_client_set_x509_session(struct quic_conn *conn)
 {
 	gnutls_certificate_credentials_t cred;
@@ -316,10 +350,16 @@ int quic_crypto_client_set_x509_session(struct quic_conn *conn)
 	ret = gnutls_priority_set_direct(session, get_priority(conn), NULL);
 	if (ret)
 		goto err_session;
+	gnutls_handshake_set_hook_function(session, GNUTLS_HANDSHAKE_ANY,
+					   GNUTLS_HOOK_POST, session_ticket_recv);
 	gnutls_session_set_ptr(session, conn);
 	ret = crypto_gnutls_configure_session(session);
 	if (ret)
 		goto err_session;
+	if (conn->ticket.buflen) {
+		if (gnutls_session_set_data(session, conn->ticket.buf, conn->ticket.buflen))
+			goto err_session;
+	}
 	gnutls_credentials_set(session, GNUTLS_CRD_CERTIFICATE, cred);
 	if (conn->parms->peername)
 		gnutls_server_name_set(session, GNUTLS_NAME_DNS,
@@ -371,6 +411,8 @@ int quic_crypto_client_set_psk_session(struct quic_conn *conn)
 	ret = gnutls_priority_set_direct(session, get_priority(conn), NULL);
 	if (ret)
 		goto err_session;
+	gnutls_handshake_set_hook_function(session, GNUTLS_HANDSHAKE_ANY,
+					   GNUTLS_HOOK_POST, session_ticket_recv);
 	gnutls_session_set_ptr(session, conn);
 	ret = crypto_gnutls_configure_session(session);
 	if (ret)
@@ -458,6 +500,7 @@ static int server_alpn_verify(gnutls_session_t session, unsigned int htype, unsi
 int quic_crypto_server_set_x509_session(struct quic_conn *conn)
 {
 	gnutls_certificate_credentials_t cred;
+	gnutls_datum_t ticket_key;
 	gnutls_session_t session;
 	int ret;
 
@@ -472,7 +515,8 @@ int quic_crypto_server_set_x509_session(struct quic_conn *conn)
 		goto err_cred;
 	gnutls_certificate_set_verify_function(cred, server_x509_verify);
 
-	ret = gnutls_init(&session, GNUTLS_SERVER);
+	conn->is_serv = 1;
+	ret = gnutls_init(&session, GNUTLS_SERVER | GNUTLS_NO_AUTO_SEND_TICKET);
 	if (ret)
 		goto err_cred;
 	ret = gnutls_priority_set_direct(session, get_priority(conn), NULL);
@@ -482,10 +526,15 @@ int quic_crypto_server_set_x509_session(struct quic_conn *conn)
 	ret = crypto_gnutls_configure_session(session);
 	if (ret)
 		goto err_session;
+	ticket_key.data = conn->ticket.buf;
+	ticket_key.size = conn->ticket.buflen;
+	ret = gnutls_session_ticket_enable_server(session, &ticket_key);
+	if (ret)
+		goto err_session;
 	gnutls_handshake_set_hook_function(session, GNUTLS_HANDSHAKE_CLIENT_HELLO,
 					   GNUTLS_HOOK_POST, server_alpn_verify);
 	gnutls_credentials_set(session, GNUTLS_CRD_CERTIFICATE, cred);
-	gnutls_certificate_server_set_request(session, conn->parms->cert_req);
+	gnutls_certificate_server_set_request(session, conn->cert_req);
 	if (conn->alpn.datalen) {
 		gnutls_datum_t alpn = {
 			.data = conn->alpn.data,
@@ -540,7 +589,8 @@ int quic_crypto_server_set_psk_session(struct quic_conn *conn)
 	if (ret)
 		goto err;
 
-	ret = gnutls_init(&session, GNUTLS_SERVER);
+	conn->is_serv = 1;
+	ret = gnutls_init(&session, GNUTLS_SERVER | GNUTLS_NO_AUTO_SEND_TICKET);
 	if (ret)
 		goto err_cred;
 	ret = gnutls_priority_set_direct(session, get_priority(conn), NULL);

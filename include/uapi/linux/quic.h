@@ -111,9 +111,11 @@ struct quic_transport_param {
 	uint64_t initial_max_streams_uni;
 	uint64_t initial_smoothed_rtt;
 	uint8_t disable_active_migration;
-	uint8_t validate_address;
 	uint8_t grease_quic_bit;
-	uint32_t version;
+	uint8_t validate_address;	/* for server only, verify token and send retry packet */
+	uint8_t recv_session_ticket;	/* for client only, handshake done until ticket is recvd */
+	uint8_t cert_request;		/* for server only, 0: IGNORE, 1: REQUEST, 2: REQUIRE */
+	uint32_t version;		/* QUIC_VERSION_V1 or V2 for now */
 };
 
 struct quic_crypto_secret {
@@ -186,11 +188,11 @@ struct quic_event_option { /* EVENT */
  *   This notification is sent when both sides have used the new key, and the parameter
  *   tells you which the new key phase is.
  *
- * - QUIC_EVENT_NEW_TOKEN and QUIC_EVENT_NEW_SESSION_TICKET
+ * - QUIC_EVENT_NEW_TOKEN
  *
- *   Since the handshake is in userspace, this two notifications are sent whenever the
- *   frame of NEW_TOKEN or TLS_NEW_SESSION_TICKET_MSG is received from the peer where
- *   it can send these frame by QUIC_SOCKOPT_NEW_TOKEN/NEW_SESSION_TICKET.
+ *   Since the handshake is in userspace, this notifications is sent whenever the
+ *   frame of NEW_TOKEN is received from the peer where it can send these frame by
+ *   QUIC_SOCKOPT_NEW_TOKEN.
  */
 enum quic_event_type {
 	QUIC_EVENT_NONE,
@@ -200,7 +202,6 @@ enum quic_event_type {
 	QUIC_EVENT_CONNECTION_MIGRATION,
 	QUIC_EVENT_KEY_UPDATE,
 	QUIC_EVENT_NEW_TOKEN,
-	QUIC_EVENT_NEW_SESSION_TICKET,
 	QUIC_EVENT_END,
 	QUIC_EVENT_MAX = QUIC_EVENT_END - 1,
 };
@@ -240,7 +241,6 @@ union quic_event {
 	uint8_t local_migration;
 	uint8_t key_update_phase;
 	uint8_t new_token[0];
-	uint8_t new_session_ticket[0];
 };
 
 #endif /* __uapi_quic_h__ */

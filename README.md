@@ -81,7 +81,7 @@ in [ktls-utils](https://github.com/lxin/ktls-utils) will handle the handshake re
 - Handshake APIs for tlshd Use - *NFS/SMB over QUIC*
 
 ### TBD
-- Session Ticket & 0-RTT
+- 0-RTT Data Transmission
 - Stateless Reset (rfc9000#name-stateless-reset)
 
 ## INSTALL
@@ -275,9 +275,6 @@ in [ktls-utils](https://github.com/lxin/ktls-utils) will handle the handshake re
         	gnutls_pcert_st		*cert;		/* certificate for x509 handshake */
         	char 			*peername;	/* - server name for client side x509 handshake or,
         						 * - psk identity name chosen during PSK handshake
-        						 */
-        	uint8_t			cert_req;	/* certificat request, server only
-        						 * 0: IGNORE, 1: REQUEST, 2: REQUIRE
         						 */
         	char			*names[10];	/* psk identifies in PSK handshake */
         	gnutls_datum_t		keys[10];	/* - psk keys in PSK handshake, or,

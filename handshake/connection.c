@@ -187,6 +187,7 @@ static int delete_timer(struct quic_conn *conn)
 
 static int get_transport_param(struct quic_conn *conn)
 {
+	struct quic_transport_param param;
 	int len, sockfd = conn->sockfd;
 
 	len = sizeof(conn->cipher);
@@ -200,6 +201,19 @@ static int get_transport_param(struct quic_conn *conn)
 		return -1;
 	}
 	conn->alpn.datalen = len;
+	len = sizeof(conn->ticket.buf);
+	if (getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_SESSION_TICKET, conn->ticket.buf, &len)) {
+		printf("socket getsockopt session ticket failed\n");
+		return -1;
+	}
+	conn->ticket.buflen = len;
+	len = sizeof(param);
+	if (getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_TRANSPORT_PARAM, &param, &len)) {
+		printf("socket getsockopt transport param failed\n");
+		return -1;
+	}
+	conn->recv_ticket = param.recv_session_ticket;
+	conn->cert_req = param.cert_request;
 	conn->sockfd = sockfd;
 	return 0;
 }

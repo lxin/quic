@@ -22,9 +22,6 @@ struct quic_handshake_parms {
 	char 			*peername;	/* - server name for client side x509 handshake or,
 						 * - psk identity name chosen during PSK handshake
 						 */
-	uint8_t			cert_req;	/* certificat request, server only
-						 * 0: IGNORE, 1: REQUEST, 2: REQUIRE
-						 */
 	char			*names[10];	/* psk identifies in PSK handshake */
 	gnutls_datum_t		keys[10];	/* - psk keys in PSK handshake, or,
 						 * - certificates received in x509 handshake

@@ -205,25 +205,30 @@ static struct sk_buff *quic_frame_crypto_create(struct sock *sk, void *data, u8 
 	struct sk_buff *skb;
 	u8 *p;
 
-	if (!info->level) {
-		struct quic_token *ticket = quic_ticket(sk);
+	quic_packet_config(sk, info->level);
+	max_frame_len = quic_packet_max_payload(quic_packet(sk));
+	crypto = quic_crypto(sk, info->level);
+	msg_len = iov_iter_count(info->msg);
 
-		skb = alloc_skb(ticket->len + 8, GFP_ATOMIC);
+	if (!info->level) {
+		if (msg_len > max_frame_len)
+			return NULL;
+		skb = alloc_skb(msg_len + 8, GFP_ATOMIC);
 		if (!skb)
 			return NULL;
 		p = quic_put_var(skb->data, type);
 		p = quic_put_var(p, 0);
-		p = quic_put_var(p, ticket->len);
-		p = quic_put_data(p, ticket->data, ticket->len);
+		p = quic_put_var(p, msg_len);
+		if (!copy_from_iter_full(p, msg_len, info->msg)) {
+			kfree_skb(skb);
+			return NULL;
+		}
+		p += msg_len;
 		skb_put(skb, (u32)(p - skb->data));
 
 		return skb;
 	}
 
-	quic_packet_config(sk, info->level);
-	max_frame_len = quic_packet_max_payload(quic_packet(sk));
-	crypto = quic_crypto(sk, info->level);
-	msg_len = iov_iter_count(info->msg);
 	if (msg_len > max_frame_len)
 		msg_len = max_frame_len;
 	hlen = 1 + quic_var_len(msg_len) + quic_var_len(crypto->send_offset);
@@ -581,20 +586,9 @@ static int quic_frame_crypto_process(struct sock *sk, struct sk_buff *skb, u8 ty
 		return -EINVAL;
 
 	if (!QUIC_RCV_CB(skb)->level) {
-		struct quic_token *ticket = quic_ticket(sk);
-
-		if (*p != 4) /* for TLS NEWSESSION_TICKET message only */
-			return -EINVAL;
-
-		p = kmemdup(p, length, GFP_ATOMIC);
-		if (!p)
-			return -ENOMEM;
-		kfree(ticket->data);
-		ticket->data = p;
-		ticket->len = length;
-		if (quic_inq_event_recv(sk, QUIC_EVENT_NEW_SESSION_TICKET, ticket))
-			return -ENOMEM;
-		goto out;
+		if (!quic_param(sk)->recv_session_ticket)
+			goto out;
+		quic_param(sk)->recv_session_ticket = 0;
 	}
 
 	nskb = skb_clone(skb, GFP_ATOMIC);
@@ -623,6 +617,8 @@ static int quic_frame_stream_process(struct sock *sk, struct sk_buff *skb, u8 ty
 	u8 *p = skb->data;
 	int err;
 
+	if (quic_param(sk)->recv_session_ticket)
+		return -EINVAL;
 	if (!quic_get_var(&p, &len, &stream_id))
 		return -EINVAL;
 	if (type & QUIC_STREAM_BIT_OFF) {
@@ -1188,6 +1184,9 @@ static int quic_frame_datagram_process(struct sock *sk, struct sk_buff *skb, u8 
 	u8 *p = skb->data;
 	u64 payload_len;
 	int err;
+
+	if (quic_param(sk)->recv_session_ticket)
+		return -EINVAL;
 
 	if (!quic_inq_max_dgram(quic_inq(sk)))
 		return -EINVAL;

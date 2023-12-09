@@ -562,58 +562,6 @@ static int do_client_notification_test(int sockfd)
 	}
 	printf("test26: PASS (enable new token event)\n");
 
-	event.type = QUIC_EVENT_NEW_SESSION_TICKET;
-	event.on = 1;
-	ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_EVENT, &event, sizeof(event));
-	if (ret == -1) {
-		printf("socket setsockopt event error %d\n", errno);
-		return -1;
-	}
-	printf("test27: PASS (enable new token event)\n");
-
-	flag = QUIC_STREAM_FLAG_NEW | QUIC_STREAM_FLAG_FIN;
-	sid  = 122;
-	strcpy(msg, "client new_session_ticket");
-	ret = quic_sendmsg(sockfd, msg, strlen(msg), sid, flag); /* stream_id: 122 */
-	if (ret == -1) {
-		printf("send error %d %d\n", ret, errno);
-		return -1;
-	}
-	ret = quic_recvmsg(sockfd, msg, sizeof(msg), &sid, &flag);
-	if (ret == -1) {
-		printf("recv error %d %d\n", ret, errno);
-		return -1;
-	}
-	if (!(flag & QUIC_STREAM_FLAG_NOTIFICATION) || msg[0] != QUIC_EVENT_NEW_SESSION_TICKET) {
-		printf("test28: FAIL %d %d\n", flag, msg[0]);
-		return -1;
-	}
-	ev = (void *)&msg[1];
-	memcpy(opt, ev->new_session_ticket, ret - 1);
-	if (strcmp(&opt[1], "1234567890123456789")) {
-		printf("test28: FAIL %s %d\n", opt, ret - 1);
-		return -1;
-	}
-	ret = quic_recvmsg(sockfd, msg, sizeof(msg), &sid, &flag);
-	if (ret == -1) {
-		printf("recv error %d %d\n", ret, errno);
-		return -1;
-	}
-	if (strcmp(msg, "client new_session_ticket") || sid != 123) {
-		printf("test28: FAIL %s %d\n", msg, sid);
-		return -1;
-	}
-	printf("test28: PASS (QUIC_EVENT_NEW_SESSION_TICKET event)\n");
-
-	event.type = QUIC_EVENT_NEW_SESSION_TICKET;
-	event.on = 0;
-	ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_EVENT, &event, sizeof(event));
-	if (ret == -1) {
-		printf("socket setsockopt event error %d\n", errno);
-		return -1;
-	}
-	printf("test29: PASS (enable new session ticket event)\n");
-
 	return 0;
 }
 
@@ -1107,53 +1055,12 @@ static int do_client_connection_test(int sockfd)
 	}
 	printf("test27: PASS (get token from socket)\n");
 
-	strcpy(msg, "client new_session_ticket");
-	ret = send(sockfd, msg, strlen(msg), MSG_SYN | MSG_FIN);
-	if (ret == -1) {
-		printf("send error %d %d\n", ret, errno);
-		return -1;
-	}
-	ret = recv(sockfd, msg, sizeof(msg), 0);
-	if (ret == -1) {
-		printf("recv error %d %d\n", ret, errno);
-		return 1;
-	}
-	if (strcmp(msg, "client new_session_ticket")) {
+	ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_TOKEN, NULL, 0);
+	if (ret != -1) {
 		printf("test28: FAIL\n");
 		return -1;
 	}
-	printf("test28: PASS (peer new_session_ticket is done)\n");
-
-	optlen = sizeof(opt);
-	memset(opt, 0, optlen);
-	ret = getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_SESSION_TICKET, opt, &optlen);
-	if (ret == -1 || strcmp(&opt[1], "1234567890123456789")) {
-		printf("socket setsockopt key update failed %s\n", opt);
-		return -1;
-	}
-	printf("test29: PASS (get new_session_ticket msg from socket)\n");
-
-	opt[0] = 1;
-	ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_SESSION_TICKET, opt, strlen(opt));
-	if (ret != -1) {
-		printf("test30: FAIL\n");
-		return -1;
-	}
-	printf("test30: PASS (not allowed to set new_session_ticket msg with an wrong format value)\n");
-
-	ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_SESSION_TICKET, NULL, 0);
-	if (ret != -1) {
-		printf("test31: FAIL\n");
-		return -1;
-	}
-	printf("test31: PASS (not allowed to set new_session_ticket msg with an null value)\n");
-
-	ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_TOKEN, NULL, 0);
-	if (ret != -1) {
-		printf("test32: FAIL\n");
-		return -1;
-	}
-	printf("test32: PASS (not allowed to set token with an null value on client)\n");
+	printf("test28: PASS (not allowed to set token with an null value on client)\n");
 
 	flag = QUIC_STREAM_FLAG_DATAGRAM;
 	strcpy(msg, "client datagram");
@@ -1168,14 +1075,14 @@ static int do_client_connection_test(int sockfd)
 		return -1;
 	}
 	if (strcmp(msg, "client datagram")) {
-		printf("test33: FAIL\n");
+		printf("test29: FAIL\n");
 		return -1;
 	}
 	if (!(flag & QUIC_STREAM_FLAG_DATAGRAM)) {
-		printf("test33: FAIL %d\n", flag);
+		printf("test29: FAIL %d\n", flag);
 		return -1;
 	}
-	printf("test33: PASS (send and recv datagram)\n");
+	printf("test29: PASS (send and recv datagram)\n");
 	return 0;
 }
 
@@ -1884,17 +1791,6 @@ static int do_server_test(int sockfd)
 			ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_TOKEN, NULL, 0);
 			if (ret == -1) {
 				printf("socket setsockopt new token failed\n");
-				return -1;
-			}
-		}
-
-		if (!strcmp(msg, "client new_session_ticket")) {
-			char ticket[] = "01234567890123456789";
-
-			ticket[0] = 4;
-			ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_SESSION_TICKET, ticket, strlen(ticket));
-			if (ret == -1) {
-				printf("socket setsockopt new session ticket failed\n");
 				return -1;
 			}
 		}

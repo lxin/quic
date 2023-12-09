@@ -8,10 +8,13 @@
 
 #include <netinet/quic.h>
 
+static uint8_t ticket[4096];
+
 static int do_client(int argc, char *argv[])
 {
+	struct quic_transport_param param = {};
+	int ret, sockfd, ticket_len = 0;
 	struct sockaddr_in ra = {};
-	int ret, sockfd;
 	char msg[50];
 
 	if (argc < 3) {
@@ -34,17 +37,69 @@ static int do_client(int argc, char *argv[])
 		return -1;
 	}
 
+	param.recv_session_ticket = 1;
+	if (setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_TRANSPORT_PARAM,
+		       &param, sizeof(param)))
+		return -1;
+
 	if (quic_client_handshake(sockfd, NULL, NULL))
 		return -1;
 
-	/* NOTE: quic_send/recvmsg() allows get/setting stream id and flags,
-	 * comparing to send/recv():
-	 * sid = 0;
-	 * flag = QUIC_STREAM_FLAG_NEW | QUIC_STREAM_FLAG_FIN;
-	 * quic_sendmsg(sockfd, msg, strlen(msg), sid, flag);
-	 * quic_recvmsg(sockfd, msg, sizeof(msg), &sid, &flag);
-	 */
+	/* get ticket after handshake (you can save it somewhere) */
+	ticket_len = sizeof(ticket);
+	ret = getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_SESSION_TICKET, ticket, &ticket_len);
+	if (ret == -1 || !ticket_len) {
+		printf("socket getsockopt session ticket\n");
+		return -1;
+	}
+	printf("get the session ticket %d, save it\n", ticket_len);
+
 	strcpy(msg, "hello quic server!");
+	ret = send(sockfd, msg, strlen(msg), MSG_SYN | MSG_FIN);
+	if (ret == -1) {
+		printf("send error %d %d\n", ret, errno);
+		return -1;
+	}
+	printf("send %d\n", ret);
+
+	ret = recv(sockfd, msg, sizeof(msg), 0);
+	if (ret == -1) {
+		printf("recv error %d %d\n", ret, errno);
+		return 1;
+	}
+	printf("recv: \"%s\", len: %d\n", msg, ret);
+
+	close(sockfd);
+
+	printf("start new connection with the session ticket used...\n");
+	sleep(2);
+
+	sockfd = socket(AF_INET, SOCK_DGRAM, IPPROTO_QUIC);
+	if (sockfd < 0) {
+		printf("socket create failed\n");
+		return -1;
+	}
+
+	ra.sin_family = AF_INET;
+	ra.sin_port = htons(atoi(argv[3]));
+	inet_pton(AF_INET, argv[2], &ra.sin_addr.s_addr);
+
+	if (connect(sockfd, (struct sockaddr *)&ra, sizeof(ra))) {
+		printf("socket connect failed\n");
+		return -1;
+	}
+
+	/* set the ticket into the socket for handshake */
+	ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_SESSION_TICKET, ticket, ticket_len);
+	if (ret == -1) {
+		printf("socket getsockopt session ticket\n");
+		return -1;
+	}
+
+	if (quic_client_handshake(sockfd, NULL, NULL))
+		return -1;
+
+	strcpy(msg, "hello quic server, I'm back!");
 	ret = send(sockfd, msg, strlen(msg), MSG_SYN | MSG_FIN);
 	if (ret == -1) {
 		printf("send error %d %d\n", ret, errno);
@@ -108,6 +163,35 @@ static int do_server(int argc, char *argv[])
 	printf("recv: \"%s\", len: %d\n", msg, ret);
 
 	strcpy(msg, "hello quic client!");
+	ret = send(sockfd, msg, strlen(msg), MSG_SYN | MSG_FIN);
+	if (ret == -1) {
+		printf("send error %d %d\n", ret, errno);
+		return -1;
+	}
+	printf("send %d\n", ret);
+
+	close(sockfd);
+
+	printf("wait for the client next connection...\n");
+
+	addrlen = sizeof(sa);
+	sockfd = accept(listenfd, (struct sockaddr *)&sa, &addrlen);
+	if (sockfd < 0) {
+		printf("socket accept failed %d %d\n", errno, sockfd);
+		return -1;
+	}
+
+	if (quic_server_handshake(sockfd, argv[4], argv[5]))
+		return -1;
+
+	ret = recv(sockfd, msg, sizeof(msg), 0);
+	if (ret == -1) {
+		printf("recv error %d %d\n", ret, errno);
+		return 1;
+	}
+	printf("recv: \"%s\", len: %d\n", msg, ret);
+
+	strcpy(msg, "hello quic client! welcome back!");
 	ret = send(sockfd, msg, strlen(msg), MSG_SYN | MSG_FIN);
 	if (ret == -1) {
 		printf("send error %d %d\n", ret, errno);

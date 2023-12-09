@@ -326,7 +326,7 @@ static void quic_unhash(struct sock *sk)
 }
 
 static int quic_msghdr_parse(struct sock *sk, struct msghdr *msg, struct quic_handshake_info *hinfo,
-			     struct quic_stream_info *sinfo)
+			     struct quic_stream_info *sinfo, bool *has_hinfo)
 {
 	struct quic_handshake_info *i = NULL;
 	struct quic_stream_info *s = NULL;
@@ -346,6 +346,7 @@ static int quic_msghdr_parse(struct sock *sk, struct msghdr *msg, struct quic_ha
 				return -EINVAL;
 			i = CMSG_DATA(cmsg);
 			hinfo->crypto_level = i->crypto_level;
+			*has_hinfo = true;
 			break;
 		case QUIC_STREAM_INFO:
 			if (cmsg->cmsg_len != CMSG_LEN(sizeof(*s)))
@@ -480,12 +481,13 @@ static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 	struct quic_stream_info sinfo = {};
 	struct quic_msginfo msginfo;
 	struct quic_stream *stream;
+	bool has_hinfo = false;
 	struct sk_buff *skb;
 	int err = 0;
 	long timeo;
 
 	lock_sock(sk);
-	err = quic_msghdr_parse(sk, msg, &hinfo, &sinfo);
+	err = quic_msghdr_parse(sk, msg, &hinfo, &sinfo, &has_hinfo);
 	if (err)
 		goto err;
 
@@ -495,7 +497,7 @@ static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 		goto err;
 	}
 
-	if (hinfo.crypto_level) {
+	if (has_hinfo) {
 		msginfo.level = hinfo.crypto_level;
 		msginfo.msg = &msg->msg_iter;
 		while (iov_iter_count(&msg->msg_iter) > 0) {
@@ -649,7 +651,7 @@ static int quic_recvmsg(struct sock *sk, struct msghdr *msg, size_t len, int fla
 		} else if (dgram) {
 			msg->msg_flags |= MSG_DATAGRAM;
 			sinfo.stream_flag |= QUIC_STREAM_FLAG_DATAGRAM;
-		} else if (level) {
+		} else if (!stream) {
 			hinfo.crypto_level = level;
 			put_cmsg(msg, IPPROTO_QUIC, QUIC_HANDSHAKE_INFO, sizeof(hinfo), &hinfo);
 		}
@@ -674,7 +676,7 @@ static int quic_recvmsg(struct sock *sk, struct msghdr *msg, size_t len, int fla
 			sinfo.stream_flag |= QUIC_STREAM_FLAG_FIN;
 			kfree_skb(__skb_dequeue(&sk->sk_receive_queue));
 			break;
-		} else if (level) {
+		} else if (!stream) {
 			kfree_skb(__skb_dequeue(&sk->sk_receive_queue));
 			break;
 		}
@@ -689,17 +691,18 @@ static int quic_recvmsg(struct sock *sk, struct msghdr *msg, size_t len, int fla
 
 		skb = skb_peek(&sk->sk_receive_queue);
 		if (!skb || QUIC_RCV_CB(skb)->event || QUIC_RCV_CB(skb)->dgram ||
-		    QUIC_RCV_CB(skb)->level ||
+		    !QUIC_RCV_CB(skb)->stream ||
 		    QUIC_RCV_CB(skb)->stream->id != stream->id)
 			break;
 	} while (copied < len);
 
-	if (!event && !dgram && !level) {
+	if (!event && stream) {
 		sinfo.stream_id = stream->id;
 		quic_inq_flow_control(sk, stream, freed);
 	}
-	if (!level)
+	if (event || stream) {
 		put_cmsg(msg, IPPROTO_QUIC, QUIC_STREAM_INFO, sizeof(sinfo), &sinfo);
+	}
 	err = copied;
 out:
 	release_sock(sk);
@@ -792,6 +795,15 @@ static int quic_copy_sock(struct sock *nsk, struct sock *sk, struct quic_request
 			return -ENOMEM;
 		quic_token(nsk)->data = data;
 		quic_token(nsk)->len = len;
+	}
+
+	len = quic_ticket(sk)->len;
+	if (len) {
+		data = kmemdup(quic_ticket(sk)->data, len, GFP_KERNEL);
+		if (!data)
+			return -ENOMEM;
+		quic_ticket(nsk)->data = data;
+		quic_ticket(nsk)->len = len;
 	}
 
 	*quic_param(nsk) = *quic_param(sk);
@@ -1014,14 +1026,9 @@ static int quic_sock_set_token(struct sock *sk, void *data, u32 len)
 static int quic_sock_set_session_ticket(struct sock *sk, u8 *data, u32 len)
 {
 	struct quic_token *ticket = quic_ticket(sk);
-	struct quic_msginfo msginfo = {};
-	struct sk_buff *skb;
 	u8 *p;
 
-	if (len < 4 + 4 + 1 + 2 || len > 4096)
-		return -EINVAL;
-
-	if (*data != 4)
+	if (!len || len > 4096)
 		return -EINVAL;
 
 	p = kmemdup(data, len, GFP_KERNEL);
@@ -1031,15 +1038,6 @@ static int quic_sock_set_session_ticket(struct sock *sk, u8 *data, u32 len)
 	kfree(ticket->data);
 	ticket->data = p;
 	ticket->len = len;
-
-	if (!quic_is_serv(sk))
-		return 0;
-
-	skb = quic_frame_create(sk, QUIC_FRAME_CRYPTO, &msginfo);
-	if (!skb)
-		return -ENOMEM;
-
-	quic_outq_ctrl_tail(sk, skb, false);
 	return 0;
 }
 
@@ -1069,6 +1067,8 @@ static int quic_sock_set_transport_param(struct sock *sk, struct quic_transport_
 	quic_set_param_if_not_zero(initial_smoothed_rtt);
 	quic_set_param_if_not_zero(disable_active_migration);
 	quic_set_param_if_not_zero(validate_address);
+	quic_set_param_if_not_zero(recv_session_ticket);
+	quic_set_param_if_not_zero(cert_request);
 	quic_set_param_if_not_zero(version);
 
 	return 0;

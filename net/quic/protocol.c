@@ -258,9 +258,9 @@ static int quic_inet_connect(struct socket *sock, struct sockaddr *addr, int add
 
 static int quic_inet_listen(struct socket *sock, int backlog)
 {
+	struct quic_token *token, *ticket;
 	struct sock *sk = sock->sk;
-	struct quic_token *token;
-	u8 rand_data[16];
+	u8 rand_data[64];
 	int err = 0;
 
 	lock_sock(sk);
@@ -284,6 +284,16 @@ static int quic_inet_listen(struct socket *sock, int backlog)
 		goto out;
 	}
 	token->len = 16;
+
+	ticket = quic_ticket(sk);
+	get_random_bytes(rand_data, 64);
+	kfree(ticket->data);
+	ticket->data = kmemdup(rand_data, 64, GFP_KERNEL);
+	if (!ticket->data) {
+		err = -ENOMEM;
+		goto out;
+	}
+	ticket->len = 64;
 
 	inet_sk_set_state(sk, QUIC_SS_LISTENING);
 	err = sk->sk_prot->hash(sk);

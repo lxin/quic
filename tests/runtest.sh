@@ -97,6 +97,11 @@ if modinfo quic_test > /dev/null 2>&1; then
 	daemon_stop "perf_test"
 fi
 
+print_start "Session Ticket Tests"
+daemon_run ./ticket_test server 127.0.0.1 1234 ./keys/server-key.pem ./keys/server-cert.pem
+./ticket_test client 127.0.0.1 1234 || exit 1
+daemon_stop
+
 print_start "Sample Tests"
 daemon_run ./sample_test server 127.0.0.1 1234 ./keys/server-key.pem ./keys/server-cert.pem
 ./sample_test client 127.0.0.1 1234 || exit 1
