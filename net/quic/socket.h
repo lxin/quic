@@ -70,6 +70,7 @@ struct quic_sock {
 	struct quic_path_addr		dst;
 
 	struct quic_transport_param	param;
+	struct quic_transport_param	remote;
 	struct quic_token		token;
 	struct quic_token		ticket;
 	struct quic_token		alpn;
@@ -181,6 +182,11 @@ static inline struct quic_connection_id_set *quic_dest(const struct sock *sk)
 static inline struct quic_transport_param *quic_param(const struct sock *sk)
 {
 	return &quic_sk(sk)->param;
+}
+
+static inline struct quic_transport_param *quic_remote(const struct sock *sk)
+{
+	return &quic_sk(sk)->remote;
 }
 
 static inline struct quic_bind_port *quic_port(const struct sock *sk)

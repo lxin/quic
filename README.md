@@ -71,7 +71,8 @@ in [ktls-utils](https://github.com/lxin/ktls-utils) will handle the handshake re
         |                           UDP TUNNEL KERNEL APIs                       |
         +------------------------------------------------------------------------+
 
-### RFCs (Most Features Supported)
+### Features
+#### most features from these RFCs are supported
 - RFC9000 - *QUIC: A UDP-Based Multiplexed and Secure Transport*
 - RFC9001 - *Using TLS to Secure QUIC*
 - RFC9002 - *QUIC Loss Detection and Congestion Control*
@@ -80,8 +81,8 @@ in [ktls-utils](https://github.com/lxin/ktls-utils) will handle the handshake re
 - RFC9369 - *QUIC Version 2*
 - Handshake APIs for tlshd Use - *NFS/SMB over QUIC*
 
-### TBD
-- 0-RTT Data Transmission
+#### some are still ongoing:
+- Transport Error Codes for All Error Cases
 - Stateless Reset (rfc9000#name-stateless-reset)
 
 ## INSTALL
@@ -202,7 +203,7 @@ in [ktls-utils](https://github.com/lxin/ktls-utils) will handle the handshake re
     # systemctl restart tlshd
     (re-run the selftests in 'run selftests' section)
 
-### Build and Install MSQUIC (Optional For Testing):
+### Build and Install MSQUIC (Optional):
     (NOTE: you can skip this if you don't want to run the interoperability tests with MSQUIC)
 
     # dnf install -y cmake

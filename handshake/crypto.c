@@ -23,6 +23,8 @@ static enum quic_crypto_level get_crypto_level(gnutls_record_encryption_level_t 
 		return QUIC_CRYPTO_HANDSHAKE;
 	if (level == GNUTLS_ENCRYPTION_LEVEL_APPLICATION)
 		return QUIC_CRYPTO_STREAM;
+	if (level == GNUTLS_ENCRYPTION_LEVEL_EARLY)
+		return QUIC_CRYPTO_EARLY;
 	print_warn("[WARN] %s: %d\n", __func__, level);
 	return QUIC_CRYPTO_MAX;
 }
@@ -35,6 +37,8 @@ static gnutls_record_encryption_level_t get_encryption_level(uint8_t level)
 		return GNUTLS_ENCRYPTION_LEVEL_HANDSHAKE;
 	if (level == QUIC_CRYPTO_STREAM)
 		return GNUTLS_ENCRYPTION_LEVEL_APPLICATION;
+	if (level == QUIC_CRYPTO_EARLY)
+		return GNUTLS_ENCRYPTION_LEVEL_EARLY;
 	print_warn("[WARN] %s: %d\n", __func__, level);
 	return QUIC_CRYPTO_MAX;
 }
@@ -153,6 +157,7 @@ static int secret_func(gnutls_session_t session,
 		       gnutls_record_encryption_level_t level,
 		       const void *rx_secret, const void *tx_secret, size_t secretlen)
 {
+	gnutls_cipher_algorithm_t type  = gnutls_cipher_get(session);
 	struct quic_conn *conn = gnutls_session_get_ptr(session);
 	struct quic_crypto_secret secret = {};
 	int len = sizeof(secret);
@@ -160,8 +165,11 @@ static int secret_func(gnutls_session_t session,
 	if (conn->completed)
 		return 0;
 
+	if (level == GNUTLS_ENCRYPTION_LEVEL_EARLY)
+		type = gnutls_early_cipher_get(session);
+
 	secret.level = get_crypto_level(level);
-	secret.type = tls_cipher_type_get(gnutls_cipher_get(session));
+	secret.type = tls_cipher_type_get(type);
 	if (tx_secret) {
 		secret.send = 1;
 		memcpy(secret.secret, tx_secret, secretlen);
@@ -344,7 +352,8 @@ int quic_crypto_client_set_x509_session(struct quic_conn *conn)
 		goto err_cred;
 	gnutls_certificate_set_verify_function(cred, client_x509_verify);
 
-	ret = gnutls_init(&session, GNUTLS_CLIENT);
+	ret = gnutls_init(&session, GNUTLS_CLIENT |
+				    GNUTLS_ENABLE_EARLY_DATA | GNUTLS_NO_END_OF_EARLY_DATA);
 	if (ret)
 		goto err_cred;
 	ret = gnutls_priority_set_direct(session, get_priority(conn), NULL);
@@ -497,6 +506,14 @@ static int server_alpn_verify(gnutls_session_t session, unsigned int htype, unsi
 	return 0;
 }
 
+static int anti_replay_db_add_func(void *dbf, time_t exp_time, const gnutls_datum_t *key,
+				   const gnutls_datum_t *data)
+{
+	return 0;
+}
+
+static gnutls_anti_replay_t anti_replay; /* TODO: make it per listen socket */
+
 int quic_crypto_server_set_x509_session(struct quic_conn *conn)
 {
 	gnutls_certificate_credentials_t cred;
@@ -513,15 +530,26 @@ int quic_crypto_server_set_x509_session(struct quic_conn *conn)
 	ret = server_set_x509_cred(conn, cred);
 	if (ret)
 		goto err_cred;
+
 	gnutls_certificate_set_verify_function(cred, server_x509_verify);
 
 	conn->is_serv = 1;
-	ret = gnutls_init(&session, GNUTLS_SERVER | GNUTLS_NO_AUTO_SEND_TICKET);
+	ret = gnutls_init(&session, GNUTLS_SERVER | GNUTLS_NO_AUTO_SEND_TICKET |
+				    GNUTLS_ENABLE_EARLY_DATA | GNUTLS_NO_END_OF_EARLY_DATA);
 	if (ret)
 		goto err_cred;
 	ret = gnutls_priority_set_direct(session, get_priority(conn), NULL);
 	if (ret)
 		goto err_session;
+
+	if (!anti_replay) {
+		gnutls_anti_replay_init(&anti_replay);
+		gnutls_anti_replay_set_add_function(anti_replay, anti_replay_db_add_func);
+		gnutls_anti_replay_set_ptr(anti_replay, NULL);
+	}
+	gnutls_anti_replay_enable(session, anti_replay);
+	gnutls_record_set_max_early_data_size(session, 0xffffffffu);
+
 	gnutls_session_set_ptr(session, conn);
 	ret = crypto_gnutls_configure_session(session);
 	if (ret)

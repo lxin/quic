@@ -539,45 +539,44 @@ int quic_crypto_set_secret(struct quic_crypto *crypto, struct quic_crypto_secret
 		return -EINVAL;
 
 	cipher = &ciphers[srt->type - QUIC_CIPHER_MIN];
+	if (!crypto->cipher) {
+		crypto->version = version;
+		tfm = crypto_alloc_shash(cipher->shash, 0, 0);
+		if (IS_ERR(tfm))
+			return PTR_ERR(tfm);
+		crypto->secret_tfm = tfm;
+
+		tfm = crypto_alloc_skcipher(cipher->skc, 0, 0);
+		if (IS_ERR(tfm)) {
+			err = PTR_ERR(tfm);
+			goto err;
+		}
+		crypto->skc_tfm = tfm;
+
+		tfm = crypto_alloc_aead(cipher->aead, 0, 0);
+		if (IS_ERR(tfm)) {
+			err = PTR_ERR(tfm);
+			goto err;
+		}
+		crypto->aead_tfm = tfm;
+		crypto->cipher = cipher;
+		crypto->cipher_type = srt->type;
+	}
+
 	if (!srt->send) {
-		if (!crypto->cipher)
-			return -EINVAL;
 		memcpy(crypto->rx_secret, srt->secret, cipher->secretlen);
 		err = quic_crypto_rx_keys_derive_and_install(crypto);
 		if (err)
 			goto err;
+		crypto->recv_ready = 1;
 		return 0;
 	}
-
-	if (crypto->cipher)
-		return -EINVAL;
-
-	crypto->version = version;
-	tfm = crypto_alloc_shash(cipher->shash, 0, 0);
-	if (IS_ERR(tfm))
-		return PTR_ERR(tfm);
-	crypto->secret_tfm = tfm;
-
-	tfm = crypto_alloc_skcipher(cipher->skc, 0, 0);
-	if (IS_ERR(tfm)) {
-		err = PTR_ERR(tfm);
-		goto err;
-	}
-	crypto->skc_tfm = tfm;
-
-	tfm = crypto_alloc_aead(cipher->aead, 0, 0);
-	if (IS_ERR(tfm)) {
-		err = PTR_ERR(tfm);
-		goto err;
-	}
-	crypto->aead_tfm = tfm;
-	crypto->cipher = cipher;
-	crypto->cipher_type = srt->type;
 
 	memcpy(crypto->tx_secret, srt->secret, cipher->secretlen);
 	err = quic_crypto_tx_keys_derive_and_install(crypto);
 	if (err)
 		goto err;
+	crypto->send_ready = 1;
 	return 0;
 err:
 	quic_crypto_destroy(crypto);
@@ -682,6 +681,9 @@ void quic_crypto_destroy(struct quic_crypto *crypto)
 	crypto->secret_tfm = NULL;
 	crypto->skc_tfm = NULL;
 	crypto->aead_tfm = NULL;
+
+	crypto->send_ready = 0;
+	crypto->recv_ready = 0;
 }
 
 #define QUIC_INITIAL_SALT_V1    \

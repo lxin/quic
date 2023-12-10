@@ -9,6 +9,7 @@
  */
 
 struct quic_outqueue {
+	struct quic_connection_id orig_dcid;
 	struct sk_buff_head retransmit_list;
 	struct sk_buff_head datagram_list;
 	struct sk_buff_head control_list;
@@ -24,6 +25,7 @@ struct quic_outqueue {
 	u32 max_idle_timeout;
 	u32 max_ack_delay;
 	u8 grease_quic_bit;
+	u8 level;
 
 	u32 close_errcode;
 	u8 *close_phrase;

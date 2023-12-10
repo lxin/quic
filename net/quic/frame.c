@@ -1284,6 +1284,9 @@ int quic_frame_process(struct sock *sk, struct sk_buff *skb, struct quic_packet_
 		if (type > QUIC_FRAME_MAX) {
 			pr_err_once("[QUIC] %s unsupported frame %x\n", __func__, type);
 			return -EPROTONOSUPPORT;
+		} else if (!type) { /* skip padding */
+			skb_pull(skb, len);
+			return 0;
 		}
 		pr_debug("[QUIC] %s type: %x level: %d\n", __func__, type, QUIC_RCV_CB(skb)->level);
 		ret = quic_frame_ops[type].frame_process(sk, skb, type);
@@ -1302,6 +1305,7 @@ int quic_frame_process(struct sock *sk, struct sk_buff *skb, struct quic_packet_
 
 		skb_pull(skb, ret);
 		len -= ret;
+		pr_debug("%s type %d ret %d len %d\n", __func__, type, ret, len);
 	}
 	return 0;
 }
@@ -1460,11 +1464,11 @@ int quic_frame_get_transport_params_ext(struct sock *sk, struct quic_transport_p
 
 	if (quic_is_serv(sk)) {
 		p = quic_put_conn_id(p, QUIC_TRANSPORT_PARAM_ORIGINAL_DESTINATION_CONNECTION_ID,
-				     &quic_param(sk)->orig_dcid);
+				     &quic_outq(sk)->orig_dcid);
 	}
 	if (quic_port(sk)->retry) {
 		p = quic_put_conn_id(p, QUIC_TRANSPORT_PARAM_RETRY_SOURCE_CONNECTION_ID,
-				     &quic_param(sk)->orig_dcid);
+				     &quic_outq(sk)->orig_dcid);
 	}
 	p = quic_put_conn_id(p, QUIC_TRANSPORT_PARAM_INITIAL_SOURCE_CONNECTION_ID,
 			     &quic_source(sk)->active->id);

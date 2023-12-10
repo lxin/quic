@@ -13,7 +13,7 @@ static uint8_t ticket[4096];
 static int do_client(int argc, char *argv[])
 {
 	struct quic_transport_param param = {};
-	int ret, sockfd, ticket_len = 0;
+	int ret, sockfd, ticket_len, param_len;
 	struct sockaddr_in ra = {};
 	char msg[50];
 
@@ -38,8 +38,9 @@ static int do_client(int argc, char *argv[])
 	}
 
 	param.recv_session_ticket = 1;
-	if (setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_TRANSPORT_PARAM,
-		       &param, sizeof(param)))
+	param_len = sizeof(param);
+	ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_TRANSPORT_PARAM, &param, param_len);
+	if (ret == -1)
 		return -1;
 
 	if (quic_client_handshake(sockfd, NULL, NULL))
@@ -52,7 +53,16 @@ static int do_client(int argc, char *argv[])
 		printf("socket getsockopt session ticket\n");
 		return -1;
 	}
-	printf("get the session ticket %d, save it\n", ticket_len);
+
+	param_len = sizeof(param);
+	param.remote = 1;
+	ret = getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_TRANSPORT_PARAM, &param, &param_len);
+	if (ret == -1) {
+		printf("socket getsockopt remote transport param\n");
+		return -1;
+	}
+
+	printf("get the session ticket and transport param, save it\n");
 
 	strcpy(msg, "hello quic server!");
 	ret = send(sockfd, msg, strlen(msg), MSG_SYN | MSG_FIN);
@@ -89,16 +99,17 @@ static int do_client(int argc, char *argv[])
 		return -1;
 	}
 
-	/* set the ticket into the socket for handshake */
+	/* set the ticket and remote param and early data into the socket for handshake */
 	ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_SESSION_TICKET, ticket, ticket_len);
 	if (ret == -1) {
-		printf("socket getsockopt session ticket\n");
+		printf("socket setsockopt session ticket\n");
 		return -1;
 	}
-
-	if (quic_client_handshake(sockfd, NULL, NULL))
+	ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_TRANSPORT_PARAM, &param, param_len);
+	if (ret == -1) {
+		printf("socket setsockopt remote transport param\n");
 		return -1;
-
+	}
 	strcpy(msg, "hello quic server, I'm back!");
 	ret = send(sockfd, msg, strlen(msg), MSG_SYN | MSG_FIN);
 	if (ret == -1) {
@@ -106,6 +117,9 @@ static int do_client(int argc, char *argv[])
 		return -1;
 	}
 	printf("send %d\n", ret);
+
+	if (quic_client_handshake(sockfd, NULL, NULL))
+		return -1;
 
 	ret = recv(sockfd, msg, sizeof(msg), 0);
 	if (ret == -1) {

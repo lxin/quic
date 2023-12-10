@@ -57,8 +57,10 @@ struct quic_crypto {
 	u32 key_update_ts;
 	u32 key_update_send_ts;
 
-	u8 key_phase:1,
-	   key_pending:1;
+	u8 key_phase:1;
+	u8 key_pending:1;
+	u8 send_ready:1;
+	u8 recv_ready:1;
 };
 
 int quic_crypto_initial_keys_install(struct quic_crypto *crypto, struct quic_connection_id *conn_id,

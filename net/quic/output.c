@@ -47,6 +47,7 @@ static int quic_outq_transmit_dgram(struct sock *sk)
 	struct quic_packet *packet = quic_packet(sk);
 	struct quic_outqueue *outq = quic_outq(sk);
 	struct sk_buff_head *head;
+	u8 level = outq->level;
 	struct sk_buff *skb;
 
 	head = &outq->datagram_list;
@@ -54,12 +55,12 @@ static int quic_outq_transmit_dgram(struct sock *sk)
 	if (!skb)
 		return 0;
 	if (!quic_packet_empty(packet)) {
-		if (QUIC_SND_CB(skb)->level != packet->level) {
+		if (level != packet->level) {
 			quic_packet_transmit(sk);
-			quic_packet_config(sk, QUIC_SND_CB(skb)->level);
+			quic_packet_config(sk, level);
 		}
 	} else {
-		quic_packet_config(sk, QUIC_SND_CB(skb)->level);
+		quic_packet_config(sk, level);
 	}
 	while (skb) {
 		if (outq->inflight + skb->len > outq->window) {
@@ -69,7 +70,7 @@ static int quic_outq_transmit_dgram(struct sock *sk)
 		outq->inflight += QUIC_SND_CB(skb)->data_bytes;
 		if (!quic_packet_tail_dgram(sk, skb)) {
 			quic_packet_transmit(sk);
-			quic_packet_config(sk, QUIC_SND_CB(skb)->level);
+			quic_packet_config(sk, level);
 			WARN_ON_ONCE(!quic_packet_tail_dgram(sk, skb));
 		}
 		skb = __skb_dequeue(head);
@@ -129,25 +130,29 @@ static void quic_outq_transmit_data(struct sock *sk)
 {
 	struct sk_buff_head *head = &sk->sk_write_queue;
 	struct quic_packet *packet = quic_packet(sk);
+	u8 level = quic_outq(sk)->level;
 	struct sk_buff *skb;
+
+	if (!quic_crypto(sk, level)->send_ready)
+		return;
 
 	skb = __skb_dequeue(head);
 	if (!skb)
 		return;
 	if (!quic_packet_empty(packet)) {
-		if (QUIC_SND_CB(skb)->level != packet->level) {
+		if (level != packet->level) {
 			quic_packet_transmit(sk);
-			quic_packet_config(sk, QUIC_SND_CB(skb)->level);
+			quic_packet_config(sk, level);
 		}
 	} else {
-		quic_packet_config(sk, QUIC_SND_CB(skb)->level);
+		quic_packet_config(sk, level);
 	}
 	while (skb) {
-		if (quic_outq_flow_control(sk, skb))
+		if (!level && quic_outq_flow_control(sk, skb))
 			break;
 		if (!quic_packet_tail(sk, skb)) {
 			quic_packet_transmit(sk);
-			quic_packet_config(sk, QUIC_SND_CB(skb)->level);
+			quic_packet_config(sk, level);
 			WARN_ON_ONCE(!quic_packet_tail(sk, skb));
 		}
 		skb = __skb_dequeue(head);

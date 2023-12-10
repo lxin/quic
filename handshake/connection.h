@@ -69,7 +69,7 @@ static inline int quic_conn_handshake_completed(struct quic_conn *conn)
 	return conn->completed || conn->errcode;
 }
 
-#define DEBUG 0
+#define DEBUG	0
 
 static inline void print_debug(char const *fmt, ...)
 {

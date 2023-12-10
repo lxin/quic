@@ -44,6 +44,7 @@ enum quic_crypto_level {
 	QUIC_CRYPTO_STREAM,
 	QUIC_CRYPTO_INITIAL,
 	QUIC_CRYPTO_HANDSHAKE,
+	QUIC_CRYPTO_EARLY,
 	QUIC_CRYPTO_MAX,
 };
 
@@ -96,7 +97,9 @@ struct quic_connection_id {
 #define QUIC_VERSION_V2			0x6b3343cf
 
 struct quic_transport_param {
-	struct quic_connection_id orig_dcid;
+	uint8_t remote;
+	uint8_t disable_active_migration;
+	uint8_t grease_quic_bit;
 	uint64_t max_udp_payload_size;
 	uint64_t ack_delay_exponent;
 	uint64_t max_ack_delay;
@@ -110,8 +113,6 @@ struct quic_transport_param {
 	uint64_t initial_max_streams_bidi;
 	uint64_t initial_max_streams_uni;
 	uint64_t initial_smoothed_rtt;
-	uint8_t disable_active_migration;
-	uint8_t grease_quic_bit;
 	uint8_t validate_address;	/* for server only, verify token and send retry packet */
 	uint8_t recv_session_ticket;	/* for client only, handshake done until ticket is recvd */
 	uint8_t cert_request;		/* for server only, 0: IGNORE, 1: REQUEST, 2: REQUIRE */

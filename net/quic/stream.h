@@ -67,8 +67,6 @@ int quic_streams_init(struct quic_stream_table *streams);
 void quic_streams_free(struct quic_stream_table *streams);
 void quic_streams_set_param(struct quic_stream_table *streams, struct quic_transport_param *local,
 			    struct quic_transport_param *remote);
-void quic_streams_get_param(struct quic_stream_table *streams, struct quic_transport_param *local,
-			    struct quic_transport_param *remote);
 struct quic_stream *quic_stream_send_get(struct quic_stream_table *streams, u64 stream_id,
 					 u32 flag, bool is_serv);
 struct quic_stream *quic_stream_recv_get(struct quic_stream_table *streams, u64 stream_id,

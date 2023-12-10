@@ -17,8 +17,8 @@
 
 static int quic_packet_handshake_retry_process(struct sock *sk, struct sk_buff *skb)
 {
+	struct quic_connection_id dcid, scid = {};
 	u32 len = skb->len, dlen, slen, version;
-	struct quic_connection_id dcid, scid;
 	u8 *p = skb->data, tag[16];
 
 	p++;
@@ -152,7 +152,13 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb)
 			level = QUIC_CRYPTO_INITIAL;
 		} else if (type == QUIC_PACKET_HANDSHAKE) {
 			level = QUIC_CRYPTO_HANDSHAKE;
-			if (!quic_crypto(sk, level)->cipher) {
+			if (!quic_crypto(sk, level)->recv_ready) {
+				__skb_queue_tail(&quic_inq(sk)->backlog_list, skb);
+				return 0;
+			}
+		} else if (type == QUIC_PACKET_0RTT) {
+			level = QUIC_CRYPTO_EARLY;
+			if (!quic_crypto(sk, QUIC_CRYPTO_STREAM)->recv_ready) {
 				__skb_queue_tail(&quic_inq(sk)->backlog_list, skb);
 				return 0;
 			}
@@ -193,7 +199,10 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb)
 			goto err;
 
 		pr_debug("[QUIC] %s serv: %d number: %llu level: %d\n", __func__,
-			 quic_is_serv(sk),  pki.number, level);
+			 quic_is_serv(sk), pki.number, level);
+
+		if (level == QUIC_CRYPTO_EARLY)
+			level = QUIC_CRYPTO_STREAM; /* pnmap level */
 		err = quic_pnmap_check(quic_pnmap(sk, level), pki.number);
 		if (err) {
 			err = -EINVAL;
@@ -243,7 +252,7 @@ int quic_packet_process(struct sock *sk, struct sk_buff *skb)
 	if (!quic_hdr(skb)->fixed && !quic_inq(sk)->grease_quic_bit)
 		goto err;
 
-	if (!quic_is_established(sk)) {
+	if (!quic_crypto(sk, QUIC_CRYPTO_STREAM)->recv_ready) {
 		__skb_queue_tail(&quic_inq(sk)->backlog_list, skb);
 		return 0;
 	}
@@ -308,11 +317,12 @@ out:
 	 */
 	quic_timer_reset(sk, QUIC_TIMER_IDLE);
 	quic_outq_reset(quic_outq(sk));
-	quic_outq_flush(sk);
+	if (quic_is_established(sk))
+		quic_outq_flush(sk);
 	return 0;
 err:
-	pr_warn("[QUIC] %s serv: %d number: %llu err: %d\n", __func__,
-		quic_is_serv(sk), pki.number, err);
+	pr_warn("[QUIC] %s serv: %d number: %llu len: %d err: %d\n", __func__,
+		quic_is_serv(sk), pki.number, skb->len, err);
 	kfree_skb(skb);
 	return err;
 }
@@ -320,16 +330,16 @@ err:
 static struct sk_buff *quic_packet_handshake_create(struct sock *sk, struct quic_packet_info *pki)
 {
 	struct quic_packet *packet = quic_packet(sk);
+	u8 *p, type, level = packet->level;
 	struct sk_buff *fskb, *skb;
 	struct sk_buff_head *head;
 	int len, hlen, plen = 0;
 	struct quichshdr *hdr;
-	u8 *p, type;
 
 	type = QUIC_PACKET_INITIAL;
 	len = packet->len;
-	if (packet->level == QUIC_CRYPTO_INITIAL &&
-	    !quic_is_serv(sk) && len < 1184) {
+	if (level == QUIC_CRYPTO_INITIAL && !quic_is_serv(sk) &&
+	    len - packet->overhead > 128 && len < 1184) {
 		len = 1184;
 		plen = len - packet->len;
 	}
@@ -342,8 +352,14 @@ static struct sk_buff *quic_packet_handshake_create(struct sock *sk, struct quic
 	skb->ignore_df = packet->ipfragok;
 	skb_reserve(skb, hlen + len);
 
-	if (packet->level == QUIC_CRYPTO_HANDSHAKE)
+	if (level == QUIC_CRYPTO_HANDSHAKE) {
 		type = QUIC_PACKET_HANDSHAKE;
+	} else if (level == QUIC_CRYPTO_EARLY) {
+		type = QUIC_PACKET_0RTT;
+		level = QUIC_CRYPTO_STREAM; /* pnmap level */
+	}
+	pki->number = quic_pnmap(sk, level)->next_number++;
+	pki->number_len = 4; /* make it fixed for easy coding */
 	hdr = skb_push(skb, len);
 	hdr->form = 1;
 	hdr->fixed = !quic_outq(sk)->grease_quic_bit;
@@ -358,7 +374,7 @@ static struct sk_buff *quic_packet_handshake_create(struct sock *sk, struct quic
 	p = quic_put_data(p, quic_dest(sk)->active->id.data, quic_dest(sk)->active->id.len);
 	p = quic_put_int(p, quic_source(sk)->active->id.len, 1);
 	p = quic_put_data(p, quic_source(sk)->active->id.data, quic_source(sk)->active->id.len);
-	if (packet->level == QUIC_CRYPTO_INITIAL) {
+	if (level == QUIC_CRYPTO_INITIAL) {
 		p = quic_put_var(p, quic_token(sk)->len);
 		p = quic_put_data(p, quic_token(sk)->data, quic_token(sk)->len);
 	}
@@ -401,10 +417,10 @@ static struct sk_buff *quic_packet_create(struct sock *sk, struct quic_packet_in
 	u8 *p;
 
 	packet = quic_packet(sk);
-	pki->number = quic_pnmap(sk, packet->level)->next_number++;
-	pki->number_len = 4; /* make it fixed for easy coding */
 	if (packet->level)
 		return quic_packet_handshake_create(sk, pki);
+	pki->number = quic_pnmap(sk, packet->level)->next_number++;
+	pki->number_len = 4; /* make it fixed for easy coding */
 	len = packet->len;
 	hlen = quic_encap_len(sk) + MAX_HEADER;
 	skb = alloc_skb(hlen + len + QUIC_TAG_LEN, GFP_ATOMIC);
@@ -543,24 +559,24 @@ void quic_packet_transmit(struct sock *sk)
 		kfree_skb(skb);
 		goto err;
 	}
+
 	if (!packet->head) {
 		packet->head = skb;
 		NAPI_GRO_CB(packet->head)->last = skb;
-		if (packet->head->len >= packet->mss || !level) {
-			packet->count++;
+		if (!level) {
 			quic_lower_xmit(sk, packet->head, packet->da, packet->sa);
+			packet->count++;
 			packet->head = NULL;
 		}
 		return;
 	}
-	if (packet->head->len + skb->len >= packet->mss || !level) {
-		packet->count++;
-		quic_lower_xmit(sk, packet->head, packet->da, packet->sa);
-		packet->head = skb;
-		NAPI_GRO_CB(packet->head)->last = skb;
-		return;
-	}
 
+	/* packet bundle */
+	if (packet->head->len + skb->len >= packet->mss) {
+		quic_lower_xmit(sk, packet->head, packet->da, packet->sa);
+		packet->count++;
+		packet->head = NULL;
+	}
 	p = packet->head;
 	if (NAPI_GRO_CB(p)->last == p)
 		skb_shinfo(p)->frag_list = skb;
@@ -570,6 +586,11 @@ void quic_packet_transmit(struct sock *sk)
 	p->data_len += skb->len;
 	p->truesize += skb->truesize;
 	p->len += skb->len;
+	if (!level) {
+		quic_lower_xmit(sk, packet->head, packet->da, packet->sa);
+		packet->count++;
+		packet->head = NULL;
+	}
 	return;
 err:
 	pr_warn("[QUIC] %s %d\n", __func__, err);
