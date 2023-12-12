@@ -22,7 +22,7 @@ static enum quic_crypto_level get_crypto_level(gnutls_record_encryption_level_t 
 	if (level == GNUTLS_ENCRYPTION_LEVEL_HANDSHAKE)
 		return QUIC_CRYPTO_HANDSHAKE;
 	if (level == GNUTLS_ENCRYPTION_LEVEL_APPLICATION)
-		return QUIC_CRYPTO_STREAM;
+		return QUIC_CRYPTO_APP;
 	if (level == GNUTLS_ENCRYPTION_LEVEL_EARLY)
 		return QUIC_CRYPTO_EARLY;
 	print_warn("[WARN] %s: %d\n", __func__, level);
@@ -35,7 +35,7 @@ static gnutls_record_encryption_level_t get_encryption_level(uint8_t level)
 		return GNUTLS_ENCRYPTION_LEVEL_INITIAL;
 	if (level == QUIC_CRYPTO_HANDSHAKE)
 		return GNUTLS_ENCRYPTION_LEVEL_HANDSHAKE;
-	if (level == QUIC_CRYPTO_STREAM)
+	if (level == QUIC_CRYPTO_APP)
 		return GNUTLS_ENCRYPTION_LEVEL_APPLICATION;
 	if (level == QUIC_CRYPTO_EARLY)
 		return GNUTLS_ENCRYPTION_LEVEL_EARLY;
@@ -185,7 +185,7 @@ static int secret_func(gnutls_session_t session,
 			print_error("socket setsockopt rx crypto_secret failed %d\n", level);
 			return -1;
 		}
-		if (secret.level == QUIC_CRYPTO_STREAM) {
+		if (secret.level == QUIC_CRYPTO_APP) {
 			if (conn->is_serv)
 				gnutls_session_ticket_send(session, 1, 0);
 			if (!conn->recv_ticket)

@@ -41,7 +41,7 @@ enum {	/* used in stream_flag of struct quic_sndinfo or quic_rcvinfo */
 };
 
 enum quic_crypto_level {
-	QUIC_CRYPTO_STREAM,
+	QUIC_CRYPTO_APP,
 	QUIC_CRYPTO_INITIAL,
 	QUIC_CRYPTO_HANDSHAKE,
 	QUIC_CRYPTO_EARLY,

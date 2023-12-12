@@ -158,7 +158,7 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb)
 			}
 		} else if (type == QUIC_PACKET_0RTT) {
 			level = QUIC_CRYPTO_EARLY;
-			if (!quic_crypto(sk, QUIC_CRYPTO_STREAM)->recv_ready) {
+			if (!quic_crypto(sk, QUIC_CRYPTO_APP)->recv_ready) {
 				__skb_queue_tail(&quic_inq(sk)->backlog_list, skb);
 				return 0;
 			}
@@ -202,7 +202,7 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb)
 			 quic_is_serv(sk), pki.number, level);
 
 		if (level == QUIC_CRYPTO_EARLY)
-			level = QUIC_CRYPTO_STREAM; /* pnmap level */
+			level = QUIC_CRYPTO_APP; /* pnmap level */
 		err = quic_pnmap_check(quic_pnmap(sk, level), pki.number);
 		if (err) {
 			err = -EINVAL;
@@ -252,20 +252,20 @@ int quic_packet_process(struct sock *sk, struct sk_buff *skb)
 	if (!quic_hdr(skb)->fixed && !quic_inq(sk)->grease_quic_bit)
 		goto err;
 
-	if (!quic_crypto(sk, QUIC_CRYPTO_STREAM)->recv_ready) {
+	if (!quic_crypto(sk, QUIC_CRYPTO_APP)->recv_ready) {
 		__skb_queue_tail(&quic_inq(sk)->backlog_list, skb);
 		return 0;
 	}
 
 	pki.number_offset = QUIC_RCV_CB(skb)->number_offset;
 	pki.length = skb->len - pki.number_offset;
-	pki.number_max = quic_pnmap_max_pn_seen(quic_pnmap(sk, 0));
-	err = quic_crypto_decrypt(quic_crypto(sk, 0), skb, &pki);
+	pki.number_max = quic_pnmap_max_pn_seen(quic_pnmap(sk, QUIC_CRYPTO_APP));
+	err = quic_crypto_decrypt(quic_crypto(sk, QUIC_CRYPTO_APP), skb, &pki);
 	if (err)
 		goto err;
 
 	pr_debug("[QUIC] %s serv: %d number: %llu \n", __func__, quic_is_serv(sk), pki.number);
-	err = quic_pnmap_check(quic_pnmap(sk, 0), pki.number);
+	err = quic_pnmap_check(quic_pnmap(sk, QUIC_CRYPTO_APP), pki.number);
 	if (err) {
 		err = -EINVAL;
 		goto err;
@@ -278,7 +278,7 @@ int quic_packet_process(struct sock *sk, struct sk_buff *skb)
 	err = quic_frame_process(sk, skb, &pki);
 	if (err)
 		goto err;
-	if (quic_pnmap_mark(quic_pnmap(sk, 0), pki.number))
+	if (quic_pnmap_mark(quic_pnmap(sk, QUIC_CRYPTO_APP), pki.number))
 		goto err;
 	skb_pull(skb, QUIC_TAG_LEN);
 
@@ -286,7 +286,7 @@ int quic_packet_process(struct sock *sk, struct sk_buff *skb)
 	 * it sends packets in response to the highest-numbered non-probing packet.
 	 */
 	if (!quic_dest(sk)->disable_active_migration && pki.non_probing &&
-	    pki.number == quic_pnmap_max_pn_seen(quic_pnmap(sk, 0))) {
+	    pki.number == quic_pnmap_max_pn_seen(quic_pnmap(sk, QUIC_CRYPTO_APP))) {
 		saddr = QUIC_RCV_CB(skb)->saddr;
 		if (memcmp(saddr, quic_path_addr(quic_dst(sk)), quic_addr_len(sk)))
 			quic_sock_change_addr(sk, quic_dst(sk), saddr, quic_addr_len(sk), 0);
@@ -302,7 +302,7 @@ int quic_packet_process(struct sock *sk, struct sk_buff *skb)
 	if (!pki.ack_eliciting)
 		goto out;
 
-	if (!pki.ack_immediate && !quic_pnmap_has_gap(quic_pnmap(sk, 0))) {
+	if (!pki.ack_immediate && !quic_pnmap_has_gap(quic_pnmap(sk, QUIC_CRYPTO_APP))) {
 		quic_timer_start(sk, QUIC_TIMER_ACK);
 		goto out;
 	}
@@ -356,7 +356,7 @@ static struct sk_buff *quic_packet_handshake_create(struct sock *sk, struct quic
 		type = QUIC_PACKET_HANDSHAKE;
 	} else if (level == QUIC_CRYPTO_EARLY) {
 		type = QUIC_PACKET_0RTT;
-		level = QUIC_CRYPTO_STREAM; /* pnmap level */
+		level = QUIC_CRYPTO_APP; /* pnmap level */
 	}
 	pki->number = quic_pnmap(sk, level)->next_number++;
 	pki->number_len = 4; /* make it fixed for easy coding */

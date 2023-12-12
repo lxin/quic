@@ -464,7 +464,7 @@ static struct quic_stream *quic_sock_send_stream(struct sock *sk, struct quic_st
 	}
 
 	/* 0rtt data should return err if stream is not found */
-	if (!quic_crypto(sk, QUIC_CRYPTO_STREAM)->send_ready)
+	if (!quic_crypto(sk, QUIC_CRYPTO_APP)->send_ready)
 		return ERR_PTR(-EINVAL);
 
 	if (sinfo->stream_id & QUIC_STREAM_TYPE_UNI_MASK)
@@ -816,7 +816,8 @@ static int quic_copy_sock(struct sock *nsk, struct sock *sk, struct quic_request
 
 	*quic_local(nsk) = *quic_local(sk);
 	quic_inq(nsk)->events = quic_inq(sk)->events;
-	quic_crypto(nsk, 0)->cipher_type = quic_crypto(sk, 0)->cipher_type;
+	quic_crypto(nsk, QUIC_CRYPTO_APP)->cipher_type =
+		quic_crypto(sk, QUIC_CRYPTO_APP)->cipher_type;
 	return 0;
 }
 
@@ -1171,7 +1172,7 @@ static int quic_sock_set_crypto_secret(struct sock *sk, struct quic_crypto_secre
 	}
 
 	/* app send key is ready */
-	quic_outq(sk)->level = QUIC_CRYPTO_STREAM;
+	quic_outq(sk)->level = QUIC_CRYPTO_APP;
 	for (seqno = 1; seqno < quic_source(sk)->max_count; seqno++) {
 		skb = quic_frame_create(sk, QUIC_FRAME_NEW_CONNECTION_ID, &prior);
 		if (!skb)
@@ -1347,7 +1348,7 @@ static int quic_setsockopt(struct sock *sk, int level, int optname,
 		retval = quic_cong_set_cong_alg(sk, kopt, optlen);
 		break;
 	case QUIC_SOCKOPT_KEY_UPDATE:
-		retval = quic_crypto_key_update(quic_crypto(sk, 0), kopt, optlen);
+		retval = quic_crypto_key_update(quic_crypto(sk, QUIC_CRYPTO_APP), kopt, optlen);
 		break;
 	case QUIC_SOCKOPT_RETIRE_CONNECTION_ID:
 		retval = quic_sock_retire_connection_id(sk, kopt, optlen);

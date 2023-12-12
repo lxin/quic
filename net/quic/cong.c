@@ -53,7 +53,7 @@ static void quic_reno_cwnd_update_after_timeout(struct sock *sk, s64 packet_numb
 		return;
 	}
 
-	cong->last_sent_number = quic_pnmap_next_number(quic_pnmap(sk, 0)) - 1;
+	cong->last_sent_number = quic_pnmap_next_number(quic_pnmap(sk, QUIC_CRYPTO_APP)) - 1;
 	cong->state = QUIC_CONG_RECOVERY_PERIOD;
 	cong->threshold = max(cong->window >> 1U, quic_packet_mss(packet) * 2);
 	cong->window = cong->threshold;
@@ -152,8 +152,8 @@ static void quic_cong_set_rto(struct sock *sk, u32 rto)
 	else if (rto > QUIC_RTO_MAX)
 		rto = QUIC_RTO_MAX;
 	cong->rto = rto;
-	quic_pnmap_set_max_record_ts(quic_pnmap(sk, 0), cong->rto * 2);
-	quic_crypto_set_key_update_ts(quic_crypto(sk, 0), cong->rto * 2);
+	quic_pnmap_set_max_record_ts(quic_pnmap(sk, QUIC_CRYPTO_APP), cong->rto * 2);
+	quic_crypto_set_key_update_ts(quic_crypto(sk, QUIC_CRYPTO_APP), cong->rto * 2);
 	quic_timer_setup(sk, QUIC_TIMER_RTX, cong->rto);
 }
 
