@@ -74,14 +74,13 @@ enum quic_msg_flags {	/* msg_flags in send/recvmsg */
 #define QUIC_SOCKOPT_CONGESTION_CONTROL			6  /* set and get */
 #define QUIC_SOCKOPT_KEY_UPDATE				7  /* set */
 #define QUIC_SOCKOPT_TRANSPORT_PARAM			8  /* set and get */
+#define QUIC_SOCKOPT_TOKEN				9  /* set and get */
 
 /* used to provide parameters for handshake from kernel, so only valid prior to handshake */
 #define QUIC_SOCKOPT_ALPN				100 /* set and get */
-#define QUIC_SOCKOPT_CIPHER				101 /* set and get */
-#define QUIC_SOCKOPT_CRYPTO_SECRET			102 /* set and get */
-#define QUIC_SOCKOPT_TRANSPORT_PARAM_EXT		103 /* set and get */
-#define QUIC_SOCKOPT_TOKEN				104 /* set and get */
-#define QUIC_SOCKOPT_SESSION_TICKET			105 /* set and get */
+#define QUIC_SOCKOPT_CRYPTO_SECRET			101 /* set and get */
+#define QUIC_SOCKOPT_TRANSPORT_PARAM_EXT		102 /* set and get */
+#define QUIC_SOCKOPT_SESSION_TICKET			103 /* set and get */
 
 /* for testing only */
 #define QUIC_SOCKOPT_RETIRE_CONNECTION_ID		1000 /* set */
@@ -116,6 +115,7 @@ struct quic_transport_param {
 	uint8_t validate_address;	/* for server only, verify token and send retry packet */
 	uint8_t recv_session_ticket;	/* for client only, handshake done until ticket is recvd */
 	uint8_t cert_request;		/* for server only, 0: IGNORE, 1: REQUEST, 2: REQUIRE */
+	uint32_t cipher_type;		/* TLS_CIPHER_AES_GCM_128/AES_GCM_256/AES_CCM_128/CHACHA20_POLY1305 */
 	uint32_t version;		/* QUIC_VERSION_V1 or V2 for now */
 };
 

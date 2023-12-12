@@ -190,11 +190,6 @@ static int get_transport_param(struct quic_conn *conn)
 	struct quic_transport_param param;
 	int len, sockfd = conn->sockfd;
 
-	len = sizeof(conn->cipher);
-	if (getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_CIPHER, &conn->cipher, &len)) {
-		print_error("socket getsockopt token failed\n");
-		return -1;
-	}
 	len = sizeof(conn->alpn.data);
 	if (getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_ALPN, conn->alpn.data, &len)) {
 		print_error("socket getsockopt alpn failed\n");
@@ -214,6 +209,7 @@ static int get_transport_param(struct quic_conn *conn)
 	}
 	conn->recv_ticket = param.recv_session_ticket;
 	conn->cert_req = param.cert_request;
+	conn->cipher = param.cipher_type;
 	conn->sockfd = sockfd;
 	return 0;
 }

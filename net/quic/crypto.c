@@ -646,31 +646,6 @@ void quic_crypto_set_key_update_ts(struct quic_crypto *crypto, u32 key_update_ts
 	crypto->key_update_ts = key_update_ts;
 }
 
-int quic_crypto_set_cipher(struct quic_crypto *crypto, u32 *cipher, u32 len)
-{
-	if (len < sizeof(*cipher))
-		return -EINVAL;
-
-	if (*cipher < QUIC_CIPHER_MIN || *cipher > QUIC_CIPHER_MAX)
-		return -EINVAL;
-
-	crypto->cipher_type = *cipher;
-	return 0;
-}
-
-int quic_crypto_get_cipher(struct quic_crypto *crypto, int len,
-			   char __user *optval, int __user *optlen)
-{
-	if (len < sizeof(crypto->cipher_type))
-		return -EINVAL;
-	len = sizeof(crypto->cipher_type);
-	if (put_user(len, optlen))
-		return -EFAULT;
-	if (copy_to_user(optval, &crypto->cipher_type, len))
-		return -EFAULT;
-	return 0;
-}
-
 void quic_crypto_destroy(struct quic_crypto *crypto)
 {
 	crypto_free_shash(crypto->secret_tfm);
