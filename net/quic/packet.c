@@ -47,7 +47,7 @@ static int quic_packet_handshake_retry_process(struct sock *sk, struct sk_buff *
 	p += slen;
 	if (len < 16)
 		goto err;
-	version = quic_param(sk)->version;
+	version = quic_local(sk)->version;
 	if (quic_crypto_get_retry_tag(skb, &scid, version, tag) || memcmp(tag, p + len - 16, 16))
 		goto err;
 	quic_token(sk)->data = kmemdup(p, len - 16, GFP_ATOMIC);
@@ -105,7 +105,7 @@ static int quic_packet_handshake_version_process(struct sock *sk, struct sk_buff
 			best = version;
 	}
 	if (best) {
-		quic_param(sk)->version = best;
+		quic_local(sk)->version = best;
 		quic_crypto_initial_keys_install(quic_crypto(sk, QUIC_CRYPTO_INITIAL),
 						 &scid, best, 0);
 		quic_outq_retransmit(sk);
@@ -144,7 +144,7 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb)
 		version = quic_get_int(&p, 4);
 		if (!version)
 			return quic_packet_handshake_version_process(sk, skb);
-		else if (version != quic_param(sk)->version)
+		else if (version != quic_local(sk)->version)
 			goto err;
 		len -= 4;
 		type = quic_version_get_type(version, hshdr->type);
@@ -363,13 +363,13 @@ static struct sk_buff *quic_packet_handshake_create(struct sock *sk, struct quic
 	hdr = skb_push(skb, len);
 	hdr->form = 1;
 	hdr->fixed = !quic_outq(sk)->grease_quic_bit;
-	hdr->type = quic_version_put_type(quic_param(sk)->version, type);
+	hdr->type = quic_version_put_type(quic_local(sk)->version, type);
 	hdr->reserved = 0;
 	hdr->pnl = 0x3;
 	skb_reset_transport_header(skb);
 
 	p = (u8 *)hdr + 1;
-	p = quic_put_int(p, quic_param(sk)->version, 4);
+	p = quic_put_int(p, quic_local(sk)->version, 4);
 	p = quic_put_int(p, quic_dest(sk)->active->id.len, 1);
 	p = quic_put_data(p, quic_dest(sk)->active->id.data, quic_dest(sk)->active->id.len);
 	p = quic_put_int(p, quic_source(sk)->active->id.len, 1);
@@ -673,7 +673,7 @@ static struct sk_buff *quic_packet_retry_create(struct sock *sk, struct quic_req
 	skb_reset_transport_header(skb);
 
 	p = (u8 *)hdr + 1;
-	p = quic_put_int(p, quic_param(sk)->version, 4);
+	p = quic_put_int(p, quic_local(sk)->version, 4);
 	p = quic_put_int(p, req->scid.len, 1);
 	p = quic_put_data(p, req->scid.data, req->scid.len);
 	p = quic_put_int(p, req->dcid.len, 1);

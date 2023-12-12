@@ -113,7 +113,7 @@ void quic_timer_setup(struct sock *sk, u8 type, u32 timeout)
 
 void quic_timers_init(struct sock *sk)
 {
-	struct quic_transport_param *p = quic_param(sk);
+	struct quic_transport_param *p = quic_local(sk);
 	struct quic_timer *t;
 
 	t = quic_timer(sk, QUIC_TIMER_RTX);

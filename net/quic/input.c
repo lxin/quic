@@ -53,7 +53,7 @@ out:
 }
 
 static int quic_get_connid_and_token(struct sk_buff *skb, struct quic_connection_id *dcid,
-				     struct quic_connection_id *scid, struct quic_token *token)
+				     struct quic_connection_id *scid, struct quic_data *token)
 {
 	u8 *p = (u8 *)quic_hshdr(skb) + 1;
 	int len = skb->len;
@@ -89,7 +89,7 @@ static int quic_do_listen_rcv(struct sock *sk, struct sk_buff *skb)
 {
 	u8 *p = (u8 *)quic_hshdr(skb) + 1, type;
 	struct quic_request_sock req = {};
-	struct quic_token token;
+	struct quic_data token;
 
 	quic_af_ops(sk)->get_msg_addr(&req.sa, skb, 0);
 	quic_af_ops(sk)->get_msg_addr(&req.da, skb, 1);
@@ -118,7 +118,7 @@ static int quic_do_listen_rcv(struct sock *sk, struct sk_buff *skb)
 		return -EINVAL;
 	}
 
-	if (quic_param(sk)->validate_address) {
+	if (quic_local(sk)->validate_address) {
 		if (!token.len) {
 			consume_skb(skb);
 			return quic_packet_retry_transmit(sk, &req);
@@ -452,8 +452,8 @@ int quic_inq_event_recv(struct sock *sk, u8 event, void *args)
 		args_len = sizeof(u64);
 		break;
 	case QUIC_EVENT_NEW_TOKEN:
-		args_len = ((struct quic_token *)args)->len;
-		args = ((struct quic_token *)args)->data;
+		args_len = ((struct quic_data *)args)->len;
+		args = ((struct quic_data *)args)->data;
 		break;
 	case QUIC_EVENT_CONNECTION_CLOSE:
 		args_len = strlen(((struct quic_connection_close *)args)->phrase) +

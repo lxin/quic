@@ -586,9 +586,9 @@ static int quic_frame_crypto_process(struct sock *sk, struct sk_buff *skb, u8 ty
 		return -EINVAL;
 
 	if (!QUIC_RCV_CB(skb)->level) {
-		if (!quic_param(sk)->recv_session_ticket)
+		if (!quic_local(sk)->recv_session_ticket)
 			goto out;
-		quic_param(sk)->recv_session_ticket = 0;
+		quic_local(sk)->recv_session_ticket = 0;
 	}
 
 	nskb = skb_clone(skb, GFP_ATOMIC);
@@ -617,7 +617,7 @@ static int quic_frame_stream_process(struct sock *sk, struct sk_buff *skb, u8 ty
 	u8 *p = skb->data;
 	int err;
 
-	if (quic_param(sk)->recv_session_ticket)
+	if (quic_local(sk)->recv_session_ticket)
 		return -EINVAL;
 	if (!quic_get_var(&p, &len, &stream_id))
 		return -EINVAL;
@@ -760,7 +760,7 @@ out:
 
 static int quic_frame_new_token_process(struct sock *sk, struct sk_buff *skb, u8 type)
 {
-	struct quic_token *token = quic_token(sk);
+	struct quic_data *token = quic_token(sk);
 	u32 len = skb->len;
 	u8 *p = skb->data;
 	u64 length;
@@ -1185,7 +1185,7 @@ static int quic_frame_datagram_process(struct sock *sk, struct sk_buff *skb, u8 
 	u64 payload_len;
 	int err;
 
-	if (quic_param(sk)->recv_session_ticket)
+	if (quic_local(sk)->recv_session_ticket)
 		return -EINVAL;
 
 	if (!quic_inq_max_dgram(quic_inq(sk)))

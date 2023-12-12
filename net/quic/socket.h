@@ -39,7 +39,7 @@ enum quic_state {
 	QUIC_SS_ESTABLISHED	= TCP_ESTABLISHED,
 };
 
-struct quic_token {
+struct quic_data {
 	u32 len;
 	void *data;
 };
@@ -69,11 +69,11 @@ struct quic_sock {
 	struct quic_path_addr		src;
 	struct quic_path_addr		dst;
 
-	struct quic_transport_param	param;
+	struct quic_transport_param	local;
 	struct quic_transport_param	remote;
-	struct quic_token		token;
-	struct quic_token		ticket;
-	struct quic_token		alpn;
+	struct quic_data		token;
+	struct quic_data		ticket;
+	struct quic_data		alpn;
 
 	struct quic_outqueue		outq;
 	struct quic_inqueue		inq;
@@ -154,17 +154,17 @@ static inline struct list_head *quic_reqs(const struct sock *sk)
 	return &quic_sk(sk)->reqs;
 }
 
-static inline struct quic_token *quic_token(const struct sock *sk)
+static inline struct quic_data *quic_token(const struct sock *sk)
 {
 	return &quic_sk(sk)->token;
 }
 
-static inline struct quic_token *quic_ticket(const struct sock *sk)
+static inline struct quic_data *quic_ticket(const struct sock *sk)
 {
 	return &quic_sk(sk)->ticket;
 }
 
-static inline struct quic_token *quic_alpn(const struct sock *sk)
+static inline struct quic_data *quic_alpn(const struct sock *sk)
 {
 	return &quic_sk(sk)->alpn;
 }
@@ -179,9 +179,9 @@ static inline struct quic_connection_id_set *quic_dest(const struct sock *sk)
 	return &quic_sk(sk)->dest;
 }
 
-static inline struct quic_transport_param *quic_param(const struct sock *sk)
+static inline struct quic_transport_param *quic_local(const struct sock *sk)
 {
-	return &quic_sk(sk)->param;
+	return &quic_sk(sk)->local;
 }
 
 static inline struct quic_transport_param *quic_remote(const struct sock *sk)

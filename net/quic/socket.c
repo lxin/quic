@@ -115,7 +115,7 @@ static void quic_write_space(struct sock *sk)
 
 static void quic_transport_param_init(struct sock *sk)
 {
-	struct quic_transport_param *param = quic_param(sk);
+	struct quic_transport_param *param = quic_local(sk);
 
 	param->max_udp_payload_size = 65527;
 	param->ack_delay_exponent = 3;
@@ -272,7 +272,7 @@ static int quic_connect(struct sock *sk, struct sockaddr *addr, int addr_len)
 	quic_outq(sk)->orig_dcid = conn_id;
 	err = quic_crypto_initial_keys_install(quic_crypto(sk, QUIC_CRYPTO_INITIAL),
 					       &quic_dest(sk)->active->id,
-					       quic_param(sk)->version, 0);
+					       quic_local(sk)->version, 0);
 	if (err)
 		goto out;
 
@@ -814,7 +814,7 @@ static int quic_copy_sock(struct sock *nsk, struct sock *sk, struct quic_request
 		quic_ticket(nsk)->len = len;
 	}
 
-	*quic_param(nsk) = *quic_param(sk);
+	*quic_local(nsk) = *quic_local(sk);
 	quic_inq(nsk)->events = quic_inq(sk)->events;
 	quic_crypto(nsk, 0)->cipher_type = quic_crypto(sk, 0)->cipher_type;
 	return 0;
@@ -840,12 +840,12 @@ static int quic_accept_sock_init(struct sock *sk, struct quic_request_sock *req)
 	if (err)
 		goto out;
 	quic_outq(sk)->orig_dcid = req->dcid;
-	quic_param(sk)->version = req->version;
+	quic_local(sk)->version = req->version;
 	err = quic_connection_id_add(quic_dest(sk), &req->scid, sk);
 	if (err)
 		goto out;
 	err = quic_crypto_initial_keys_install(quic_crypto(sk, QUIC_CRYPTO_INITIAL),
-					       &req->dcid, quic_param(sk)->version, 1);
+					       &req->dcid, quic_local(sk)->version, 1);
 	if (err)
 		goto out;
 	quic_port(sk)->serv = 1;
@@ -1006,7 +1006,7 @@ err:
 
 static int quic_sock_set_token(struct sock *sk, void *data, u32 len)
 {
-	struct quic_token *token = quic_token(sk);
+	struct quic_data *token = quic_token(sk);
 	struct sk_buff *skb;
 	u8 *p;
 
@@ -1033,7 +1033,7 @@ static int quic_sock_set_token(struct sock *sk, void *data, u32 len)
 
 static int quic_sock_set_session_ticket(struct sock *sk, u8 *data, u32 len)
 {
-	struct quic_token *ticket = quic_ticket(sk);
+	struct quic_data *ticket = quic_ticket(sk);
 	u8 *p;
 
 	if (!len || len > 4096)
@@ -1055,7 +1055,7 @@ static int quic_sock_set_session_ticket(struct sock *sk, u8 *data, u32 len)
 
 static int quic_sock_set_transport_param(struct sock *sk, struct quic_transport_param *p, u32 len)
 {
-	struct quic_transport_param *param = quic_param(sk);
+	struct quic_transport_param *param = quic_local(sk);
 
 	if (len < sizeof(*param))
 		return -EINVAL;
@@ -1122,7 +1122,7 @@ static int quic_sock_set_crypto_secret(struct sock *sk, struct quic_crypto_secre
 		return -EINVAL;
 
 	err = quic_crypto_set_secret(quic_crypto(sk, secret->level), secret,
-				     quic_param(sk)->version);
+				     quic_local(sk)->version);
 	if (err)
 		return err;
 
@@ -1218,7 +1218,7 @@ static int quic_sock_retire_connection_id(struct sock *sk, struct quic_connectio
 
 static int quic_sock_set_alpn(struct sock *sk, char *data, u32 len)
 {
-	struct quic_token *alpn = quic_alpn(sk);
+	struct quic_data *alpn = quic_alpn(sk);
 	u8 *p;
 
 	if (!len || len > 20)
@@ -1384,7 +1384,7 @@ static int quic_setsockopt(struct sock *sk, int level, int optname,
 
 static int quic_sock_get_token(struct sock *sk, int len, char __user *optval, int __user *optlen)
 {
-	struct quic_token *token = quic_token(sk);
+	struct quic_data *token = quic_token(sk);
 
 	if (quic_is_serv(sk) || len < token->len)
 		return -EINVAL;
@@ -1398,7 +1398,7 @@ static int quic_sock_get_token(struct sock *sk, int len, char __user *optval, in
 static int quic_sock_get_session_ticket(struct sock *sk, int len,
 					char __user *optval, int __user *optlen)
 {
-	struct quic_token *ticket = quic_ticket(sk);
+	struct quic_data *ticket = quic_ticket(sk);
 
 	if (len < ticket->len)
 		return -EINVAL;
@@ -1412,7 +1412,7 @@ static int quic_sock_get_session_ticket(struct sock *sk, int len,
 static int quic_sock_get_transport_param(struct sock *sk, int len,
 					 char __user *optval, int __user *optlen)
 {
-	struct quic_transport_param param, *p = quic_param(sk);
+	struct quic_transport_param param, *p = quic_local(sk);
 
 	if (len < sizeof(param))
 		return -EINVAL;
@@ -1437,7 +1437,7 @@ static int quic_sock_get_transport_param(struct sock *sk, int len,
 static int quic_sock_get_transport_params_ext(struct sock *sk, int len,
 					      char __user *optval, int __user *optlen)
 {
-	struct quic_transport_param *param = quic_param(sk);
+	struct quic_transport_param *param = quic_local(sk);
 	u8 data[256];
 	u32 datalen;
 
@@ -1495,7 +1495,7 @@ static int quic_sock_get_active_connection_id(struct sock *sk, int len,
 
 static int quic_sock_get_alpn(struct sock *sk, int len, char __user *optval, int __user *optlen)
 {
-	struct quic_token *alpn = quic_alpn(sk);
+	struct quic_data *alpn = quic_alpn(sk);
 
 	if (len < alpn->len)
 		return -EINVAL;

@@ -258,7 +258,7 @@ static int quic_inet_connect(struct socket *sock, struct sockaddr *addr, int add
 
 static int quic_inet_listen(struct socket *sock, int backlog)
 {
-	struct quic_token *token, *ticket;
+	struct quic_data *token, *ticket;
 	struct sock *sk = sock->sk;
 	u8 rand_data[64];
 	int err = 0;
