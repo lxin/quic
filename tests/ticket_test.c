@@ -89,6 +89,7 @@ static int do_client(int argc, char *argv[])
 	}
 	printf("send %d\n", ret);
 
+	memset(msg, 0, sizeof(msg));
 	ret = recv(sockfd, msg, sizeof(msg), 0);
 	if (ret == -1) {
 		printf("recv error %d %d\n", ret, errno);
@@ -149,6 +150,7 @@ static int do_client(int argc, char *argv[])
 	if (quic_client_handshake(sockfd, NULL, NULL))
 		return -1;
 
+	memset(msg, 0, sizeof(msg));
 	ret = recv(sockfd, msg, sizeof(msg), 0);
 	if (ret == -1) {
 		printf("recv error %d %d\n", ret, errno);
@@ -201,6 +203,7 @@ static int do_server(int argc, char *argv[])
 	if (quic_server_handshake(sockfd, argv[4], argv[5]))
 		return -1;
 
+	memset(msg, 0, sizeof(msg));
 	ret = recv(sockfd, msg, sizeof(msg), 0);
 	if (ret == -1) {
 		printf("recv error %d %d\n", ret, errno);
@@ -230,6 +233,7 @@ static int do_server(int argc, char *argv[])
 	if (quic_server_handshake(sockfd, argv[4], argv[5]))
 		return -1;
 
+	memset(msg, 0, sizeof(msg));
 	ret = recv(sockfd, msg, sizeof(msg), 0);
 	if (ret == -1) {
 		printf("recv error %d %d\n", ret, errno);

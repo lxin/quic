@@ -187,7 +187,7 @@ static int delete_timer(struct quic_conn *conn)
 
 static int get_transport_param(struct quic_conn *conn)
 {
-	struct quic_transport_param param;
+	struct quic_transport_param param = {};
 	int len, sockfd = conn->sockfd;
 
 	len = sizeof(conn->alpn.data);
