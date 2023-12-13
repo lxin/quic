@@ -692,6 +692,7 @@ int quic_packet_retry_transmit(struct sock *sk, struct quic_request_sock *req)
 {
 	struct sk_buff *skb;
 
+	__sk_dst_reset(sk);
 	if (quic_flow_route(sk, &req->da, &req->sa))
 		return -EINVAL;
 	skb = quic_packet_retry_create(sk, req);
@@ -739,6 +740,7 @@ int quic_packet_version_transmit(struct sock *sk, struct quic_request_sock *req)
 {
 	struct sk_buff *skb;
 
+	__sk_dst_reset(sk);
 	if (quic_flow_route(sk, &req->da, &req->sa))
 		return -EINVAL;
 	skb = quic_packet_version_create(sk, req);
