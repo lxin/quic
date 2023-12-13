@@ -191,16 +191,6 @@ static void quic_v6_set_sk_addr(struct sock *sk, union quic_addr *a, bool src)
 	}
 }
 
-static void quic_v4_update_proto_ops(struct sock *sk)
-{
-	sk->sk_prot = &quic_prot;
-}
-
-static void quic_v6_update_proto_ops(struct sock *sk)
-{
-	sk->sk_prot = &quicv6_prot;
-}
-
 static struct quic_addr_family_ops quic_af_inet = {
 	.sa_family		= AF_INET,
 	.addr_len		= sizeof(struct sockaddr_in),
@@ -213,7 +203,6 @@ static struct quic_addr_family_ops quic_af_inet = {
 	.get_sk_addr		= quic_v4_get_sk_addr,
 	.setsockopt		= ip_setsockopt,
 	.getsockopt		= ip_getsockopt,
-	.update_proto_ops		= quic_v4_update_proto_ops,
 };
 
 static struct quic_addr_family_ops quic_af_inet6 = {
@@ -228,7 +217,6 @@ static struct quic_addr_family_ops quic_af_inet6 = {
 	.get_sk_addr		= quic_v6_get_sk_addr,
 	.setsockopt		= ipv6_setsockopt,
 	.getsockopt		= ipv6_getsockopt,
-	.update_proto_ops		= quic_v6_update_proto_ops,
 };
 
 struct quic_addr_family_ops *quic_af_ops_get(sa_family_t family)
@@ -352,12 +340,6 @@ void quic_lower_xmit(struct sock *sk, struct sk_buff *skb, union quic_addr *da,
 int quic_flow_route(struct sock *sk, union quic_addr *da, union quic_addr *sa)
 {
 	return quic_af_ops(sk)->flow_route(sk, da, sa);
-}
-
-void quic_update_proto_ops(struct sock *sk)
-{
-	quic_af_ops(sk)->update_proto_ops(sk);
-	sk->sk_backlog_rcv = sk->sk_prot->backlog_rcv;
 }
 
 static const struct proto_ops quic_proto_ops = {
