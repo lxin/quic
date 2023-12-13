@@ -9,12 +9,13 @@
 #include <netinet/quic.h>
 
 static uint8_t ticket[4096];
+static uint8_t token[256];
 
 static int do_client(int argc, char *argv[])
 {
+	int ret, sockfd, ticket_len, param_len, token_len, addr_len;
 	struct quic_transport_param param = {};
-	int ret, sockfd, ticket_len, param_len;
-	struct sockaddr_in ra = {};
+	struct sockaddr_in ra = {}, la = {};
 	char msg[50];
 
 	if (argc < 3) {
@@ -46,7 +47,7 @@ static int do_client(int argc, char *argv[])
 	if (quic_client_handshake(sockfd, NULL, NULL))
 		return -1;
 
-	/* get ticket after handshake (you can save it somewhere) */
+	/* get ticket and param after handshake (you can save it somewhere) */
 	ticket_len = sizeof(ticket);
 	ret = getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_SESSION_TICKET, ticket, &ticket_len);
 	if (ret == -1 || !ticket_len) {
@@ -62,7 +63,23 @@ static int do_client(int argc, char *argv[])
 		return -1;
 	}
 
-	printf("get the session ticket and transport param, save it\n");
+	/* get token and local address (needed when peer validate_address is set) */
+	token_len = sizeof(token);
+	ret = getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_TOKEN, &token, &token_len);
+	if (ret == -1) {
+		printf("socket getsockopt regular token\n");
+		return -1;
+	}
+
+	addr_len = sizeof(la);
+	ret = getsockname(sockfd, (struct sockaddr *)&la, &addr_len);
+	if (ret == -1) {
+		printf("getsockname local address and port used\n");
+		return -1;
+	}
+
+	printf("get the session ticket %d and transport param %d and token %d, save it\n",
+	       ticket_len, param_len, token_len);
 
 	strcpy(msg, "hello quic server!");
 	ret = send(sockfd, msg, strlen(msg), MSG_SYN | MSG_FIN);
@@ -87,6 +104,17 @@ static int do_client(int argc, char *argv[])
 	sockfd = socket(AF_INET, SOCK_DGRAM, IPPROTO_QUIC);
 	if (sockfd < 0) {
 		printf("socket create failed\n");
+		return -1;
+	}
+
+	/* bind previous address and port and set token for address validation */
+	if (bind(sockfd, (struct sockaddr *)&la, addr_len)) {
+		printf("socket bind failed\n");
+		return -1;
+	}
+	ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_TOKEN, token, token_len);
+	if (ret == -1) {
+		printf("socket setsockopt token\n");
 		return -1;
 	}
 
@@ -134,6 +162,7 @@ static int do_client(int argc, char *argv[])
 
 static int do_server(int argc, char *argv[])
 {
+	struct quic_transport_param param = {};
 	int listenfd, sockfd, addrlen, ret;
 	struct sockaddr_in sa = {};
 	char msg[50];
@@ -159,6 +188,9 @@ static int do_server(int argc, char *argv[])
 		printf("socket listen failed\n");
 		return -1;
 	}
+	param.validate_address = 1;
+	if (setsockopt(listenfd, SOL_QUIC, QUIC_SOCKOPT_TRANSPORT_PARAM, &param, sizeof(param)))
+		return -1;
 	addrlen = sizeof(sa);
 	sockfd = accept(listenfd, (struct sockaddr *)&sa, &addrlen);
 	if (sockfd < 0) {
