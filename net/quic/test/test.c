@@ -229,7 +229,7 @@ static int quic_test_do_client(void)
 	printk("ALL RECVD: %u MBytes/Sec\n", TOT_LEN/1024/1024/start);
 	err = 0;
 free:
-	__fput_sync(priv.filp);
+	fput(priv.filp);
 	return err;
 }
 
@@ -299,7 +299,7 @@ static int quic_test_do_server(void)
 	msleep(100);
 	err = 0;
 free_flip:
-	__fput_sync(priv.filp);
+	fput(priv.filp);
 free:
 	sock_release(sock);
 	return err;
