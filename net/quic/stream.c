@@ -14,6 +14,7 @@
 #include <linux/jhash.h>
 #include <net/netns/hash.h>
 #include <net/sock.h>
+#include "connection.h"
 #include "hashtable.h"
 #include "stream.h"
 #include "crypto.h"

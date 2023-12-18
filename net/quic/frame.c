@@ -270,7 +270,8 @@ static struct sk_buff *quic_frame_retire_connection_id_create(struct sock *sk, v
 
 static struct sk_buff *quic_frame_new_connection_id_create(struct sock *sk, void *data, u8 type)
 {
-	u8 *p, frame[100], conn_id[16], token[16];
+	struct quic_connection_id scid = {};
+	u8 *p, frame[100], token[16];
 	u64 *prior = data, seqno;
 	struct sk_buff *skb;
 	u32 frame_len;
@@ -282,8 +283,8 @@ static struct sk_buff *quic_frame_new_connection_id_create(struct sock *sk, void
 	p = quic_put_var(p, seqno);
 	p = quic_put_var(p, *prior);
 	p = quic_put_var(p, 16);
-	get_random_bytes(conn_id, 16);
-	p = quic_put_data(p, conn_id, 16);
+	quic_generate_id(&scid, 16);
+	p = quic_put_data(p, scid.data, scid.len);
 	get_random_bytes(token, 16);
 	p = quic_put_data(p, token, 16);
 	frame_len = (u32)(p - frame);
@@ -293,7 +294,7 @@ static struct sk_buff *quic_frame_new_connection_id_create(struct sock *sk, void
 		return NULL;
 	skb_put_data(skb, frame, frame_len);
 
-	err = quic_connection_id_append(quic_source(sk), seqno, sk, conn_id, 16);
+	err = quic_connection_id_add(quic_source(sk), &scid, seqno, sk);
 	if (err) {
 		kfree_skb(skb);
 		return NULL;
@@ -694,8 +695,9 @@ static int quic_frame_ack_process(struct sock *sk, struct sk_buff *skb, u8 type)
 static int quic_frame_new_connection_id_process(struct sock *sk, struct sk_buff *skb, u8 type)
 {
 	struct quic_connection_id_set *id_set = quic_dest(sk);
-	u8 *p = skb->data, *conn_id, *token;
 	u64 seqno, prior, length, first;
+	struct quic_connection_id dcid;
+	u8 *p = skb->data, *token;
 	struct sk_buff *nskb;
 	u32 len = skb->len;
 	int err;
@@ -705,13 +707,14 @@ static int quic_frame_new_connection_id_process(struct sock *sk, struct sk_buff 
 	    !quic_get_var(&p, &len, &length) || length + 16 > len)
 		return -EINVAL;
 
-	conn_id = p;
-	token = conn_id + length; /* TODO: Stateless Reset */
+	memcpy(dcid.data, p, length);
+	dcid.len = length;
+	token = p + length;
 
 	if (seqno != quic_connection_id_last_number(id_set) + 1 || prior > seqno)
 		return -EINVAL;
 
-	err = quic_connection_id_append(id_set, seqno, sk, conn_id, length);
+	err = quic_connection_id_add(id_set, &dcid, seqno, token);
 	if (err)
 		return err;
 
@@ -767,12 +770,10 @@ static int quic_frame_new_token_process(struct sock *sk, struct sk_buff *skb, u8
 
 	if (!quic_get_var(&p, &len, &length) || length > len)
 		return -EINVAL;
-	p = kmemdup(p, length, GFP_ATOMIC);
-	if (!p)
+
+	if (quic_data_dup(token, p, length))
 		return -ENOMEM;
-	kfree(token->data);
-	token->data = p;
-	token->len = length;
+
 	if (quic_inq_event_recv(sk, QUIC_EVENT_NEW_TOKEN, token))
 		return -ENOMEM;
 

@@ -69,10 +69,11 @@ static void quic_connection_id_del(struct quic_common_connection_id *common)
 }
 
 int quic_connection_id_add(struct quic_connection_id_set *id_set,
-			   struct quic_connection_id *conn_id, struct sock *sk)
+			   struct quic_connection_id *conn_id, u32 number, void *data)
 {
 	struct quic_common_connection_id *common, *last;
 	struct quic_source_connection_id *s_conn_id;
+	struct quic_dest_connection_id *d_conn_id;
 	struct quic_hash_head *head;
 	struct list_head *list;
 
@@ -82,11 +83,12 @@ int quic_connection_id_add(struct quic_connection_id_set *id_set,
 	if (!common)
 		return -ENOMEM;
 	common->id = *conn_id;
+	common->number = number;
 
 	list = &id_set->head;
 	if (!list_empty(list)) {
 		last = list_last_entry(list, struct quic_common_connection_id, list);
-		if (common->id.number != last->id.number + 1) {
+		if (common->number != last->number + 1) {
 			kfree(common);
 			return -EINVAL;
 		}
@@ -96,41 +98,22 @@ int quic_connection_id_add(struct quic_connection_id_set *id_set,
 		id_set->active = common;
 	id_set->count++;
 
-	if (id_set->entry_size == sizeof(struct quic_dest_connection_id))
+	if (id_set->entry_size == sizeof(struct quic_dest_connection_id)) {
+		if (data) {
+			d_conn_id = (struct quic_dest_connection_id *)common;
+			memcpy(d_conn_id->token, data, 16);
+		}
 		return 0;
+	}
 
 	common->hashed = 1;
 	s_conn_id = (struct quic_source_connection_id *)common;
-	s_conn_id->sk = sk;
-	head = quic_source_connection_id_head(sock_net(sk), common->id.data);
+	s_conn_id->sk = data;
+	head = quic_source_connection_id_head(sock_net(data), common->id.data);
 	spin_lock(&head->lock);
 	hlist_add_head(&s_conn_id->node, &head->head);
 	spin_unlock(&head->lock);
 	return 0;
-}
-
-int quic_connection_id_get(struct quic_connection_id_set *id_set, struct quic_connection_id *conn_id)
-{
-	struct quic_common_connection_id *common;
-
-	list_for_each_entry(common, &id_set->head, list) {
-		if (common->id.number == conn_id->number) {
-			*conn_id = common->id;
-			return 0;
-		}
-	}
-	return -ENOENT;
-}
-
-int quic_connection_id_append(struct quic_connection_id_set *id_set, u32 number, struct sock *sk,
-			      u8 *conn_id, u8 len)
-{
-	struct quic_connection_id conn;
-
-	conn.len = len;
-	memcpy(conn.data, conn_id, len);
-	conn.number = number;
-	return quic_connection_id_add(id_set, &conn, sk);
 }
 
 void quic_connection_id_remove(struct quic_connection_id_set *id_set, u32 number)
@@ -140,7 +123,7 @@ void quic_connection_id_remove(struct quic_connection_id_set *id_set, u32 number
 
 	list = &id_set->head;
 	list_for_each_entry_safe(common, tmp, list, list)
-		if (common->id.number <= number)
+		if (common->number <= number)
 			quic_connection_id_del(common);
 
 	id_set->active = list_first_entry(list, struct quic_common_connection_id, list);

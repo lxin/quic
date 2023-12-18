@@ -227,13 +227,6 @@ out:
 	return err;
 }
 
-static void quic_generate_id(struct quic_connection_id *conn_id, int conn_id_len)
-{
-	get_random_bytes(conn_id->data, conn_id_len);
-	conn_id->len = conn_id_len;
-	conn_id->number = 0;
-}
-
 static int quic_connect(struct sock *sk, struct sockaddr *addr, int addr_len)
 {
 	struct quic_sock *qs = quic_sk(sk);
@@ -261,15 +254,15 @@ static int quic_connect(struct sock *sk, struct sockaddr *addr, int addr_len)
 		quic_set_sk_addr(sk, sa, true);
 	}
 
-	quic_generate_id(&conn_id, 17);
-	err = quic_connection_id_add(quic_source(sk), &conn_id, sk);
-	if (err)
-		goto out;
 	quic_generate_id(&conn_id, 18);
-	err = quic_connection_id_add(quic_dest(sk), &conn_id, sk);
+	err = quic_connection_id_add(quic_dest(sk), &conn_id, 0, NULL);
 	if (err)
 		goto out;
 	quic_outq(sk)->orig_dcid = conn_id;
+	quic_generate_id(&conn_id, 16);
+	err = quic_connection_id_add(quic_source(sk), &conn_id, 0, sk);
+	if (err)
+		goto out;
 	err = quic_crypto_initial_keys_install(quic_crypto(sk, QUIC_CRYPTO_INITIAL),
 					       &quic_dest(sk)->active->id,
 					       quic_local(sk)->version, 0);
@@ -836,19 +829,20 @@ static int quic_accept_sock_init(struct sock *sk, struct quic_request_sock *req)
 		goto out;
 	quic_set_sk_addr(sk, quic_addr(&req->da.sa), false);
 
-	quic_generate_id(&conn_id, 17);
-	err = quic_connection_id_add(quic_source(sk), &conn_id, sk);
+	quic_generate_id(&conn_id, 16);
+	err = quic_connection_id_add(quic_source(sk), &conn_id, 0, sk);
 	if (err)
 		goto out;
 	quic_outq(sk)->orig_dcid = req->dcid;
 	quic_local(sk)->version = req->version;
-	err = quic_connection_id_add(quic_dest(sk), &req->scid, sk);
+	err = quic_connection_id_add(quic_dest(sk), &req->scid, 0, NULL);
 	if (err)
 		goto out;
 	err = quic_crypto_initial_keys_install(quic_crypto(sk, QUIC_CRYPTO_INITIAL),
 					       &req->dcid, quic_local(sk)->version, 1);
 	if (err)
 		goto out;
+
 	quic_port(sk)->serv = 1;
 	quic_port(sk)->retry = req->retry;
 	inet_sk_set_state(sk, QUIC_SS_ESTABLISHING);
@@ -1219,20 +1213,10 @@ static int quic_sock_retire_connection_id(struct sock *sk, struct quic_connectio
 
 static int quic_sock_set_alpn(struct sock *sk, char *data, u32 len)
 {
-	struct quic_data *alpn = quic_alpn(sk);
-	u8 *p;
-
 	if (!len || len > 20)
 		return -EINVAL;
 
-	p = kmemdup(data, len, GFP_KERNEL);
-	if (!p)
-		return -ENOMEM;
-
-	kfree(alpn->data);
-	alpn->data = p;
-	alpn->len = len;
-	return 0;
+	return quic_data_dup(quic_alpn(sk), data, len);
 }
 
 static int quic_sock_stream_reset(struct sock *sk, struct quic_errinfo *info, u32 len)
@@ -1480,8 +1464,8 @@ static int quic_sock_get_active_connection_id(struct sock *sk, int len,
 		return -EINVAL;
 
 	len = sizeof(info);
-	info.source = quic_source(sk)->active->id.number;
-	info.dest = quic_dest(sk)->active->id.number;
+	info.source = quic_source(sk)->active->number;
+	info.dest = quic_dest(sk)->active->number;
 
 	if (put_user(len, optlen))
 		return -EFAULT;

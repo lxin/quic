@@ -17,6 +17,7 @@
 #include <linux/jhash.h>
 #include <crypto/aead.h>
 #include <crypto/hash.h>
+#include "connection.h"
 #include "hashtable.h"
 #include <net/tls.h>
 #include "crypto.h"

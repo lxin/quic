@@ -265,6 +265,21 @@ static inline u8 quic_version_put_type(uint32_t version, u8 type)
 	return -1;
 }
 
+static inline int quic_data_dup(struct quic_data *to, u8 *data, u32 len)
+{
+	if (!len)
+		return 0;
+
+	data = kmemdup(data, len, GFP_ATOMIC);
+	if (!data)
+		return -ENOMEM;
+
+	kfree(to->data);
+	to->data = data;
+	to->len = len;
+	return 0;
+}
+
 int quic_sock_change_addr(struct sock *sk, struct quic_path_addr *path, void *data,
 			  u32 len, bool udp_bind);
 bool quic_request_sock_exists(struct sock *sk, union quic_addr *sa, union quic_addr *da);

@@ -50,8 +50,8 @@ static int quic_packet_handshake_retry_process(struct sock *sk, struct sk_buff *
 	version = quic_local(sk)->version;
 	if (quic_crypto_get_retry_tag(skb, &scid, version, tag) || memcmp(tag, p + len - 16, 16))
 		goto err;
-	quic_token(sk)->data = kmemdup(p, len - 16, GFP_ATOMIC);
-	quic_token(sk)->len = len - 16;
+	if (quic_data_dup(quic_token(sk), p, len - 16))
+		goto err;
 
 	quic_crypto_initial_keys_install(quic_crypto(sk, QUIC_CRYPTO_INITIAL), &scid, version, 0);
 	quic_dest(sk)->active->id = scid;

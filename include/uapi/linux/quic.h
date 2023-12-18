@@ -86,12 +86,6 @@ enum quic_msg_flags {	/* msg_flags in send/recvmsg */
 #define QUIC_SOCKOPT_RETIRE_CONNECTION_ID		1000 /* set */
 #define QUIC_SOCKOPT_ACTIVE_CONNECTION_ID		1001 /* get */
 
-struct quic_connection_id {
-	uint32_t number;
-	uint8_t len;
-	uint8_t data[20];
-};
-
 #define QUIC_VERSION_V1			0x1
 #define QUIC_VERSION_V2			0x6b3343cf
 
