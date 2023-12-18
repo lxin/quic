@@ -17,6 +17,7 @@
 struct quic_hash_table quic_hash_tables[QUIC_HT_MAX_TABLES] __read_mostly;
 struct percpu_counter quic_sockets_allocated;
 struct workqueue_struct *quic_wq;
+u8 random_data[16];
 
 static int quic_v6_flow_route(struct sock *sk, union quic_addr *da, union quic_addr *sa)
 {
@@ -246,9 +247,7 @@ static int quic_inet_connect(struct socket *sock, struct sockaddr *addr, int add
 
 static int quic_inet_listen(struct socket *sock, int backlog)
 {
-	struct quic_data *token, *ticket;
 	struct sock *sk = sock->sk;
-	u8 rand_data[64];
 	int err = 0;
 
 	lock_sock(sk);
@@ -262,26 +261,6 @@ static int quic_inet_listen(struct socket *sock, int backlog)
 
 	if (!hlist_unhashed(&quic_sk(sk)->inet.sk.sk_node))
 		goto out;
-
-	token = quic_token(sk);
-	get_random_bytes(rand_data, 16);
-	kfree(token->data);
-	token->data = kmemdup(rand_data, 16, GFP_KERNEL);
-	if (!token->data) {
-		err = -ENOMEM;
-		goto out;
-	}
-	token->len = 16;
-
-	ticket = quic_ticket(sk);
-	get_random_bytes(rand_data, 64);
-	kfree(ticket->data);
-	ticket->data = kmemdup(rand_data, 64, GFP_KERNEL);
-	if (!ticket->data) {
-		err = -ENOMEM;
-		goto out;
-	}
-	ticket->len = 64;
 
 	inet_sk_set_state(sk, QUIC_SS_LISTENING);
 	err = sk->sk_prot->hash(sk);
@@ -521,6 +500,7 @@ static __init int quic_init(void)
 	if (err)
 		goto err_def_ops;
 
+	get_random_bytes(random_data, 16);
 	pr_info("[QUIC] init\n");
 	return 0;
 

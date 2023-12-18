@@ -830,10 +830,6 @@ static int quic_copy_sock(struct sock *nsk, struct sock *sk, struct quic_request
 
 	if (quic_data_dup(quic_alpn(nsk), quic_alpn(sk)->data, quic_alpn(sk)->len))
 		return -ENOMEM;
-	if (quic_data_dup(quic_token(nsk), quic_token(sk)->data, quic_token(sk)->len))
-		return -ENOMEM;
-	if (quic_data_dup(quic_ticket(nsk), quic_ticket(sk)->data, quic_ticket(sk)->len))
-		return -ENOMEM;
 
 	quic_sock_set_transport_param(nsk, quic_local(sk),
 				      sizeof(struct quic_transport_param));
@@ -1342,13 +1338,27 @@ static int quic_sock_get_token(struct sock *sk, int len, char __user *optval, in
 static int quic_sock_get_session_ticket(struct sock *sk, int len,
 					char __user *optval, int __user *optlen)
 {
-	struct quic_data *ticket = quic_ticket(sk);
+	u8 *ticket, key[64];
+	u32 ticket_len;
 
-	if (len < ticket->len)
+	if (quic_is_serv(sk)) { /* get ticket_key for server */
+		union quic_addr *da = quic_path_addr(quic_dst(sk));
+
+		if (quic_crypto_generate_session_ticket_key(da, key, 64))
+			return -EINVAL;
+		ticket = key;
+		ticket_len = 64;
+		goto out;
+	}
+
+	ticket_len = quic_ticket(sk)->len;
+	ticket = quic_ticket(sk)->data;
+out:
+	if (len < ticket_len)
 		return -EINVAL;
-	if (put_user(ticket->len, optlen))
+	if (put_user(ticket_len, optlen))
 		return -EFAULT;
-	if (copy_to_user(optval, ticket->data, ticket->len))
+	if (copy_to_user(optval, ticket, ticket_len))
 		return -EFAULT;
 	return 0;
 }

@@ -87,7 +87,7 @@ static int quic_get_connid_and_token(struct sk_buff *skb, struct quic_connection
 
 static int quic_do_listen_rcv(struct sock *sk, struct sk_buff *skb)
 {
-	u8 *p = (u8 *)quic_hshdr(skb) + 1, type;
+	u8 *p = (u8 *)quic_hshdr(skb) + 1, type, data[16];
 	struct quic_request_sock req = {};
 	struct quic_data token;
 
@@ -124,9 +124,8 @@ static int quic_do_listen_rcv(struct sock *sk, struct sk_buff *skb)
 			return quic_packet_retry_transmit(sk, &req);
 		}
 		p = token.data;
-		if (token.len != 1 + 16 + quic_addr_len(sk) ||
-		    memcmp(p + 1, quic_token(sk)->data, 16) ||
-		    memcmp(p + 16 + 1, &req.da, quic_addr_len(sk))) {
+		if (quic_crypto_generate_token(&req.da, "path_verification", data, 16) ||
+		    memcmp(p + 1, data, 16)) {
 			kfree_skb(skb);
 			return -EINVAL;
 		}

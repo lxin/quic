@@ -105,15 +105,15 @@ static struct sk_buff *quic_frame_padding_create(struct sock *sk, void *data, u8
 
 static struct sk_buff *quic_frame_new_token_create(struct sock *sk, void *data, u8 type)
 {
+	union quic_addr *da = quic_path_addr(quic_dst(sk));
 	struct sk_buff *skb;
-	u8 buf[64], *p;
-	u32 len;
+	u8 buf[17], *p;
+	u32 len = 17;
 
 	p = buf;
 	p = quic_put_int(p, 0, 1); /* regular token */
-	p = quic_put_data(p, quic_token(sk)->data, quic_token(sk)->len);
-	p = quic_put_data(p, (u8 *)quic_path_addr(quic_dst(sk)), quic_addr_len(sk));
-	len = p - buf;
+	if (quic_crypto_generate_token((u8 *)da, "path_verification", p, 16))
+		return NULL;
 
 	skb = alloc_skb(len + 4, GFP_ATOMIC);
 	if (!skb)

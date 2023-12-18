@@ -10,6 +10,7 @@
 
 extern struct percpu_counter quic_sockets_allocated;
 extern struct workqueue_struct *quic_wq;
+extern u8 random_data[16];
 
 struct quic_addr_family_ops {
 	sa_family_t sa_family;

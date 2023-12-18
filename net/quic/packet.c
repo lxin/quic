@@ -646,16 +646,15 @@ int quic_packet_tail_dgram(struct sock *sk, struct sk_buff *skb)
 
 static struct sk_buff *quic_packet_retry_create(struct sock *sk, struct quic_request_sock *req)
 {
-	u8 *p, token[64], tag[16];
-	int len, hlen, tokenlen;
+	int len, hlen, tokenlen = 17;
+	u8 *p, token[17], tag[16];
 	struct quichshdr *hdr;
 	struct sk_buff *skb;
 
 	p = token;
 	p = quic_put_int(p, 1, 1); /* retry token */
-	p = quic_put_data(p, quic_token(sk)->data, quic_token(sk)->len);
-	p = quic_put_data(p, (u8 *)&req->da, quic_addr_len(sk)); /* make it simple for now */
-	tokenlen = p - token;
+	if (quic_crypto_generate_token(&req->da, "path_verification", p, 16))
+		return NULL;
 
 	len = 1 + 4 + 1 + req->scid.len + 1 + req->dcid.len + tokenlen + 16;
 	hlen = quic_encap_len(sk) + MAX_HEADER;

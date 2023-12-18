@@ -13,6 +13,7 @@
 #include <uapi/linux/quic.h>
 #include <crypto/skcipher.h>
 #include <net/netns/hash.h>
+#include <net/udp_tunnel.h>
 #include <linux/skbuff.h>
 #include <linux/jhash.h>
 #include <crypto/aead.h>
@@ -20,6 +21,7 @@
 #include "connection.h"
 #include "hashtable.h"
 #include <net/tls.h>
+#include "protocol.h"
 #include "crypto.h"
 #include "number.h"
 
@@ -775,4 +777,34 @@ int quic_crypto_get_retry_tag(struct sk_buff *skb, struct quic_connection_id *od
 err:
 	crypto_free_aead(tfm);
 	return  err;
+}
+
+int quic_crypto_generate_token(void *data, char *label, u8 *token, u32 len)
+{
+	struct tls_vec salt, s, l, k, z = {NULL, 0};
+	struct crypto_shash *tfm;
+	u8 secret[32];
+	int err;
+
+	tfm = crypto_alloc_shash("hmac(sha256)", 0, 0);
+	if (IS_ERR(tfm))
+		return PTR_ERR(tfm);
+
+	tls_vec(&salt, data, 16);
+	tls_vec(&k, random_data, 16);
+	tls_vec(&s, secret, 32);
+	err = tls_crypto_hkdf_extract(tfm, &salt, &k, &s);
+	if (err)
+		goto out;
+	tls_vec(&l, label, strlen(label));
+	tls_vec(&k, token, len);
+	err = tls_crypto_hkdf_expand(tfm, &s, &l, &z, &k);
+out:
+	crypto_free_shash(tfm);
+	return err;
+}
+
+int quic_crypto_generate_session_ticket_key(void *data, u8 *key, u32 len)
+{
+	return quic_crypto_generate_token(data, "session_ticket", key, len);
 }
