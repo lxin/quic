@@ -100,6 +100,19 @@ static int quic_do_listen_rcv(struct sock *sk, struct sk_buff *skb)
 	    quic_new_sock_do_rcv(sk, skb, &req.sa, &req.da))
 		return 0;
 
+	if (!quic_hshdr(skb)->form) { /* stateless reset always by listen sock */
+		if (skb->len < 17) {
+			kfree_skb(skb);
+			return -EINVAL;
+		}
+
+		req.dcid.len = 16;
+		memcpy(req.dcid.data, (u8 *)quic_hdr(skb) + 1, 16);
+		consume_skb(skb);
+		quic_packet_stateless_reset_transmit(sk, &req);
+		return 0;
+	}
+
 	if (quic_get_connid_and_token(skb, &req.dcid, &req.scid, &token)) {
 		kfree_skb(skb);
 		return -EINVAL;
@@ -113,9 +126,10 @@ static int quic_do_listen_rcv(struct sock *sk, struct sk_buff *skb)
 	}
 
 	type = quic_version_get_type(req.version, quic_hshdr(skb)->type);
-	if (type != QUIC_PACKET_INITIAL) {
-		kfree_skb(skb);
-		return -EINVAL;
+	if (type != QUIC_PACKET_INITIAL) { /* stateless reset for handshake */
+		consume_skb(skb);
+		quic_packet_stateless_reset_transmit(sk, &req);
+		return 0;
 	}
 
 	if (quic_local(sk)->validate_address) {
@@ -183,11 +197,13 @@ int quic_rcv(struct sk_buff *skb)
 		dcid = (u8 *)quic_hdr(skb) + 1;
 		s_conn_id = quic_source_connection_id_lookup(dev_net(skb->dev),
 							     dcid, skb->len - 1);
-		if (!s_conn_id)
-			goto err;
-		QUIC_RCV_CB(skb)->number_offset = s_conn_id->common.id.len + sizeof(struct quichdr);
-		sk = s_conn_id->sk;
-	} else { /* search sock hashtable for all handshake packets */
+		if (s_conn_id) {
+			QUIC_RCV_CB(skb)->number_offset =
+				s_conn_id->common.id.len + sizeof(struct quichdr);
+			sk = s_conn_id->sk;
+		}
+	}
+	if (!sk) {
 		af_ops->get_msg_addr(&daddr, skb, 0);
 		af_ops->get_msg_addr(&saddr, skb, 1);
 		sk = quic_sock_lookup(skb, &daddr, &saddr);

@@ -93,6 +93,7 @@ struct quic_transport_param {
 	uint8_t remote;
 	uint8_t disable_active_migration;
 	uint8_t grease_quic_bit;
+	uint8_t stateless_reset;
 	uint64_t max_udp_payload_size;
 	uint64_t ack_delay_exponent;
 	uint64_t max_ack_delay;

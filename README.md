@@ -83,7 +83,7 @@ in [ktls-utils](https://github.com/lxin/ktls-utils) will handle the handshake re
 
 #### some are still ongoing:
 - Transport Error Codes for All Error Cases
-- Stateless Reset (rfc9000#name-stateless-reset)
+- Performance Optimization
 
 ## INSTALL
 

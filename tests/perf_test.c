@@ -144,6 +144,7 @@ static int do_server(int argc, char *argv[])
 	param.validate_address = 1; /* trigger retry packet sending */
 	param.grease_quic_bit = 1;
 	param.cert_request = 1;
+	param.stateless_reset = 1;
 	if (setsockopt(listenfd, SOL_QUIC, QUIC_SOCKOPT_TRANSPORT_PARAM, &param, sizeof(param)))
 		return -1;
 

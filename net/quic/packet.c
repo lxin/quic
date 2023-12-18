@@ -15,6 +15,40 @@
 #include "number.h"
 #include "frame.h"
 
+static int quic_packet_stateless_reset_process(struct sock *sk, struct sk_buff *skb)
+{
+	struct quic_common_connection_id *common;
+	struct quic_connection_close close = {};
+	struct quic_dest_connection_id *dcid;
+	u8 *token;
+
+	if (skb->len < 22)
+		return -EINVAL;
+
+	token = skb->data + skb->len - 16;
+	dcid = (struct quic_dest_connection_id *)quic_dest(sk)->active;
+	if (!memcmp(dcid->token, token, 16)) /* fast path */
+		goto reset;
+
+	list_for_each_entry(common, &quic_dest(sk)->head, list) {
+		dcid = (struct quic_dest_connection_id *)common;
+		if (common == quic_dest(sk)->active)
+			continue;
+		if (!memcmp(dcid->token, token, 16))
+			goto reset;
+	}
+	return -EINVAL;
+
+reset:
+	close.errcode = QUIC_TRANS_ERR_CRYPTO;
+	if (quic_inq_event_recv(sk, QUIC_EVENT_CONNECTION_CLOSE, &close))
+		return -ENOMEM;
+	inet_sk_set_state(sk, QUIC_SS_CLOSED);
+	sk->sk_state_change(sk);
+	pr_debug("%s: peer reset\n", __func__);
+	return 0;
+}
+
 static int quic_packet_handshake_retry_process(struct sock *sk, struct sk_buff *skb)
 {
 	struct quic_connection_id dcid, scid = {};
@@ -261,8 +295,11 @@ int quic_packet_process(struct sock *sk, struct sk_buff *skb)
 	pki.length = skb->len - pki.number_offset;
 	pki.number_max = quic_pnmap_max_pn_seen(quic_pnmap(sk, QUIC_CRYPTO_APP));
 	err = quic_crypto_decrypt(quic_crypto(sk, QUIC_CRYPTO_APP), skb, &pki);
-	if (err)
+	if (err) {
+		if (!quic_packet_stateless_reset_process(sk, skb))
+			return 0;
 		goto err;
+	}
 
 	pr_debug("[QUIC] %s serv: %d number: %llu \n", __func__, quic_is_serv(sk), pki.number);
 	err = quic_pnmap_check(quic_pnmap(sk, QUIC_CRYPTO_APP), pki.number);
@@ -743,6 +780,51 @@ int quic_packet_version_transmit(struct sock *sk, struct quic_request_sock *req)
 	if (quic_flow_route(sk, &req->da, &req->sa))
 		return -EINVAL;
 	skb = quic_packet_version_create(sk, req);
+	if (!skb)
+		return -ENOMEM;
+	quic_lower_xmit(sk, skb, &req->da, &req->sa);
+	return 0;
+}
+
+static struct sk_buff *quic_packet_stateless_reset_create(struct sock *sk,
+							  struct quic_request_sock *req)
+{
+	struct sk_buff *skb;
+	u8 *p, token[16];
+	int len, hlen;
+
+	if (quic_crypto_generate_token(req->dcid.data, "stateless_reset", token, 16))
+		return NULL;
+
+	len = 64;
+	hlen = quic_encap_len(sk) + MAX_HEADER;
+	skb = alloc_skb(hlen + len, GFP_ATOMIC);
+	if (!skb)
+		return NULL;
+	skb_reserve(skb, hlen + len);
+
+	p = skb_push(skb, len);
+	get_random_bytes(p, len);
+
+	skb_reset_transport_header(skb);
+	quic_hdr(skb)->form = 0;
+	quic_hdr(skb)->fixed = 1;
+
+	p += (len - 16);
+	p = quic_put_data(p, token, 16);
+
+	return skb;
+}
+
+int quic_packet_stateless_reset_transmit(struct sock *sk, struct quic_request_sock *req)
+{
+	struct sk_buff *skb;
+
+	__sk_dst_reset(sk);
+	if (quic_flow_route(sk, &req->da, &req->sa))
+		return -EINVAL;
+
+	skb = quic_packet_stateless_reset_create(sk, req);
 	if (!skb)
 		return -ENOMEM;
 	quic_lower_xmit(sk, skb, &req->da, &req->sa);
