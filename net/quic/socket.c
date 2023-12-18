@@ -748,11 +748,59 @@ static int quic_wait_for_accept(struct sock *sk, long timeo)
 	return err;
 }
 
+#define quic_set_param_if_not_zero(param_name) \
+	if (p->param_name) \
+		param->param_name = p->param_name
+
+static int quic_sock_set_transport_param(struct sock *sk, struct quic_transport_param *p, u32 len)
+{
+	struct quic_transport_param *param = quic_local(sk);
+
+	if (len < sizeof(*param))
+		return -EINVAL;
+
+	if (p->remote)
+		param = quic_remote(sk);
+
+	quic_set_param_if_not_zero(max_udp_payload_size);
+	quic_set_param_if_not_zero(ack_delay_exponent);
+	quic_set_param_if_not_zero(max_ack_delay);
+	quic_set_param_if_not_zero(active_connection_id_limit);
+	quic_set_param_if_not_zero(max_idle_timeout);
+	quic_set_param_if_not_zero(max_datagram_frame_size);
+	quic_set_param_if_not_zero(initial_max_data);
+	quic_set_param_if_not_zero(initial_max_stream_data_bidi_local);
+	quic_set_param_if_not_zero(initial_max_stream_data_bidi_remote);
+	quic_set_param_if_not_zero(initial_max_stream_data_uni);
+	quic_set_param_if_not_zero(initial_max_streams_bidi);
+	quic_set_param_if_not_zero(initial_max_streams_uni);
+	quic_set_param_if_not_zero(initial_smoothed_rtt);
+	quic_set_param_if_not_zero(disable_active_migration);
+	quic_set_param_if_not_zero(validate_address);
+	quic_set_param_if_not_zero(grease_quic_bit);
+	quic_set_param_if_not_zero(recv_session_ticket);
+	quic_set_param_if_not_zero(cert_request);
+	quic_set_param_if_not_zero(version);
+
+	if (p->remote) {
+		param->remote = 1;
+		quic_outq_set_param(sk, param);
+		quic_connection_id_set_param(quic_source(sk), param);
+		quic_streams_set_param(quic_streams(sk), NULL, param);
+		return 0;
+	}
+
+	quic_inq_set_param(sk, param);
+	quic_cong_set_param(sk, param);
+	quic_connection_id_set_param(quic_dest(sk), param);
+	quic_streams_set_param(quic_streams(sk), param, NULL);
+	return 0;
+}
+
 static int quic_copy_sock(struct sock *nsk, struct sock *sk, struct quic_request_sock *req)
 {
 	struct sk_buff *skb, *tmp;
 	union quic_addr sa, da;
-	u8 *data, len;
 
 	nsk->sk_type = sk->sk_type;
 	nsk->sk_flags = sk->sk_flags;
@@ -780,34 +828,15 @@ static int quic_copy_sock(struct sock *nsk, struct sock *sk, struct quic_request
 	if (nsk->sk_family == AF_INET6)
 		inet_sk(nsk)->pinet6 = &((struct quic6_sock *)nsk)->inet6;
 
-	len = quic_alpn(sk)->len;
-	if (len) {
-		data = kmemdup(quic_alpn(sk)->data, len, GFP_KERNEL);
-		if (!data)
-			return -ENOMEM;
-		quic_alpn(nsk)->data = data;
-		quic_alpn(nsk)->len = len;
-	}
+	if (quic_data_dup(quic_alpn(nsk), quic_alpn(sk)->data, quic_alpn(sk)->len))
+		return -ENOMEM;
+	if (quic_data_dup(quic_token(nsk), quic_token(sk)->data, quic_token(sk)->len))
+		return -ENOMEM;
+	if (quic_data_dup(quic_ticket(nsk), quic_ticket(sk)->data, quic_ticket(sk)->len))
+		return -ENOMEM;
 
-	len = quic_token(sk)->len;
-	if (len) {
-		data = kmemdup(quic_token(sk)->data, len, GFP_KERNEL);
-		if (!data)
-			return -ENOMEM;
-		quic_token(nsk)->data = data;
-		quic_token(nsk)->len = len;
-	}
-
-	len = quic_ticket(sk)->len;
-	if (len) {
-		data = kmemdup(quic_ticket(sk)->data, len, GFP_KERNEL);
-		if (!data)
-			return -ENOMEM;
-		quic_ticket(nsk)->data = data;
-		quic_ticket(nsk)->len = len;
-	}
-
-	*quic_local(nsk) = *quic_local(sk);
+	quic_sock_set_transport_param(nsk, quic_local(sk),
+				      sizeof(struct quic_transport_param));
 	quic_inq(nsk)->events = quic_inq(sk)->events;
 	quic_crypto(nsk, QUIC_CRYPTO_APP)->cipher_type =
 		quic_crypto(sk, QUIC_CRYPTO_APP)->cipher_type;
@@ -1001,9 +1030,7 @@ err:
 
 static int quic_sock_set_token(struct sock *sk, void *data, u32 len)
 {
-	struct quic_data *token = quic_token(sk);
 	struct sk_buff *skb;
-	u8 *p;
 
 	if (quic_is_serv(sk)) {
 		skb = quic_frame_create(sk, QUIC_FRAME_NEW_TOKEN, NULL);
@@ -1016,80 +1043,15 @@ static int quic_sock_set_token(struct sock *sk, void *data, u32 len)
 	if (!len || len > 120)
 		return -EINVAL;
 
-	p = kmemdup(data, len, GFP_KERNEL);
-	if (!p)
-		return -ENOMEM;
-
-	kfree(token->data);
-	token->data = p;
-	token->len = len;
-	return 0;
+	return quic_data_dup(quic_token(sk), data, len);
 }
 
 static int quic_sock_set_session_ticket(struct sock *sk, u8 *data, u32 len)
 {
-	struct quic_data *ticket = quic_ticket(sk);
-	u8 *p;
-
 	if (!len || len > 4096)
 		return -EINVAL;
 
-	p = kmemdup(data, len, GFP_KERNEL);
-	if (!p)
-		return -ENOMEM;
-
-	kfree(ticket->data);
-	ticket->data = p;
-	ticket->len = len;
-	return 0;
-}
-
-#define quic_set_param_if_not_zero(param_name) \
-	if (p->param_name) \
-		param->param_name = p->param_name
-
-static int quic_sock_set_transport_param(struct sock *sk, struct quic_transport_param *p, u32 len)
-{
-	struct quic_transport_param *param = quic_local(sk);
-
-	if (len < sizeof(*param))
-		return -EINVAL;
-
-	if (p->remote)
-		param = quic_remote(sk);
-
-	quic_set_param_if_not_zero(max_udp_payload_size);
-	quic_set_param_if_not_zero(ack_delay_exponent);
-	quic_set_param_if_not_zero(max_ack_delay);
-	quic_set_param_if_not_zero(active_connection_id_limit);
-	quic_set_param_if_not_zero(max_idle_timeout);
-	quic_set_param_if_not_zero(max_datagram_frame_size);
-	quic_set_param_if_not_zero(initial_max_data);
-	quic_set_param_if_not_zero(initial_max_stream_data_bidi_local);
-	quic_set_param_if_not_zero(initial_max_stream_data_bidi_remote);
-	quic_set_param_if_not_zero(initial_max_stream_data_uni);
-	quic_set_param_if_not_zero(initial_max_streams_bidi);
-	quic_set_param_if_not_zero(initial_max_streams_uni);
-	quic_set_param_if_not_zero(initial_smoothed_rtt);
-	quic_set_param_if_not_zero(disable_active_migration);
-	quic_set_param_if_not_zero(validate_address);
-	quic_set_param_if_not_zero(recv_session_ticket);
-	quic_set_param_if_not_zero(cert_request);
-	quic_set_param_if_not_zero(version);
-
-	if (p->remote) {
-		param->remote = 1;
-		quic_outq_set_param(sk, param);
-		quic_connection_id_set_param(quic_source(sk), param);
-		quic_streams_set_param(quic_streams(sk), NULL, param);
-		return 0;
-	}
-
-	quic_inq_set_param(sk, param);
-	quic_cong_set_param(sk, param);
-	quic_connection_id_set_param(quic_dest(sk), param);
-	quic_streams_set_param(quic_streams(sk), param, NULL);
-	return 0;
+	return quic_data_dup(quic_ticket(sk), data, len);
 }
 
 static int quic_sock_set_transport_params_ext(struct sock *sk, u8 *p, u32 len)
