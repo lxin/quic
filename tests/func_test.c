@@ -680,21 +680,6 @@ static int do_client_connection_test(int sockfd)
 	printf("CONNECTION TEST:\n");
 
 	optlen = sizeof(info);
-	info.source = 1;
-	ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_RETIRE_CONNECTION_ID, &info, optlen); /* 1-7 */
-	if (ret == -1) {
-		printf("socket setsockopt retire connection id %d\n", errno);
-		return -1;
-	}
-	sleep(1);
-	ret = getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_ACTIVE_CONNECTION_ID, &info, &optlen);
-	if (ret == -1 || info.source != 1) {
-		printf("socket getsockopt active id failed %d\n", info.source);
-		return -1;
-	}
-	printf("test1: PASS (retire source connection id 0)\n");
-
-	optlen = sizeof(info);
 	info.source = 2;
 	ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_RETIRE_CONNECTION_ID, &info, optlen); /* 2-8 */
 	if (ret == -1) {
@@ -707,10 +692,25 @@ static int do_client_connection_test(int sockfd)
 		printf("socket getsockopt active id failed %d\n", info.source);
 		return -1;
 	}
+	printf("test1: PASS (retire source connection id 0)\n");
+
+	optlen = sizeof(info);
+	info.source = 3;
+	ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_RETIRE_CONNECTION_ID, &info, optlen); /* 3-9 */
+	if (ret == -1) {
+		printf("socket setsockopt retire connection id %d\n", errno);
+		return -1;
+	}
+	sleep(1);
+	ret = getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_ACTIVE_CONNECTION_ID, &info, &optlen);
+	if (ret == -1 || info.source != 3) {
+		printf("socket getsockopt active id failed %d\n", info.source);
+		return -1;
+	}
 	printf("test2: PASS (retire source connection id 1)\n");
 
 	optlen = sizeof(info);
-	info.source = 2;
+	info.source = 3;
 	ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_RETIRE_CONNECTION_ID, &info, optlen);
 	if (ret != -1) {
 		printf("test3: FAIL\n");
@@ -719,7 +719,7 @@ static int do_client_connection_test(int sockfd)
 	printf("test3: PASS (not allow to retire a retired source connection id)\n");
 
 	optlen = sizeof(info);
-	info.source = 9;
+	info.source = 10;
 	ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_RETIRE_CONNECTION_ID, &info, optlen);
 	if (ret != -1) {
 		printf("test4: FAIL\n");
@@ -759,22 +759,6 @@ static int do_client_connection_test(int sockfd)
 
 	optlen = sizeof(info);
 	info.source = 0;
-	info.dest = 1;
-	ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_RETIRE_CONNECTION_ID, &info, optlen); /* 1-7 */
-	if (ret == -1) {
-		printf("socket setsockopt retire connection id %d\n", errno);
-		return -1;
-	}
-	sleep(1);
-	ret = getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_ACTIVE_CONNECTION_ID, &info, &optlen);
-	if (ret == -1 || info.dest != 1) {
-		printf("socket getsockopt active id failed %d\n", info.dest);
-		return -1;
-	}
-	printf("test7: PASS (retire dest connection id 0)\n");
-
-	optlen = sizeof(info);
-	info.source = 0;
 	info.dest = 2;
 	ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_RETIRE_CONNECTION_ID, &info, optlen); /* 2-8 */
 	if (ret == -1) {
@@ -787,11 +771,27 @@ static int do_client_connection_test(int sockfd)
 		printf("socket getsockopt active id failed %d\n", info.dest);
 		return -1;
 	}
+	printf("test7: PASS (retire dest connection id 0)\n");
+
+	optlen = sizeof(info);
+	info.source = 0;
+	info.dest = 3;
+	ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_RETIRE_CONNECTION_ID, &info, optlen); /* 3-9 */
+	if (ret == -1) {
+		printf("socket setsockopt retire connection id %d\n", errno);
+		return -1;
+	}
+	sleep(1);
+	ret = getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_ACTIVE_CONNECTION_ID, &info, &optlen);
+	if (ret == -1 || info.dest != 3) {
+		printf("socket getsockopt active id failed %d\n", info.dest);
+		return -1;
+	}
 	printf("test8: PASS (retire dest connection id 1)\n");
 
 	optlen = sizeof(info);
 	info.source = 0;
-	info.dest = 2;
+	info.dest = 3;
 	ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_RETIRE_CONNECTION_ID, &info, optlen);
 	if (ret != -1) {
 		printf("test3: FAIL\n");
@@ -801,7 +801,7 @@ static int do_client_connection_test(int sockfd)
 
 	optlen = sizeof(info);
 	info.source = 0;
-	info.dest = 9;
+	info.dest = 10;
 	ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_RETIRE_CONNECTION_ID, &info, optlen);
 	if (ret != -1) {
 		printf("test4: FAIL\n");
