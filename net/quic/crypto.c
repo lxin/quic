@@ -605,11 +605,12 @@ int quic_crypto_key_update(struct quic_crypto *crypto, u8 *key, unsigned int len
 {
 	u8 tx_secret[QUIC_SECRET_LEN], rx_secret[QUIC_SECRET_LEN];
 	struct tls_vec l = {LABEL_V1, 7}, z = {NULL, 0}, k, srt;
-	int err, secret_len = crypto->cipher->secretlen;
+	int err, secret_len;
 
-	if (crypto->key_pending)
+	if (crypto->key_pending || !crypto->recv_ready)
 		return -EINVAL;
 
+	secret_len = crypto->cipher->secretlen;
 	if (crypto->version == QUIC_VERSION_V2)
 		tls_vec(&l, LABEL_V2, 9);
 

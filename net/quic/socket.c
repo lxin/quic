@@ -235,7 +235,7 @@ static int quic_connect(struct sock *sk, struct sockaddr *addr, int addr_len)
 	union quic_addr *sa;
 
 	lock_sock(sk);
-	if (sk->sk_state != QUIC_SS_CLOSED || addr_len < quic_addr_len(sk))
+	if (!quic_is_closed(sk) || addr_len < quic_addr_len(sk))
 		goto out;
 
 	quic_path_addr_set(&qs->dst, quic_addr(addr));
@@ -593,7 +593,7 @@ static int quic_wait_for_packet(struct sock *sk, long timeo)
 			goto out;
 		}
 
-		if (sk->sk_state == QUIC_SS_CLOSED)
+		if (quic_is_closed(sk))
 			goto out;
 
 		exit = 0;
@@ -758,7 +758,7 @@ static int quic_sock_set_transport_param(struct sock *sk, struct quic_transport_
 {
 	struct quic_transport_param *param = quic_local(sk);
 
-	if (len < sizeof(*param))
+	if (len < sizeof(*param) || quic_is_established(sk))
 		return -EINVAL;
 
 	if (p->remote)
@@ -987,7 +987,7 @@ int quic_sock_change_addr(struct sock *sk, struct quic_path_addr *path, void *da
 	u64 number;
 	int err;
 
-	if (path->pending)
+	if (path->pending || !quic_is_established(sk))
 		return -EINVAL;
 
 	if (udp_bind && quic_source(sk)->disable_active_migration)
@@ -1058,6 +1058,9 @@ static int quic_sock_set_transport_params_ext(struct sock *sk, u8 *p, u32 len)
 {
 	struct quic_transport_param *param = quic_remote(sk);
 
+	if (!quic_is_establishing(sk))
+		return -EINVAL;
+
 	if (quic_frame_set_transport_params_ext(sk, param, p, len))
 		return -1;
 
@@ -1075,7 +1078,7 @@ static int quic_sock_set_crypto_secret(struct sock *sk, struct quic_crypto_secre
 	int err, seqno;
 	u64 prior = 1;
 
-	if (len != sizeof(*secret))
+	if (len != sizeof(*secret) || !quic_is_establishing(sk))
 		return -EINVAL;
 
 	err = quic_crypto_set_secret(quic_crypto(sk, secret->level), secret,
@@ -1143,13 +1146,13 @@ static int quic_sock_retire_connection_id(struct sock *sk, struct quic_connectio
 	struct sk_buff *skb;
 	u64 number, first;
 
-	if (len < sizeof(*info))
+	if (len < sizeof(*info) || !quic_is_established(sk))
 		return -EINVAL;
 
 	if (info->source) {
 		number = info->source;
 		if (number > quic_connection_id_last_number(quic_source(sk)) ||
-				number <= quic_connection_id_first_number(quic_source(sk)))
+		    number <= quic_connection_id_first_number(quic_source(sk)))
 			return -EINVAL;
 		skb = quic_frame_create(sk, QUIC_FRAME_NEW_CONNECTION_ID, &number);
 		if (!skb)
@@ -1185,7 +1188,7 @@ static int quic_sock_stream_reset(struct sock *sk, struct quic_errinfo *info, u3
 	struct quic_stream *stream;
 	struct sk_buff *skb;
 
-	if (len != sizeof(*info))
+	if (len != sizeof(*info) || !quic_is_established(sk))
 		return -EINVAL;
 
 	stream = quic_stream_send_get(quic_streams(sk), info->stream_id, 0, quic_is_serv(sk));
@@ -1209,7 +1212,7 @@ static int quic_sock_stream_stop_sending(struct sock *sk, struct quic_errinfo *i
 	struct quic_stream *stream;
 	struct sk_buff *skb;
 
-	if (len != sizeof(*info))
+	if (len != sizeof(*info) || !quic_is_established(sk))
 		return -EINVAL;
 
 	stream = quic_stream_recv_get(quic_streams(sk), info->stream_id, quic_is_serv(sk));
@@ -1435,7 +1438,7 @@ static int quic_sock_get_active_connection_id(struct sock *sk, int len,
 {
 	struct quic_connection_id_info info;
 
-	if (len < sizeof(info))
+	if (len < sizeof(info) || !quic_is_established(sk))
 		return -EINVAL;
 
 	len = sizeof(info);

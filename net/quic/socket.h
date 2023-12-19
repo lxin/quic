@@ -199,6 +199,11 @@ static inline bool quic_is_serv(const struct sock *sk)
 	return quic_port(sk)->serv;
 }
 
+static inline bool quic_is_establishing(struct sock *sk)
+{
+	return sk->sk_state == QUIC_SS_ESTABLISHING;
+}
+
 static inline bool quic_is_established(struct sock *sk)
 {
 	return sk->sk_state == QUIC_SS_ESTABLISHED;

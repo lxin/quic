@@ -564,7 +564,7 @@ static int quic_packet_number_check(struct sock *sk)
 		return 0;
 
 	__skb_queue_purge(&packet->frame_list);
-	if (sk->sk_state != QUIC_SS_CLOSED) {
+	if (!quic_is_closed(sk)) {
 		struct quic_connection_close *close;
 		u8 frame[10] = {};
 
