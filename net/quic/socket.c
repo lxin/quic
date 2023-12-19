@@ -503,8 +503,10 @@ static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 		msginfo.msg = &msg->msg_iter;
 		while (iov_iter_count(&msg->msg_iter) > 0) {
 			skb = quic_frame_create(sk, QUIC_FRAME_CRYPTO, &msginfo);
-			if (!skb)
+			if (!skb) {
+				err = -ENOMEM;
 				goto err;
+			}
 			quic_outq_ctrl_tail(sk, skb, true);
 		}
 		goto out;
@@ -999,6 +1001,7 @@ int quic_sock_change_addr(struct sock *sk, struct quic_path_addr *path, void *da
 	if (err)
 		goto err;
 
+	err = -ENOMEM;
 	/* send a ping before path validation so that we can delete the old path
 	 * when validation is complete with no worries that the peer hasn't been
 	 * aware of the new path.

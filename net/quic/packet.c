@@ -250,7 +250,8 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb)
 		err = quic_frame_process(sk, skb, &pki);
 		if (err)
 			goto err;
-		if (quic_pnmap_mark(quic_pnmap(sk, level), pki.number))
+		err = quic_pnmap_mark(quic_pnmap(sk, level), pki.number);
+		if (err)
 			goto err;
 		skb_pull(skb, QUIC_TAG_LEN);
 		if (pki.ack_eliciting) {
@@ -278,7 +279,7 @@ int quic_packet_process(struct sock *sk, struct sk_buff *skb)
 	u8 key_phase, level = 0;
 	union quic_addr *saddr;
 	struct sk_buff *fskb;
-	int err;
+	int err = -EINVAL;
 
 	if (quic_hdr(skb)->form)
 		return quic_packet_handshake_process(sk, skb);
@@ -315,7 +316,8 @@ int quic_packet_process(struct sock *sk, struct sk_buff *skb)
 	err = quic_frame_process(sk, skb, &pki);
 	if (err)
 		goto err;
-	if (quic_pnmap_mark(quic_pnmap(sk, QUIC_CRYPTO_APP), pki.number))
+	err = quic_pnmap_mark(quic_pnmap(sk, QUIC_CRYPTO_APP), pki.number);
+	if (err)
 		goto err;
 	skb_pull(skb, QUIC_TAG_LEN);
 

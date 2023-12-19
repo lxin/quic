@@ -296,13 +296,13 @@ static int quic_crypto_payload_encrypt(struct crypto_aead *tfm, struct sk_buff *
 	len = skb->len;
 	nsg = skb_cow_data(skb, QUIC_TAG_LEN, &trailer);
 	if (nsg < 0)
-		goto err;
+		return nsg;
 	pskb_put(skb, trailer, QUIC_TAG_LEN);
 	hdr->key = pki->key_phase;
 
 	ctx = quic_crypto_aead_mem_alloc(tfm, 0, &iv, &req, &sg, nsg);
 	if (!ctx)
-		return err;
+		return -ENOMEM;
 
 	sg_init_table(sg, nsg);
 	err = skb_to_sgvec(skb, sg, 0, skb->len);
@@ -352,10 +352,10 @@ static int quic_crypto_payload_decrypt(struct crypto_aead *tfm, struct sk_buff *
 		return -EINVAL;
 	nsg = skb_cow_data(skb, 0, &trailer);
 	if (nsg < 0)
-		return err;
+		return nsg;
 	ctx = quic_crypto_aead_mem_alloc(tfm, 0, &iv, &req, &sg, nsg);
 	if (!ctx)
-		return err;
+		return -ENOMEM;
 
 	sg_init_table(sg, nsg);
 	err = skb_to_sgvec(skb, sg, 0, len);
@@ -754,8 +754,10 @@ int quic_crypto_get_retry_tag(struct sk_buff *skb, struct quic_connection_id *od
 		goto err;
 
 	pseudo_retry = quic_crypto_aead_mem_alloc(tfm, 128, &iv, &req, &sg, 1);
-	if (!pseudo_retry)
+	if (!pseudo_retry) {
+		err = -ENOMEM;
 		goto err;
+	}
 
 	p = pseudo_retry;
 	p = quic_put_int(p, odcid->len, 1);
