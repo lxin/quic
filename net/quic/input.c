@@ -90,9 +90,10 @@ static int quic_do_listen_rcv(struct sock *sk, struct sk_buff *skb)
 	u8 *p = (u8 *)quic_hshdr(skb) + 1, type, data[16];
 	struct quic_request_sock req = {};
 	struct quic_data token;
+	int err = -EINVAL;
 
-	quic_af_ops(sk)->get_msg_addr(&req.sa, skb, 0);
-	quic_af_ops(sk)->get_msg_addr(&req.da, skb, 1);
+	quic_get_msg_addr(sk, &req.sa, skb, 0);
+	quic_get_msg_addr(sk, &req.da, skb, 1);
 	if (quic_request_sock_exists(sk, &req.sa, &req.da))
 		goto out;
 
@@ -101,22 +102,17 @@ static int quic_do_listen_rcv(struct sock *sk, struct sk_buff *skb)
 		return 0;
 
 	if (!quic_hshdr(skb)->form) { /* stateless reset always by listen sock */
-		if (skb->len < 17) {
-			kfree_skb(skb);
-			return -EINVAL;
-		}
+		if (skb->len < 17)
+			goto err;
 
 		req.dcid.len = 16;
 		memcpy(req.dcid.data, (u8 *)quic_hdr(skb) + 1, 16);
 		consume_skb(skb);
-		quic_packet_stateless_reset_transmit(sk, &req);
-		return 0;
+		return quic_packet_stateless_reset_transmit(sk, &req);
 	}
 
-	if (quic_get_connid_and_token(skb, &req.dcid, &req.scid, &token)) {
-		kfree_skb(skb);
-		return -EINVAL;
-	}
+	if (quic_get_connid_and_token(skb, &req.dcid, &req.scid, &token))
+		goto err;
 
 	req.version = quic_get_int(&p, 4);
 	if (!quic_version_supported(req.version)) {
@@ -128,8 +124,7 @@ static int quic_do_listen_rcv(struct sock *sk, struct sk_buff *skb)
 	type = quic_version_get_type(req.version, quic_hshdr(skb)->type);
 	if (type != QUIC_PACKET_INITIAL) { /* stateless reset for handshake */
 		consume_skb(skb);
-		quic_packet_stateless_reset_transmit(sk, &req);
-		return 0;
+		return quic_packet_stateless_reset_transmit(sk, &req);
 	}
 
 	if (quic_local(sk)->validate_address) {
@@ -139,27 +134,27 @@ static int quic_do_listen_rcv(struct sock *sk, struct sk_buff *skb)
 		}
 		p = token.data;
 		if (quic_crypto_generate_token(&req.da, "path_verification", data, 16) ||
-		    memcmp(p + 1, data, 16)) {
-			kfree_skb(skb);
-			return -EINVAL;
-		}
+		    memcmp(p + 1, data, 16))
+			goto err;
 		req.retry = *p;
 	}
 
-	if (quic_request_sock_enqueue(sk, &req)) {
-		kfree_skb(skb);
-		return -ENOMEM;
-	}
+	err = quic_request_sock_enqueue(sk, &req);
+	if (err)
+		goto err;
 out:
 	if (atomic_read(&sk->sk_rmem_alloc) + skb->len > sk->sk_rcvbuf) {
-		kfree_skb(skb);
-		return -ENOBUFS;
+		err = -ENOBUFS;
+		goto err;
 	}
 
 	quic_inq_set_owner_r(skb, sk); /* handle it later when accepting the sock */
 	__skb_queue_tail(&quic_inq(sk)->backlog_list, skb);
 	sk->sk_data_ready(sk);
 	return 0;
+err:
+	kfree_skb(skb);
+	return err;
 }
 
 int quic_do_rcv(struct sock *sk, struct sk_buff *skb)

@@ -817,8 +817,8 @@ static int quic_copy_sock(struct sock *nsk, struct sock *sk, struct quic_request
 	nsk->sk_sndtimeo = sk->sk_sndtimeo;
 
 	skb_queue_walk_safe(&quic_inq(sk)->backlog_list, skb, tmp) {
-		quic_af_ops(sk)->get_msg_addr(&da, skb, 0);
-		quic_af_ops(sk)->get_msg_addr(&sa, skb, 1);
+		quic_get_msg_addr(sk, &da, skb, 0);
+		quic_get_msg_addr(sk, &sa, skb, 1);
 
 		if (!memcmp(&req->sa, &da, quic_addr_len(sk)) &&
 		    !memcmp(&req->da, &sa, quic_addr_len(sk))) {

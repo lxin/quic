@@ -37,14 +37,13 @@ static int quic_packet_stateless_reset_process(struct sock *sk, struct sk_buff *
 		if (!memcmp(dcid->token, token, 16))
 			goto reset;
 	}
-	return -EINVAL;
+	return -EINVAL; /* not a stateless reset and the caller will free skb */
 
 reset:
 	close.errcode = QUIC_TRANS_ERR_CRYPTO;
-	if (quic_inq_event_recv(sk, QUIC_EVENT_CONNECTION_CLOSE, &close))
-		return -ENOMEM;
+	quic_inq_event_recv(sk, QUIC_EVENT_CONNECTION_CLOSE, &close);
 	inet_sk_set_state(sk, QUIC_SS_CLOSED);
-	sk->sk_state_change(sk);
+	consume_skb(skb);
 	pr_debug("%s: peer reset\n", __func__);
 	return 0;
 }
@@ -164,7 +163,7 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb)
 
 	while (skb->len > 0) {
 		hshdr = quic_hshdr(skb);
-		if (!hshdr->form) { /* handle it later when setting 1RTT key*/
+		if (!hshdr->form) { /* handle it later when setting 1RTT key */
 			__skb_queue_tail(&quic_inq(sk)->backlog_list, skb);
 			return 0;
 		}
