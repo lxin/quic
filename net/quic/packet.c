@@ -548,7 +548,7 @@ void quic_packet_config(struct sock *sk, u8 level)
 	}
 	packet->len = hlen;
 	packet->overhead = hlen;
-	packet->ipfragok = !level;
+	packet->ipfragok = !!level;
 	packet->level = level;
 
 	quic_packet_route(sk);
@@ -602,19 +602,16 @@ void quic_packet_transmit(struct sock *sk)
 	if (!packet->head) {
 		packet->head = skb;
 		NAPI_GRO_CB(packet->head)->last = skb;
-		if (!level) {
-			quic_lower_xmit(sk, packet->head, packet->da, packet->sa);
-			packet->count++;
-			packet->head = NULL;
-		}
-		return;
+		goto out;
 	}
 
 	/* packet bundle */
 	if (packet->head->len + skb->len >= packet->mss) {
 		quic_lower_xmit(sk, packet->head, packet->da, packet->sa);
 		packet->count++;
-		packet->head = NULL;
+		packet->head = skb;
+		NAPI_GRO_CB(packet->head)->last = skb;
+		goto out;
 	}
 	p = packet->head;
 	if (NAPI_GRO_CB(p)->last == p)
@@ -625,6 +622,7 @@ void quic_packet_transmit(struct sock *sk)
 	p->data_len += skb->len;
 	p->truesize += skb->truesize;
 	p->len += skb->len;
+out:
 	if (!level) {
 		quic_lower_xmit(sk, packet->head, packet->da, packet->sa);
 		packet->count++;
