@@ -164,8 +164,9 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb)
 	while (skb->len > 0) {
 		hshdr = quic_hshdr(skb);
 		if (!hshdr->form) { /* handle it later when setting 1RTT key */
-			__skb_queue_tail(&quic_inq(sk)->backlog_list, skb);
-			return 0;
+			QUIC_RCV_CB(skb)->number_offset =
+				quic_source(sk)->active->id.len + sizeof(struct quichdr);
+			return quic_packet_process(sk, skb);
 		}
 		p = (u8 *)hshdr;
 		len = skb->len;
