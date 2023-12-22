@@ -226,6 +226,11 @@ err:
 static void quic_inq_recv_tail(struct sock *sk, struct quic_stream *stream, struct sk_buff *skb)
 {
 	struct quic_stream_update update = {};
+	u64 overlap;
+
+	overlap = stream->recv.offset - QUIC_RCV_CB(skb)->stream_offset;
+	skb_pull(skb, overlap);
+	QUIC_RCV_CB(skb)->stream_offset += overlap;
 
 	if (QUIC_RCV_CB(skb)->stream_fin) {
 		update.id = stream->id;
@@ -284,7 +289,7 @@ int quic_inq_reasm_tail(struct sock *sk, struct sk_buff *skb)
 	struct sk_buff *tmp;
 
 	stream = QUIC_RCV_CB(skb)->stream;
-	if (stream->recv.offset > stream_offset) {
+	if (stream->recv.offset > stream_offset + skb->len) { /* dup */
 		kfree_skb(skb);
 		return 0;
 	}
@@ -314,7 +319,8 @@ int quic_inq_reasm_tail(struct sock *sk, struct sk_buff *skb)
 				break;
 			if (QUIC_RCV_CB(tmp)->stream_offset > stream_offset)
 				break;
-			if (QUIC_RCV_CB(tmp)->stream_offset == stream_offset) { /* dup */
+			if (QUIC_RCV_CB(tmp)->stream_offset + tmp->len >=
+						stream_offset + skb->len) { /* dup */
 				kfree_skb(skb);
 				return 0;
 			}
@@ -350,6 +356,10 @@ int quic_inq_reasm_tail(struct sock *sk, struct sk_buff *skb)
 			break;
 		__skb_unlink(skb, head);
 		stream->recv.frags--;
+		if (QUIC_RCV_CB(skb)->stream_offset + skb->len <= stream->recv.offset) { /* dup */
+			kfree_skb(skb);
+			continue;
+		}
 		quic_inq_recv_tail(sk, stream, skb);
 	}
 	return 0;

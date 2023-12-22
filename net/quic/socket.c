@@ -824,7 +824,6 @@ static int quic_copy_sock(struct sock *nsk, struct sock *sk, struct quic_request
 		    !memcmp(&req->da, &sa, quic_addr_len(sk))) {
 			__skb_unlink(skb, &quic_inq(sk)->backlog_list);
 			__skb_queue_tail(&quic_inq(nsk)->backlog_list, skb);
-			quic_inq_set_owner_r(skb, nsk);
 		}
 	}
 
