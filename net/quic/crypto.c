@@ -782,16 +782,28 @@ err:
 	return  err;
 }
 
-int quic_crypto_generate_token(void *data, char *label, u8 *token, u32 len)
+int quic_crypto_listen_init(struct quic_crypto *crypto)
 {
-	struct tls_vec salt, s, l, k, z = {NULL, 0};
 	struct crypto_shash *tfm;
-	u8 secret[32];
-	int err;
 
 	tfm = crypto_alloc_shash("hmac(sha256)", 0, 0);
 	if (IS_ERR(tfm))
 		return PTR_ERR(tfm);
+
+	crypto->secret_tfm = tfm;
+	return 0;
+}
+
+int quic_crypto_generate_token(struct quic_crypto *crypto, void *data, char *label,
+			       u8 *token, u32 len)
+{
+	struct tls_vec salt, s, l, k, z = {NULL, 0};
+	struct crypto_shash *tfm = crypto->secret_tfm;
+	u8 secret[32];
+	int err;
+
+	if (!tfm)
+		return -EINVAL;
 
 	tls_vec(&salt, data, 16);
 	tls_vec(&k, random_data, 16);
@@ -803,11 +815,11 @@ int quic_crypto_generate_token(void *data, char *label, u8 *token, u32 len)
 	tls_vec(&k, token, len);
 	err = tls_crypto_hkdf_expand(tfm, &s, &l, &z, &k);
 out:
-	crypto_free_shash(tfm);
 	return err;
 }
 
-int quic_crypto_generate_session_ticket_key(void *data, u8 *key, u32 len)
+int quic_crypto_generate_session_ticket_key(struct quic_crypto *crypto, void *data,
+					    u8 *key, u32 len)
 {
-	return quic_crypto_generate_token(data, "session_ticket", key, len);
+	return quic_crypto_generate_token(crypto, data, "session_ticket", key, len);
 }

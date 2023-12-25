@@ -1349,7 +1349,8 @@ static int quic_sock_get_session_ticket(struct sock *sk, int len,
 	if (quic_is_serv(sk)) { /* get ticket_key for server */
 		union quic_addr *da = quic_path_addr(quic_dst(sk));
 
-		if (quic_crypto_generate_session_ticket_key(da, key, 64))
+		if (quic_crypto_generate_session_ticket_key(quic_crypto(sk, QUIC_CRYPTO_INITIAL),
+							    da, key, 64))
 			return -EINVAL;
 		ticket = key;
 		ticket_len = 64;

@@ -690,7 +690,8 @@ static struct sk_buff *quic_packet_retry_create(struct sock *sk, struct quic_req
 
 	p = token;
 	p = quic_put_int(p, 1, 1); /* retry token */
-	if (quic_crypto_generate_token(&req->da, "path_verification", p, 16))
+	if (quic_crypto_generate_token(quic_crypto(sk, QUIC_CRYPTO_INITIAL),
+				       &req->da, "path_verification", p, 16))
 		return NULL;
 
 	len = 1 + 4 + 1 + req->scid.len + 1 + req->dcid.len + tokenlen + 16;
@@ -793,7 +794,8 @@ static struct sk_buff *quic_packet_stateless_reset_create(struct sock *sk,
 	u8 *p, token[16];
 	int len, hlen;
 
-	if (quic_crypto_generate_token(req->dcid.data, "stateless_reset", token, 16))
+	if (quic_crypto_generate_token(quic_crypto(sk, QUIC_CRYPTO_INITIAL),
+				       req->dcid.data, "stateless_reset", token, 16))
 		return NULL;
 
 	len = 64;

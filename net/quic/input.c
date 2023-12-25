@@ -133,7 +133,8 @@ static int quic_do_listen_rcv(struct sock *sk, struct sk_buff *skb)
 			return quic_packet_retry_transmit(sk, &req);
 		}
 		p = token.data;
-		if (quic_crypto_generate_token(&req.da, "path_verification", data, 16) ||
+		if (quic_crypto_generate_token(quic_crypto(sk, QUIC_CRYPTO_INITIAL),
+					       &req.da, "path_verification", data, 16) ||
 		    memcmp(p + 1, data, 16))
 			goto err;
 		req.retry = *p;
