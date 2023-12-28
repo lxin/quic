@@ -74,8 +74,8 @@ int quic_crypto_get_secret(struct quic_crypto *crypto, struct quic_crypto_secret
 void quic_crypto_destroy(struct quic_crypto *crypto);
 int quic_crypto_key_update(struct quic_crypto *crypto, u8 *key, unsigned int len);
 void quic_crypto_set_key_update_ts(struct quic_crypto *crypto, u32 key_update_ts);
-int quic_crypto_get_retry_tag(struct sk_buff *skb, struct quic_connection_id *odcid,
-			      u32 version, u8 *tag);
+int quic_crypto_get_retry_tag(struct quic_crypto *crypto, struct sk_buff *skb,
+			      struct quic_connection_id *odcid, u32 version, u8 *tag);
 int quic_crypto_listen_init(struct quic_crypto *crypto);
 int quic_crypto_generate_token(struct quic_crypto *crypto, void *data, char *label,
 			       u8 *token, u32 len);

@@ -732,18 +732,17 @@ out:
 #define QUIC_RETRY_NONCE_V1 "\x46\x15\x99\xd3\x5d\x63\x2b\xf2\x23\x98\x25\xbb"
 #define QUIC_RETRY_NONCE_V2 "\xd8\x69\x69\xbc\x2d\x7c\x6d\x99\x90\xef\xb0\x4a"
 
-int quic_crypto_get_retry_tag(struct sk_buff *skb, struct quic_connection_id *odcid,
-			      u32 version, u8 *tag)
+int quic_crypto_get_retry_tag(struct quic_crypto *crypto, struct sk_buff *skb,
+			      struct quic_connection_id *odcid, u32 version, u8 *tag)
 {
 	u8 *pseudo_retry, *p, *iv, *key;
 	struct aead_request *req;
-	struct crypto_aead *tfm;
+	struct crypto_aead *tfm = crypto->aead_tfm;
 	struct scatterlist *sg;
 	int err, plen;
 
-	tfm = crypto_alloc_aead("gcm(aes)", 0, 0);
-	if (IS_ERR(tfm))
-		return PTR_ERR(tfm);
+	if (!tfm)
+		return -EINVAL;
 	err = crypto_aead_setauthsize(tfm, QUIC_TAG_LEN);
 	if (err)
 		goto err;
@@ -778,19 +777,24 @@ int quic_crypto_get_retry_tag(struct sk_buff *skb, struct quic_connection_id *od
 	memcpy(tag, pseudo_retry + plen, 16);
 	kfree(pseudo_retry);
 err:
-	crypto_free_aead(tfm);
 	return  err;
 }
 
 int quic_crypto_listen_init(struct quic_crypto *crypto)
 {
-	struct crypto_shash *tfm;
+	void *tfm;
 
 	tfm = crypto_alloc_shash("hmac(sha256)", 0, 0);
 	if (IS_ERR(tfm))
 		return PTR_ERR(tfm);
-
+	crypto_free_shash(crypto->secret_tfm);
 	crypto->secret_tfm = tfm;
+
+	tfm = crypto_alloc_aead("gcm(aes)", 0, 0);
+	if (IS_ERR(tfm))
+		return PTR_ERR(tfm);
+	crypto_free_aead(crypto->aead_tfm);
+	crypto->aead_tfm = tfm;
 	return 0;
 }
 

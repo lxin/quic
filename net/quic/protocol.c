@@ -293,7 +293,8 @@ static int quic_inet_listen(struct socket *sock, int backlog)
 	if (!hlist_unhashed(&quic_sk(sk)->inet.sk.sk_node))
 		goto out;
 
-	if (quic_crypto_listen_init(quic_crypto(sk, QUIC_CRYPTO_INITIAL)))
+	err = quic_crypto_listen_init(quic_crypto(sk, QUIC_CRYPTO_INITIAL));
+	if (err)
 		goto out;
 	inet_sk_set_state(sk, QUIC_SS_LISTENING);
 	err = sk->sk_prot->hash(sk);
