@@ -81,7 +81,9 @@ static int quic_packet_handshake_retry_process(struct sock *sk, struct sk_buff *
 	if (len < 16)
 		goto err;
 	version = quic_local(sk)->version;
-	if (quic_crypto_get_retry_tag(skb, &scid, version, tag) || memcmp(tag, p + len - 16, 16))
+	if (quic_crypto_get_retry_tag(quic_crypto(sk, QUIC_CRYPTO_INITIAL),
+				      skb, &scid, version, tag) ||
+	    memcmp(tag, p + len - 16, 16))
 		goto err;
 	if (quic_data_dup(quic_token(sk), p, len - 16))
 		goto err;
@@ -716,7 +718,8 @@ static struct sk_buff *quic_packet_retry_create(struct sock *sk, struct quic_req
 	p = quic_put_int(p, req->dcid.len, 1);
 	p = quic_put_data(p, req->dcid.data, req->dcid.len);
 	p = quic_put_data(p, token, tokenlen);
-	if (quic_crypto_get_retry_tag(skb, &req->dcid, req->version, tag)) {
+	if (quic_crypto_get_retry_tag(quic_crypto(sk, QUIC_CRYPTO_INITIAL),
+				      skb, &req->dcid, req->version, tag)) {
 		kfree_skb(skb);
 		return NULL;
 	}
