@@ -1103,6 +1103,9 @@ static int quic_sock_set_crypto_secret(struct sock *sk, struct quic_crypto_secre
 			return 0;
 		/* app recv key is ready */
 		if (quic_is_serv(sk)) {
+			/* some implementations don't send ACKs to handshake packets
+			 * so ACK them manually.
+			 */
 			quic_outq_retransmit_check(sk, QUIC_CRYPTO_INITIAL,
 						   QUIC_PN_MAP_MAX_PN, 0, 0, 0);
 			quic_outq_retransmit_check(sk, QUIC_CRYPTO_HANDSHAKE,

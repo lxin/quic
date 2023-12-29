@@ -788,6 +788,7 @@ static int quic_frame_new_token_process(struct sock *sk, struct sk_buff *skb, u8
 
 static int quic_frame_handshake_done_process(struct sock *sk, struct sk_buff *skb, u8 type)
 {
+	/* some implementations don't send ACKs to handshake packets, so ACK them manually */
 	quic_outq_retransmit_check(sk, QUIC_CRYPTO_INITIAL, QUIC_PN_MAP_MAX_PN, 0, 0, 0);
 	quic_outq_retransmit_check(sk, QUIC_CRYPTO_HANDSHAKE, QUIC_PN_MAP_MAX_PN, 0, 0, 0);
 	return 0; /* no content */

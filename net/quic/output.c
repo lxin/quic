@@ -235,7 +235,18 @@ out:
 
 void quic_outq_rtx_tail(struct sock *sk, struct sk_buff *skb)
 {
-	__skb_queue_tail(&quic_outq(sk)->retransmit_list, skb);
+	struct sk_buff_head *list = &quic_outq(sk)->retransmit_list;
+	struct sk_buff *pos;
+
+	if (QUIC_SND_CB(skb)->level) { /* prioritize handshake frames */
+		skb_queue_walk(list, pos) {
+			if (!QUIC_SND_CB(pos)->level) {
+				__skb_queue_before(list, pos, skb);
+				return;
+			}
+		}
+	}
+	__skb_queue_tail(list, skb);
 }
 
 void quic_outq_retransmit_check(struct sock *sk, u8 level, s64 largest, s64 smallest,
