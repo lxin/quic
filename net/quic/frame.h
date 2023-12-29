@@ -57,6 +57,11 @@ static inline bool quic_frame_ack_eliciting(u8 type)
 		type != QUIC_FRAME_CONNECTION_CLOSE_APP;
 }
 
+static inline bool quic_frame_retransmittable(u8 type)
+{
+	return quic_frame_ack_eliciting(type) && type != QUIC_FRAME_PING;
+}
+
 static inline bool quic_frame_ack_immediate(u8 type)
 {
 	return (type < QUIC_FRAME_STREAM || type >= QUIC_FRAME_MAX_DATA) ||
@@ -77,6 +82,11 @@ static inline bool quic_frame_is_dgram(u8 type)
 static inline bool quic_frame_is_reset(u8 type)
 {
 	return type == QUIC_FRAME_RESET_STREAM;
+}
+
+static inline bool quic_frame_is_probe(u8 type)
+{
+	return type == QUIC_FRAME_PING;
 }
 
 struct sk_buff *quic_frame_create(struct sock *sk, u8 type, void *data);

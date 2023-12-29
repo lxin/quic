@@ -225,9 +225,21 @@ err:
 
 void quic_rcv_err_icmp(struct sock *sk)
 {
-	u32 info = ((struct quic_path_dst *)quic_dst(sk))->mtu_info;
+	u32 pathmtu, info = ((struct quic_path_dst *)quic_dst(sk))->mtu_info;
+	bool reset_timer;
 
-	quic_packet_mss_update(sk, info - quic_encap_len(sk));
+	if (!quic_inq(sk)->probe_timeout) {
+		quic_packet_mss_update(sk, info - quic_encap_len(sk));
+		return;
+	}
+	info = info - quic_encap_len(sk) - QUIC_TAG_LEN;
+	pathmtu = quic_path_pl_toobig(quic_dst(sk), info, &reset_timer);
+	if (reset_timer) {
+		quic_timer_setup(sk, QUIC_TIMER_PROBE, quic_inq(sk)->probe_timeout);
+		quic_timer_reset(sk, QUIC_TIMER_PROBE);
+	}
+	if (pathmtu)
+		quic_packet_mss_update(sk, pathmtu + QUIC_TAG_LEN);
 }
 
 int quic_rcv_err(struct sk_buff *skb)
@@ -477,6 +489,9 @@ void quic_inq_set_param(struct sock *sk, struct quic_transport_param *p)
 	inq->max_bytes = p->initial_max_data;
 	if (sk->sk_rcvbuf < p->initial_max_data * 2)
 		sk->sk_rcvbuf = p->initial_max_data * 2;
+
+	inq->probe_timeout = p->probe_timeout;
+	quic_timer_setup(sk, QUIC_TIMER_PROBE, inq->probe_timeout);
 }
 
 void quic_inq_get_param(struct sock *sk, struct quic_transport_param *p)

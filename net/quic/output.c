@@ -249,17 +249,55 @@ void quic_outq_rtx_tail(struct sock *sk, struct sk_buff *skb)
 	__skb_queue_tail(list, skb);
 }
 
+void quic_outq_transmit_probe(struct sock *sk)
+{
+	struct quic_path_dst *d = (struct quic_path_dst *)quic_dst(sk);
+	struct sk_buff *skb;
+	u32 pathmtu;
+
+	if (!quic_is_established(sk))
+		return;
+	quic_packet_config(sk, QUIC_CRYPTO_APP);
+	skb = quic_frame_create(sk, QUIC_FRAME_PING, &d->pl.probe_size);
+	if (skb) {
+		d->pl.number = quic_pnmap(sk, QUIC_CRYPTO_APP)->next_number;
+		quic_packet_tail(sk, skb);
+		quic_packet_flush(sk);
+
+		pathmtu = quic_path_pl_send(quic_dst(sk));
+		if (pathmtu)
+			quic_packet_mss_update(sk, pathmtu + QUIC_TAG_LEN);
+	}
+
+	quic_timer_setup(sk, QUIC_TIMER_PROBE, quic_inq(sk)->probe_timeout);
+	quic_timer_reset(sk, QUIC_TIMER_PROBE);
+}
+
 void quic_outq_retransmit_check(struct sock *sk, u8 level, s64 largest, s64 smallest,
 				s64 ack_largest, u32 ack_delay)
 {
+	u32 pathmtu, acked_bytes = 0, transmit_ts = 0;
 	struct quic_outqueue *outq = quic_outq(sk);
-	u32 acked_bytes = 0, transmit_ts = 0;
 	struct sk_buff *skb, *tmp, *first;
 	struct quic_stream_update update;
 	struct quic_stream *stream;
 	struct quic_snd_cb *snd_cb;
+	bool raise_timer, complete;
 	struct sk_buff_head *head;
 	s64 acked_number = 0;
+
+	pr_debug("[QUIC] %s largest: %llu, smallest: %llu\n", __func__, largest, smallest);
+	if (quic_path_pl_confirm(quic_dst(sk), largest, smallest)) {
+		pathmtu = quic_path_pl_recv(quic_dst(sk), &raise_timer, &complete);
+		if (pathmtu)
+			quic_packet_mss_update(sk, pathmtu + QUIC_TAG_LEN);
+		if (!complete)
+			quic_outq_transmit_probe(sk);
+		if (raise_timer) { /* reuse probe timer as raise timer */
+			quic_timer_setup(sk, QUIC_TIMER_PROBE, quic_inq(sk)->probe_timeout * 30);
+			quic_timer_reset(sk, QUIC_TIMER_PROBE);
+		}
+	}
 
 	head = &outq->retransmit_list;
 	first = skb_peek(head);

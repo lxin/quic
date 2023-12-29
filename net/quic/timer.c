@@ -87,6 +87,25 @@ out:
 	pr_debug("[QUIC] IDLE TIMEOUT\n");
 }
 
+static void quic_timer_probe_timeout(struct timer_list *t)
+{
+	struct quic_sock *qs = from_timer(qs, t, timers[QUIC_TIMER_PROBE].timer);
+	struct sock *sk = &qs->inet.sk;
+
+	bh_lock_sock(sk);
+	if (sock_owned_by_user(sk)) {
+		if (!mod_timer(&quic_timer(sk, QUIC_TIMER_PROBE)->timer, jiffies + (HZ / 20)))
+			sock_hold(sk);
+		goto out;
+	}
+
+	quic_outq_transmit_probe(sk);
+
+out:
+	bh_unlock_sock(sk);
+	sock_put(sk);
+}
+
 void quic_timer_reset(struct sock *sk, u8 type)
 {
 	struct quic_timer *t = quic_timer(sk, type);
@@ -135,6 +154,10 @@ void quic_timers_init(struct sock *sk)
 	t = quic_timer(sk, QUIC_TIMER_IDLE);
 	timer_setup(&t->timer, quic_timer_idle_timeout, 0);
 	quic_timer_setup(sk, QUIC_TIMER_IDLE, p->max_idle_timeout);
+
+	t = quic_timer(sk, QUIC_TIMER_PROBE);
+	timer_setup(&t->timer, quic_timer_probe_timeout, 0);
+	quic_timer_setup(sk, QUIC_TIMER_PROBE, p->probe_timeout);
 }
 
 void quic_timers_free(struct sock *sk)
@@ -142,4 +165,5 @@ void quic_timers_free(struct sock *sk)
 	quic_timer_stop(sk, QUIC_TIMER_RTX);
 	quic_timer_stop(sk, QUIC_TIMER_ACK);
 	quic_timer_stop(sk, QUIC_TIMER_IDLE);
+	quic_timer_stop(sk, QUIC_TIMER_PROBE);
 }

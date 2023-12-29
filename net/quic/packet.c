@@ -439,7 +439,7 @@ static struct sk_buff *quic_packet_handshake_create(struct sock *sk, struct quic
 		p = quic_put_data(p, fskb->data, fskb->len);
 		pr_debug("[QUIC] %s number: %llu type: %u packet_len: %u frame_len: %u level: %u\n", __func__,
 			 pki->number, QUIC_SND_CB(fskb)->frame_type, skb->len, fskb->len, packet->level);
-		if (!quic_frame_ack_eliciting(QUIC_SND_CB(fskb)->frame_type)) {
+		if (!quic_frame_retransmittable(QUIC_SND_CB(fskb)->frame_type)) {
 			consume_skb(fskb);
 			fskb =  __skb_dequeue(head);
 			continue;
@@ -501,7 +501,7 @@ static struct sk_buff *quic_packet_create(struct sock *sk, struct quic_packet_in
 		p = quic_put_data(p, fskb->data, fskb->len);
 		pr_debug("[QUIC] %s number: %llu type: %u packet_len: %u frame_len: %u\n", __func__,
 			 pki->number, QUIC_SND_CB(fskb)->frame_type, skb->len, fskb->len);
-		if (!quic_frame_ack_eliciting(QUIC_SND_CB(fskb)->frame_type)) {
+		if (!quic_frame_retransmittable(QUIC_SND_CB(fskb)->frame_type)) {
 			consume_skb(fskb);
 			fskb =  __skb_dequeue(head);
 			continue;
@@ -546,6 +546,10 @@ int quic_packet_route(struct sock *sk)
 
 	mss = dst_mtu(__sk_dst_get(sk)) - quic_encap_len(sk);
 	quic_packet_mss_update(sk, mss);
+
+	quic_path_pl_reset(quic_dst(sk));
+	quic_timer_setup(sk, QUIC_TIMER_PROBE, quic_inq(sk)->probe_timeout);
+	quic_timer_reset(sk, QUIC_TIMER_PROBE);
 	return 0;
 }
 
@@ -564,6 +568,7 @@ void quic_packet_config(struct sock *sk, u8 level)
 			hlen += 1 + quic_token(sk)->len;
 		hlen += 4; /* version */
 		hlen += 4; /* length number */
+		packet->ipfragok = !!quic_inq(sk)->probe_timeout;
 	}
 	packet->len = hlen;
 	packet->overhead = hlen;
@@ -678,7 +683,8 @@ int quic_packet_tail(struct sock *sk, struct sk_buff *skb)
 	if (packet->len + skb->len > packet->mss) {
 		if (packet->len != packet->overhead)
 			return 0;
-		packet->ipfragok = 1;
+		if (!quic_frame_is_probe(QUIC_SND_CB(skb)->frame_type))
+			packet->ipfragok = 1;
 	}
 	packet->len += skb->len;
 	__skb_queue_tail(&packet->frame_list, skb);

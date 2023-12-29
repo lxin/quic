@@ -74,17 +74,20 @@ static struct sk_buff *quic_frame_ack_create(struct sock *sk, void *data, u8 typ
 
 static struct sk_buff *quic_frame_ping_create(struct sock *sk, void *data, u8 type)
 {
+	u16 *probe_size = data;
 	struct sk_buff *skb;
-	u8 *p, frame[10];
-	u32 frame_len;
+	u32 frame_len = 1;
 
-	p = quic_put_var(frame, type);
-	frame_len = (u32)(p - frame);
+	if (probe_size)
+		frame_len = *probe_size - quic_packet(sk)->overhead;
 
 	skb = alloc_skb(frame_len, GFP_ATOMIC);
 	if (!skb)
 		return NULL;
-	skb_put_data(skb, frame, frame_len);
+
+	quic_put_var(skb->data, type);
+	skb_put(skb, 1);
+	skb_put_zero(skb, frame_len - 1);
 
 	return skb;
 }

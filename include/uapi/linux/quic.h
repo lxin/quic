@@ -107,6 +107,7 @@ struct quic_transport_param {
 	uint64_t initial_max_streams_bidi;
 	uint64_t initial_max_streams_uni;
 	uint64_t initial_smoothed_rtt;
+	uint32_t probe_timeout;		/* plpmtud probe timeout in usec, 0: disabled by default */
 	uint8_t validate_address;	/* for server only, verify token and send retry packet */
 	uint8_t recv_session_ticket;	/* for client only, handshake done until ticket is recvd */
 	uint8_t cert_request;		/* for server only, 0: IGNORE, 1: REQUEST, 2: REQUIRE */

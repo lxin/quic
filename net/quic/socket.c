@@ -773,6 +773,7 @@ static int quic_sock_set_transport_param(struct sock *sk, struct quic_transport_
 	quic_set_param_if_not_zero(initial_max_streams_uni);
 	quic_set_param_if_not_zero(initial_smoothed_rtt);
 	quic_set_param_if_not_zero(disable_active_migration);
+	quic_set_param_if_not_zero(probe_timeout);
 	quic_set_param_if_not_zero(validate_address);
 	quic_set_param_if_not_zero(grease_quic_bit);
 	quic_set_param_if_not_zero(stateless_reset);
@@ -1118,6 +1119,7 @@ static int quic_sock_set_crypto_secret(struct sock *sk, struct quic_crypto_secre
 			quic_outq_ctrl_tail(sk, skb, false);
 		}
 		inet_sk_set_state(sk, QUIC_SS_ESTABLISHED);
+		quic_timer_reset(sk, QUIC_TIMER_PROBE);
 		return 0;
 	}
 

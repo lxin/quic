@@ -106,3 +106,4 @@ void quic_outq_retransmit_check(struct sock *sk, u8 level, s64 largest,
 				s64 smallest, s64 ack_largest, u32 ack_delay);
 void quic_outq_set_param(struct sock *sk, struct quic_transport_param *p);
 void quic_outq_get_param(struct sock *sk, struct quic_transport_param *p);
+void quic_outq_transmit_probe(struct sock *sk);

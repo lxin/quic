@@ -24,6 +24,7 @@ struct quic_inqueue {
 	u32 max_idle_timeout;
 	u32 max_ack_delay;
 	u32 events;
+	u32 probe_timeout;
 	u8 grease_quic_bit;
 };
 
