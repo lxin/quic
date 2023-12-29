@@ -223,6 +223,49 @@ err:
 	return err;
 }
 
+void quic_rcv_err_icmp(struct sock *sk)
+{
+	u32 info = ((struct quic_path_dst *)quic_dst(sk))->mtu_info;
+
+	quic_packet_mss_update(sk, info - quic_encap_len(sk));
+}
+
+int quic_rcv_err(struct sk_buff *skb)
+{
+	struct quic_addr_family_ops *af_ops;
+	union quic_addr daddr, saddr;
+	struct sock *sk = NULL;
+	int ret = 0;
+	u32 info;
+
+	af_ops = quic_af_ops_get(ip_hdr(skb)->version == 4 ? AF_INET : AF_INET6);
+
+	af_ops->get_msg_addr(&saddr, skb, 0);
+	af_ops->get_msg_addr(&daddr, skb, 1);
+	sk = quic_sock_lookup(skb, &daddr, &saddr);
+	if (!sk)
+		return -ENOENT;
+
+	bh_lock_sock(sk);
+	if (quic_is_listen(sk))
+	       goto out;
+
+	if (quic_get_mtu_info(sk, skb, &info))
+		goto out;
+
+	ret = 1; /* processed with common mtud */
+	((struct quic_path_dst *)quic_dst(sk))->mtu_info = info;
+	if (sock_owned_by_user(sk)) {
+		if (!test_and_set_bit(QUIC_MTU_REDUCED_DEFERRED, &sk->sk_tsq_flags))
+			sock_hold(sk);
+		goto out;
+	}
+	quic_rcv_err_icmp(sk);
+out:
+	bh_unlock_sock(sk);
+	return ret;
+}
+
 static void quic_inq_recv_tail(struct sock *sk, struct quic_stream *stream, struct sk_buff *skb)
 {
 	struct quic_stream_update update = {};

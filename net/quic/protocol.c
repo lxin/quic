@@ -13,6 +13,7 @@
 #include "socket.h"
 #include <net/inet_common.h>
 #include <net/protocol.h>
+#include <linux/icmp.h>
 
 struct quic_hash_table quic_hash_tables[QUIC_HT_MAX_TABLES] __read_mostly;
 struct percpu_counter quic_sockets_allocated;
@@ -192,6 +193,34 @@ static void quic_v6_set_sk_addr(struct sock *sk, union quic_addr *a, bool src)
 	}
 }
 
+static int quic_v4_get_mtu_info(struct sk_buff *skb, u32 *info)
+{
+	struct icmphdr *hdr;
+
+	hdr = (struct icmphdr *)(skb_network_header(skb) - sizeof(struct icmphdr));
+	if (hdr->type == ICMP_DEST_UNREACH && hdr->code == ICMP_FRAG_NEEDED) {
+		*info = ntohs(hdr->un.frag.mtu);
+		return 0;
+	}
+
+	/* can't be handled without outer iphdr known, leave it to udp_err */
+	return 1;
+}
+
+static int quic_v6_get_mtu_info(struct sk_buff *skb, u32 *info)
+{
+	struct icmp6hdr *hdr;
+
+	hdr = (struct icmp6hdr *)(skb_network_header(skb) - sizeof(struct icmp6hdr));
+	if (hdr->icmp6_type == ICMPV6_PKT_TOOBIG) {
+		*info = ntohl(hdr->icmp6_mtu);
+		return 0;
+	}
+
+	/* can't be handled without outer ip6hdr known, leave it to udpv6_err */
+	return 1;
+}
+
 static struct quic_addr_family_ops quic_af_inet = {
 	.sa_family		= AF_INET,
 	.addr_len		= sizeof(struct sockaddr_in),
@@ -202,6 +231,7 @@ static struct quic_addr_family_ops quic_af_inet = {
 	.get_msg_addr		= quic_v4_get_msg_addr,
 	.set_sk_addr		= quic_v4_set_sk_addr,
 	.get_sk_addr		= quic_v4_get_sk_addr,
+	.get_mtu_info		= quic_v4_get_mtu_info,
 	.setsockopt		= ip_setsockopt,
 	.getsockopt		= ip_getsockopt,
 };
@@ -216,6 +246,7 @@ static struct quic_addr_family_ops quic_af_inet6 = {
 	.get_msg_addr		= quic_v6_get_msg_addr,
 	.set_sk_addr		= quic_v6_set_sk_addr,
 	.get_sk_addr		= quic_v6_get_sk_addr,
+	.get_mtu_info		= quic_v6_get_mtu_info,
 	.setsockopt		= ipv6_setsockopt,
 	.getsockopt		= ipv6_getsockopt,
 };
@@ -302,6 +333,11 @@ void quic_get_sk_addr(struct socket *sock, struct sockaddr *a, bool peer)
 void quic_get_msg_addr(struct sock *sk, union quic_addr *addr, struct sk_buff *skb, bool src)
 {
 	quic_af_ops(sk)->get_msg_addr(addr, skb, src);
+}
+
+int quic_get_mtu_info(struct sock *sk, struct sk_buff *skb, u32 *info)
+{
+	return quic_af_ops(sk)->get_mtu_info(skb, info);
 }
 
 void quic_udp_conf_init(struct sock *sk, struct udp_port_cfg *udp_conf, union quic_addr *a)

@@ -81,6 +81,8 @@ static inline u32 quic_inq_max_dgram(struct quic_inqueue *inq)
 
 int quic_do_rcv(struct sock *sk, struct sk_buff *skb);
 int quic_rcv(struct sk_buff *skb);
+int quic_rcv_err(struct sk_buff *skb);
+void quic_rcv_err_icmp(struct sock *sk);
 int quic_inq_reasm_tail(struct sock *sk, struct sk_buff *skb);
 int quic_inq_dgram_tail(struct sock *sk, struct sk_buff *skb);
 int quic_inq_flow_control(struct sock *sk, struct quic_stream *stream, int len);

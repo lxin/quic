@@ -54,6 +54,10 @@ struct quic_request_sock {
 	u32				version;
 };
 
+enum quic_tsq_enum {
+	QUIC_MTU_REDUCED_DEFERRED,
+};
+
 struct quic_sock {
 	struct inet_sock		inet;
 	struct list_head		reqs;

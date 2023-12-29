@@ -515,10 +515,28 @@ static struct sk_buff *quic_packet_create(struct sock *sk, struct quic_packet_in
 	return skb;
 }
 
+void quic_packet_mss_update(struct sock *sk, int mss)
+{
+	struct quic_packet *packet = quic_packet(sk);
+	int max_udp, mss_dgram;
+
+	max_udp = quic_outq_max_udp(quic_outq(sk));
+	if (max_udp && mss > max_udp)
+		mss = max_udp;
+	packet->mss = mss - QUIC_TAG_LEN;
+
+	mss_dgram = quic_outq_max_dgram(quic_outq(sk));
+	if (!mss_dgram)
+		return;
+	if (mss_dgram > mss)
+		mss_dgram = mss;
+	packet->mss_dgram = mss_dgram - QUIC_TAG_LEN;
+}
+
 int quic_packet_route(struct sock *sk)
 {
 	struct quic_packet *packet = quic_packet(sk);
-	int err, mss, mss_dgram, max_udp;;
+	int err, mss;
 
 	packet->da = quic_path_addr(quic_dst(sk));
 	packet->sa = quic_path_addr(quic_src(sk));
@@ -527,17 +545,7 @@ int quic_packet_route(struct sock *sk)
 		return err;
 
 	mss = dst_mtu(__sk_dst_get(sk)) - quic_encap_len(sk);
-	max_udp = quic_outq_max_udp(quic_outq(sk));
-	if (max_udp && mss > max_udp)
-		mss = max_udp;
-	packet->mss = mss - QUIC_TAG_LEN;
-
-	mss_dgram = quic_outq_max_dgram(quic_outq(sk));
-	if (!mss_dgram)
-		return 0;
-	if (mss_dgram > mss)
-		mss_dgram = mss;
-	packet->mss_dgram = mss_dgram - QUIC_TAG_LEN;
+	quic_packet_mss_update(sk, mss);
 	return 0;
 }
 
@@ -546,19 +554,19 @@ void quic_packet_config(struct sock *sk, u8 level)
 	struct quic_packet *packet = quic_packet(sk);
 	int hlen = sizeof(struct quichdr);
 
-	hlen += 4; /* version */
+	packet->ipfragok = 0;
+	hlen += 4; /* packet number */
 	hlen += quic_dest(sk)->active->id.len;
 	if (level) {
 		hlen += 1;
 		hlen += 1 + quic_source(sk)->active->id.len;
 		if (level == QUIC_CRYPTO_INITIAL)
 			hlen += 1 + quic_token(sk)->len;
+		hlen += 4; /* version */
 		hlen += 4; /* length number */
-		hlen += 4; /* packet number */
 	}
 	packet->len = hlen;
 	packet->overhead = hlen;
-	packet->ipfragok = !!level;
 	packet->level = level;
 
 	quic_packet_route(sk);

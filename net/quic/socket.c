@@ -811,6 +811,8 @@ static int quic_copy_sock(struct sock *nsk, struct sock *sk, struct quic_request
 	nsk->sk_rcvtimeo = sk->sk_rcvtimeo;
 	nsk->sk_sndtimeo = sk->sk_sndtimeo;
 
+	inet_sk(nsk)->pmtudisc = inet_sk(sk)->pmtudisc;
+
 	skb_queue_walk_safe(&quic_inq(sk)->backlog_list, skb, tmp) {
 		quic_get_msg_addr(sk, &da, skb, 0);
 		quic_get_msg_addr(sk, &sa, skb, 1);
@@ -1599,6 +1601,15 @@ static int quic_getsockopt(struct sock *sk, int level, int optname,
 	return retval;
 }
 
+static void quic_release_cb(struct sock *sk)
+{
+	if (test_bit(QUIC_MTU_REDUCED_DEFERRED, &sk->sk_tsq_flags)) {
+		quic_rcv_err_icmp(sk);
+		clear_bit(QUIC_MTU_REDUCED_DEFERRED, &sk->sk_tsq_flags);
+		__sock_put(sk);
+	}
+}
+
 struct proto quic_prot = {
 	.name		=  "QUIC",
 	.owner		=  THIS_MODULE,
@@ -1615,6 +1626,7 @@ struct proto quic_prot = {
 	.hash		=  quic_hash,
 	.unhash		=  quic_unhash,
 	.backlog_rcv	=  quic_do_rcv,
+	.release_cb	=  quic_release_cb,
 	.no_autobind	=  true,
 	.obj_size	=  sizeof(struct quic_sock),
 	.sockets_allocated	=  &quic_sockets_allocated,
@@ -1636,6 +1648,7 @@ struct proto quicv6_prot = {
 	.hash		=  quic_hash,
 	.unhash		=  quic_unhash,
 	.backlog_rcv	=  quic_do_rcv,
+	.release_cb	=  quic_release_cb,
 	.no_autobind	=  true,
 	.obj_size	= sizeof(struct quic6_sock),
 #if KERNEL_VERSION(6, 5, 0) <= LINUX_VERSION_CODE

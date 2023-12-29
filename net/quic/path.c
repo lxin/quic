@@ -32,9 +32,15 @@ static int quic_udp_rcv(struct sock *sk, struct sk_buff *skb)
 	return 0;
 }
 
-static int quic_udp_err_lookup(struct sock *sk, struct sk_buff *skb)
+static int quic_udp_err(struct sock *sk, struct sk_buff *skb)
 {
-	return -ENOENT;
+	int ret;
+
+	skb->transport_header += sizeof(struct udphdr);
+	ret = quic_rcv_err(skb);
+	skb->transport_header -= sizeof(struct udphdr);
+
+	return ret;
 }
 
 static void quic_udp_sock_destroy(struct work_struct *work)
@@ -74,7 +80,7 @@ static struct quic_udp_sock *quic_udp_sock_create(struct sock *sk, union quic_ad
 
 	tuncfg.encap_type = 1;
 	tuncfg.encap_rcv = quic_udp_rcv;
-	tuncfg.encap_err_lookup = quic_udp_err_lookup;
+	tuncfg.encap_err_lookup = quic_udp_err;
 	setup_udp_tunnel_sock(net, sock, &tuncfg);
 
 	refcount_set(&us->refcnt, 1);

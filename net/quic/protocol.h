@@ -25,6 +25,7 @@ struct quic_addr_family_ops {
 	void	(*get_msg_addr)(union quic_addr *addr, struct sk_buff *skb, bool src);
 	void	(*set_sk_addr)(struct sock *sk, union quic_addr *addr, bool src);
 	int	(*get_sk_addr)(struct socket *sock, struct sockaddr *addr, int peer);
+	int	(*get_mtu_info)(struct sk_buff *skb, u32 *info);
 
 	int	(*setsockopt)(struct sock *sk, int level, int optname, sockptr_t optval,
 			      unsigned int optlen);
@@ -35,6 +36,7 @@ struct quic_addr_family_ops {
 int quic_encap_len(struct sock *sk);
 int quic_addr_len(struct sock *sk);
 int quic_addr_family(struct sock *sk);
+int quic_get_mtu_info(struct sock *sk, struct sk_buff *skb, u32 *info);
 void quic_set_sk_addr(struct sock *sk, union quic_addr *a, bool src);
 void quic_get_sk_addr(struct socket *sock, struct sockaddr *a, bool peer);
 void quic_get_msg_addr(struct sock *sk, union quic_addr *addr, struct sk_buff *skb, bool src);

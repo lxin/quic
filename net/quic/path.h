@@ -41,6 +41,7 @@ struct quic_path_src {
 
 struct quic_path_dst {
 	struct quic_path_addr a;
+	u32 mtu_info;
 };
 
 static inline struct udphdr *quic_udp_hdr(struct sk_buff *skb)
