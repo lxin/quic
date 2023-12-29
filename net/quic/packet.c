@@ -232,8 +232,8 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb)
 		if (err)
 			goto err;
 
-		pr_debug("[QUIC] %s serv: %d number: %llu level: %d\n", __func__,
-			 quic_is_serv(sk), pki.number, level);
+		pr_debug("[QUIC] %s serv: %d number: %llu level: %d len: %d\n", __func__,
+			 quic_is_serv(sk), pki.number, level, skb->len);
 
 		if (level == QUIC_CRYPTO_EARLY)
 			level = QUIC_CRYPTO_APP; /* pnmap level */
@@ -260,8 +260,13 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb)
 				memcpy(quic_dest(sk)->active->id.data, scid, slen);
 			}
 			fskb = quic_frame_create(sk, QUIC_FRAME_ACK, &level);
-			if (fskb)
+			if (fskb) {
+				/* flush it out in ack timer in case that no handshake packets
+				 * from user space come to bundle it.
+				 */
 				quic_outq_ctrl_tail(sk, fskb, true);
+				quic_timer_start(sk, QUIC_TIMER_ACK);
+			}
 		}
 		skb_reset_transport_header(skb);
 	}
@@ -304,7 +309,9 @@ int quic_packet_process(struct sock *sk, struct sk_buff *skb)
 		goto err;
 	}
 
-	pr_debug("[QUIC] %s serv: %d number: %llu \n", __func__, quic_is_serv(sk), pki.number);
+	pr_debug("[QUIC] %s serv: %d number: %llu len: %d\n", __func__,
+		 quic_is_serv(sk), pki.number, skb->len);
+
 	err = quic_pnmap_check(quic_pnmap(sk, QUIC_CRYPTO_APP), pki.number);
 	if (err) {
 		err = -EINVAL;
@@ -445,6 +452,7 @@ static struct sk_buff *quic_packet_handshake_create(struct sock *sk, struct quic
 	if (plen)
 		memset(p, 0, plen);
 
+	quic_timer_stop(sk, QUIC_TIMER_ACK);
 	return skb;
 }
 

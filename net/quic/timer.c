@@ -25,6 +25,11 @@ static void quic_timer_delay_ack_timeout(struct timer_list *t)
 		goto out;
 	}
 
+	if (quic_is_establishing(sk)) { /* try to flush ACKs to Handshake packets */
+		quic_outq_flush(sk);
+		goto out;
+	}
+
 	skb = quic_frame_create(sk, QUIC_FRAME_ACK, &level);
 	if (skb)
 		quic_outq_ctrl_tail(sk, skb, false);
