@@ -255,12 +255,14 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb)
 			goto err;
 		skb_pull(skb, QUIC_TAG_LEN);
 		if (pki.ack_eliciting) {
+			if (!quic_is_serv(sk) && level == QUIC_CRYPTO_INITIAL) {
+				quic_dest(sk)->active->id.len = slen;
+				memcpy(quic_dest(sk)->active->id.data, scid, slen);
+			}
 			fskb = quic_frame_create(sk, QUIC_FRAME_ACK, &level);
 			if (fskb)
 				quic_outq_ctrl_tail(sk, fskb, true);
 		}
-		quic_dest(sk)->active->id.len = slen;
-		memcpy(quic_dest(sk)->active->id.data, scid, slen);
 		skb_reset_transport_header(skb);
 	}
 	consume_skb(skb);
