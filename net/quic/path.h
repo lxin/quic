@@ -27,9 +27,20 @@ struct quic_udp_sock {
 struct quic_path_addr {
 	union quic_addr addr[2];
 	u8 addr_len;
-	u8 active:1,
-	   pending:1;
+	u8 active:1;
+	u8 pending:1;
+	u8 udp_bind:1;
 	u8 entropy[8];
+};
+
+struct quic_path_src {
+	struct quic_path_addr a;
+	struct quic_bind_port port[2];
+	struct quic_udp_sock *udp_sk[2];
+};
+
+struct quic_path_dst {
+	struct quic_path_addr a;
 };
 
 static inline struct udphdr *quic_udp_hdr(struct sk_buff *skb)
@@ -47,13 +58,19 @@ static inline union quic_addr *quic_path_addr(struct quic_path_addr *a)
 	return &a->addr[a->active];
 }
 
+static inline struct quic_bind_port *quic_path_port(struct quic_path_addr *a)
+{
+	return &((struct quic_path_src *)a)->port[a->active];
+}
+
 static inline void quic_path_addr_init(struct quic_path_addr *a, u8 addr_len)
 {
 	a->addr_len = addr_len;
 }
 
-int quic_get_port(struct net *net, struct quic_bind_port *pp, union quic_addr *addr);
-void quic_put_port(struct net *net, struct quic_bind_port *pp);
 void quic_udp_sock_put(struct quic_udp_sock *us);
 struct quic_udp_sock *quic_udp_sock_get(struct quic_udp_sock *us);
-int quic_udp_sock_set(struct sock *sk, struct quic_udp_sock *udp_sk[], struct quic_path_addr *a);
+int quic_path_set_udp_sock(struct sock *sk, struct quic_path_addr *a);
+void quic_bind_port_put(struct sock *sk, struct quic_bind_port *pp);
+int quic_path_set_bind_port(struct sock *sk, struct quic_path_addr *a);
+void quic_path_free(struct sock *sk, struct quic_path_addr *a);

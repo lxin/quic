@@ -190,7 +190,6 @@ static void quic_destroy_sock(struct sock *sk)
 	kfree(quic_alpn(sk)->data);
 
 	local_bh_disable();
-	quic_put_port(sock_net(sk), quic_port(sk));
 	sk_sockets_allocated_dec(sk);
 	sock_prot_inuse_add(sock_net(sk), sk->sk_prot, -1);
 	local_bh_enable();
@@ -211,10 +210,10 @@ static int quic_bind(struct sock *sk, struct sockaddr *addr, int addr_len)
 	}
 
 	memcpy(a, addr, quic_addr_len(sk));
-	err = quic_get_port(sock_net(sk), quic_port(sk), a);
+	err = quic_path_set_bind_port(sk, quic_src(sk));
 	if (err)
 		goto out;
-	err = quic_udp_sock_set(sk, quic_sk(sk)->udp_sk, quic_src(sk));
+	err = quic_path_set_udp_sock(sk, quic_src(sk));
 	if (err)
 		goto out;
 	quic_set_sk_addr(sk, a, true);
@@ -241,10 +240,10 @@ static int quic_connect(struct sock *sk, struct sockaddr *addr, int addr_len)
 	quic_set_sk_addr(sk, quic_addr(addr), false);
 	sa = quic_path_addr(quic_src(sk));
 	if (!sa->v4.sin_port) { /* auto bind */
-		err = quic_get_port(sock_net(sk), quic_port(sk), sa);
+		err = quic_path_set_bind_port(sk, quic_src(sk));
 		if (err)
 			goto out;
-		err = quic_udp_sock_set(sk, quic_sk(sk)->udp_sk, quic_src(sk));
+		err = quic_path_set_udp_sock(sk, quic_src(sk));
 		if (err)
 			goto out;
 		quic_set_sk_addr(sk, sa, true);
@@ -865,8 +864,8 @@ static int quic_accept_sock_init(struct sock *sk, struct quic_request_sock *req)
 	if (err)
 		goto out;
 
-	quic_port(sk)->serv = 1;
-	quic_port(sk)->retry = req->retry;
+	quic_outq(sk)->serv = 1;
+	quic_outq(sk)->retry = req->retry;
 	inet_sk_set_state(sk, QUIC_SS_ESTABLISHING);
 	err = sk->sk_prot->hash(sk);
 
@@ -950,8 +949,8 @@ static void quic_close(struct sock *sk, long timeout)
 	quic_outq_purge(sk, quic_outq(sk));
 	quic_inq_purge(sk, quic_inq(sk));
 
-	quic_udp_sock_put(quic_sk(sk)->udp_sk[0]);
-	quic_udp_sock_put(quic_sk(sk)->udp_sk[1]);
+	quic_path_free(sk, quic_src(sk));
+	quic_path_free(sk, quic_dst(sk));
 
 	quic_connection_id_set_free(quic_source(sk));
 	quic_connection_id_set_free(quic_dest(sk));
@@ -968,9 +967,12 @@ static int quic_sock_set_addr(struct sock *sk, struct quic_path_addr *path,
 
 	quic_path_addr_set(path, addr);
 
-	if (udp_bind && quic_udp_sock_set(sk, quic_sk(sk)->udp_sk, path))
+	if (!udp_bind)
+		return 0;
+
+	if (quic_path_set_bind_port(sk, path))
 		return -EINVAL;
-	return 0;
+	return quic_path_set_udp_sock(sk, path);
 }
 
 int quic_sock_change_addr(struct sock *sk, struct quic_path_addr *path, void *data,

@@ -21,65 +21,6 @@
 #include "input.h"
 #include "path.h"
 
-int quic_get_port(struct net *net, struct quic_bind_port *port, union quic_addr *addr)
-{
-	struct quic_hash_head *head;
-	struct quic_bind_port *pp;
-	int low, high, remaining;
-	unsigned int rover;
-
-	rover = ntohs(addr->v4.sin_port);
-	if (rover) {
-		head = quic_bind_port_head(net, rover);
-		spin_lock_bh(&head->lock);
-		port->net = net;
-		port->port = rover;
-		hlist_add_head(&port->node, &head->head);
-		spin_unlock_bh(&head->lock);
-		return 0;
-	}
-
-	inet_get_local_port_range(net, &low, &high);
-	remaining = (high - low) + 1;
-	rover = (u32)(((u64)get_random_u32() * remaining) >> 32) + low;
-	do {
-		rover++;
-		if ((rover < low) || (rover > high))
-			rover = low;
-		if (inet_is_local_reserved_port(net, rover))
-			continue;
-		head = quic_bind_port_head(net, rover);
-		spin_lock_bh(&head->lock);
-		hlist_for_each_entry(pp, &head->head, node)
-			if ((pp->port == rover) && net_eq(net, pp->net))
-				goto next;
-		addr->v4.sin_port = htons(rover);
-		port->net = net;
-		port->port = rover;
-		hlist_add_head(&port->node, &head->head);
-		spin_unlock_bh(&head->lock);
-		return 0;
-	next:
-		spin_unlock_bh(&head->lock);
-		cond_resched();
-	} while (--remaining > 0);
-
-	return -EADDRINUSE;
-}
-
-void quic_put_port(struct net *net, struct quic_bind_port *pp)
-{
-	struct quic_hash_head *head;
-
-	if (hlist_unhashed(&pp->node))
-		return;
-
-	head = quic_bind_port_head(net, pp->port);
-	spin_lock(&head->lock);
-	hlist_del(&pp->node);
-	spin_unlock(&head->lock);
-}
-
 static int quic_udp_rcv(struct sock *sk, struct sk_buff *skb)
 {
 	if (skb_linearize(skb))
@@ -188,20 +129,6 @@ static struct quic_udp_sock *quic_udp_sock_lookup(struct sock *sk, union quic_ad
 	return us;
 }
 
-int quic_udp_sock_set(struct sock *sk, struct quic_udp_sock *udp_sk[], struct quic_path_addr *a)
-{
-	struct quic_udp_sock *usk;
-
-	usk = quic_udp_sock_lookup(sk, quic_path_addr(a));
-	if (!usk)
-		return -EINVAL;
-
-	quic_udp_sock_put(udp_sk[a->active]);
-	udp_sk[a->active] = usk;
-
-	return 0;
-}
-
 struct quic_udp_sock *quic_udp_sock_get(struct quic_udp_sock *us)
 {
 	if (us)
@@ -213,4 +140,98 @@ void quic_udp_sock_put(struct quic_udp_sock *us)
 {
 	if (us && refcount_dec_and_test(&us->refcnt))
 		queue_work(quic_wq, &us->work);
+}
+
+int quic_path_set_udp_sock(struct sock *sk, struct quic_path_addr *a)
+{
+	struct quic_path_src *s = (struct quic_path_src *)a;
+	struct quic_udp_sock *usk;
+
+	usk = quic_udp_sock_lookup(sk, quic_path_addr(a));
+	if (!usk)
+		return -EINVAL;
+
+	quic_udp_sock_put(s->udp_sk[s->a.active]);
+	s->udp_sk[s->a.active] = usk;
+	a->udp_bind = 1;
+	return 0;
+}
+
+void quic_bind_port_put(struct sock *sk, struct quic_bind_port *pp)
+{
+	struct net *net = sock_net(sk);
+	struct quic_hash_head *head;
+
+	if (hlist_unhashed(&pp->node))
+		return;
+
+	head = quic_bind_port_head(net, pp->port);
+	spin_lock(&head->lock);
+	hlist_del_init(&pp->node);
+	spin_unlock(&head->lock);
+}
+
+int quic_path_set_bind_port(struct sock *sk, struct quic_path_addr *a)
+{
+	struct quic_bind_port *port = quic_path_port(a);
+	union quic_addr *addr = quic_path_addr(a);
+	struct net *net = sock_net(sk);
+	struct quic_hash_head *head;
+	struct quic_bind_port *pp;
+	int low, high, remaining;
+	unsigned int rover;
+
+	quic_bind_port_put(sk, port);
+
+	rover = ntohs(addr->v4.sin_port);
+	if (rover) {
+		head = quic_bind_port_head(net, rover);
+		spin_lock_bh(&head->lock);
+		port->net = net;
+		port->port = rover;
+		hlist_add_head(&port->node, &head->head);
+		spin_unlock_bh(&head->lock);
+		return 0;
+	}
+
+	inet_get_local_port_range(net, &low, &high);
+	remaining = (high - low) + 1;
+	rover = (u32)(((u64)get_random_u32() * remaining) >> 32) + low;
+	do {
+		rover++;
+		if ((rover < low) || (rover > high))
+			rover = low;
+		if (inet_is_local_reserved_port(net, rover))
+			continue;
+		head = quic_bind_port_head(net, rover);
+		spin_lock_bh(&head->lock);
+		hlist_for_each_entry(pp, &head->head, node)
+			if ((pp->port == rover) && net_eq(net, pp->net))
+				goto next;
+		addr->v4.sin_port = htons(rover);
+		port->net = net;
+		port->port = rover;
+		hlist_add_head(&port->node, &head->head);
+		spin_unlock_bh(&head->lock);
+		return 0;
+	next:
+		spin_unlock_bh(&head->lock);
+		cond_resched();
+	} while (--remaining > 0);
+
+	return -EADDRINUSE;
+}
+
+void quic_path_free(struct sock *sk, struct quic_path_addr *a)
+{
+	struct quic_path_src *s;
+
+	if (!a->udp_bind)
+		return;
+
+	s = (struct quic_path_src *)a;
+	quic_udp_sock_put(s->udp_sk[0]);
+	quic_udp_sock_put(s->udp_sk[1]);
+	quic_bind_port_put(sk, &s->port[0]);
+	quic_bind_port_put(sk, &s->port[1]);
 }

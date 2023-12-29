@@ -56,6 +56,9 @@ struct quic_request_sock {
 
 struct quic_sock {
 	struct inet_sock		inet;
+	struct list_head		reqs;
+	struct quic_path_src		src;
+	struct quic_path_dst		dst;
 	struct quic_addr_family_ops	*af_ops; /* inet4 or inet6 */
 
 	struct quic_connection_id_set	source;
@@ -63,11 +66,6 @@ struct quic_sock {
 	struct quic_stream_table	streams;
 	struct quic_crypto		crypto[QUIC_CRYPTO_MAX];
 	struct quic_pnmap		pn_map[QUIC_CRYPTO_MAX];
-
-	struct quic_bind_port		port;
-	struct quic_udp_sock		*udp_sk[2];
-	struct quic_path_addr		src;
-	struct quic_path_addr		dst;
 
 	struct quic_transport_param	local;
 	struct quic_transport_param	remote;
@@ -80,8 +78,6 @@ struct quic_sock {
 	struct quic_packet		packet;
 	struct quic_cong		cong;
 	struct quic_timer		timers[QUIC_TIMER_MAX];
-
-	struct list_head		reqs;
 };
 
 struct quic6_sock {
@@ -106,12 +102,12 @@ static inline struct quic_addr_family_ops *quic_af_ops(const struct sock *sk)
 
 static inline struct quic_path_addr *quic_src(const struct sock *sk)
 {
-	return &quic_sk(sk)->src;
+	return &quic_sk(sk)->src.a;
 }
 
 static inline struct quic_path_addr *quic_dst(const struct sock *sk)
 {
-	return &quic_sk(sk)->dst;
+	return &quic_sk(sk)->dst.a;
 }
 
 static inline struct quic_packet *quic_packet(const struct sock *sk)
@@ -194,14 +190,9 @@ static inline struct quic_transport_param *quic_remote(const struct sock *sk)
 	return &quic_sk(sk)->remote;
 }
 
-static inline struct quic_bind_port *quic_port(const struct sock *sk)
-{
-	return &quic_sk(sk)->port;
-}
-
 static inline bool quic_is_serv(const struct sock *sk)
 {
-	return quic_port(sk)->serv;
+	return quic_outq(sk)->serv;
 }
 
 static inline bool quic_is_establishing(struct sock *sk)

@@ -30,8 +30,10 @@ struct quic_outqueue {
 	u32 close_errcode;
 	u8 *close_phrase;
 	u8 close_frame;
-	u8 data_blocked;
 	u8 rtx_count;
+	u8 data_blocked:1;
+	u8 serv:1;
+	u8 retry:1;
 };
 
 struct quic_snd_cb {
