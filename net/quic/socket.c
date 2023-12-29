@@ -779,6 +779,7 @@ static int quic_sock_set_transport_param(struct sock *sk, struct quic_transport_
 	quic_set_param_if_not_zero(stateless_reset);
 	quic_set_param_if_not_zero(recv_session_ticket);
 	quic_set_param_if_not_zero(cert_request);
+	quic_set_param_if_not_zero(cipher_type);
 	quic_set_param_if_not_zero(version);
 
 	if (p->remote) {
