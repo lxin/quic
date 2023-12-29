@@ -94,6 +94,11 @@ static inline struct quic_sock *quic_sk(const struct sock *sk)
 	return (struct quic_sock *)sk;
 }
 
+static inline void quic_set_af_ops(struct sock *sk, struct quic_addr_family_ops *af_ops)
+{
+	quic_sk(sk)->af_ops = af_ops;
+}
+
 static inline struct quic_addr_family_ops *quic_af_ops(const struct sock *sk)
 {
 	return quic_sk(sk)->af_ops;

@@ -15,12 +15,12 @@ static void quic_timer_delay_ack_timeout(struct timer_list *t)
 {
 	struct quic_sock *qs = from_timer(qs, t, timers[QUIC_TIMER_ACK].timer);
 	struct sock *sk = &qs->inet.sk;
+	u8 level = QUIC_CRYPTO_APP;
 	struct sk_buff *skb;
-	u8 level = 0;
 
 	bh_lock_sock(sk);
 	if (sock_owned_by_user(sk)) {
-		if (!mod_timer(&qs->timers[QUIC_TIMER_ACK].timer, jiffies + (HZ / 20)))
+		if (!mod_timer(&quic_timer(sk, QUIC_TIMER_ACK)->timer, jiffies + (HZ / 20)))
 			sock_hold(sk);
 		goto out;
 	}
@@ -46,7 +46,7 @@ static void quic_timer_rtx_timeout(struct timer_list *t)
 
 	bh_lock_sock(sk);
 	if (sock_owned_by_user(sk)) {
-		if (!mod_timer(&qs->timers[QUIC_TIMER_RTX].timer, jiffies + (HZ / 20)))
+		if (!mod_timer(&quic_timer(sk, QUIC_TIMER_RTX)->timer, jiffies + (HZ / 20)))
 			sock_hold(sk);
 		goto out;
 	}
@@ -66,7 +66,7 @@ static void quic_timer_idle_timeout(struct timer_list *t)
 
 	bh_lock_sock(sk);
 	if (sock_owned_by_user(sk)) {
-		if (!mod_timer(&qs->timers[QUIC_TIMER_IDLE].timer, jiffies + (HZ / 20)))
+		if (!mod_timer(&quic_timer(sk, QUIC_TIMER_IDLE)->timer, jiffies + (HZ / 20)))
 			sock_hold(sk);
 		goto out;
 	}

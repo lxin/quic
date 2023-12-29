@@ -139,20 +139,19 @@ static void quic_transport_param_init(struct sock *sk)
 
 static int quic_init_sock(struct sock *sk)
 {
-	struct quic_sock *qs = quic_sk(sk);
 	u8 len, i;
 
-	qs->af_ops = quic_af_ops_get(sk->sk_family);
-	quic_connection_id_set_init(&qs->source, 1);
-	quic_connection_id_set_init(&qs->dest, 0);
+	quic_set_af_ops(sk, quic_af_ops_get(sk->sk_family));
+	quic_connection_id_set_init(quic_source(sk), 1);
+	quic_connection_id_set_init(quic_dest(sk), 0);
 
 	len = quic_addr_len(sk);
-	quic_path_addr_init(&qs->src, len);
-	quic_path_addr_init(&qs->dst, len);
+	quic_path_addr_init(quic_src(sk), len);
+	quic_path_addr_init(quic_dst(sk), len);
 
-	quic_outq_init(&qs->outq);
-	quic_inq_init(&qs->inq);
-	quic_packet_init(&qs->packet);
+	quic_outq_init(quic_outq(sk));
+	quic_inq_init(quic_inq(sk));
+	quic_packet_init(quic_packet(sk));
 
 	quic_transport_param_init(sk);
 
@@ -162,9 +161,9 @@ static int quic_init_sock(struct sock *sk)
 
 	for (i = 0; i < QUIC_CRYPTO_MAX; i ++)
 		quic_pnmap_init(quic_pnmap(sk, i));
-	quic_streams_init(&qs->streams);
+	quic_streams_init(quic_streams(sk));
 	quic_timers_init(sk);
-	INIT_LIST_HEAD(&qs->reqs);
+	INIT_LIST_HEAD(quic_reqs(sk));
 
 	local_bh_disable();
 	sk_sockets_allocated_inc(sk);
@@ -176,7 +175,6 @@ static int quic_init_sock(struct sock *sk)
 
 static void quic_destroy_sock(struct sock *sk)
 {
-	struct quic_sock *qs = quic_sk(sk);
 	u8 i;
 
 	for (i = 0; i < QUIC_CRYPTO_MAX; i ++) {
@@ -185,14 +183,14 @@ static void quic_destroy_sock(struct sock *sk)
 	}
 
 	quic_timers_free(sk);
-	quic_streams_free(&qs->streams);
+	quic_streams_free(quic_streams(sk));
 
-	kfree(qs->token.data);
-	kfree(qs->ticket.data);
-	kfree(qs->alpn.data);
+	kfree(quic_token(sk)->data);
+	kfree(quic_ticket(sk)->data);
+	kfree(quic_alpn(sk)->data);
 
 	local_bh_disable();
-	quic_put_port(sock_net(sk), &qs->port);
+	quic_put_port(sock_net(sk), quic_port(sk));
 	sk_sockets_allocated_dec(sk);
 	sock_prot_inuse_add(sock_net(sk), sk->sk_prot, -1);
 	local_bh_enable();
@@ -200,13 +198,12 @@ static void quic_destroy_sock(struct sock *sk)
 
 static int quic_bind(struct sock *sk, struct sockaddr *addr, int addr_len)
 {
-	struct quic_sock *qs = quic_sk(sk);
 	union quic_addr *a;
 	__u32 err = 0;
 
 	lock_sock(sk);
 
-	a = quic_path_addr(&qs->src);
+	a = quic_path_addr(quic_src(sk));
 	if (a->v4.sin_port || addr_len < quic_addr_len(sk) ||
 	    addr->sa_family != sk->sk_family || !quic_addr(addr)->v4.sin_port) {
 		err = -EINVAL;
@@ -214,10 +211,10 @@ static int quic_bind(struct sock *sk, struct sockaddr *addr, int addr_len)
 	}
 
 	memcpy(a, addr, quic_addr_len(sk));
-	err = quic_get_port(sock_net(sk), &qs->port, a);
+	err = quic_get_port(sock_net(sk), quic_port(sk), a);
 	if (err)
 		goto out;
-	err = quic_udp_sock_set(sk, qs->udp_sk, &qs->src);
+	err = quic_udp_sock_set(sk, quic_sk(sk)->udp_sk, quic_src(sk));
 	if (err)
 		goto out;
 	quic_set_sk_addr(sk, a, true);
@@ -229,7 +226,6 @@ out:
 
 static int quic_connect(struct sock *sk, struct sockaddr *addr, int addr_len)
 {
-	struct quic_sock *qs = quic_sk(sk);
 	struct quic_connection_id conn_id;
 	__u32 err = -EINVAL;
 	union quic_addr *sa;
@@ -238,17 +234,17 @@ static int quic_connect(struct sock *sk, struct sockaddr *addr, int addr_len)
 	if (!quic_is_closed(sk) || addr_len < quic_addr_len(sk))
 		goto out;
 
-	quic_path_addr_set(&qs->dst, quic_addr(addr));
+	quic_path_addr_set(quic_dst(sk), quic_addr(addr));
 	err = quic_packet_route(sk);
 	if (err < 0)
 		goto out;
 	quic_set_sk_addr(sk, quic_addr(addr), false);
-	sa = quic_path_addr(&qs->src);
+	sa = quic_path_addr(quic_src(sk));
 	if (!sa->v4.sin_port) { /* auto bind */
-		err = quic_get_port(sock_net(sk), &qs->port, sa);
+		err = quic_get_port(sock_net(sk), quic_port(sk), sa);
 		if (err)
 			goto out;
-		err = quic_udp_sock_set(sk, qs->udp_sk, &qs->src);
+		err = quic_udp_sock_set(sk, quic_sk(sk)->udp_sk, quic_src(sk));
 		if (err)
 			goto out;
 		quic_set_sk_addr(sk, sa, true);
@@ -843,14 +839,13 @@ static int quic_copy_sock(struct sock *nsk, struct sock *sk, struct quic_request
 
 static int quic_accept_sock_init(struct sock *sk, struct quic_request_sock *req)
 {
-	struct quic_sock *qs = quic_sk(sk);
 	struct quic_connection_id conn_id;
 	struct sk_buff_head tmpq;
 	struct sk_buff *skb;
 	__u32 err;
 
 	lock_sock(sk);
-	quic_path_addr_set(&qs->dst, &req->da);
+	quic_path_addr_set(quic_dst(sk), &req->da);
 	err = quic_packet_route(sk);
 	if (err < 0)
 		goto out;
@@ -940,7 +935,6 @@ free:
 
 static void quic_close(struct sock *sk, long timeout)
 {
-	struct quic_sock *qs = quic_sk(sk);
 	struct sk_buff *skb;
 
 	lock_sock(sk);
@@ -953,14 +947,14 @@ static void quic_close(struct sock *sk, long timeout)
 
 	inet_sk_set_state(sk, QUIC_SS_CLOSED);
 
-	quic_outq_purge(sk, &qs->outq);
-	quic_inq_purge(sk, &qs->inq);
+	quic_outq_purge(sk, quic_outq(sk));
+	quic_inq_purge(sk, quic_inq(sk));
 
-	quic_udp_sock_put(qs->udp_sk[0]);
-	quic_udp_sock_put(qs->udp_sk[1]);
+	quic_udp_sock_put(quic_sk(sk)->udp_sk[0]);
+	quic_udp_sock_put(quic_sk(sk)->udp_sk[1]);
 
-	quic_connection_id_set_free(&qs->source);
-	quic_connection_id_set_free(&qs->dest);
+	quic_connection_id_set_free(quic_source(sk));
+	quic_connection_id_set_free(quic_dest(sk));
 
 	release_sock(sk);
 	sk_common_release(sk);
