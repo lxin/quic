@@ -696,7 +696,7 @@ static int quic_frame_ack_process(struct sock *sk, struct sk_buff *skb, u8 type)
 static int quic_frame_new_connection_id_process(struct sock *sk, struct sk_buff *skb, u8 type)
 {
 	struct quic_connection_id_set *id_set = quic_dest(sk);
-	u64 seqno, prior, length, first;
+	u64 seqno, prior, length, first, last;
 	struct quic_connection_id dcid;
 	u8 *p = skb->data, *token;
 	struct sk_buff *nskb;
@@ -712,7 +712,11 @@ static int quic_frame_new_connection_id_process(struct sock *sk, struct sk_buff 
 	dcid.len = length;
 	token = p + length;
 
-	if (seqno != quic_connection_id_last_number(id_set) + 1 || prior > seqno)
+	last = quic_connection_id_last_number(id_set);
+	if (seqno < last + 1) /* already exists */
+		goto out;
+
+	if (seqno > last + 1 || prior > seqno)
 		return -EINVAL;
 
 	err = quic_connection_id_add(id_set, &dcid, seqno, token);
