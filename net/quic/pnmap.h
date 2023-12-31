@@ -12,17 +12,27 @@
 #define QUIC_PN_MAP_BASE_PN	0
 #define QUIC_PN_MAP_MAX_PN	((1ULL << 62) - 1)
 
+#define QUIC_PN_MAP_INITIAL BITS_PER_LONG
+#define QUIC_PN_MAP_INCREMENT QUIC_PN_MAP_INITIAL
+#define QUIC_PN_MAP_SIZE 1024
+
 /*
  * pn_map:
- *           |----------------------|---------------------|...
- * base_pn --^   last_max_pn_seen --^       max_pn_seen --^
+ * cum_ack_point --v
+ * min_pn_seen -->  |----------------------|---------------------|...
+ *        base_pn --^   last_max_pn_seen --^       max_pn_seen --^
  *
  * move forward:
- *   base_pn = last_max_pn_seen - 1;
+ *   min_pn_seen = last_max_pn_seen;
+ *   base_pn = first_zero_bit from last_max_pn_seen + 1;
+ *   cum_ack_point = base_pn - 1;
  *   last_max_pn_seen = max_pn_seen;
  * when:
  *   'max_pn_ts - last_max_pn_ts >= max_record_ts' or
- *   'max_pn_seen - last_max_pn_seen > QUIC_PN_MAP_SIZE / 2'
+ *   'max_pn_seen - last_max_pn_seen > QUIC_PN_MAP_SIZE / 2' or
+ *   'max_pn_seen - base_pn > QUIC_PN_MAP_SIZE * 3 / 4'
+ * gaps search:
+ *    from cum_ack_point/min_pn_seen to max_pn_seen
  */
 struct quic_pnmap {
 	unsigned long *pn_map;

@@ -49,12 +49,14 @@ int quic_pnmap_init(struct quic_pnmap *map)
 
 	return 0;
 }
+EXPORT_SYMBOL_GPL(quic_pnmap_init);
 
 void quic_pnmap_free(struct quic_pnmap *map)
 {
 	map->len = 0;
 	kfree(map->pn_map);
 }
+EXPORT_SYMBOL_GPL(quic_pnmap_free);
 
 int quic_pnmap_check(const struct quic_pnmap *map, s64 pn)
 {
@@ -71,6 +73,7 @@ int quic_pnmap_check(const struct quic_pnmap *map, s64 pn)
 
 	return gap < map->len && test_bit(gap, map->pn_map);
 }
+EXPORT_SYMBOL_GPL(quic_pnmap_check);
 
 int quic_pnmap_mark(struct quic_pnmap *map, s64 pn)
 {
@@ -114,6 +117,7 @@ out:
 	quic_pnmap_update(map, pn);
 	return 0;
 }
+EXPORT_SYMBOL_GPL(quic_pnmap_mark);
 
 struct quic_pnmap_iter {
 	s64 start;
@@ -210,3 +214,4 @@ u16 quic_pnmap_num_gabs(struct quic_pnmap *map, struct quic_gap_ack_block *gabs)
 	}
 	return ngaps;
 }
+EXPORT_SYMBOL_GPL(quic_pnmap_num_gabs);

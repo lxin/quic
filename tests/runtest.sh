@@ -84,15 +84,15 @@ fi
 if systemctl is-active --quiet tlshd && modinfo quic_test > /dev/null 2>&1; then
 	print_start "Kernel Tests (kernel -> lkquic)"
 	daemon_run ./perf_test server 0.0.0.0 1234 -pkey_file:./keys/server-key.pem -cert_file:./keys/server-cert.pem
-	modprobe quic_test || exit 1
-	rmmod quic_test
+	modprobe quic_sample_test || exit 1
+	rmmod quic_sample_test
 	dmesg |tail -n 5
 	daemon_stop "perf_test"
 
 	print_start "Kernel Tests (lkquic -> kernel)"
 	daemon_run ./perf_test client 127.0.0.1 1234
-	modprobe quic_test role=server || exit 1
-	rmmod quic_test
+	modprobe quic_sample_test role=server || exit 1
+	rmmod quic_sample_test
 	dmesg |tail -n 5
 	daemon_stop "perf_test"
 fi

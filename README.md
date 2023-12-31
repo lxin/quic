@@ -104,34 +104,24 @@ in [ktls-utils](https://github.com/lxin/ktls-utils) will handle the handshake re
     warning: the compiler differs from the one used to build the kernel
       The kernel was built by: gcc (GCC) 8.5.0 20210514 (Red Hat 8.5.0-4)
       You are using:           gcc (GCC) 11.4.1 20230605 (Red Hat 11.4.1-2)
-      CC [M]  /root/quic/net/quic/protocol.o
-      CC [M]  /root/quic/net/quic/socket.o
-      CC [M]  /root/quic/net/quic/connection.o
-      CC [M]  /root/quic/net/quic/stream.o
-      CC [M]  /root/quic/net/quic/path.o
-      CC [M]  /root/quic/net/quic/packet.o
-      CC [M]  /root/quic/net/quic/frame.o
-      CC [M]  /root/quic/net/quic/input.o
-      CC [M]  /root/quic/net/quic/output.o
-      CC [M]  /root/quic/net/quic/crypto.o
-      CC [M]  /root/quic/net/quic/pnmap.o
-      CC [M]  /root/quic/net/quic/timer.o
-      CC [M]  /root/quic/net/quic/cong.o
-      LD [M]  /root/quic/net/quic/quic.o
-      CC [M]  /root/quic/net/quic/test/test.o
-      LD [M]  /root/quic/net/quic/quic_test.o
+      ...
       MODPOST /root/quic/net/quic/Module.symvers
       CC [M]  /root/quic/net/quic/quic.mod.o
       LD [M]  /root/quic/net/quic/quic.ko
       BTF [M] /root/quic/net/quic/quic.ko
-      CC [M]  /root/quic/net/quic/quic_test.mod.o
-      LD [M]  /root/quic/net/quic/quic_test.ko
-      BTF [M] /root/quic/net/quic/quic_test.ko
+      CC [M]  /root/quic/net/quic/quic_unit_test.mod.o
+      LD [M]  /root/quic/net/quic/quic_unit_test.ko
+      BTF [M] /root/quic/net/quic/quic_unit_test.ko
+      CC [M]  /root/quic/net/quic/quic_sample_test.mod.o
+      LD [M]  /root/quic/net/quic/quic_sample_test.ko
+      BTF [M] /root/quic/net/quic/quic_sample_test.ko
     make[1]: Leaving directory '/media/net-next'
 
     # make module_install
     install -m 644 include/uapi/linux/quic.h /usr/include/linux
     install -m 644 net/quic/quic.ko -d /lib/modules/6.6.0-rc1.nxt/extra/
+    install -m 644 net/quic/quic_unit_test.ko -d /lib/modules/6.6.0-rc1.nxt/extra/
+    install -m 644 net/quic/quic_sample_test.ko /lib/modules/6.6.0-rc1.nxt/extra
     depmod -a
 
   **Or**, you can also integrate it in your kernel source code to build (e.g. /home/net-next/):
@@ -144,6 +134,7 @@ in [ktls-utils](https://github.com/lxin/ktls-utils) will handle the handshake re
     Then build kernel with:
 
       CONFIG_IP_QUIC=m
+      CONFIG_IP_QUIC_TEST=m
 
 #### build libquic for userspace handshake
     # make lib
@@ -302,7 +293,7 @@ NOTE: tlshd service must be installed and started, see
 as it receives and handles the kernel handshake request for kernel sockets.
 
 In kernel space, the use is pretty much like TCP sockets, except a extra handshake up-call.
-(See [net/quic/test/test.c](https://github.com/lxin/quic/blob/main/net/quic/test/test.c) for examples)
+(See [net/quic/sample_test.c](https://github.com/lxin/quic/blob/main/net/quic/sample_test.c) for examples)
 
             Client				    Server
          ---------------------------------------------------------------------------
