@@ -1617,6 +1617,11 @@ static void quic_release_cb(struct sock *sk)
 	}
 }
 
+static int quic_disconnect(struct sock *sk, int flags)
+{
+	return -EOPNOTSUPP;
+}
+
 struct proto quic_prot = {
 	.name		=  "QUIC",
 	.owner		=  THIS_MODULE,
@@ -1627,6 +1632,7 @@ struct proto quic_prot = {
 	.connect	=  quic_connect,
 	.bind		=  quic_bind,
 	.close		=  quic_close,
+	.disconnect	=  quic_disconnect,
 	.sendmsg	=  quic_sendmsg,
 	.recvmsg	=  quic_recvmsg,
 	.accept		=  quic_accept,
@@ -1649,6 +1655,7 @@ struct proto quicv6_prot = {
 	.connect	=  quic_connect,
 	.bind		=  quic_bind,
 	.close		=  quic_close,
+	.disconnect	=  quic_disconnect,
 	.sendmsg	=  quic_sendmsg,
 	.recvmsg	=  quic_recvmsg,
 	.accept		=  quic_accept,
