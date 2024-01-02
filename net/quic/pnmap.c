@@ -22,14 +22,14 @@
 static int quic_pnmap_grow(struct quic_pnmap *map, u16 size);
 static void quic_pnmap_update(struct quic_pnmap *map, s64 pn);
 
-struct quic_pnmap *quic_pnmap_init(struct quic_pnmap *map)
+int quic_pnmap_init(struct quic_pnmap *map)
 {
 	u16 len = QUIC_PN_MAP_INITIAL;
 
 	if (!map->pn_map) {
 		map->pn_map = kzalloc(len >> 3, GFP_KERNEL);
 		if (!map->pn_map)
-			return NULL;
+			return -ENOMEM;
 
 		map->len = len;
 	} else {
@@ -47,7 +47,7 @@ struct quic_pnmap *quic_pnmap_init(struct quic_pnmap *map)
 	map->max_pn_ts = jiffies_to_usecs(jiffies);
 	map->last_max_pn_ts = map->max_pn_ts;
 
-	return map;
+	return 0;
 }
 
 void quic_pnmap_free(struct quic_pnmap *map)

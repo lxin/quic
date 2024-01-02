@@ -82,7 +82,7 @@ static inline bool quic_pnmap_has_gap(const struct quic_pnmap *map)
 	return map->cum_ack_point != map->max_pn_seen;
 }
 
-struct quic_pnmap *quic_pnmap_init(struct quic_pnmap *map);
+int quic_pnmap_init(struct quic_pnmap *map);
 int quic_pnmap_check(const struct quic_pnmap *map, s64 pn);
 int quic_pnmap_mark(struct quic_pnmap *map, s64 pn);
 void quic_pnmap_free(struct quic_pnmap *map);

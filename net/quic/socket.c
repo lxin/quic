@@ -159,9 +159,12 @@ static int quic_init_sock(struct sock *sk)
 	sk->sk_write_space = quic_write_space;
 	sock_set_flag(sk, SOCK_USE_WRITE_QUEUE);
 
-	for (i = 0; i < QUIC_CRYPTO_MAX; i ++)
-		quic_pnmap_init(quic_pnmap(sk, i));
-	quic_streams_init(quic_streams(sk));
+	for (i = 0; i < QUIC_CRYPTO_MAX; i ++) {
+		if (quic_pnmap_init(quic_pnmap(sk, i)))
+			return -ENOMEM;
+	}
+	if (quic_streams_init(quic_streams(sk)))
+		return -ENOMEM;
 	quic_timers_init(sk);
 	INIT_LIST_HEAD(quic_reqs(sk));
 

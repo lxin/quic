@@ -78,16 +78,16 @@ int quic_streams_init(struct quic_stream_table *streams)
 {
 	struct quic_hash_table *ht = &streams->ht;
 	struct quic_hash_head *head;
-	int i;
+	int i, size = 16;
 
-	ht->size = 16;
-	head = kmalloc_array(ht->size, sizeof(*head), GFP_KERNEL);
+	head = kmalloc_array(size, sizeof(*head), GFP_KERNEL);
 	if (!head)
 		return -ENOMEM;
-	for (i = 0; i < ht->size; i++) {
+	for (i = 0; i < size; i++) {
 		spin_lock_init(&head[i].lock);
 		INIT_HLIST_HEAD(&head[i].head);
 	}
+	ht->size = size;
 	ht->hash = head;
 	return 0;
 }
