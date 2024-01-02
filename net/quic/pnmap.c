@@ -106,12 +106,10 @@ int quic_pnmap_mark(struct quic_pnmap *map, s64 pn)
 	}
 
 	set_bit(gap, map->pn_map);
-	zero_bit = find_first_zero_bit(map->pn_map, map->max_pn_seen - map->cum_ack_point);
-	if (zero_bit) {
-		map->base_pn += zero_bit;
-		map->cum_ack_point = map->base_pn - 1;
-		bitmap_shift_right(map->pn_map, map->pn_map, zero_bit, map->len);
-	}
+	zero_bit = find_first_zero_bit(map->pn_map, map->max_pn_seen - map->base_pn + 1);
+	map->base_pn += zero_bit;
+	map->cum_ack_point = map->base_pn - 1;
+	bitmap_shift_right(map->pn_map, map->pn_map, zero_bit, map->len);
 out:
 	quic_pnmap_update(map, pn);
 	return 0;
@@ -157,7 +155,6 @@ static void quic_pnmap_update(struct quic_pnmap *map, s64 pn)
 
 	offset = map->last_max_pn_seen + 1 - map->base_pn;
 	zero_bit = find_next_zero_bit(map->pn_map, map->len, offset);
-
 	map->base_pn += zero_bit;
 	map->cum_ack_point = map->base_pn - 1;
 	bitmap_shift_right(map->pn_map, map->pn_map, zero_bit, map->len);
