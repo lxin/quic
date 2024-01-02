@@ -14,6 +14,7 @@
 #include "frame.h"
 #include <net/inet_common.h>
 #include <linux/version.h>
+#include <asm/ioctls.h>
 
 bool quic_request_sock_exists(struct sock *sk, union quic_addr *sa, union quic_addr *da)
 {
@@ -1638,9 +1639,31 @@ out:
 	inet_sk_set_state(sk, QUIC_SS_CLOSED);
 }
 
+static int quic_ioctl(struct sock *sk, int cmd, int *karg)
+{
+	struct sk_buff *skb;
+	int rc = 0;
+
+	lock_sock(sk);
+	switch (cmd) {
+	case SIOCINQ:
+		*karg = 0;
+		skb = skb_peek(&sk->sk_receive_queue);
+		if (skb)
+			*karg = skb->len;
+		break;
+	default:
+		rc = -ENOIOCTLCMD;
+		break;
+	}
+	release_sock(sk);
+	return rc;
+}
+
 struct proto quic_prot = {
 	.name		=  "QUIC",
 	.owner		=  THIS_MODULE,
+	.ioctl		=  quic_ioctl,
 	.init		=  quic_init_sock,
 	.destroy	=  quic_destroy_sock,
 	.shutdown	=  quic_shutdown,
@@ -1665,6 +1688,7 @@ struct proto quic_prot = {
 struct proto quicv6_prot = {
 	.name		=  "QUICv6",
 	.owner		=  THIS_MODULE,
+	.ioctl		=  quic_ioctl,
 	.init		=  quic_init_sock,
 	.destroy	=  quic_destroy_sock,
 	.shutdown	=  quic_shutdown,
