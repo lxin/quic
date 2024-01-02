@@ -1622,11 +1622,28 @@ static int quic_disconnect(struct sock *sk, int flags)
 	return -EOPNOTSUPP;
 }
 
+static void quic_shutdown(struct sock *sk, int how)
+{
+	struct sk_buff *skb;
+
+	if (!(how & SEND_SHUTDOWN))
+		goto out;
+
+	if (quic_is_established(sk)) {
+		skb = quic_frame_create(sk, QUIC_FRAME_CONNECTION_CLOSE_APP, NULL);
+		if (skb)
+			quic_outq_ctrl_tail(sk, skb, false);
+	}
+out:
+	inet_sk_set_state(sk, QUIC_SS_CLOSED);
+}
+
 struct proto quic_prot = {
 	.name		=  "QUIC",
 	.owner		=  THIS_MODULE,
 	.init		=  quic_init_sock,
 	.destroy	=  quic_destroy_sock,
+	.shutdown	=  quic_shutdown,
 	.setsockopt	=  quic_setsockopt,
 	.getsockopt	=  quic_getsockopt,
 	.connect	=  quic_connect,
@@ -1650,6 +1667,7 @@ struct proto quicv6_prot = {
 	.owner		=  THIS_MODULE,
 	.init		=  quic_init_sock,
 	.destroy	=  quic_destroy_sock,
+	.shutdown	=  quic_shutdown,
 	.setsockopt	=  quic_setsockopt,
 	.getsockopt	=  quic_getsockopt,
 	.connect	=  quic_connect,
