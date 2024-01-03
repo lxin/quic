@@ -391,8 +391,6 @@ static int quic_msghdr_parse(struct sock *sk, struct msghdr *msg, struct quic_ha
 
 static int quic_wait_for_send(struct sock *sk, u64 stream_id, long timeo, u32 msg_len)
 {
-	u8 state;
-
 	for (;;) {
 		int err = 0, exit = 1;
 		DEFINE_WAIT(wait);
@@ -413,7 +411,7 @@ static int quic_wait_for_send(struct sock *sk, u64 stream_id, long timeo, u32 ms
 		}
 		if (quic_is_closed(sk)) {
 			err = -EPIPE;
-			pr_warn("wait sndbuf state %u, %d\n", state, err);
+			pr_warn("wait sndbuf closed %d\n", err);
 			goto out;
 		}
 
