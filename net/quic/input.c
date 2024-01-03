@@ -17,6 +17,7 @@
 static void quic_inq_rfree(struct sk_buff *skb)
 {
 	atomic_sub(skb->len, &skb->sk->sk_rmem_alloc);
+	sk_mem_uncharge(skb->sk, skb->len);
 }
 
 void quic_inq_set_owner_r(struct sk_buff *skb, struct sock *sk)
@@ -24,6 +25,7 @@ void quic_inq_set_owner_r(struct sk_buff *skb, struct sock *sk)
 	skb_orphan(skb);
 	skb->sk = sk;
 	atomic_add(skb->len, &sk->sk_rmem_alloc);
+	sk_mem_charge(sk, skb->len);
 	skb->destructor = quic_inq_rfree;
 }
 
@@ -296,7 +298,6 @@ static void quic_inq_recv_tail(struct sock *sk, struct quic_stream *stream, stru
 		stream->recv.state = update.state;
 	}
 	stream->recv.offset += skb->len;
-	quic_inq_set_owner_r(skb, sk);
 	__skb_queue_tail(&sk->sk_receive_queue, skb);
 	sk->sk_data_ready(sk);
 }
@@ -350,9 +351,11 @@ int quic_inq_reasm_tail(struct sock *sk, struct sk_buff *skb)
 		return 0;
 	}
 
-	if (atomic_read(&sk->sk_rmem_alloc) + skb->len > sk->sk_rcvbuf)
+	if (atomic_read(&sk->sk_rmem_alloc) + skb->len > sk->sk_rcvbuf ||
+	    !sk_rmem_schedule(sk, skb, skb->len))
 		return -ENOBUFS;
 
+	quic_inq_set_owner_r(skb, sk);
 	offset = stream_offset + skb->len;
 	if (offset > stream->recv.highest) {
 		highest = offset - stream->recv.highest;
@@ -436,6 +439,7 @@ int quic_inq_handshake_tail(struct sock *sk, struct sk_buff *skb)
 		kfree_skb(skb);
 		return 0;
 	}
+	quic_inq_set_owner_r(skb, sk);
 	head = &quic_inq(sk)->handshake_list;
 	if (crypto->recv_offset < crypto_offset) {
 		skb_queue_walk(head, tmp) {
@@ -454,7 +458,6 @@ int quic_inq_handshake_tail(struct sock *sk, struct sk_buff *skb)
 		return 0;
 	}
 
-	quic_inq_set_owner_r(skb, sk);
 	__skb_queue_tail(&sk->sk_receive_queue, skb);
 	sk->sk_data_ready(sk);
 	crypto->recv_offset += skb->len;
@@ -467,7 +470,6 @@ int quic_inq_handshake_tail(struct sock *sk, struct sk_buff *skb)
 		if (QUIC_RCV_CB(skb)->crypto_offset > crypto->recv_offset)
 			break;
 		__skb_unlink(skb, head);
-		quic_inq_set_owner_r(skb, sk);
 		__skb_queue_tail(&sk->sk_receive_queue, skb);
 		sk->sk_data_ready(sk);
 		crypto->recv_offset += skb->len;
@@ -567,11 +569,12 @@ int quic_inq_event_recv(struct sock *sk, u8 event, void *args)
 
 int quic_inq_dgram_tail(struct sock *sk, struct sk_buff *skb)
 {
-	if (atomic_read(&sk->sk_rmem_alloc) + skb->len > sk->sk_rcvbuf)
+	if (atomic_read(&sk->sk_rmem_alloc) + skb->len > sk->sk_rcvbuf ||
+	    !sk_rmem_schedule(sk, skb, skb->len))
 		return -ENOBUFS;
 
-	QUIC_RCV_CB(skb)->dgram = 1;
 	quic_inq_set_owner_r(skb, sk);
+	QUIC_RCV_CB(skb)->dgram = 1;
 	__skb_queue_tail(&sk->sk_receive_queue, skb);
 	sk->sk_data_ready(sk);
 	return 0;

@@ -20,6 +20,10 @@ struct percpu_counter quic_sockets_allocated;
 struct workqueue_struct *quic_wq;
 u8 random_data[16];
 
+long sysctl_quic_mem[3];
+int sysctl_quic_rmem[3];
+int sysctl_quic_wmem[3];
+
 static int quic_v6_flow_route(struct sock *sk, union quic_addr *da, union quic_addr *sa)
 {
 	struct dst_entry *dst;
@@ -360,6 +364,32 @@ int quic_flow_route(struct sock *sk, union quic_addr *da, union quic_addr *sa)
 	return quic_af_ops(sk)->flow_route(sk, da, sa);
 }
 
+static struct ctl_table quic_table[] = {
+	{
+		.procname	= "quic_mem",
+		.data		= &sysctl_quic_mem,
+		.maxlen		= sizeof(sysctl_quic_mem),
+		.mode		= 0644,
+		.proc_handler	= proc_doulongvec_minmax
+	},
+	{
+		.procname	= "quic_rmem",
+		.data		= &sysctl_quic_rmem,
+		.maxlen		= sizeof(sysctl_quic_rmem),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec,
+	},
+	{
+		.procname	= "quic_wmem",
+		.data		= &sysctl_quic_wmem,
+		.maxlen		= sizeof(sysctl_quic_wmem),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec,
+	},
+
+	{ /* sentinel */ }
+};
+
 static const struct proto_ops quic_proto_ops = {
 	.family		   = PF_INET,
 	.owner		   = THIS_MODULE,
@@ -516,6 +546,38 @@ err:
 	return -ENOMEM;
 }
 
+static struct ctl_table_header *quic_sysctl_header;
+
+static void quic_sysctl_register(void)
+{
+	unsigned long limit;
+	int max_share;
+
+	limit = nr_free_buffer_pages() / 8;
+	limit = max(limit, 128UL);
+	sysctl_quic_mem[0] = limit / 4 * 3;
+	sysctl_quic_mem[1] = limit;
+	sysctl_quic_mem[2] = sysctl_quic_mem[0] * 2;
+
+	limit = (sysctl_quic_mem[1]) << (PAGE_SHIFT - 7);
+	max_share = min(4UL * 1024 * 1024, limit);
+
+	sysctl_quic_rmem[0] = PAGE_SIZE;
+	sysctl_quic_rmem[1] = 1500 * SKB_TRUESIZE(1);
+	sysctl_quic_rmem[2] = max(sysctl_quic_rmem[1], max_share);
+
+	sysctl_quic_wmem[0] = PAGE_SIZE;
+	sysctl_quic_wmem[1] = 16 * 1024;
+	sysctl_quic_wmem[2] = max(64 * 1024, max_share);
+
+	quic_sysctl_header = register_net_sysctl(&init_net, "net/quic", quic_table);
+}
+
+static void quic_sysctl_unregister(void)
+{
+	unregister_net_sysctl_table(quic_sysctl_header);
+}
+
 static __init int quic_init(void)
 {
 	int err = -ENOMEM;
@@ -539,6 +601,8 @@ static __init int quic_init(void)
 	if (err)
 		goto err_def_ops;
 
+	quic_sysctl_register();
+
 	get_random_bytes(random_data, 16);
 	pr_info("[QUIC] init\n");
 	return 0;
@@ -558,6 +622,7 @@ err:
 
 static __exit void quic_exit(void)
 {
+	quic_sysctl_unregister();
 	unregister_pernet_subsys(&quic_net_ops);
 	quic_protosw_exit();
 	percpu_counter_destroy(&quic_sockets_allocated);

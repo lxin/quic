@@ -15,6 +15,15 @@
 #include <net/inet_common.h>
 #include <linux/version.h>
 
+static DEFINE_PER_CPU(int, quic_memory_per_cpu_fw_alloc);
+static unsigned long quic_memory_pressure;
+static atomic_long_t quic_memory_allocated;
+
+static void quic_enter_memory_pressure(struct sock *sk)
+{
+	WRITE_ONCE(quic_memory_pressure, 1);
+}
+
 bool quic_request_sock_exists(struct sock *sk, union quic_addr *sa, union quic_addr *da)
 {
 	struct quic_request_sock *req;
@@ -122,10 +131,10 @@ static void quic_transport_param_init(struct sock *sk)
 	param->max_ack_delay = 25000;
 	param->active_connection_id_limit = 7;
 	param->max_idle_timeout = 30000000;
-	param->initial_max_data = 128 * 1024;
-	param->initial_max_stream_data_bidi_local = 64 * 1024;
-	param->initial_max_stream_data_bidi_remote = 64 * 1024;
-	param->initial_max_stream_data_uni = 64 * 1024;
+	param->initial_max_data = sk->sk_rcvbuf / 2;
+	param->initial_max_stream_data_bidi_local = sk->sk_rcvbuf / 4;
+	param->initial_max_stream_data_bidi_remote = sk->sk_rcvbuf / 4;
+	param->initial_max_stream_data_uni = sk->sk_rcvbuf / 4;
 	param->initial_max_streams_bidi = 100;
 	param->initial_max_streams_uni = 100;
 	param->initial_smoothed_rtt = 333000;
@@ -419,7 +428,8 @@ static int quic_wait_for_send(struct sock *sk, u64 stream_id, long timeo, u32 ms
 			if (!quic_stream_id_exceeds(quic_streams(sk), stream_id))
 				goto out;
 		} else {
-			if ((int)msg_len <= sk_stream_wspace(sk))
+			if ((int)msg_len <= sk_stream_wspace(sk) &&
+			    sk_wmem_schedule(sk, msg_len))
 				goto out;
 		}
 
@@ -513,7 +523,7 @@ static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 			err = -EINVAL;
 			goto err;
 		}
-		if (sk_stream_wspace(sk) <= 0) {
+		if (sk_stream_wspace(sk) <= 0 || !sk_wmem_schedule(sk, msg_len)) {
 			timeo = sock_sndtimeo(sk, msg->msg_flags & MSG_DONTWAIT);
 			err = quic_wait_for_send(sk, 0, timeo, msg_len);
 			if (err)
@@ -536,7 +546,7 @@ static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 		goto err;
 	}
 
-	if (sk_stream_wspace(sk) <= 0) {
+	if (sk_stream_wspace(sk) <= 0 || !sk_wmem_schedule(sk, msg_len)) {
 		timeo = sock_sndtimeo(sk, msg->msg_flags & MSG_DONTWAIT);
 		err = quic_wait_for_send(sk, 0, timeo, msg_len);
 		if (err)
@@ -1657,6 +1667,13 @@ struct proto quic_prot = {
 	.release_cb	=  quic_release_cb,
 	.no_autobind	=  true,
 	.obj_size	=  sizeof(struct quic_sock),
+	.sysctl_mem		=  sysctl_quic_mem,
+	.sysctl_rmem		=  sysctl_quic_rmem,
+	.sysctl_wmem		=  sysctl_quic_wmem,
+	.memory_pressure	=  &quic_memory_pressure,
+	.enter_memory_pressure	=  quic_enter_memory_pressure,
+	.memory_allocated	=  &quic_memory_allocated,
+	.per_cpu_fw_alloc	=  &quic_memory_per_cpu_fw_alloc,
 	.sockets_allocated	=  &quic_sockets_allocated,
 };
 
@@ -1684,5 +1701,12 @@ struct proto quicv6_prot = {
 #if KERNEL_VERSION(6, 5, 0) <= LINUX_VERSION_CODE
 	.ipv6_pinfo_offset	= offsetof(struct quic6_sock, inet6),
 #endif
+	.sysctl_mem		=  sysctl_quic_mem,
+	.sysctl_rmem		=  sysctl_quic_rmem,
+	.sysctl_wmem		=  sysctl_quic_wmem,
+	.memory_pressure	=  &quic_memory_pressure,
+	.enter_memory_pressure	=  quic_enter_memory_pressure,
+	.memory_allocated	=  &quic_memory_allocated,
+	.per_cpu_fw_alloc	=  &quic_memory_per_cpu_fw_alloc,
 	.sockets_allocated	=  &quic_sockets_allocated,
 };

@@ -171,16 +171,24 @@ void quic_outq_flush(struct sock *sk)
 
 static void quic_outq_wfree(struct sk_buff *skb)
 {
+	int len = QUIC_SND_CB(skb)->data_bytes;
 	struct sock *sk = skb->sk;
 
-	sk_wmem_queued_add(sk, -QUIC_SND_CB(skb)->data_bytes);
+	WARN_ON(refcount_sub_and_test(len, &sk->sk_wmem_alloc));
+	sk_wmem_queued_add(sk, -len);
+	sk_mem_uncharge(sk, len);
+
 	if (sk_stream_wspace(sk) > 0)
 		sk->sk_write_space(sk);
 }
 
 static void quic_outq_set_owner_w(struct sk_buff *skb, struct sock *sk)
 {
-	sk_wmem_queued_add(sk, QUIC_SND_CB(skb)->data_bytes);
+	int len = QUIC_SND_CB(skb)->data_bytes;
+
+	refcount_add(len, &sk->sk_wmem_alloc);
+	sk_wmem_queued_add(sk, len);
+	sk_mem_charge(sk, len);
 
 	skb->sk = sk;
 	skb->destructor = quic_outq_wfree;
