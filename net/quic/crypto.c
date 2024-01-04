@@ -549,7 +549,7 @@ int quic_crypto_set_secret(struct quic_crypto *crypto, struct quic_crypto_secret
 			return PTR_ERR(tfm);
 		crypto->secret_tfm = tfm;
 
-		tfm = crypto_alloc_skcipher(cipher->skc, 0, 0);
+		tfm = crypto_alloc_sync_skcipher(cipher->skc, 0, 0);
 		if (IS_ERR(tfm)) {
 			err = PTR_ERR(tfm);
 			goto err;
