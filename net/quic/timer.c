@@ -25,6 +25,9 @@ static void quic_timer_delay_ack_timeout(struct timer_list *t)
 		goto out;
 	}
 
+	if (quic_is_closed(sk))
+		goto out;
+
 	if (quic_is_establishing(sk)) { /* try to flush ACKs to Handshake packets */
 		quic_outq_flush(sk);
 		goto out;
@@ -50,6 +53,9 @@ static void quic_timer_rtx_timeout(struct timer_list *t)
 			sock_hold(sk);
 		goto out;
 	}
+
+	if (quic_is_closed(sk))
+		goto out;
 
 	quic_outq_retransmit(sk);
 out:
@@ -98,6 +104,9 @@ static void quic_timer_probe_timeout(struct timer_list *t)
 			sock_hold(sk);
 		goto out;
 	}
+
+	if (quic_is_closed(sk))
+		goto out;
 
 	quic_outq_transmit_probe(sk);
 
