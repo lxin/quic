@@ -395,7 +395,7 @@ next:
 		goto next;
 	}
 
-	quic_packet_config(sk, snd_cb->level);
+	quic_packet_config(sk, (snd_cb->level ?: outq->level));
 	quic_packet_tail(sk, skb);
 	quic_packet_flush(sk);
 

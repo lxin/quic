@@ -25,6 +25,11 @@ struct quic_outqueue {
 	u32 max_idle_timeout;
 	u32 max_ack_delay;
 	u8 grease_quic_bit;
+	/* Use for 0-RTT/1-RTT DATA (re)transmit,
+	 * as QUIC_SND_CB(skb)->level is always QUIC_CRYPTO_APP.
+	 * Set this level to QUIC_CRYPTO_EARLY or QUIC_CRYPTO_APP
+	 * when the corresponding crypto is ready for send.
+	 */
 	u8 level;
 
 	u32 close_errcode;
