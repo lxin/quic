@@ -8,6 +8,8 @@
  *    Xin Long <lucien.xin@gmail.com>
  */
 
+#include <linux/crypto.h>
+
 struct quic_packet_info {
 	s64 number;
 	s64 number_max;
@@ -39,6 +41,7 @@ struct quic_crypto {
 	u8 tx_secret[QUIC_SECRET_LEN];
 	u8 rx_secret[QUIC_SECRET_LEN];
 
+	struct crypto_wait async_wait;
 	struct crypto_aead *aead_tfm;
 	struct quic_cipher *cipher;
 	u32 cipher_type;

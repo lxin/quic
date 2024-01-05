@@ -275,7 +275,7 @@ static void *quic_crypto_aead_mem_alloc(struct crypto_aead *tfm, u32 ctx_size,
 
 static int quic_crypto_payload_encrypt(struct crypto_aead *tfm, struct sk_buff *skb,
 				       struct quic_packet_info *pki, u8 *tx_key, u32 keylen,
-				       u8 *tx_iv, u32 ivlen, bool ccm)
+				       u8 *tx_iv, u32 ivlen, bool ccm, struct crypto_wait *wait)
 {
 	struct quichdr *hdr = quic_hdr(skb);
 	u8 *iv, i, nonce[QUIC_IV_LEN];
@@ -320,7 +320,9 @@ static int quic_crypto_payload_encrypt(struct crypto_aead *tfm, struct sk_buff *
 	aead_request_set_tfm(req, tfm);
 	aead_request_set_ad(req, hlen);
 	aead_request_set_crypt(req, sg, sg, len - hlen, iv);
-	err = crypto_aead_encrypt(req);
+	aead_request_set_callback(req, CRYPTO_TFM_REQ_MAY_BACKLOG, crypto_req_done, wait);
+
+	err = crypto_wait_req(crypto_aead_encrypt(req), wait);
 
 err:
 	kfree(ctx);
@@ -329,7 +331,7 @@ err:
 
 static int quic_crypto_payload_decrypt(struct crypto_aead *tfm, struct sk_buff *skb,
 				       struct quic_packet_info *pki, u8 *rx_key, u32 keylen,
-				       u8 *rx_iv, u32 ivlen, bool ccm)
+				       u8 *rx_iv, u32 ivlen, bool ccm, struct crypto_wait *wait)
 {
 	u8 *iv, i, nonce[QUIC_IV_LEN];
 	struct aead_request *req;
@@ -372,7 +374,9 @@ static int quic_crypto_payload_decrypt(struct crypto_aead *tfm, struct sk_buff *
 	aead_request_set_tfm(req, tfm);
 	aead_request_set_ad(req, hlen);
 	aead_request_set_crypt(req, sg, sg, len - hlen, iv);
-	err = crypto_aead_decrypt(req);
+	aead_request_set_callback(req, CRYPTO_TFM_REQ_MAY_BACKLOG, crypto_req_done, wait);
+
+	err = crypto_wait_req(crypto_aead_decrypt(req), wait);
 
 err:
 	kfree(ctx);
@@ -480,7 +484,7 @@ int quic_crypto_encrypt(struct quic_crypto *crypto, struct sk_buff *skb,
 
 	keylen = crypto->cipher->keylen;
 	err = quic_crypto_payload_encrypt(crypto->aead_tfm, skb, pki, key, keylen, iv, ivlen,
-					  quic_crypto_is_cipher_ccm(crypto));
+					  quic_crypto_is_cipher_ccm(crypto), &crypto->async_wait);
 	if (err)
 		return err;
 
@@ -514,7 +518,7 @@ int quic_crypto_decrypt(struct quic_crypto *crypto, struct sk_buff *skb,
 	iv = crypto->rx_iv[pki->key_phase];
 
 	err = quic_crypto_payload_decrypt(crypto->aead_tfm, skb, pki, key, keylen, iv, ivlen,
-					  quic_crypto_is_cipher_ccm(crypto));
+					  quic_crypto_is_cipher_ccm(crypto), &crypto->async_wait);
 	if (err)
 		return err;
 
@@ -564,6 +568,7 @@ int quic_crypto_set_secret(struct quic_crypto *crypto, struct quic_crypto_secret
 		crypto->aead_tfm = tfm;
 		crypto->cipher = cipher;
 		crypto->cipher_type = srt->type;
+		crypto_init_wait(&crypto->async_wait);
 	}
 
 	if (!srt->send) {
