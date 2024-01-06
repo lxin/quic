@@ -29,6 +29,6 @@ menuconfig IP_QUIC
 
 if IP_QUIC
 config IP_QUIC_TEST
-	depends on NET_HANDSHAKE
-	def_tristate NET_HANDSHAKE
+	depends on NET_HANDSHAKE || KUNIT
+	def_tristate m
 endif
