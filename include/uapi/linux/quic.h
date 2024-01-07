@@ -19,7 +19,7 @@ enum {
 #define IPPROTO_QUIC		IPPROTO_QUIC
 };
 
-#define SOL_QUIC	287
+#define SOL_QUIC	288
 
 /* Send or Receive Options APIs */
 enum quic_cmsg_type {
