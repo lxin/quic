@@ -37,16 +37,16 @@ static int read_psk_file(char *psk, char *identity[], gnutls_datum_t *pkey)
 
 	end = buf + size - 1;
 	do {
-		key = strchr(buf, ':');
+		key = (unsigned char *)strchr((char *)buf, ':');
 		if (!key)
 			goto out;
 		*key = '\0';
-		identity[i] = buf;
+		identity[i] = (char *)buf;
 
 		key++;
 		gkey.data = key;
 
-		buf = strchr(key, '\n');
+		buf = (unsigned char *)strchr((char *)key, '\n');
 		if (!buf) {
 			gkey.size = end - gkey.data;
 			buf = end;
@@ -54,7 +54,7 @@ static int read_psk_file(char *psk, char *identity[], gnutls_datum_t *pkey)
 		}
 		*buf = '\0';
 		buf++;
-		gkey.size = strlen(gkey.data);
+		gkey.size = strlen((char *)gkey.data);
 decode:
 		if (gnutls_hex_decode2(&gkey, &pkey[i]))
 			goto out;
@@ -188,7 +188,8 @@ static int delete_timer(struct quic_conn *conn)
 static int get_transport_param(struct quic_conn *conn)
 {
 	struct quic_transport_param param = {};
-	int len, sockfd = conn->sockfd;
+	int sockfd = conn->sockfd;
+	unsigned int len;
 
 	len = sizeof(conn->alpn.data);
 	if (getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_ALPN, conn->alpn.data, &len)) {
@@ -263,7 +264,6 @@ static int quic_conn_sendmsg(int sockfd, struct quic_frame *frame)
 	struct cmsghdr *cmsg;
 	struct iovec iov;
 	int flags = 0;
-	uint8_t *p;
 
 	outmsg.msg_name = NULL;
 	outmsg.msg_namelen = 0;

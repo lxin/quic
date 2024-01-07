@@ -122,21 +122,6 @@ static int client_set_x509_cred(struct quic_conn *conn, void *cred)
 	return gnutls_certificate_set_key(cred, NULL, 0, cert, 1, privkey);
 }
 
-static gnutls_cipher_algorithm_t crypto_get_cipher_type(gnutls_cipher_algorithm_t cipher) {
-	switch (cipher) {
-	case GNUTLS_CIPHER_AES_128_GCM:
-	case GNUTLS_CIPHER_AES_128_CCM:
-		return GNUTLS_CIPHER_AES_128_CBC;
-	case GNUTLS_CIPHER_AES_256_GCM:
-	case GNUTLS_CIPHER_AES_256_CCM:
-		return GNUTLS_CIPHER_AES_256_CBC;
-	case GNUTLS_CIPHER_CHACHA20_POLY1305:
-		return GNUTLS_CIPHER_CHACHA20_32;
-	default:
-		return GNUTLS_CIPHER_UNKNOWN;
-	}
-}
-
 static uint32_t tls_cipher_type_get(gnutls_cipher_algorithm_t cipher)
 {
 	switch (cipher) {
@@ -220,7 +205,8 @@ static int tp_send_func(gnutls_session_t session, gnutls_buffer_t extdata)
 {
 	struct quic_conn *conn = gnutls_session_get_ptr(session);
 	uint8_t buf[256];
-	int rv, len;
+	unsigned int len;
+	int rv;
 
         len = sizeof(buf);
         if (getsockopt(conn->sockfd, SOL_QUIC, QUIC_SOCKOPT_TRANSPORT_PARAM_EXT, buf, &len)) {
@@ -228,7 +214,7 @@ static int tp_send_func(gnutls_session_t session, gnutls_buffer_t extdata)
                 return -1;
         }
 
-	rv = gnutls_buffer_append_data(extdata, buf, (size_t)len);
+	rv = gnutls_buffer_append_data(extdata, buf, len);
 	if (rv != 0)
 		return -1;
 
@@ -286,7 +272,7 @@ static char priority[] = "%DISABLE_TLS13_COMPAT_MODE:NORMAL:-VERS-ALL:+VERS-TLS1
 
 static char *get_priority(struct quic_conn *conn)
 {
-	char *p = conn->priority.data;
+	char *p = (char *)conn->priority.data;
 
 	memcpy(p, priority, strlen(priority));
 	switch (conn->cipher) {
@@ -376,7 +362,7 @@ int quic_crypto_client_set_x509_session(struct quic_conn *conn)
 	if (conn->alpn.datalen) {
 		gnutls_datum_t alpn = {
 			.data = conn->alpn.data,
-			.size = strlen(conn->alpn.data),
+			.size = strlen((char *)conn->alpn.data),
 		};
 		gnutls_alpn_set_protocols(session, &alpn, 1, GNUTLS_ALPN_MANDATORY);
 	}
@@ -430,7 +416,7 @@ int quic_crypto_client_set_psk_session(struct quic_conn *conn)
 	if (conn->alpn.datalen) {
 		gnutls_datum_t alpn = {
 			.data = conn->alpn.data,
-			.size = strlen(conn->alpn.data),
+			.size = strlen((char *)conn->alpn.data),
 		};
 		gnutls_alpn_set_protocols(session, &alpn, 1, GNUTLS_ALPN_MANDATORY);
 	}
@@ -499,7 +485,7 @@ static int server_alpn_verify(gnutls_session_t session, unsigned int htype, unsi
 	if (ret)
 		return ret;
 
-	if (strlen(conn->alpn.data) != alpn.size ||
+	if (strlen((char *)conn->alpn.data) != alpn.size ||
 	    memcmp(conn->alpn.data, alpn.data, alpn.size))
 		return -1;
 
@@ -566,7 +552,7 @@ int quic_crypto_server_set_x509_session(struct quic_conn *conn)
 	if (conn->alpn.datalen) {
 		gnutls_datum_t alpn = {
 			.data = conn->alpn.data,
-			.size = strlen(conn->alpn.data),
+			.size = strlen((char *)conn->alpn.data),
 		};
 		gnutls_alpn_set_protocols(session, &alpn, 1, GNUTLS_ALPN_MANDATORY);
 	}
@@ -634,7 +620,7 @@ int quic_crypto_server_set_psk_session(struct quic_conn *conn)
 	if (conn->alpn.datalen) {
 		gnutls_datum_t alpn = {
 			.data = conn->alpn.data,
-			.size = strlen(conn->alpn.data),
+			.size = strlen((char *)conn->alpn.data),
 		};
 		gnutls_alpn_set_protocols(session, &alpn, 1, GNUTLS_ALPN_MANDATORY);
 	}
