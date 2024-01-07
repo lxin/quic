@@ -86,14 +86,14 @@ static int do_server(int argc, char *argv[])
 {
 	struct quic_handshake_parms parms = {};
 	struct quic_transport_param param = {};
-	int ret, sockfd, listenfd, addrlen;
 	struct sockaddr_storage ra = {};
 	struct sockaddr_in la = {};
+	uint32_t flag = 0, addrlen;
 	uint64_t len = 0,  sid = 0;
+	int ret, sockfd, listenfd;
 	char *mode, *pkey, *cert;
 	gnutls_pcert_st gcert;
 	struct addrinfo *rp;
-	int flag = 0;
 
 	if (argc != 6) {
 		printf("%s server <LOCAL ADDR> <LOCAL PORT> <-pkey_file:PRIVATE_KEY_FILE> <-cert_file:CERTIFICATE_FILE>\n", argv[0]);
@@ -193,17 +193,17 @@ loop:
 	while (1) {
 		ret = quic_recvmsg(sockfd, &rcv_msg, RCV_MSG_LEN, &sid, &flag);
 		if (ret == -1) {
-			printf("recv error %d\n", ret, errno);
+			printf("recv error %d %d\n", ret, errno);
 			return 1;
 		}
 		len += ret;
 		usleep(20);
 		if (flag & QUIC_STREAM_FLAG_FIN)
 			break;
-		printf("  recv len: %lld, stream_id: %lld, flag: %d.\n", len, sid, flag);
+		printf("  recv len: %lu, stream_id: %lu, flag: %u.\n", len, sid, flag);
 	}
 
-	printf("RECV DONE: tot_len %lld, stream_id: %lld, flag: %d.\n", len, sid, flag);
+	printf("RECV DONE: tot_len %lu, stream_id: %lu, flag: %u.\n", len, sid, flag);
 
 	flag = QUIC_STREAM_FLAG_FIN;
 	strcpy(snd_msg, "recv done");
@@ -228,9 +228,10 @@ static int do_client(int argc, char *argv[])
 	struct sockaddr_in ra = {};
 	uint64_t len = 0, sid = 0;
 	gnutls_pcert_st gcert;
-	int ret, sockfd, flag;
 	struct addrinfo *rp;
 	time_t start, end;
+	int ret, sockfd;
+	uint32_t flag;
 
 	if (argc != 4 && argc != 6) {
 		printf("%s client <PEER ADDR> <PEER PORT> [<-pkey_file:PRIVATE_KEY_FILE> <-cert_file:CERTIFICATE_FILE>]\n", argv[0]);
@@ -331,7 +332,7 @@ handshake:
 		}
 		len += ret;
 		if (!(len % (SND_MSG_LEN * 1024)))
-			printf("  send len: %lld, stream_id: %lld, flag: %d.\n", len, sid, flag);
+			printf("  send len: %lu, stream_id: %lu, flag: %u.\n", len, sid, flag);
 		if (len > TOT_LEN - SND_MSG_LEN)
 			break;
 	}
@@ -342,7 +343,7 @@ handshake:
 		return -1;
 	}
 	len += ret;
-	printf("SEND DONE: tot_len: %lld, stream_id: %lld, flag: %d.\n", len, sid, flag);
+	printf("SEND DONE: tot_len: %lu, stream_id: %lu, flag: %u.\n", len, sid, flag);
 
 	memset(rcv_msg, 0, sizeof(rcv_msg));
 	ret = quic_recvmsg(sockfd, rcv_msg, RCV_MSG_LEN, &sid, &flag);
@@ -352,7 +353,7 @@ handshake:
 	}
 	time(&end);
 	start = end - start;
-	printf("ALL RECVD: %u MBytes/Sec\n", TOT_LEN/1024/1024/start);
+	printf("ALL RECVD: %lu MBytes/Sec\n", TOT_LEN/1024/1024/start);
 
 	close(sockfd);
 	return 0;

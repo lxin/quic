@@ -13,9 +13,10 @@ static uint8_t token[256];
 
 static int do_client(int argc, char *argv[])
 {
-	int ret, sockfd, ticket_len, param_len, token_len, addr_len;
+	unsigned int ticket_len, param_len, token_len, addr_len;
 	struct quic_transport_param param = {};
 	struct sockaddr_in ra = {}, la = {};
+	int ret, sockfd;
 	char msg[50];
 
 	if (argc < 3) {
@@ -165,8 +166,9 @@ static int do_client(int argc, char *argv[])
 static int do_server(int argc, char *argv[])
 {
 	struct quic_transport_param param = {};
-	int listenfd, sockfd, addrlen, ret;
 	struct sockaddr_in sa = {};
+	int listenfd, sockfd, ret;
+	unsigned int addrlen;
 	char msg[50];
 
 	if (argc < 5) {
