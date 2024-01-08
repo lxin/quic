@@ -260,7 +260,7 @@ ServerStreamCallback(
         // Data was received from the peer on the stream.
         //
         TotalRecvLength += Event->RECEIVE.TotalBufferLength;
-        printf("  [strm][%p] Data received Length %lld Flag %d\n", Stream, TotalRecvLength, Event->RECEIVE.Flags);
+        printf("  [strm][%p] Data received Length %lu Flag %d\n", Stream, TotalRecvLength, Event->RECEIVE.Flags);
         break;
     case QUIC_STREAM_EVENT_PEER_SEND_SHUTDOWN:
         //
@@ -599,7 +599,7 @@ ClientStreamCallback(
             break;
         }
 	if (!((TotalSentLength + SendBufferLength) % (SendBufferLength * 1024)))
-		printf("  [strm][%p] Data sent Length %lld Flag %d\n", Stream, TotalSentLength + SendBufferLength, Flag);
+		printf("  [strm][%p] Data sent Length %lu Flag %d\n", Stream, TotalSentLength + SendBufferLength, Flag);
         break;
     case QUIC_STREAM_EVENT_RECEIVE:
         //
@@ -607,7 +607,7 @@ ClientStreamCallback(
         //
         time(&EndTime);
         StartTime = EndTime - StartTime;
-        printf("[strm][%p] ALL RECVD: %u MBytes/Sec\n", Stream, TotalSentLength/1024/1024/StartTime);
+        printf("[strm][%p] ALL RECVD: %lu MBytes/Sec\n", Stream, TotalSentLength/1024/1024/StartTime);
         break;
     case QUIC_STREAM_EVENT_PEER_SEND_ABORTED:
         //

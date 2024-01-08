@@ -9,7 +9,7 @@ sample_test: sample_test.c
 ticket_test: ticket_test.c
 	gcc ticket_test.c -o ticket_test -lquic -Wall
 msquic_test: msquic_test.c
-	g++ msquic_test.c -o msquic_test -lmsquic -Wl,-rpath=/usr/local/lib
+	g++ msquic_test.c -o msquic_test -lmsquic -Wl,-rpath=/usr/local/lib -Wall
 clean:
 	rm -rf func_test perf_test msquic_test sample_test ticket_test
 run:
