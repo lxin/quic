@@ -25,7 +25,7 @@ cleanup()
 	pkill func_test > /dev/null 2>&1
 	pkill perf_test > /dev/null 2>&1
 	pkill msquic_test > /dev/null 2>&1
-	rmmod quic_test > /dev/null 2>&1
+	rmmod quic_sample_test > /dev/null 2>&1
 }
 
 make || exit 1
@@ -81,7 +81,7 @@ if [ -f /usr/local/include/msquic.h -o -f /usr/include/msquic.h ]; then
 	daemon_stop "msquic_test"
 fi
 
-if systemctl is-active --quiet tlshd && modinfo quic_test > /dev/null 2>&1; then
+if systemctl is-active --quiet tlshd && modinfo quic_sample_test > /dev/null 2>&1; then
 	print_start "Kernel Tests (kernel -> lkquic)"
 	daemon_run ./perf_test server 0.0.0.0 1234 -pkey_file:./keys/server-key.pem -cert_file:./keys/server-cert.pem
 	modprobe quic_sample_test || exit 1
