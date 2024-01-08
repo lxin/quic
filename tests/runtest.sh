@@ -36,7 +36,7 @@ print_start "Install Keys & Certificates"
 pushd keys/ && sh ca_cert_pkey.sh || exit 1
 popd
 
-setenforce 0
+setenforce 0 > /dev/null 2>&1
 
 print_start "Function Tests (PSK)"
 daemon_run ./func_test server 0.0.0.0 1234 -psk_file:./keys/server-psk.txt

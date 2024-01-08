@@ -13,4 +13,4 @@ msquic_test: msquic_test.c
 clean:
 	rm -rf func_test perf_test msquic_test sample_test ticket_test
 run:
-	sh runtest.sh
+	./runtest.sh
