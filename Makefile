@@ -9,6 +9,8 @@ lib_install: lib
 	install -m 644 handshake/quic.h /usr/include/netinet/quic.h
 	install -m 644 handshake/libquic.so /usr/lib64
 	install -m 644 handshake/libquic.pc /usr/lib64/pkgconfig
+	install -m 644 handshake/libquic.conf /etc/ld.so.conf.d
+	ldconfig
 lib_clean:
 	rm -rf handshake/libquic.so
 
@@ -21,7 +23,7 @@ module_install: module
 	install -m 644 include/uapi/linux/quic.h /usr/include/linux
 	[ -d /lib/modules/$(shell uname -r)/extra ] || mkdir /lib/modules/$(shell uname -r)/extra
 	install -m 644 net/quic/quic.ko /lib/modules/$(shell uname -r)/extra
-	install -m 644 net/quic/quic_unit_test.ko /lib/modules/$(shell uname -r)/extra
+	! [ -f net/quic/quic_quic_test.ko ] || install -m 644 net/quic/quic_unit_test.ko /lib/modules/$(shell uname -r)/extra
 	! [ -f net/quic/quic_sample_test.ko ] || install -m 644 net/quic/quic_sample_test.ko /lib/modules/$(shell uname -r)/extra
 	depmod -a
 module_clean:
@@ -33,7 +35,8 @@ uninstall:
 	rm -rf /lib/modules/$(shell uname -r)/extra/quic.ko
 	rm -rf /lib/modules/$(shell uname -r)/extra/quic_sample_test.ko
 	rm -rf /lib/modules/$(shell uname -r)/extra/quic_unit_test.ko
-	rm -rf /usr/lib64/libquic.so /usr/lib64/pkgconfig/libquic.pc
+	rm -rf /usr/lib64/libquic.so /usr/lib64/pkgconfig/libquic.pc /etc/ld.so.conf.d/libquic.conf
+	ldconfig
 	! [ -d /sys/module/quic_unit_test ] || rmmod quic_unit_test
 	! [ -d /sys/module/quic_sample_test ] || rmmod quic_sample_test
 	! [ -d /sys/module/quic ] || rmmod quic
