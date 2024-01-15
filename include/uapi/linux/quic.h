@@ -29,15 +29,15 @@ enum quic_cmsg_type {
 
 #define QUIC_STREAM_TYPE_SERVER_MASK	0x01
 #define QUIC_STREAM_TYPE_UNI_MASK	0x02
-#define QUIC_STREAM_TYPE_MASK		0x03	/* the 1st 2 bits in stream_id */
+#define QUIC_STREAM_TYPE_MASK		0x03
 
-enum {	/* used in stream_flag of struct quic_sndinfo or quic_rcvinfo */
-	QUIC_STREAM_FLAG_NEW = (1 << 0),	/* sendmsg (like MSG_SYN in msg_flags) */
-	QUIC_STREAM_FLAG_FIN = (1 << 1),	/* send/recvmsg (like MSG_FIN in msg_flags) */
-	QUIC_STREAM_FLAG_UNI = (1 << 2),	/* getsockopt to open the next uni stream */
-	QUIC_STREAM_FLAG_ASYNC = (1 << 3),	/* getsockopt or sendmsg to open stream */
-	QUIC_STREAM_FLAG_NOTIFICATION = (1 << 4), /* recvmsg (MSG_NOTIFICATION in msg_flags) */
-	QUIC_STREAM_FLAG_DATAGRAM = (1 << 5), /* send/recvmsg (like MSG_DATAGRAM in msg_flags) */
+enum {
+	QUIC_STREAM_FLAG_NEW		= (1 << 0),
+	QUIC_STREAM_FLAG_FIN		= (1 << 1),
+	QUIC_STREAM_FLAG_UNI		= (1 << 2),
+	QUIC_STREAM_FLAG_ASYNC		= (1 << 3),
+	QUIC_STREAM_FLAG_NOTIFICATION	= (1 << 4),
+	QUIC_STREAM_FLAG_DATAGRAM	= (1 << 5),
 };
 
 enum quic_crypto_level {
@@ -48,42 +48,42 @@ enum quic_crypto_level {
 	QUIC_CRYPTO_MAX,
 };
 
-struct quic_handshake_info { /* sendmsg or recvmsg */
+struct quic_handshake_info {
 	uint8_t	crypto_level;
 };
 
-struct quic_stream_info { /* sendmsg or setsockopt(QUIC_SOCKOPT_STREAM_OPEN) */
+struct quic_stream_info {
 	uint64_t stream_id;
 	uint32_t stream_flag;
 };
 
-enum quic_msg_flags {	/* msg_flags in send/recvmsg */
-	MSG_NOTIFICATION = 0x8000,
-	MSG_STREAM_UNI = 0x800,
-	MSG_DATAGRAM = 0x10,
+enum quic_msg_flags {
+	MSG_NOTIFICATION	= 0x8000,
+	MSG_STREAM_UNI		= 0x800,
+	MSG_DATAGRAM		= 0x10,
 };
 
 /* Socket Options APIs */
-#define QUIC_SOCKOPT_EVENT				0  /* set and get */
-#define QUIC_SOCKOPT_STREAM_OPEN			1  /* get */
-#define QUIC_SOCKOPT_STREAM_RESET			2  /* set */
-#define QUIC_SOCKOPT_STREAM_STOP_SENDING		3  /* set */
-#define QUIC_SOCKOPT_CONNECTION_CLOSE			4  /* set and get */
-#define QUIC_SOCKOPT_CONNECTION_MIGRATION		5  /* set */
-#define QUIC_SOCKOPT_CONGESTION_CONTROL			6  /* set and get */
-#define QUIC_SOCKOPT_KEY_UPDATE				7  /* set */
-#define QUIC_SOCKOPT_TRANSPORT_PARAM			8  /* set and get */
-#define QUIC_SOCKOPT_TOKEN				9  /* set and get */
+#define QUIC_SOCKOPT_EVENT				0
+#define QUIC_SOCKOPT_STREAM_OPEN			1
+#define QUIC_SOCKOPT_STREAM_RESET			2
+#define QUIC_SOCKOPT_STREAM_STOP_SENDING		3
+#define QUIC_SOCKOPT_CONNECTION_CLOSE			4
+#define QUIC_SOCKOPT_CONNECTION_MIGRATION		5
+#define QUIC_SOCKOPT_CONGESTION_CONTROL			6
+#define QUIC_SOCKOPT_KEY_UPDATE				7
+#define QUIC_SOCKOPT_TRANSPORT_PARAM			8
+#define QUIC_SOCKOPT_TOKEN				9
+#define QUIC_SOCKOPT_ALPN				10
+#define QUIC_SOCKOPT_SESSION_TICKET			11
 
-/* used to provide parameters for handshake from kernel, so only valid prior to handshake */
-#define QUIC_SOCKOPT_ALPN				100 /* set and get */
-#define QUIC_SOCKOPT_CRYPTO_SECRET			101 /* set and get */
-#define QUIC_SOCKOPT_TRANSPORT_PARAM_EXT		102 /* set and get */
-#define QUIC_SOCKOPT_SESSION_TICKET			103 /* set and get */
+/* for handshake only */
+#define QUIC_SOCKOPT_CRYPTO_SECRET			100
+#define QUIC_SOCKOPT_TRANSPORT_PARAM_EXT		101
 
 /* for testing only */
-#define QUIC_SOCKOPT_RETIRE_CONNECTION_ID		1000 /* set */
-#define QUIC_SOCKOPT_ACTIVE_CONNECTION_ID		1001 /* get */
+#define QUIC_SOCKOPT_RETIRE_CONNECTION_ID		1000
+#define QUIC_SOCKOPT_ACTIVE_CONNECTION_ID		1001
 
 #define QUIC_VERSION_V1			0x1
 #define QUIC_VERSION_V2			0x6b3343cf
@@ -106,90 +106,43 @@ struct quic_transport_param {
 	uint64_t initial_max_streams_bidi;
 	uint64_t initial_max_streams_uni;
 	uint64_t initial_smoothed_rtt;
-	uint32_t probe_timeout;		/* plpmtud probe timeout in usec, 0: disabled by default */
-	uint8_t validate_address;	/* for server only, verify token and send retry packet */
-	uint8_t recv_session_ticket;	/* for client only, handshake done until ticket is recvd */
-	uint8_t cert_request;		/* for server only, 0: IGNORE, 1: REQUEST, 2: REQUIRE */
-	uint32_t cipher_type;		/* AES_GCM_128/AES_GCM_256/AES_CCM_128/CHACHA20_POLY1305 */
-	uint32_t version;		/* QUIC_VERSION_V1 or V2 for now */
+
+	uint32_t probe_timeout;
+	uint8_t validate_address;
+	uint8_t recv_session_ticket;
+	uint8_t cert_request;
+	uint32_t cipher_type;
+	uint32_t version;
 };
 
 struct quic_crypto_secret {
-	uint8_t level; /* stream or handshake */
+	uint8_t level; /* crypto level */
 	uint16_t send; /* send or recv */
 	uint32_t type; /* TLS_CIPHER_* */
 	uint8_t secret[48];
 };
 
-enum { /* CONGESTION_CONTROL */
+enum {
 	QUIC_CONG_ALG_RENO,
 	QUIC_CONG_ALG_MAX,
 };
 
-struct quic_errinfo { /* STREAM_RESET and STREAM_STOP_SENDING */
+struct quic_errinfo {
 	uint64_t stream_id;
 	uint32_t errcode;
 };
 
-struct quic_connection_id_info { /* RETIRE/ACTIVE_CONNECTION_ID */
+struct quic_connection_id_info {
 	uint32_t source;
 	uint32_t dest;
 };
 
-struct quic_event_option { /* EVENT */
+struct quic_event_option {
 	uint8_t type;
 	uint8_t on;
 };
 
-/* Event APIs:
- *
- * - QUIC_EVENT_STREAM_UPDATE:
- *
- *   Only notifications with these states are sent to userspace:
- *
- *   QUIC_STREAM_SEND_STATE_RECVD
- *   QUIC_STREAM_SEND_STATE_RESET_SENT
- *   QUIC_STREAM_SEND_STATE_RESET_RECVD
- *
- *   QUIC_STREAM_RECV_STATE_RECV
- *   QUIC_STREAM_RECV_STATE_SIZE_KNOWN
- *   QUIC_STREAM_RECV_STATE_RECVD
- *   QUIC_STREAM_RECV_STATE_RESET_RECVD
- *
- *   Note:
- *   1. QUIC_STREAM_SEND_STATE_RESET_SENT update is sent only if STOP_SEDNING is received;
- *   2. QUIC_STREAM_RECV_STATE_SIZE_KNOWN update is sent only if data comes out of order;
- *   3. QUIC_STREAM_RECV_STATE_RECV update is sent only when the last frag hasn't arrived.
- *
- * - QUIC_EVENT_STREAM_MAX_STREAM:
- *
- *   This notification is sent when max_streams frame is received, and this is useful when
- *   using QUIC_STREAM_FLAG_ASYNC to open a stream whose id exceeds the max stream count.
- *   After receiving this notification, try to open this stream again.
- *
- * - QUIC_EVENT_CONNECTION_CLOSE
- *
- *   This notification is sent when receiving a close from peer where it can set the close
- *   info with QUIC_SOCKOPT_CONNECTION_CLOSE socket option
- *
- * - QUIC_EVENT_CONNECTION_MIGRATION
- *
- *   This notification is sent when either side successfully changes its source address by
- *   QUIC_SOCKOPT_CONNECTION_MIGRATION or dest address by peer's CONNECTION_MIGRATION.
- *   The parameter tells you if it's a local or peer CONNECTION_MIGRATION, and then you
- *   can get the new address with getsockname() or getpeername().
- *
- * - QUIC_EVENT_KEY_UPDATE
- *
- *   This notification is sent when both sides have used the new key, and the parameter
- *   tells you which the new key phase is.
- *
- * - QUIC_EVENT_NEW_TOKEN
- *
- *   Since the handshake is in userspace, this notifications is sent whenever the
- *   frame of NEW_TOKEN is received from the peer where it can send these frame by
- *   QUIC_SOCKOPT_NEW_TOKEN.
- */
+/* Event APIs */
 enum quic_event_type {
 	QUIC_EVENT_NONE,
 	QUIC_EVENT_STREAM_UPDATE,
@@ -224,7 +177,7 @@ struct quic_stream_update {
 	uint32_t errcode; /* or known_size */
 };
 
-struct quic_connection_close { /* also used for CONNECTION_CLOSE socket option */
+struct quic_connection_close {
 	uint32_t errcode;
 	uint8_t frame;
 	uint8_t phrase[];
@@ -232,8 +185,8 @@ struct quic_connection_close { /* also used for CONNECTION_CLOSE socket option *
 
 union quic_event {
 	struct quic_stream_update update;
-	uint64_t max_stream;
 	struct quic_connection_close close;
+	uint64_t max_stream;
 	uint8_t local_migration;
 	uint8_t key_update_phase;
 };
