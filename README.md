@@ -15,10 +15,9 @@ is still in Kernel space.
 these messages are sent and received via sendmsg/recvmsg() with crypto level in cmsg. See:
 [handshake/](https://github.com/lxin/quic/tree/main/handshake).
 
-- **What's in Kernel**: All QUIC protocol except TLS Handshake Messages processing and creating
-is implemented in kernel. Instead of a ULP layer, it creates IPPROTO_QUIC type socket (similar
-to IPPROTO_MPTCP) running over UDP TUNNEL. See:
-[net/quic/](https://github.com/lxin/quic/tree/main/net/quic).
+- **What's in Kernel**: All QUIC protocol except TLS Handshake Messages processing and creating.
+Instead of a ULP layer, it creates IPPROTO_QUIC type socket (similar to IPPROTO_MPTCP) running
+over UDP TUNNEL. See: [net/quic/](https://github.com/lxin/quic/tree/main/net/quic).
 
 - **How Kernel Consumers Use It**: Kernel users can send Handshake request from kernel via
 [handshake netlink](https://docs.kernel.org/networking/tls-handshake.html) to Userspace. tlshd
@@ -242,8 +241,8 @@ in [ktls-utils](https://github.com/lxin/ktls-utils) will handle the handshake re
         /* quic_sendmsg() and quic_recvmsg() allow you to send and recv messages with
          * stream_id and stream_flags, they wrap sendmsg() and recvmsg().
          *
-         * setsockopt() and getsockopt() can give you more control on QUIC use, see
-         * tests/func_test.c more details.
+         * setsockopt() and getsockopt() can give you more control on QUIC use, show more details
+         * in mandoc by # man quic, and see more examples in tests/func_test.c.
          */
         int quic_sendmsg(int sockfd, const void *msg, size_t len, uint64_t sid, uint32_t flag);
         int quic_recvmsg(int sockfd, void *msg, size_t len, uint64_t *sid, uint32_t *flag);

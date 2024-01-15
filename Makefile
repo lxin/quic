@@ -10,6 +10,8 @@ lib_install: lib
 	install -m 644 handshake/libquic.so /usr/lib64
 	install -m 644 handshake/libquic.pc /usr/share/pkgconfig
 	install -m 644 handshake/libquic.conf /etc/ld.so.conf.d
+	[ -d /usr/local/share/man/man7 ] || mkdir /usr/local/share/man/man7
+	install -m 644 handshake/quic.7 /usr/local/share/man/man7
 	ldconfig
 lib_clean:
 	rm -rf handshake/libquic.so
@@ -31,6 +33,7 @@ module_clean:
 	! [ -d /sys/module/quic ] || rmmod quic
 
 uninstall:
+	rm -rf /usr/local/share/man/man7/quic.7
 	rm -rf /usr/include/linux/quic.h /usr/include/netinet/quic.h
 	rm -rf /lib/modules/$(shell uname -r)/extra/quic.ko
 	rm -rf /lib/modules/$(shell uname -r)/extra/quic_sample_test.ko
