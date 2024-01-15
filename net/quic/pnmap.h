@@ -16,8 +16,7 @@
 #define QUIC_PN_MAP_INCREMENT QUIC_PN_MAP_INITIAL
 #define QUIC_PN_MAP_SIZE 1024
 
-/*
- * pn_map:
+/* pn_map:
  * cum_ack_point --v
  * min_pn_seen -->  |----------------------|---------------------|...
  *        base_pn --^   last_max_pn_seen --^       max_pn_seen --^

@@ -30,8 +30,8 @@ static int port = 1234;
 static char alpn[ALPN_LEN] = "sample";
 
 #define SND_MSG_LEN	4096
-#define RCV_MSG_LEN	4096 * 16
-#define TOT_LEN		1 * 1024 * 1024 * 1024
+#define RCV_MSG_LEN	(4096 * 16)
+#define TOT_LEN		(1 * 1024 * 1024 * 1024)
 
 static char	snd_msg[SND_MSG_LEN];
 static char	rcv_msg[RCV_MSG_LEN];
@@ -165,7 +165,7 @@ static int quic_test_do_client(void)
 {
 	struct quic_test_priv priv = {};
 	struct sockaddr_in ra = {};
-	uint64_t len = 0, sid = 0;
+	u64 len = 0, sid = 0;
 	struct socket *sock;
 	int err, flag = 0;
 	u32 start, end;
@@ -193,7 +193,7 @@ static int quic_test_do_client(void)
 	flag = QUIC_STREAM_FLAG_NEW; /* open stream when send first msg */
 	err = quic_test_sendmsg(sock, snd_msg, SND_MSG_LEN, sid, flag);
 	if (err < 0) {
-		printk("send %d\n", err);
+		pr_info("send %d\n", err);
 		goto free;
 	}
 	len += err;
@@ -201,32 +201,32 @@ static int quic_test_do_client(void)
 	while (1) {
 		err = quic_test_sendmsg(sock, snd_msg, SND_MSG_LEN, sid, flag);
 		if (err < 0) {
-			printk("send %d\n", err);
+			pr_info("send %d\n", err);
 			goto free;
 		}
 		len += err;
 		if (!(len % (SND_MSG_LEN * 1024)))
-			printk("  send len: %lld, stream_id: %lld, flag: %d.\n", len, sid, flag);
+			pr_info("  send len: %lld, stream_id: %lld, flag: %d.\n", len, sid, flag);
 		if (len > TOT_LEN - SND_MSG_LEN)
 			break;
 	}
 	flag = QUIC_STREAM_FLAG_FIN; /* close stream when send last msg */
 	err = quic_test_sendmsg(sock, snd_msg, SND_MSG_LEN, sid, flag);
 	if (err < 0) {
-		printk("send %d\n", err);
+		pr_info("send %d\n", err);
 		goto free;
 	}
-	printk("SEND DONE: tot_len: %lld, stream_id: %lld, flag: %d.\n", len, sid, flag);
+	pr_info("SEND DONE: tot_len: %lld, stream_id: %lld, flag: %d.\n", len, sid, flag);
 
 	memset(rcv_msg, 0, sizeof(rcv_msg));
 	err = quic_test_recvmsg(sock, rcv_msg, RCV_MSG_LEN, &sid, &flag);
 	if (err < 0) {
-		printk("recv error %d\n", err);
+		pr_info("recv error %d\n", err);
 		goto free;
 	}
 	end = jiffies_to_msecs(jiffies);
 	start = (end - start) / 1000;
-	printk("ALL RECVD: %u MBytes/Sec\n", TOT_LEN/1024/1024/start);
+	pr_info("ALL RECVD: %u MBytes/Sec\n", TOT_LEN / 1024 / 1024 / start);
 	err = 0;
 free:
 	fput(priv.filp);
@@ -238,7 +238,7 @@ static int quic_test_do_server(void)
 	struct quic_test_priv priv = {};
 	struct socket *sock, *newsock;
 	struct sockaddr_in la = {};
-	uint64_t len = 0, sid = 0;
+	u64 len = 0, sid = 0;
 	int err, flag = 0;
 
 	err = __sock_create(&init_net, PF_INET, SOCK_DGRAM, IPPROTO_QUIC, &sock, 1);
@@ -272,28 +272,28 @@ static int quic_test_do_server(void)
 	if (err < 0)
 		goto free_flip;
 
-	printk("HANDSHAKE DONE\n");
+	pr_info("HANDSHAKE DONE\n");
 
 	while (1) {
 		err = quic_test_recvmsg(newsock, &rcv_msg, sizeof(rcv_msg), &sid, &flag);
 		if (err < 0) {
-			printk("recv error %d\n", err);
+			pr_info("recv error %d\n", err);
 			goto free_flip;
 		}
 		len += err;
-		udelay(10);
+		usleep_range(20, 40);
 		if (flag & QUIC_STREAM_FLAG_FIN)
 			break;
-		printk("  recv len: %lld, stream_id: %lld, flag: %d.\n", len, sid, flag);
+		pr_info("  recv len: %lld, stream_id: %lld, flag: %d.\n", len, sid, flag);
 	}
 
-	printk("RECV DONE: tot_len %lld, stream_id: %lld, flag: %d.\n", len, sid, flag);
+	pr_info("RECV DONE: tot_len %lld, stream_id: %lld, flag: %d.\n", len, sid, flag);
 
 	flag = QUIC_STREAM_FLAG_FIN;
-	strcpy(snd_msg, "recv done");
+	strscpy(snd_msg, "recv done", sizeof(snd_msg));
 	err = quic_test_sendmsg(newsock, snd_msg, strlen(snd_msg), sid, flag);
 	if (err < 0) {
-		printk("send %d\n", err);
+		pr_info("send %d\n", err);
 		goto free_flip;
 	}
 	msleep(100);
@@ -307,7 +307,7 @@ free:
 
 static int quic_test_init(void)
 {
-	printk(KERN_INFO "[QUIC_TEST] Quic Test Start\n");
+	pr_info("[QUIC_TEST] Quic Test Start\n");
 	if (!strcmp(role, "client"))
 		return quic_test_do_client();
 	if (!strcmp(role, "server"))
@@ -317,7 +317,7 @@ static int quic_test_init(void)
 
 static void quic_test_exit(void)
 {
-	printk(KERN_INFO "[QUIC_TEST] Quic Test Exit\n");
+	pr_info("[QUIC_TEST] Quic Test Exit\n");
 }
 
 module_init(quic_test_init);

@@ -60,7 +60,8 @@ static struct sk_buff *quic_frame_ack_create(struct sock *sk, void *data, u8 typ
 	if (num_gabs) {
 		for (i = num_gabs - 1; i > 0; i--) {
 			p = quic_put_var(p, gabs[i].end - gabs[i].start); /* Gap */
-			p = quic_put_var(p, gabs[i].start - gabs[i - 1].end - 2); /* ACK Range Length */
+			/* ACK Range Length */
+			p = quic_put_var(p, gabs[i].start - gabs[i - 1].end - 2);
 		}
 		p = quic_put_var(p, gabs[0].end - gabs[0].start); /* Gap */
 		p = quic_put_var(p, gabs[0].start - 2); /* ACK Range Length */
@@ -1000,7 +1001,7 @@ static int quic_frame_connection_close_process(struct sock *sk, struct sk_buff *
 	if (phrase_len) {
 		if ((phrase_len > 80 || *(p + phrase_len - 1) != 0))
 			return -EINVAL;
-		strcpy(close->phrase, p);
+		strscpy(close->phrase, p, phrase_len);
 	}
 	close->errcode = err_code;
 	close->frame = ftype;
@@ -1009,8 +1010,7 @@ static int quic_frame_connection_close_process(struct sock *sk, struct sk_buff *
 
 	inet_sk_set_state(sk, QUIC_SS_CLOSED);
 
-	/*
-	 * Now that state is QUIC_STATE_USER_CLOSED, we can wake the waiting
+	/* Now that state is QUIC_STATE_USER_CLOSED, we can wake the waiting
 	 * recv thread up.
 	 */
 	sk->sk_state_change(sk);
@@ -1356,7 +1356,8 @@ static int quic_get_param(u64 *pdest, u8 **pp, u32 *plen)
 	return 0;
 }
 
-int quic_frame_set_transport_params_ext(struct sock *sk, struct quic_transport_param *params, u8 *data, u32 len)
+int quic_frame_set_transport_params_ext(struct sock *sk, struct quic_transport_param *params,
+					u8 *data, u32 len)
 {
 	struct quic_dest_connection_id *dcid;
 	u64 type, valuelen;
@@ -1468,7 +1469,8 @@ int quic_frame_set_transport_params_ext(struct sock *sk, struct quic_transport_p
 	return 0;
 }
 
-static u8 *quic_put_conn_id(u8 *p, enum quic_transport_param_id id, struct quic_connection_id *conn_id)
+static u8 *quic_put_conn_id(u8 *p, enum quic_transport_param_id id,
+			    struct quic_connection_id *conn_id)
 {
 	p = quic_put_var(p, id);
 	p = quic_put_var(p, conn_id->len);
@@ -1483,7 +1485,8 @@ static u8 *quic_put_param(u8 *p, enum quic_transport_param_id id, u64 value)
 	return quic_put_var(p, value);
 }
 
-int quic_frame_get_transport_params_ext(struct sock *sk, struct quic_transport_param *params, u8 *data, u32 *len)
+int quic_frame_get_transport_params_ext(struct sock *sk, struct quic_transport_param *params,
+					u8 *data, u32 *len)
 {
 	struct quic_connection_id *scid = &quic_source(sk)->active->id;
 	u8 *p = data, token[16];

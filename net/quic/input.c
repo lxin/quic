@@ -263,7 +263,7 @@ int quic_rcv_err(struct sk_buff *skb)
 
 	bh_lock_sock(sk);
 	if (quic_is_listen(sk))
-	       goto out;
+		goto out;
 
 	if (quic_get_mtu_info(sk, skb, &info))
 		goto out;

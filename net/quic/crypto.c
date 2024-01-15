@@ -441,7 +441,7 @@ err:
 #define TLS_CIPHER_AES_CCM_128_SECRET_SIZE		32
 #define TLS_CIPHER_CHACHA20_POLY1305_SECRET_SIZE	32
 
-#define CIPHER_DESC(type,aead_name,skc_name,sha_name) [type - QUIC_CIPHER_MIN] = { \
+#define CIPHER_DESC(type, aead_name, skc_name, sha_name)[type - QUIC_CIPHER_MIN] = { \
 	.secretlen = type ## _SECRET_SIZE, \
 	.keylen = type ## _KEY_SIZE, \
 	.aead = aead_name, \
@@ -454,7 +454,7 @@ static struct quic_cipher ciphers[QUIC_CIPHER_MAX + 1 - QUIC_CIPHER_MIN] = {
 	CIPHER_DESC(TLS_CIPHER_AES_GCM_256, "gcm(aes)", "ecb(aes)", "hmac(sha384)"),
 	CIPHER_DESC(TLS_CIPHER_AES_CCM_128, "ccm(aes)", "ecb(aes)", "hmac(sha256)"),
 	CIPHER_DESC(TLS_CIPHER_CHACHA20_POLY1305,
-			  "rfc7539(chacha20,poly1305)", "chacha20", "hmac(sha256)"),
+		    "rfc7539(chacha20,poly1305)", "chacha20", "hmac(sha256)"),
 };
 
 static bool quic_crypto_is_cipher_ccm(struct quic_crypto *crypto)

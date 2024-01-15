@@ -219,12 +219,12 @@ static inline bool quic_is_closed(struct sock *sk)
 	return sk->sk_state == QUIC_SS_CLOSED;
 }
 
-static inline bool quic_version_supported(uint32_t version)
+static inline bool quic_version_supported(u32 version)
 {
 	return version == QUIC_VERSION_V1 || version == QUIC_VERSION_V2;
 }
 
-static inline u8 quic_version_get_type(uint32_t version, u8 type)
+static inline u8 quic_version_get_type(u32 version, u8 type)
 {
 	if (!quic_version_supported(version))
 		return -1;
@@ -247,7 +247,7 @@ static inline u8 quic_version_get_type(uint32_t version, u8 type)
 	return -1;
 }
 
-static inline u8 quic_version_put_type(uint32_t version, u8 type)
+static inline u8 quic_version_put_type(u32 version, u8 type)
 {
 	if (!quic_version_supported(version))
 		return -1;

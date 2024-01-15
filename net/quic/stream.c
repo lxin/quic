@@ -114,8 +114,10 @@ void quic_streams_set_param(struct quic_stream_table *streams, struct quic_trans
 			    struct quic_transport_param *remote)
 {
 	if (remote) {
-		streams->send.max_stream_data_bidi_local = remote->initial_max_stream_data_bidi_local;
-		streams->send.max_stream_data_bidi_remote = remote->initial_max_stream_data_bidi_remote;
+		streams->send.max_stream_data_bidi_local =
+				remote->initial_max_stream_data_bidi_local;
+		streams->send.max_stream_data_bidi_remote =
+				remote->initial_max_stream_data_bidi_remote;
 		streams->send.max_stream_data_uni = remote->initial_max_stream_data_uni;
 		streams->send.max_streams_bidi = remote->initial_max_streams_bidi;
 		streams->send.max_streams_uni = remote->initial_max_streams_uni;
@@ -123,8 +125,10 @@ void quic_streams_set_param(struct quic_stream_table *streams, struct quic_trans
 	}
 
 	if (local) {
-		streams->recv.max_stream_data_bidi_local = local->initial_max_stream_data_bidi_local;
-		streams->recv.max_stream_data_bidi_remote = local->initial_max_stream_data_bidi_remote;
+		streams->recv.max_stream_data_bidi_local =
+				local->initial_max_stream_data_bidi_local;
+		streams->recv.max_stream_data_bidi_remote =
+				local->initial_max_stream_data_bidi_remote;
 		streams->recv.max_stream_data_uni = local->initial_max_stream_data_uni;
 		streams->recv.max_streams_bidi = local->initial_max_streams_bidi;
 		streams->recv.max_streams_uni = local->initial_max_streams_uni;
@@ -152,8 +156,9 @@ struct quic_stream *quic_stream_send_get(struct quic_stream_table *streams, u64 
 	if (is_serv) {
 		if (type == QUIC_STREAM_TYPE_CLIENT_UNI)
 			return ERR_PTR(-EINVAL);
-	} else if (type == QUIC_STREAM_TYPE_SERVER_UNI)
+	} else if (type == QUIC_STREAM_TYPE_SERVER_UNI) {
 		return ERR_PTR(-EINVAL);
+	}
 
 	stream = quic_stream_find(streams, stream_id);
 	if (stream) {
@@ -188,8 +193,9 @@ struct quic_stream *quic_stream_recv_get(struct quic_stream_table *streams, u64 
 	if (is_serv) {
 		if (type == QUIC_STREAM_TYPE_SERVER_UNI)
 			return NULL;
-	} else if (type == QUIC_STREAM_TYPE_CLIENT_UNI)
+	} else if (type == QUIC_STREAM_TYPE_CLIENT_UNI) {
 		return NULL;
+	}
 
 	stream = quic_stream_find(streams, stream_id);
 	if (stream)

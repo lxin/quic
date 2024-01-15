@@ -205,14 +205,14 @@ int quic_path_set_bind_port(struct sock *sk, struct quic_path_addr *a)
 	rover = (u32)(((u64)get_random_u32() * remaining) >> 32) + low;
 	do {
 		rover++;
-		if ((rover < low) || (rover > high))
+		if (rover < low || rover > high)
 			rover = low;
 		if (inet_is_local_reserved_port(net, rover))
 			continue;
 		head = quic_bind_port_head(net, rover);
 		spin_lock_bh(&head->lock);
 		hlist_for_each_entry(pp, &head->head, node)
-			if ((pp->port == rover) && net_eq(net, pp->net))
+			if (pp->port == rover && net_eq(net, pp->net))
 				goto next;
 		addr->v4.sin_port = htons(rover);
 		port->net = net;
@@ -220,7 +220,7 @@ int quic_path_set_bind_port(struct sock *sk, struct quic_path_addr *a)
 		hlist_add_head(&port->node, &head->head);
 		spin_unlock_bh(&head->lock);
 		return 0;
-	next:
+next:
 		spin_unlock_bh(&head->lock);
 		cond_resched();
 	} while (--remaining > 0);

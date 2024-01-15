@@ -184,24 +184,29 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb)
 			goto err;
 		len -= 4;
 		type = quic_version_get_type(version, hshdr->type);
-		if (type == QUIC_PACKET_INITIAL) {
+		switch (type) {
+		case QUIC_PACKET_INITIAL:
 			level = QUIC_CRYPTO_INITIAL;
-		} else if (type == QUIC_PACKET_HANDSHAKE) {
+			break;
+		case QUIC_PACKET_HANDSHAKE:
 			level = QUIC_CRYPTO_HANDSHAKE;
 			if (!quic_crypto(sk, level)->recv_ready) {
 				__skb_queue_tail(&quic_inq(sk)->backlog_list, skb);
 				return 0;
 			}
-		} else if (type == QUIC_PACKET_0RTT) {
+			break;
+		case QUIC_PACKET_0RTT:
 			level = QUIC_CRYPTO_EARLY;
 			if (!quic_crypto(sk, QUIC_CRYPTO_APP)->recv_ready) {
 				__skb_queue_tail(&quic_inq(sk)->backlog_list, skb);
 				return 0;
 			}
-		} else if (type == QUIC_PACKET_RETRY) {
+			break;
+		case QUIC_PACKET_RETRY:
 			return quic_packet_handshake_retry_process(sk, skb);
-		} else
+		default:
 			goto err;
+		}
 		/* DCID */
 		if (len-- < 1)
 			goto err;
@@ -439,8 +444,9 @@ static struct sk_buff *quic_packet_handshake_create(struct sock *sk, struct quic
 	fskb =  __skb_dequeue(head);
 	while (fskb) {
 		p = quic_put_data(p, fskb->data, fskb->len);
-		pr_debug("[QUIC] %s number: %llu type: %u packet_len: %u frame_len: %u level: %u\n", __func__,
-			 pki->number, QUIC_SND_CB(fskb)->frame_type, skb->len, fskb->len, packet->level);
+		pr_debug("[QUIC] %s number: %llu type: %u packet_len: %u frame_len: %u level: %u\n",
+			 __func__, pki->number, QUIC_SND_CB(fskb)->frame_type, skb->len, fskb->len,
+			 packet->level);
 		if (!quic_frame_retransmittable(QUIC_SND_CB(fskb)->frame_type)) {
 			consume_skb(fskb);
 			fskb =  __skb_dequeue(head);

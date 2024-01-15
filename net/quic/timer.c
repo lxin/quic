@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-2.0-or-later */
+// SPDX-License-Identifier: GPL-2.0-or-later
 /* QUIC kernel implementation
  * (C) Copyright Red Hat Corp. 2023
  *

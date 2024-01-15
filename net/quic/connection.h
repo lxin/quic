@@ -9,14 +9,14 @@
  */
 
 struct quic_connection_id {
-	uint8_t len;
-	uint8_t data[20];
+	u8 len;
+	u8 data[20];
 };
 
 struct quic_common_connection_id {
 	struct list_head list;
 	struct quic_connection_id id;
-	uint32_t number;
+	u32 number;
 	u8 hashed;
 };
 
@@ -64,11 +64,14 @@ static inline void quic_generate_id(struct quic_connection_id *conn_id, int conn
 	conn_id->len = conn_id_len;
 }
 
-struct quic_source_connection_id *quic_source_connection_id_lookup(struct net *net, u8 *scid, u32 len);
+struct quic_source_connection_id *quic_source_connection_id_lookup(struct net *net, u8 *scid,
+								   u32 len);
 int quic_connection_id_add(struct quic_connection_id_set *id_set,
 			   struct quic_connection_id *conn_id, u32 number, void *data);
 void quic_connection_id_remove(struct quic_connection_id_set *id_set, u32 number);
 void quic_connection_id_set_init(struct quic_connection_id_set *id_set, bool source);
 void quic_connection_id_set_free(struct quic_connection_id_set *id_set);
-void quic_connection_id_set_param(struct quic_connection_id_set *id_set, struct quic_transport_param *p);
-void quic_connection_id_get_param(struct quic_connection_id_set *id_set, struct quic_transport_param *p);
+void quic_connection_id_set_param(struct quic_connection_id_set *id_set,
+				  struct quic_transport_param *p);
+void quic_connection_id_get_param(struct quic_connection_id_set *id_set,
+				  struct quic_transport_param *p);

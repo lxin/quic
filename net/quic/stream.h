@@ -13,7 +13,7 @@
 #define QUIC_STREAM_BIT_OFF	0x04
 #define QUIC_STREAM_BIT_MASK	0x08
 
-#define QUIC_MAX_STREAMS	(1LL << 60)
+#define QUIC_MAX_STREAMS	BIT_ULL(60)
 
 struct quic_stream {
 	struct hlist_node node;

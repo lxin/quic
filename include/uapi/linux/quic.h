@@ -33,11 +33,11 @@ enum quic_cmsg_type {
 
 enum {	/* used in stream_flag of struct quic_sndinfo or quic_rcvinfo */
 	QUIC_STREAM_FLAG_NEW = (1 << 0),	/* sendmsg (like MSG_SYN in msg_flags) */
-	QUIC_STREAM_FLAG_FIN = (1 << 1),	/* sendmsg or recvmsg (like MSG_FIN in msg_flags) */
-	QUIC_STREAM_FLAG_UNI = (1 << 2),	/* getsockopt to open next uni stream with stream_id == -1 */
+	QUIC_STREAM_FLAG_FIN = (1 << 1),	/* send/recvmsg (like MSG_FIN in msg_flags) */
+	QUIC_STREAM_FLAG_UNI = (1 << 2),	/* getsockopt to open the next uni stream */
 	QUIC_STREAM_FLAG_ASYNC = (1 << 3),	/* getsockopt or sendmsg to open stream */
 	QUIC_STREAM_FLAG_NOTIFICATION = (1 << 4), /* recvmsg (MSG_NOTIFICATION in msg_flags) */
-	QUIC_STREAM_FLAG_DATAGRAM = (1 << 5), /* sendmsg or recvmsg (like MSG_DATAGRAM in msg_flags) */
+	QUIC_STREAM_FLAG_DATAGRAM = (1 << 5), /* send/recvmsg (like MSG_DATAGRAM in msg_flags) */
 };
 
 enum quic_crypto_level {
@@ -61,7 +61,6 @@ enum quic_msg_flags {	/* msg_flags in send/recvmsg */
 	MSG_NOTIFICATION = 0x8000,
 	MSG_STREAM_UNI = 0x800,
 	MSG_DATAGRAM = 0x10,
-#define MSG_NOTIFICATION MSG_NOTIFICATION
 };
 
 /* Socket Options APIs */
@@ -111,7 +110,7 @@ struct quic_transport_param {
 	uint8_t validate_address;	/* for server only, verify token and send retry packet */
 	uint8_t recv_session_ticket;	/* for client only, handshake done until ticket is recvd */
 	uint8_t cert_request;		/* for server only, 0: IGNORE, 1: REQUEST, 2: REQUIRE */
-	uint32_t cipher_type;		/* TLS_CIPHER_AES_GCM_128/AES_GCM_256/AES_CCM_128/CHACHA20_POLY1305 */
+	uint32_t cipher_type;		/* AES_GCM_128/AES_GCM_256/AES_CCM_128/CHACHA20_POLY1305 */
 	uint32_t version;		/* QUIC_VERSION_V1 or V2 for now */
 };
 
@@ -175,7 +174,7 @@ struct quic_event_option { /* EVENT */
  *
  * - QUIC_EVENT_CONNECTION_MIGRATION
  *
- *   This notification is sent when either side sucessfully changes its source address by
+ *   This notification is sent when either side successfully changes its source address by
  *   QUIC_SOCKOPT_CONNECTION_MIGRATION or dest address by peer's CONNECTION_MIGRATION.
  *   The parameter tells you if it's a local or peer CONNECTION_MIGRATION, and then you
  *   can get the new address with getsockname() or getpeername().
@@ -237,7 +236,6 @@ union quic_event {
 	struct quic_connection_close close;
 	uint8_t local_migration;
 	uint8_t key_update_phase;
-	uint8_t new_token[0];
 };
 
 #endif /* __uapi_quic_h__ */
