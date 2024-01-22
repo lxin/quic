@@ -89,95 +89,68 @@ in [ktls-utils](https://github.com/lxin/ktls-utils) will handle the handshake re
 ### Build QUIC Kernel Module and Libquic:
     (IMPORTANT: please use the latest kernel (>=6.5) if you want to use QUIC from kernel space)
 
-    # dnf install -y kernel-devel dwarves gnutls-devel gcc
+    Packages Required:
+    - make autoconf automake libtool pkg-config
+    - gnutls-devel / gnutls-dev
+    - kernel-devel / linux-headers-$(uname -r)
+
     # cd ~/
     # git clone https://github.com/lxin/quic.git
     # cd quic/
-    # pwd
-    /root/quic (e.g.)
+    # pwd (e.g. /root/quic/)
+    # ./autogen.sh
+    # ./configure
 
-#### build the kernel quic module
-    # make module
-    make -C /lib/modules/6.6.0-rc1.nxt/build M=/root/quic/net/quic modules ROOTDIR=/root/quic CONFIG_IP_QUIC=m CONFIG_IP_QUIC_TEST=m
-    make[1]: Entering directory '/media/net-next'
-    warning: the compiler differs from the one used to build the kernel
-      The kernel was built by: gcc (GCC) 8.5.0 20210514 (Red Hat 8.5.0-4)
-      You are using:           gcc (GCC) 11.4.1 20230605 (Red Hat 11.4.1-2)
-      ...
-      MODPOST /root/quic/net/quic/Module.symvers
-      CC [M]  /root/quic/net/quic/quic.mod.o
-      LD [M]  /root/quic/net/quic/quic.ko
-      BTF [M] /root/quic/net/quic/quic.ko
-      CC [M]  /root/quic/net/quic/quic_unit_test.mod.o
-      LD [M]  /root/quic/net/quic/quic_unit_test.ko
-      BTF [M] /root/quic/net/quic/quic_unit_test.ko
-      CC [M]  /root/quic/net/quic/quic_sample_test.mod.o
-      LD [M]  /root/quic/net/quic/quic_sample_test.ko
-      BTF [M] /root/quic/net/quic/quic_sample_test.ko
-    make[1]: Leaving directory '/media/net-next'
+- build the kernel quic module
 
-    # make module_install
-    install -m 644 include/uapi/linux/quic.h /usr/include/linux
-    install -m 644 net/quic/quic.ko -d /lib/modules/6.6.0-rc1.nxt/extra/
-    install -m 644 net/quic/quic_unit_test.ko -d /lib/modules/6.6.0-rc1.nxt/extra/
-    install -m 644 net/quic/quic_sample_test.ko /lib/modules/6.6.0-rc1.nxt/extra
-    depmod -a
+      # make module
+      # sudo make module_install
 
   **Or**, you can also integrate it in your kernel source code to build (e.g. /home/net-next/):
 
-    # cp -r include net /home/net-next
-    # cd /home/net-next/
-    # sed -i 's@.*sctp.*@&\nobj-$(CONFIG_IP_QUIC)\t\t+= quic/@' net/Makefile
-    # sed -i 's@.*sctp.*@&\nsource "net/quic/Kconfig"@' net/Kconfig
+      # cp -r include net /home/net-next
+      # cd /home/net-next/
+      # sed -i 's@.*sctp.*@&\nobj-$(CONFIG_IP_QUIC)\t\t+= quic/@' net/Makefile
+      # sed -i 's@.*sctp.*@&\nsource "net/quic/Kconfig"@' net/Kconfig
 
-    Then build kernel with:
+  Then build kernel with:
 
       CONFIG_IP_QUIC=m
       CONFIG_IP_QUIC_TEST=m
 
-#### build libquic for userspace handshake
-    # make lib
-    gcc -fPIC handshake/*.c -shared -o handshake/libquic.so -Iinclude/uapi/ -lgnutls
+- build libquic for userspace handshake
 
-    # make lib_install
-    install -m 644 handshake/quic.h /usr/include/netinet/quic.h
-    install -m 644 handshake/libquic.so /usr/lib64
-    install -m 644 handshake/libquic.pc /usr/lib64/pkgconfig
+      # make
+      # sudo make install
 
-#### run selftests
-    (NOTE: run tests to make sure all works well)
+- run selftests
 
-    # cd tests/
-    # make
-    gcc func_test.c -o func_test -lquic
-    gcc perf_test.c -o perf_test -lquic -lgnutls
-    gcc sample_test.c -o sample_test
-
-    # make run
-    ...
+      (NOTE: run tests to make sure all works well)
+      # cd tests/
+      # sudo make run
 
 ### Build and Install tlshd (For Kernel Consumer):
     (NOTE: you can skip this if you don't want to use QUIC in kernel space)
 
-    # dnf install -y automake keyutils-libs-devel glib2-devel libnl3-devel
+    Packages Required:
+    - keyutils-libs-devel / libkeyutils-dev
+    - glib2-devel / glib-2.0-dev
+    - libnl3-devel / libnl-genl-3-dev
 
     (IMPORTANT: disable selinux, as selinux may stop quic.ko being loaded automatically and
                 also not allow to use getpeername() in tlshd)
-    # setenforce 0
-    # semodule -B
-    # grubby --update-kernel ALL --args selinux=0
-
     # cd ~/
     # git clone https://github.com/lxin/ktls-utils
     # cd ktls-utils/
     # ./autogen.sh
     # ./configure --with-systemd
     # make
-    # make install
+    # sudo make install
 
     (IMPORTANT: configure certficates, for testing you can use the certficates unders tests/keys/
                 generated during running the tests, for example)
-    # cat /etc/tlshd.conf
+    # sudo \cp -vf src/tlshd/tlshd.conf /etc/tlshd.conf
+    # sudo cat /etc/tlshd.conf
       ...
       [authenticate.client]
       #x509.truststore= <pathname>
@@ -189,21 +162,23 @@ in [ktls-utils](https://github.com/lxin/ktls-utils) will handle the handshake re
       x509.certificate=/root/quic/tests/keys/server-cert.pem
       x509.private_key=/root/quic/tests/keys/server-key.pem
 
-    # systemctl enable tlshd
-    # systemctl restart tlshd
+    # sudo systemctl enable tlshd
+    # sudo systemctl restart tlshd
     (re-run the selftests in 'run selftests' section)
 
 ### Build and Install MSQUIC (Optional):
     (NOTE: you can skip this if you don't want to run the interoperability tests with MSQUIC)
 
-    # dnf install -y cmake
+    Packages Required:
+    - cmake
+
     # cd ~/
     # git clone --recursive https://github.com/microsoft/msquic.git
     # cd msquic/
     # mkdir build && cd build/
     # cmake -G 'Unix Makefiles' ..
     # cmake --build .
-    # make install
+    # sudo make install
     (re-run the selftests in 'run selftests' section)
 
 ## USAGE

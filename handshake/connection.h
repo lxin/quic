@@ -23,7 +23,7 @@
 #include <errno.h>
 #include <stdio.h>
 #include <fcntl.h>
-#include "quic.h"
+#include "netinet/quic.h"
 
 struct quic_data {
 	uint8_t data[144];
