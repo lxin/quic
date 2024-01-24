@@ -74,7 +74,7 @@ static inline u32 quic_get_int(u8 **pp, u32 len)
 {
 	union quic_num n;
 	u8 *p = *pp;
-	u32 v;
+	u32 v = 0;
 
 	n.be32 = 0;
 	switch (len) {

@@ -238,8 +238,8 @@ out:
 static int quic_connect(struct sock *sk, struct sockaddr *addr, int addr_len)
 {
 	struct quic_connection_id conn_id;
-	__u32 err = -EINVAL;
 	union quic_addr *sa;
+	int err = -EINVAL;
 
 	lock_sock(sk);
 	if (!quic_is_closed(sk) || addr_len < quic_addr_len(sk))
@@ -857,7 +857,7 @@ static int quic_accept_sock_init(struct sock *sk, struct quic_request_sock *req)
 	struct quic_connection_id conn_id;
 	struct sk_buff_head tmpq;
 	struct sk_buff *skb;
-	__u32 err;
+	int err;
 
 	lock_sock(sk);
 	quic_path_addr_set(quic_dst(sk), &req->da);

@@ -156,7 +156,7 @@ err:
 static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb)
 {
 	struct quic_packet_info pki = {};
-	u8 *p, level, *scid, type;
+	u8 *p, level = 0, *scid, type;
 	struct quichshdr *hshdr;
 	struct sk_buff *fskb;
 	u64 dlen, slen, tlen;

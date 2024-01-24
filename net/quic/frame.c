@@ -13,6 +13,7 @@
 #include "socket.h"
 #include "number.h"
 #include "frame.h"
+#include <linux/nospec.h>
 
 /* ACK Frame {
  *  Type (i) = 0x02..0x03,
@@ -1303,6 +1304,7 @@ int quic_frame_process(struct sock *sk, struct sk_buff *skb, struct quic_packet_
 			return 0;
 		}
 		pr_debug("[QUIC] %s type: %x level: %d\n", __func__, type, QUIC_RCV_CB(skb)->level);
+		type = array_index_nospec(type, QUIC_FRAME_MAX + 1);
 		ret = quic_frame_ops[type].frame_process(sk, skb, type);
 		if (ret < 0) {
 			pr_warn("[QUIC] %s type: %x level: %d err: %d\n", __func__, type,
