@@ -14,6 +14,15 @@
 #include <sys/socket.h>
 #include <linux/quic.h>
 
+/* Socket option layer for QUIC */
+#ifndef SOL_QUIC
+#define SOL_QUIC		288
+#endif
+
+#ifndef IPPROTO_QUIC
+#define IPPROTO_QUIC		261
+#endif
+
 struct quic_handshake_parms {
 	uint32_t		timeout;	/* handshake timeout in milliseconds */
 
