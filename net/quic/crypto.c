@@ -706,7 +706,6 @@ int quic_crypto_initial_keys_install(struct quic_crypto *crypto, struct quic_con
 	if (err)
 		goto out;
 
-	crypto->cipher = NULL;
 	tls_vec(&l, tl, 9);
 	tls_vec(&k, srt.secret, 32);
 	srt.type = TLS_CIPHER_AES_GCM_128;
