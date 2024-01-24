@@ -99,7 +99,7 @@ in [ktls-utils](https://github.com/lxin/ktls-utils) will handle the handshake re
     # cd quic/
     # pwd (e.g. /root/quic/)
     # ./autogen.sh
-    # ./configure
+    # ./configure --prefix=/usr
 
 - build the kernel quic module
 
