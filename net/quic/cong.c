@@ -155,6 +155,7 @@ static void quic_cong_set_rto(struct sock *sk, u32 rto)
 	quic_pnmap_set_max_record_ts(quic_pnmap(sk, QUIC_CRYPTO_APP), cong->rto * 2);
 	quic_crypto_set_key_update_ts(quic_crypto(sk, QUIC_CRYPTO_APP), cong->rto * 2);
 	quic_timer_setup(sk, QUIC_TIMER_RTX, cong->rto);
+	quic_timer_setup(sk, QUIC_TIMER_PATH, cong->rto * 3);
 }
 
 void quic_cong_set_param(struct sock *sk, struct quic_transport_param *p)

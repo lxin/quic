@@ -12,8 +12,9 @@
 #define QUIC_TIMER_ACK		1
 #define QUIC_TIMER_IDLE		2
 #define QUIC_TIMER_PROBE	3
+#define QUIC_TIMER_PATH		4
 
-#define QUIC_TIMER_MAX		4
+#define QUIC_TIMER_MAX		5
 
 struct quic_timer {
 	struct timer_list timer;

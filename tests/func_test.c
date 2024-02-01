@@ -356,6 +356,7 @@ static int do_client_notification_test(int sockfd)
 		printf("send error %d\n", errno);
 		return -1;
 	}
+	sleep(4);
 	ret = quic_recvmsg(sockfd, msg, sizeof(msg), &sid, &flag);
 	if (ret == -1) {
 		printf("recv error %d\n", errno);
@@ -888,7 +889,7 @@ static int do_client_connection_test(int sockfd)
 
 	optlen = sizeof(info);
 	ret = getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_ACTIVE_CONNECTION_ID, &info, &optlen);
-	if (ret == -1 || info.dest != 12 || info.source != 12) {
+	if (ret == -1 || info.dest != 11 || info.source != 12) {
 		printf("teset16: FAIL ret %d, dest %d, source %d\n", ret, info.dest, info.source);
 		return -1;
 	}
@@ -918,6 +919,7 @@ static int do_client_connection_test(int sockfd)
 	}
 	printf("test18: PASS (peer connection migration is set)\n");
 
+	sleep(2);
 	optlen = sizeof(addr);
 	ret = getpeername(sockfd, (struct sockaddr *)&addr, &optlen);
 	if (ret == -1 || ntohs(addr.sin_port) != port + 1) {
@@ -928,7 +930,7 @@ static int do_client_connection_test(int sockfd)
 
 	optlen = sizeof(info);
 	ret = getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_ACTIVE_CONNECTION_ID, &info, &optlen);
-	if (ret == -1 || info.dest != 13 || info.source != 13) {
+	if (ret == -1 || info.dest != 12 || info.source != 12) {
 		printf("teset20: FAIL ret %d, dest %d, source %d\n", ret, info.dest, info.source);
 		return -1;
 	}
@@ -1784,6 +1786,7 @@ static int do_server_test(int sockfd)
 				printf("socket setsockopt migration failed %d\n", errno);
 				return -1;
 			}
+			sleep(2);
 		}
 
 		if (!strcmp(msg, "client key_update")) {

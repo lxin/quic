@@ -977,65 +977,83 @@ static void quic_close(struct sock *sk, long timeout)
 static int quic_sock_set_addr(struct sock *sk, struct quic_path_addr *path,
 			      union quic_addr *addr, bool udp_bind)
 {
+	int err;
+
 	if (quic_addr_family(sk) != addr->sa.sa_family)
 		return -EINVAL;
 
+	path->active = !path->active;
 	quic_path_addr_set(path, addr);
 
 	if (!udp_bind)
 		return 0;
 
-	if (quic_path_set_bind_port(sk, path))
-		return -EINVAL;
-	return quic_path_set_udp_sock(sk, path);
+	err = quic_path_set_bind_port(sk, path);
+	if (err)
+		goto out;
+	err = quic_path_set_udp_sock(sk, path);
+out:
+	path->active = !path->active;
+	return err;
 }
 
-int quic_sock_change_addr(struct sock *sk, struct quic_path_addr *path, void *data,
-			  u32 len, bool udp_bind)
+int quic_sock_change_daddr(struct sock *sk, void *data, u32 len)
 {
+	struct quic_path_addr *path = quic_dst(sk);
+	struct sk_buff *skb;
+	int err;
+
+	if (path->sent_cnt)
+		return -EINVAL;
+
+	err = quic_sock_set_addr(sk, path, data, 0);
+	if (err)
+		return err;
+
+	skb = quic_frame_create(sk, QUIC_FRAME_PATH_CHALLENGE, path);
+	if (!skb)
+		return -ENOMEM;
+	quic_outq_ctrl_tail(sk, skb, false);
+
+	path->sent_cnt++;
+	quic_timer_reset(sk, QUIC_TIMER_PATH);
+	return 0;
+}
+
+int quic_sock_change_saddr(struct sock *sk, void *data, u32 len)
+{
+	struct quic_path_addr *path = quic_src(sk);
 	struct sk_buff *skb;
 	u64 number;
 	int err;
 
-	if (path->pending || !quic_is_established(sk))
+	if (path->sent_cnt || !quic_is_established(sk))
 		return -EINVAL;
 
-	if (udp_bind && quic_source(sk)->disable_active_migration)
+	if (quic_source(sk)->disable_active_migration)
 		return -EINVAL;
 
 	if (len != quic_addr_len(sk))
 		return -EINVAL;
 
-	path->active = !path->active;
-	err = quic_sock_set_addr(sk, path, data, udp_bind);
+	err = quic_sock_set_addr(sk, path, data, 1);
 	if (err)
-		goto err;
+		return err;
 
-	err = -ENOMEM;
-	/* send a ping before path validation so that we can delete the old path
-	 * when validation is complete with no worries that the peer hasn't been
-	 * aware of the new path.
-	 */
-	skb = quic_frame_create(sk, QUIC_FRAME_PING, NULL);
+	number = quic_connection_id_first_number(quic_source(sk)) + 1;
+	skb = quic_frame_create(sk, QUIC_FRAME_NEW_CONNECTION_ID, &number);
 	if (!skb)
-		goto err;
-	quic_outq_ctrl_tail(sk, skb, true);
-
-	number = quic_connection_id_first_number(quic_dest(sk));
-	skb = quic_frame_create(sk, QUIC_FRAME_RETIRE_CONNECTION_ID, &number);
-	if (!skb)
-		goto err;
+		return -ENOMEM;
 	quic_outq_ctrl_tail(sk, skb, true);
 
 	skb = quic_frame_create(sk, QUIC_FRAME_PATH_CHALLENGE, path);
 	if (!skb)
-		goto err;
-	quic_outq_ctrl_tail(sk, skb, !udp_bind);
-	path->pending = 1;
+		return -ENOMEM;
+	quic_outq_ctrl_tail(sk, skb, false);
+
+	path->sent_cnt++;
+	quic_timer_reset(sk, QUIC_TIMER_PATH);
 	return 0;
-err:
-	path->active = !path->active;
-	return err;
 }
 
 static int quic_sock_set_token(struct sock *sk, void *data, u32 len)
@@ -1300,7 +1318,7 @@ static int quic_setsockopt(struct sock *sk, int level, int optname,
 		retval = quic_sock_set_connection_close(sk, kopt, optlen);
 		break;
 	case QUIC_SOCKOPT_CONNECTION_MIGRATION:
-		retval = quic_sock_change_addr(sk, quic_src(sk), kopt, optlen, 1);
+		retval = quic_sock_change_saddr(sk, kopt, optlen);
 		break;
 	case QUIC_SOCKOPT_CONGESTION_CONTROL:
 		retval = quic_cong_set_cong_alg(sk, kopt, optlen);

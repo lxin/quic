@@ -376,7 +376,7 @@ int quic_packet_process(struct sock *sk, struct sk_buff *skb, u8 resume)
 	    pki.number == quic_pnmap_max_pn_seen(quic_pnmap(sk, QUIC_CRYPTO_APP))) {
 		quic_get_msg_addr(sk, &saddr, skb, 1);
 		if (memcmp(&saddr, quic_path_addr(quic_dst(sk)), quic_addr_len(sk)))
-			quic_sock_change_addr(sk, quic_dst(sk), &saddr, quic_addr_len(sk), 0);
+			quic_sock_change_daddr(sk, &saddr, quic_addr_len(sk));
 	}
 
 	consume_skb(skb);

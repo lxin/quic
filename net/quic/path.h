@@ -27,8 +27,8 @@ struct quic_udp_sock {
 struct quic_path_addr {
 	union quic_addr addr[2];
 	u8 addr_len;
+	u8 sent_cnt;
 	u8 active:1;
-	u8 pending:1;
 	u8 udp_bind:1;
 	u8 entropy[8];
 };

@@ -115,6 +115,55 @@ out:
 	sock_put(sk);
 }
 
+static void quic_timer_path_timeout(struct timer_list *t)
+{
+	struct quic_sock *qs = from_timer(qs, t, timers[QUIC_TIMER_PATH].timer);
+	struct sock *sk = &qs->inet.sk;
+	struct quic_path_addr *path;
+	struct sk_buff *skb;
+
+	bh_lock_sock(sk);
+	if (sock_owned_by_user(sk)) {
+		if (!mod_timer(&quic_timer(sk, QUIC_TIMER_PATH)->timer, jiffies + (HZ / 20)))
+			sock_hold(sk);
+		goto out;
+	}
+
+	if (quic_is_closed(sk))
+		goto out;
+
+	path = quic_src(sk);
+	if (path->sent_cnt) {
+		if (path->sent_cnt >= 5) {
+			path->sent_cnt = 0;
+			goto out;
+		}
+		skb = quic_frame_create(sk, QUIC_FRAME_PATH_CHALLENGE, path);
+		if (skb)
+			quic_outq_ctrl_tail(sk, skb, false);
+		path->sent_cnt++;
+		quic_timer_reset(sk, QUIC_TIMER_PATH);
+	}
+
+	path = quic_dst(sk);
+	if (path->sent_cnt) {
+		if (path->sent_cnt >= 5) {
+			path->sent_cnt = 0;
+			path->active = !path->active;
+			goto out;
+		}
+		skb = quic_frame_create(sk, QUIC_FRAME_PATH_CHALLENGE, path);
+		if (skb)
+			quic_outq_ctrl_tail(sk, skb, false);
+		path->sent_cnt++;
+		quic_timer_reset(sk, QUIC_TIMER_PATH);
+	}
+
+out:
+	bh_unlock_sock(sk);
+	sock_put(sk);
+}
+
 void quic_timer_reset(struct sock *sk, u8 type)
 {
 	struct quic_timer *t = quic_timer(sk, type);
@@ -167,6 +216,10 @@ void quic_timers_init(struct sock *sk)
 	t = quic_timer(sk, QUIC_TIMER_PROBE);
 	timer_setup(&t->timer, quic_timer_probe_timeout, 0);
 	quic_timer_setup(sk, QUIC_TIMER_PROBE, p->probe_timeout);
+
+	t = quic_timer(sk, QUIC_TIMER_PATH);
+	timer_setup(&t->timer, quic_timer_path_timeout, 0);
+	quic_timer_setup(sk, QUIC_TIMER_PATH, p->initial_smoothed_rtt * 3);
 }
 
 void quic_timers_free(struct sock *sk)
@@ -175,4 +228,5 @@ void quic_timers_free(struct sock *sk)
 	quic_timer_stop(sk, QUIC_TIMER_ACK);
 	quic_timer_stop(sk, QUIC_TIMER_IDLE);
 	quic_timer_stop(sk, QUIC_TIMER_PROBE);
+	quic_timer_stop(sk, QUIC_TIMER_PATH);
 }

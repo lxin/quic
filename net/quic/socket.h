@@ -20,9 +20,9 @@
 #include "stream.h"
 #include "pnmap.h"
 #include "packet.h"
+#include "path.h"
 #include "output.h"
 #include "input.h"
-#include "path.h"
 #include "timer.h"
 #include "cong.h"
 
@@ -285,8 +285,8 @@ static inline int quic_data_dup(struct quic_data *to, u8 *data, u32 len)
 	return 0;
 }
 
-int quic_sock_change_addr(struct sock *sk, struct quic_path_addr *path, void *data,
-			  u32 len, bool udp_bind);
+int quic_sock_change_saddr(struct sock *sk, void *data, u32 len);
+int quic_sock_change_daddr(struct sock *sk, void *data, u32 len);
 bool quic_request_sock_exists(struct sock *sk, union quic_addr *sa, union quic_addr *da);
 struct sock *quic_sock_lookup(struct sk_buff *skb, union quic_addr *sa, union quic_addr *da);
 struct quic_request_sock *quic_request_sock_dequeue(struct sock *sk);
