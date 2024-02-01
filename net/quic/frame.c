@@ -165,10 +165,8 @@ static struct sk_buff *quic_frame_stream_create(struct sock *sk, void *data, u8 
 
 	p = quic_put_var(skb->data, type);
 	p = quic_put_var(p, stream->id);
-	if (type & QUIC_STREAM_BIT_OFF) {
+	if (type & QUIC_STREAM_BIT_OFF)
 		p = quic_put_var(p, stream->send.offset);
-		QUIC_SND_CB(skb)->stream_offset = stream->send.offset;
-	}
 	p = quic_put_var(p, msg_len);
 	frame_len = (u32)(p - skb->data);
 
@@ -211,7 +209,7 @@ static struct sk_buff *quic_frame_crypto_create(struct sock *sk, void *data, u8 
 	struct sk_buff *skb;
 	u8 *p;
 
-	quic_packet_config(sk, info->level);
+	quic_packet_config(sk, info->level, 0);
 	max_frame_len = quic_packet_max_payload(quic_packet(sk));
 	crypto = quic_crypto(sk, info->level);
 	msg_len = iov_iter_count(info->msg);

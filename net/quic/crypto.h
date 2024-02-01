@@ -21,6 +21,8 @@ struct quic_packet_info {
 	u8 ack_eliciting:1;
 	u8 ack_immediate:1;
 	u8 non_probing:1;
+	u8 resume:1;
+	void *crypto_done;
 };
 
 #define QUIC_KEY_LEN	32

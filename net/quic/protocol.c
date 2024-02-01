@@ -131,7 +131,7 @@ static void quic_v6_udp_conf_init(struct udp_port_cfg *udp_conf, union quic_addr
 
 static void quic_v4_get_msg_addr(union quic_addr *a, struct sk_buff *skb, bool src)
 {
-	struct udphdr *uh = quic_udp_hdr(skb);
+	struct udphdr *uh = (struct udphdr *)(skb->head + QUIC_RCV_CB(skb)->uh_offset);
 	struct sockaddr_in *sa = &a->v4;
 
 	a->v4.sin_family = AF_INET;
@@ -149,7 +149,7 @@ static void quic_v4_get_msg_addr(union quic_addr *a, struct sk_buff *skb, bool s
 
 static void quic_v6_get_msg_addr(union quic_addr *a, struct sk_buff *skb, bool src)
 {
-	struct udphdr *uh = quic_udp_hdr(skb);
+	struct udphdr *uh = (struct udphdr *)(skb->head + QUIC_RCV_CB(skb)->uh_offset);
 	struct sockaddr_in6 *sa = &a->v6;
 
 	a->v6.sin6_family = AF_INET6;
@@ -355,7 +355,6 @@ void quic_udp_conf_init(struct sock *sk, struct udp_port_cfg *udp_conf, union qu
 void quic_lower_xmit(struct sock *sk, struct sk_buff *skb, union quic_addr *da,
 		     union quic_addr *sa)
 {
-	skb_set_owner_w(skb, sk);
 	quic_af_ops(sk)->lower_xmit(sk, skb, da, sa);
 }
 

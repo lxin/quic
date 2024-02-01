@@ -53,19 +53,24 @@ struct quic_path_dst {
 	} pl; /* plpmtud related */
 };
 
-static inline struct udphdr *quic_udp_hdr(struct sk_buff *skb)
-{
-	return (struct udphdr *)(skb_transport_header(skb) - sizeof(struct udphdr));
-}
-
 static inline void quic_path_addr_set(struct quic_path_addr *a, union quic_addr *addr)
 {
 	memcpy(&a->addr[a->active], addr, a->addr_len);
 }
 
+static inline void quic_path_addr_sel_set(struct quic_path_addr *a, union quic_addr *addr, bool sel)
+{
+	memcpy(&a->addr[a->active ^ sel], addr, a->addr_len);
+}
+
 static inline union quic_addr *quic_path_addr(struct quic_path_addr *a)
 {
 	return &a->addr[a->active];
+}
+
+static inline union quic_addr *quic_path_addr_sel(struct quic_path_addr *a, bool sel)
+{
+	return &a->addr[a->active ^ sel];
 }
 
 static inline struct quic_bind_port *quic_path_port(struct quic_path_addr *a)

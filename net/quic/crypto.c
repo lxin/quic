@@ -273,9 +273,15 @@ static void *quic_crypto_aead_mem_alloc(struct crypto_aead *tfm, u32 ctx_size,
 	return (void *)mem;
 }
 
+static void quic_crypto_destruct_skb(struct sk_buff *skb)
+{
+	kfree(skb_shinfo(skb)->destructor_arg);
+	sock_efree(skb);
+}
+
 static int quic_crypto_payload_encrypt(struct crypto_aead *tfm, struct sk_buff *skb,
 				       struct quic_packet_info *pki, u8 *tx_key, u32 keylen,
-				       u8 *tx_iv, u32 ivlen, bool ccm, struct crypto_wait *wait)
+				       u8 *tx_iv, u32 ivlen, bool ccm)
 {
 	struct quichdr *hdr = quic_hdr(skb);
 	u8 *iv, i, nonce[QUIC_IV_LEN];
@@ -320,9 +326,14 @@ static int quic_crypto_payload_encrypt(struct crypto_aead *tfm, struct sk_buff *
 	aead_request_set_tfm(req, tfm);
 	aead_request_set_ad(req, hlen);
 	aead_request_set_crypt(req, sg, sg, len - hlen, iv);
-	aead_request_set_callback(req, CRYPTO_TFM_REQ_MAY_BACKLOG, crypto_req_done, wait);
+	aead_request_set_callback(req, CRYPTO_TFM_REQ_MAY_BACKLOG, pki->crypto_done, skb);
 
-	err = crypto_wait_req(crypto_aead_encrypt(req), wait);
+	err = crypto_aead_encrypt(req);
+	if (err == -EINPROGRESS) {
+		skb->destructor = quic_crypto_destruct_skb;
+		skb_shinfo(skb)->destructor_arg = ctx;
+		return err;
+	}
 
 err:
 	kfree(ctx);
@@ -331,7 +342,7 @@ err:
 
 static int quic_crypto_payload_decrypt(struct crypto_aead *tfm, struct sk_buff *skb,
 				       struct quic_packet_info *pki, u8 *rx_key, u32 keylen,
-				       u8 *rx_iv, u32 ivlen, bool ccm, struct crypto_wait *wait)
+				       u8 *rx_iv, u32 ivlen, bool ccm)
 {
 	u8 *iv, i, nonce[QUIC_IV_LEN];
 	struct aead_request *req;
@@ -374,10 +385,14 @@ static int quic_crypto_payload_decrypt(struct crypto_aead *tfm, struct sk_buff *
 	aead_request_set_tfm(req, tfm);
 	aead_request_set_ad(req, hlen);
 	aead_request_set_crypt(req, sg, sg, len - hlen, iv);
-	aead_request_set_callback(req, CRYPTO_TFM_REQ_MAY_BACKLOG, crypto_req_done, wait);
+	aead_request_set_callback(req, CRYPTO_TFM_REQ_MAY_BACKLOG, pki->crypto_done, skb);
 
-	err = crypto_wait_req(crypto_aead_decrypt(req), wait);
-
+	err = crypto_aead_decrypt(req);
+	if (err == -EINPROGRESS) {
+		skb->destructor = quic_crypto_destruct_skb;
+		skb_shinfo(skb)->destructor_arg = ctx;
+		return err;
+	}
 err:
 	kfree(ctx);
 	return err;
@@ -478,16 +493,20 @@ int quic_crypto_encrypt(struct quic_crypto *crypto, struct sk_buff *skb,
 	key = crypto->tx_key[crypto->key_phase];
 	iv = crypto->tx_iv[crypto->key_phase];
 	hp_key = crypto->tx_hp_key;
+	keylen = crypto->cipher->keylen;
+
+	if (pki->resume)
+		goto out;
 
 	if (crypto->key_pending && !crypto->key_update_send_ts)
 		crypto->key_update_send_ts = jiffies_to_usecs(jiffies);
 
-	keylen = crypto->cipher->keylen;
 	err = quic_crypto_payload_encrypt(crypto->aead_tfm, skb, pki, key, keylen, iv, ivlen,
-					  quic_crypto_is_cipher_ccm(crypto), &crypto->async_wait);
+					  quic_crypto_is_cipher_ccm(crypto));
 	if (err)
 		return err;
 
+out:
 	return quic_crypto_header_encrypt(crypto->skc_tfm, skb, pki, hp_key, keylen,
 					  quic_crypto_is_cipher_chacha(crypto));
 }
@@ -495,9 +514,19 @@ int quic_crypto_encrypt(struct quic_crypto *crypto, struct sk_buff *skb,
 int quic_crypto_decrypt(struct quic_crypto *crypto, struct sk_buff *skb,
 			struct quic_packet_info *pki)
 {
+	struct quichdr *hdr = quic_hdr(skb);
 	u32 keylen, ivlen = QUIC_IV_LEN;
-	u8 *key, *iv, *hp_key;
-	int err;
+	u8 *key, *iv, *hp_key, *p;
+	int err = 0;
+
+	if (pki->resume) {
+		p = (u8 *)hdr + pki->number_offset;
+		pki->number_len = hdr->pnl + 1;
+		pki->number = quic_get_int(&p, pki->number_len);
+		pki->number = quic_get_num(pki->number_max, pki->number, pki->number_len);
+		pki->key_phase = hdr->key;
+		goto out;
+	}
 
 	hp_key = crypto->rx_hp_key;
 	keylen = crypto->cipher->keylen;
@@ -518,10 +547,11 @@ int quic_crypto_decrypt(struct quic_crypto *crypto, struct sk_buff *skb,
 	iv = crypto->rx_iv[pki->key_phase];
 
 	err = quic_crypto_payload_decrypt(crypto->aead_tfm, skb, pki, key, keylen, iv, ivlen,
-					  quic_crypto_is_cipher_ccm(crypto), &crypto->async_wait);
+					  quic_crypto_is_cipher_ccm(crypto));
 	if (err)
 		return err;
 
+out:
 	/* An endpoint MUST retain old keys until it has successfully unprotected a
 	 * packet sent using the new keys. An endpoint SHOULD retain old keys for
 	 * some time after unprotecting a packet sent using the new keys.
@@ -533,7 +563,7 @@ int quic_crypto_decrypt(struct quic_crypto *crypto, struct sk_buff *skb,
 		crypto->key_pending = 0;
 		crypto->key_update_send_ts = 0;
 	}
-	return 0;
+	return err;
 }
 
 int quic_crypto_set_secret(struct quic_crypto *crypto, struct quic_crypto_secret *srt, u32 version)

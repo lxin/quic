@@ -46,11 +46,12 @@ struct quic_snd_cb {
 	u8 level;
 	u8 rtx_count;
 	u8 frame_type;
+	u8 path_alt; /* bit 1: src, bit 2: dst */
 	u32 err_code;
 	u32 data_bytes;
 	u32 transmit_ts;
+	u32 number_offset;
 	s64 packet_number;
-	u64 stream_offset; /* for debug only */
 };
 
 #define QUIC_SND_CB(__skb)      ((struct quic_snd_cb *)&((__skb)->cb[0]))

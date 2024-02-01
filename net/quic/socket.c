@@ -889,8 +889,7 @@ static int quic_accept_sock_init(struct sock *sk, struct quic_request_sock *req)
 	skb_queue_splice_init(&quic_inq(sk)->backlog_list, &tmpq);
 	skb = __skb_dequeue(&tmpq);
 	while (skb) {
-		skb_orphan(skb);
-		quic_packet_process(sk, skb);
+		quic_packet_process(sk, skb, 0);
 		skb = __skb_dequeue(&tmpq);
 	}
 
@@ -1102,13 +1101,7 @@ static int quic_sock_set_crypto_secret(struct sock *sk, struct quic_crypto_secre
 		skb_queue_splice_init(&quic_inq(sk)->backlog_list, &tmpq);
 		skb = __skb_dequeue(&tmpq);
 		while (skb) {
-			skb_orphan(skb);
-			if (!quic_hdr(skb)->form) {
-				QUIC_RCV_CB(skb)->number_offset =
-					quic_source(sk)->active->id.len + sizeof(struct quichdr);
-			}
-			QUIC_RCV_CB(skb)->saddr = quic_path_addr(quic_dst(sk));
-			quic_packet_process(sk, skb);
+			quic_packet_process(sk, skb, 0);
 			skb = __skb_dequeue(&tmpq);
 		}
 		if (secret->level)

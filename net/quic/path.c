@@ -27,6 +27,7 @@ static int quic_udp_rcv(struct sock *sk, struct sk_buff *skb)
 		return 0;
 
 	memset(skb->cb, 0, sizeof(skb->cb));
+	QUIC_RCV_CB(skb)->uh_offset = skb->transport_header;
 	skb_set_transport_header(skb, sizeof(struct udphdr));
 	quic_rcv(skb);
 	return 0;
