@@ -420,6 +420,19 @@ int quic_inq_reasm_tail(struct sock *sk, struct sk_buff *skb)
 	return 0;
 }
 
+void quic_inq_stream_purge(struct sock *sk, struct quic_stream *stream)
+{
+	struct sk_buff_head *head = &quic_inq(sk)->reassemble_list;
+	struct sk_buff *skb, *tmp;
+
+	skb_queue_walk_safe(head, skb, tmp) {
+		if (QUIC_RCV_CB(skb)->stream != stream)
+			continue;
+		__skb_unlink(skb, head);
+		kfree_skb(skb);
+	}
+}
+
 int quic_inq_handshake_tail(struct sock *sk, struct sk_buff *skb)
 {
 	u64 crypto_offset = QUIC_RCV_CB(skb)->crypto_offset;

@@ -1230,6 +1230,7 @@ static int quic_sock_stream_reset(struct sock *sk, struct quic_errinfo *info, u3
 		return -ENOMEM;
 
 	stream->send.state = QUIC_STREAM_SEND_STATE_RESET_SENT;
+	quic_outq_stream_purge(sk, stream);
 	quic_outq_ctrl_tail(sk, skb, false);
 	return 0;
 }

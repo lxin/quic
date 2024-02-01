@@ -87,6 +87,7 @@ void quic_rcv_err_icmp(struct sock *sk);
 int quic_inq_reasm_tail(struct sock *sk, struct sk_buff *skb);
 int quic_inq_dgram_tail(struct sock *sk, struct sk_buff *skb);
 int quic_inq_flow_control(struct sock *sk, struct quic_stream *stream, int len);
+void quic_inq_stream_purge(struct sock *sk, struct quic_stream *stream);
 void quic_inq_set_param(struct sock *sk, struct quic_transport_param *p);
 void quic_inq_get_param(struct sock *sk, struct quic_transport_param *p);
 void quic_inq_set_owner_r(struct sk_buff *skb, struct sock *sk);

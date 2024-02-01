@@ -859,6 +859,7 @@ static int quic_frame_reset_stream_process(struct sock *sk, struct sk_buff *skb,
 	if (quic_inq_event_recv(sk, QUIC_EVENT_STREAM_UPDATE, &update))
 		return -ENOMEM;
 	stream->recv.state = update.state;
+	quic_inq_stream_purge(sk, stream);
 	return skb->len - len;
 }
 
@@ -894,6 +895,7 @@ static int quic_frame_stop_sending_process(struct sock *sk, struct sk_buff *skb,
 		return -ENOMEM;
 	}
 	stream->send.state = update.state;
+	quic_outq_stream_purge(sk, stream);
 	quic_outq_ctrl_tail(sk, nskb, true);
 	return skb->len - len;
 }

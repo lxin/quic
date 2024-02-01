@@ -392,6 +392,31 @@ next:
 		quic_cong_cwnd_update_after_timeout(sk, packet_number, transmit_ts);
 }
 
+void quic_outq_stream_purge(struct sock *sk, struct quic_stream *stream)
+{
+	struct quic_outqueue *outq = quic_outq(sk);
+	struct sk_buff *skb, *tmp;
+	struct sk_buff_head *head;
+
+	head = &outq->retransmit_list;
+	skb_queue_walk_safe(head, skb, tmp) {
+		if (QUIC_SND_CB(skb)->stream != stream)
+			continue;
+		if (outq->retransmit_skb == skb)
+			outq->retransmit_skb = NULL;
+		__skb_unlink(skb, head);
+		kfree_skb(skb);
+	}
+
+	head = &sk->sk_write_queue;
+	skb_queue_walk_safe(head, skb, tmp) {
+		if (QUIC_SND_CB(skb)->stream != stream)
+			continue;
+		__skb_unlink(skb, head);
+		kfree_skb(skb);
+	}
+}
+
 void quic_outq_set_param(struct sock *sk, struct quic_transport_param *p)
 {
 	u32 local_ito = quic_inq_max_idle_timeout(quic_inq(sk));
