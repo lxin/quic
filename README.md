@@ -170,7 +170,7 @@ in [ktls-utils](https://github.com/lxin/ktls-utils) will handle the handshake re
     (NOTE: you can skip this if you don't want to run the interoperability tests with MSQUIC)
 
     Packages Required:
-    - cmake
+    - cmake g++
 
     # cd ~/
     # git clone --recursive https://github.com/microsoft/msquic.git
