@@ -39,6 +39,7 @@ struct quic_rcv_cb {
 	u8 backlog:1;
 	u8 stream_fin:1;
 	u8 handshake:1;
+	u8 path_alt:2;
 	u64 stream_offset;
 	u64 crypto_offset;
 };

@@ -8,6 +8,9 @@
  *    Xin Long <lucien.xin@gmail.com>
  */
 
+#define QUIC_PATH_ALT_SRC	0x1
+#define QUIC_PATH_ALT_DST	0x2
+
 struct quic_bind_port {
 	unsigned short		port;
 	struct hlist_node	node;
@@ -58,9 +61,9 @@ static inline void quic_path_addr_set(struct quic_path_addr *a, union quic_addr 
 	memcpy(&a->addr[a->active], addr, a->addr_len);
 }
 
-static inline void quic_path_addr_sel_set(struct quic_path_addr *a, union quic_addr *addr, bool sel)
+static inline void quic_path_addr_sel_set(struct quic_path_addr *a, union quic_addr *addr, bool alt)
 {
-	memcpy(&a->addr[a->active ^ sel], addr, a->addr_len);
+	memcpy(&a->addr[a->active ^ alt], addr, a->addr_len);
 }
 
 static inline union quic_addr *quic_path_addr(struct quic_path_addr *a)
@@ -68,9 +71,9 @@ static inline union quic_addr *quic_path_addr(struct quic_path_addr *a)
 	return &a->addr[a->active];
 }
 
-static inline union quic_addr *quic_path_addr_sel(struct quic_path_addr *a, bool sel)
+static inline union quic_addr *quic_path_addr_sel(struct quic_path_addr *a, bool alt)
 {
-	return &a->addr[a->active ^ sel];
+	return &a->addr[a->active ^ alt];
 }
 
 static inline struct quic_bind_port *quic_path_port(struct quic_path_addr *a)

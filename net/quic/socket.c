@@ -1044,11 +1044,13 @@ int quic_sock_change_saddr(struct sock *sk, void *data, u32 len)
 	skb = quic_frame_create(sk, QUIC_FRAME_NEW_CONNECTION_ID, &number);
 	if (!skb)
 		return -ENOMEM;
+	QUIC_SND_CB(skb)->path_alt = QUIC_PATH_ALT_SRC;
 	quic_outq_ctrl_tail(sk, skb, true);
 
 	skb = quic_frame_create(sk, QUIC_FRAME_PATH_CHALLENGE, path);
 	if (!skb)
 		return -ENOMEM;
+	QUIC_SND_CB(skb)->path_alt = QUIC_PATH_ALT_SRC;
 	quic_outq_ctrl_tail(sk, skb, false);
 
 	path->sent_cnt++;

@@ -314,7 +314,7 @@ int quic_packet_process(struct sock *sk, struct sk_buff *skb, u8 resume)
 {
 	struct quic_packet_info pki = {};
 	u8 key_phase, level = 0;
-	union quic_addr saddr;
+	union quic_addr addr;
 	struct sk_buff *fskb;
 	int err = -EINVAL;
 
@@ -357,6 +357,17 @@ int quic_packet_process(struct sock *sk, struct sk_buff *skb, u8 resume)
 		goto err;
 	}
 
+	/* Set path_alt so that the replies will choose the correct path */
+	quic_get_msg_addr(sk, &addr, skb, 0);
+	if (!memcmp(&addr, quic_path_addr_sel(quic_src(sk), 1), quic_addr_len(sk)))
+		QUIC_RCV_CB(skb)->path_alt |= QUIC_PATH_ALT_SRC;
+
+	quic_get_msg_addr(sk, &addr, skb, 1);
+	if (memcmp(&addr, quic_path_addr(quic_dst(sk)), quic_addr_len(sk))) {
+		quic_path_addr_sel_set(quic_dst(sk), &addr, 1);
+		QUIC_RCV_CB(skb)->path_alt |= QUIC_PATH_ALT_DST;
+	}
+
 	skb_pull(skb, pki.number_offset + pki.number_len);
 	pki.length -= pki.number_len;
 	pki.length -= QUIC_TAG_LEN;
@@ -373,13 +384,9 @@ int quic_packet_process(struct sock *sk, struct sk_buff *skb, u8 resume)
 	 * it sends packets in response to the highest-numbered non-probing packet.
 	 */
 	if (!quic_dest(sk)->disable_active_migration && pki.non_probing &&
-	    pki.number == quic_pnmap_max_pn_seen(quic_pnmap(sk, QUIC_CRYPTO_APP))) {
-		quic_get_msg_addr(sk, &saddr, skb, 1);
-		if (memcmp(&saddr, quic_path_addr(quic_dst(sk)), quic_addr_len(sk)))
-			quic_sock_change_daddr(sk, &saddr, quic_addr_len(sk));
-	}
-
-	consume_skb(skb);
+	    pki.number == quic_pnmap_max_pn_seen(quic_pnmap(sk, QUIC_CRYPTO_APP)) &&
+	    (QUIC_RCV_CB(skb)->path_alt & QUIC_PATH_ALT_DST))
+		quic_sock_change_daddr(sk, &addr, quic_addr_len(sk));
 
 	if (pki.key_update) {
 		key_phase = pki.key_phase;
@@ -394,11 +401,15 @@ int quic_packet_process(struct sock *sk, struct sk_buff *skb, u8 resume)
 		goto out;
 	}
 	fskb = quic_frame_create(sk, QUIC_FRAME_ACK, &level);
-	if (fskb)
+	if (fskb) {
+		QUIC_SND_CB(fskb)->path_alt = QUIC_RCV_CB(skb)->path_alt;
 		quic_outq_ctrl_tail(sk, fskb, true);
+	}
 	quic_timer_stop(sk, QUIC_TIMER_ACK);
 
 out:
+	consume_skb(skb);
+
 	/* Since a packet was successfully processed, we can reset the idle
 	 * timer.
 	 */
@@ -610,8 +621,8 @@ int quic_packet_route(struct sock *sk)
 	struct quic_packet *packet = quic_packet(sk);
 	int err, mss;
 
-	packet->sa = quic_path_addr_sel(quic_src(sk), packet->path_alt & 0x1);
-	packet->da = quic_path_addr_sel(quic_dst(sk), packet->path_alt & 0x2);
+	packet->sa = quic_path_addr_sel(quic_src(sk), packet->path_alt & QUIC_PATH_ALT_SRC);
+	packet->da = quic_path_addr_sel(quic_dst(sk), packet->path_alt & QUIC_PATH_ALT_DST);
 	err = quic_flow_route(sk, packet->da, packet->sa);
 	if (err)
 		return err;
