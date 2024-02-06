@@ -283,8 +283,12 @@ static void quic_inq_recv_tail(struct sock *sk, struct quic_stream *stream, stru
 	u64 overlap;
 
 	overlap = stream->recv.offset - QUIC_RCV_CB(skb)->stream_offset;
-	skb_pull(skb, overlap);
-	QUIC_RCV_CB(skb)->stream_offset += overlap;
+	if (overlap) {
+		skb_orphan(skb);
+		skb_pull(skb, overlap);
+		quic_inq_set_owner_r(skb, sk);
+		QUIC_RCV_CB(skb)->stream_offset += overlap;
+	}
 
 	if (QUIC_RCV_CB(skb)->stream_fin) {
 		update.id = stream->id;
