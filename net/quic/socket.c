@@ -131,12 +131,12 @@ static void quic_transport_param_init(struct sock *sk)
 	param->max_ack_delay = 25000;
 	param->active_connection_id_limit = 7;
 	param->max_idle_timeout = 30000000;
-	param->initial_max_data = sk->sk_rcvbuf / 2;
-	param->initial_max_stream_data_bidi_local = sk->sk_rcvbuf / 4;
-	param->initial_max_stream_data_bidi_remote = sk->sk_rcvbuf / 4;
-	param->initial_max_stream_data_uni = sk->sk_rcvbuf / 4;
-	param->initial_max_streams_bidi = 100;
-	param->initial_max_streams_uni = 100;
+	param->max_data = sk->sk_rcvbuf / 2;
+	param->max_stream_data_bidi_local = sk->sk_rcvbuf / 4;
+	param->max_stream_data_bidi_remote = sk->sk_rcvbuf / 4;
+	param->max_stream_data_uni = sk->sk_rcvbuf / 4;
+	param->max_streams_bidi = 100;
+	param->max_streams_uni = 100;
 	param->initial_smoothed_rtt = 333000;
 	param->version = QUIC_VERSION_V1;
 
@@ -777,21 +777,21 @@ static int quic_sock_set_transport_param(struct sock *sk, struct quic_transport_
 	quic_set_param_if_not_zero(active_connection_id_limit);
 	quic_set_param_if_not_zero(max_idle_timeout);
 	quic_set_param_if_not_zero(max_datagram_frame_size);
-	quic_set_param_if_not_zero(initial_max_data);
-	quic_set_param_if_not_zero(initial_max_stream_data_bidi_local);
-	quic_set_param_if_not_zero(initial_max_stream_data_bidi_remote);
-	quic_set_param_if_not_zero(initial_max_stream_data_uni);
-	quic_set_param_if_not_zero(initial_max_streams_bidi);
-	quic_set_param_if_not_zero(initial_max_streams_uni);
+	quic_set_param_if_not_zero(max_data);
+	quic_set_param_if_not_zero(max_stream_data_bidi_local);
+	quic_set_param_if_not_zero(max_stream_data_bidi_remote);
+	quic_set_param_if_not_zero(max_stream_data_uni);
+	quic_set_param_if_not_zero(max_streams_bidi);
+	quic_set_param_if_not_zero(max_streams_uni);
 	quic_set_param_if_not_zero(initial_smoothed_rtt);
 	quic_set_param_if_not_zero(disable_active_migration);
-	quic_set_param_if_not_zero(probe_timeout);
-	quic_set_param_if_not_zero(validate_address);
+	quic_set_param_if_not_zero(plpmtud_probe_timeout);
+	quic_set_param_if_not_zero(validate_peer_address);
 	quic_set_param_if_not_zero(grease_quic_bit);
 	quic_set_param_if_not_zero(stateless_reset);
-	quic_set_param_if_not_zero(recv_session_ticket);
-	quic_set_param_if_not_zero(cert_request);
-	quic_set_param_if_not_zero(cipher_type);
+	quic_set_param_if_not_zero(receive_session_ticket);
+	quic_set_param_if_not_zero(certificate_request);
+	quic_set_param_if_not_zero(payload_cipher_type);
 	quic_set_param_if_not_zero(version);
 
 	if (p->remote) {

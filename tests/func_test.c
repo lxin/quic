@@ -1879,13 +1879,13 @@ static int do_client(int argc, char *argv[])
 	}
 
 	param.max_datagram_frame_size = 1400;
-	param.cipher_type = TLS_CIPHER_AES_GCM_256;
+	param.payload_cipher_type = TLS_CIPHER_AES_GCM_256;
 	if (argc < 5)
 		goto start;
 
 	mode = strtok(argv[4], ":");
 	if (!strcmp(mode, "-psk_file")) {
-		param.cipher_type = TLS_CIPHER_AES_CCM_128;
+		param.payload_cipher_type = TLS_CIPHER_AES_CCM_128;
 		pkey = strtok(NULL, ":");
 		goto start;
 	}
@@ -1947,10 +1947,10 @@ static int do_server(int argc, char *argv[])
 	}
 
 	param.max_datagram_frame_size = 1400;
-	param.cipher_type = TLS_CIPHER_AES_GCM_256;
+	param.payload_cipher_type = TLS_CIPHER_AES_GCM_256;
 	mode = strtok(argv[4], ":");
 	if (!strcmp(mode, "-psk_file")) {
-		param.cipher_type = TLS_CIPHER_AES_CCM_128;
+		param.payload_cipher_type = TLS_CIPHER_AES_CCM_128;
 		pkey = strtok(NULL, ":");
 		goto start;
 	}

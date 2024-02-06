@@ -208,9 +208,9 @@ static int get_transport_param(struct quic_conn *conn)
 		printf("socket getsockopt transport param failed\n");
 		return -1;
 	}
-	conn->recv_ticket = param.recv_session_ticket;
-	conn->cert_req = param.cert_request;
-	conn->cipher = param.cipher_type;
+	conn->recv_ticket = param.receive_session_ticket;
+	conn->cert_req = param.certificate_request;
+	conn->cipher = param.payload_cipher_type;
 	conn->sockfd = sockfd;
 	return 0;
 }

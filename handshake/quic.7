@@ -400,39 +400,39 @@ the quic original transport param, but also some handshake options.
 for reading and writing, and the parameter type is:
 
     struct quic_transport_param {
-            uint8_t remote;
-            uint8_t disable_active_migration; (0)
-            uint8_t grease_quic_bit; (0)
-            uint8_t stateless_reset; (0)
-            uint64_t max_udp_payload_size; (65527)
-            uint64_t ack_delay_exponent; (3)
-            uint64_t max_ack_delay; (25000)
-            uint64_t active_connection_id_limit; (7)
-            uint64_t max_idle_timeout; (30000000 us)
-            uint64_t max_datagram_frame_size; (0)
-            uint64_t initial_max_data; (sk_rcvbuf / 2)
-            uint64_t initial_max_stream_data_bidi_local; (sk_rcvbuf / 4)
-            uint64_t initial_max_stream_data_bidi_remote; (sk_rcvbuf / 4)
-            uint64_t initial_max_stream_data_uni; (sk->sk_rcvbuf / 4)
-            uint64_t initial_max_streams_bidi; (100)
-            uint64_t initial_max_streams_uni; (100)
-            uint64_t initial_smoothed_rtt; (333000)
+            uint8_t         remote;
+            uint8_t         disable_active_migration; (0 by default)
+            uint8_t         grease_quic_bit; (0)
+            uint8_t         stateless_reset; (0)
+            uint64_t        max_udp_payload_size; (65527)
+            uint64_t        ack_delay_exponent; (3)
+            uint64_t        max_ack_delay; (25000)
+            uint64_t        active_connection_id_limit; (7)
+            uint64_t        max_idle_timeout; (30000000 us)
+            uint64_t        max_datagram_frame_size; (0)
+            uint64_t        max_data; (sk_rcvbuf / 2)
+            uint64_t        max_stream_data_bidi_local; (sk_rcvbuf / 4)
+            uint64_t        max_stream_data_bidi_remote; (sk_rcvbuf / 4)
+            uint64_t        max_stream_data_uni; (sk_rcvbuf / 4)
+            uint64_t        max_streams_bidi; (100)
+            uint64_t        max_streams_uni; (100)
+            uint64_t        initial_smoothed_rtt; (333000)
 
-            uint32_t probe_timeout; (0)
-            uint8_t validate_address; (0)
-            uint8_t recv_session_ticket; (0)
-            uint8_t cert_request; (0)
-            uint32_t cipher_type; (0)
-            uint32_t version; (QUIC_VERSION_V1)
+            uint32_t        plpmtud_probe_timeout; (0)
+            uint8_t         validate_peer_address; (0)
+            uint8_t         receive_session_ticket; (0)
+            uint8_t         certificate_request; (0)
+            uint32_t        payload_cipher_type; (0)
+            uint32_t        version; (QUIC_VERSION_V1)
     };
 
 These members in the 1st group are from RFC9000, and in the 2nd group, the members are:
 
-    - probe_timeout: plpmtud probe timeout in usec, 0: disabled
-    - validate_address: for server only, verify token and send retry packet
-    - recv_session_ticket: for client only, handshake done until ticket is recvd
-    - cert_request: for server only, 0: IGNORE, 1: REQUEST, 2: REQUIRE
-    - cipher_type: AES_GCM_128/AES_GCM_256/AES_CCM_128/CHACHA20_POLY1305
+    - plpmtud_probe_timeout: plpmtud probe timeout in usec, 0: disabled
+    - validate_peer_address: for server only, verify token and send retry packet
+    - receive_session_ticket: for client only, handshake done until ticket is recvd
+    - certificate_request: for server only, 0: IGNORE, 1: REQUEST, 2: REQUIRE
+    - payload_cipher_type: AES_GCM_128/AES_GCM_256/AES_CCM_128/CHACHA20_POLY1305
     - version:  QUIC_VERSION_V1 or V2 for now
 
 See inline notes for default values.

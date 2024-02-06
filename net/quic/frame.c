@@ -594,9 +594,9 @@ static int quic_frame_crypto_process(struct sock *sk, struct sk_buff *skb, u8 ty
 		return -EINVAL;
 
 	if (!QUIC_RCV_CB(skb)->level) {
-		if (!quic_local(sk)->recv_session_ticket)
+		if (!quic_local(sk)->receive_session_ticket)
 			goto out;
-		quic_local(sk)->recv_session_ticket = 0;
+		quic_local(sk)->receive_session_ticket = 0;
 	}
 
 	nskb = skb_clone(skb, GFP_ATOMIC);
@@ -625,7 +625,7 @@ static int quic_frame_stream_process(struct sock *sk, struct sk_buff *skb, u8 ty
 	u8 *p = skb->data;
 	int err;
 
-	if (quic_local(sk)->recv_session_ticket)
+	if (quic_local(sk)->receive_session_ticket)
 		return -EINVAL;
 	if (!quic_get_var(&p, &len, &stream_id))
 		return -EINVAL;
@@ -1188,7 +1188,7 @@ static int quic_frame_datagram_process(struct sock *sk, struct sk_buff *skb, u8 
 	u64 payload_len;
 	int err;
 
-	if (quic_local(sk)->recv_session_ticket)
+	if (quic_local(sk)->receive_session_ticket)
 		return -EINVAL;
 
 	if (!quic_inq_max_dgram(quic_inq(sk)))
@@ -1364,31 +1364,31 @@ int quic_frame_set_transport_params_ext(struct sock *sk, struct quic_transport_p
 
 		switch (type) {
 		case QUIC_TRANSPORT_PARAM_INITIAL_MAX_STREAM_DATA_BIDI_LOCAL:
-			if (quic_get_param(&params->initial_max_stream_data_bidi_local, &p, &len))
+			if (quic_get_param(&params->max_stream_data_bidi_local, &p, &len))
 				return -1;
 			break;
 		case QUIC_TRANSPORT_PARAM_INITIAL_MAX_STREAM_DATA_BIDI_REMOTE:
-			if (quic_get_param(&params->initial_max_stream_data_bidi_remote, &p, &len))
+			if (quic_get_param(&params->max_stream_data_bidi_remote, &p, &len))
 				return -1;
 			break;
 		case QUIC_TRANSPORT_PARAM_INITIAL_MAX_STREAM_DATA_UNI:
-			if (quic_get_param(&params->initial_max_stream_data_uni, &p, &len))
+			if (quic_get_param(&params->max_stream_data_uni, &p, &len))
 				return -1;
 			break;
 		case QUIC_TRANSPORT_PARAM_INITIAL_MAX_DATA:
-			if (quic_get_param(&params->initial_max_data, &p, &len))
+			if (quic_get_param(&params->max_data, &p, &len))
 				return -1;
 			break;
 		case QUIC_TRANSPORT_PARAM_INITIAL_MAX_STREAMS_BIDI:
-			if (quic_get_param(&params->initial_max_streams_bidi, &p, &len))
+			if (quic_get_param(&params->max_streams_bidi, &p, &len))
 				return -1;
-			if (params->initial_max_streams_bidi > QUIC_MAX_STREAMS)
+			if (params->max_streams_bidi > QUIC_MAX_STREAMS)
 				return -1;
 			break;
 		case QUIC_TRANSPORT_PARAM_INITIAL_MAX_STREAMS_UNI:
-			if (quic_get_param(&params->initial_max_streams_uni, &p, &len))
+			if (quic_get_param(&params->max_streams_uni, &p, &len))
 				return -1;
-			if (params->initial_max_streams_uni > QUIC_MAX_STREAMS)
+			if (params->max_streams_uni > QUIC_MAX_STREAMS)
 				return -1;
 			break;
 		case QUIC_TRANSPORT_PARAM_MAX_IDLE_TIMEOUT:
@@ -1498,29 +1498,29 @@ int quic_frame_get_transport_params_ext(struct sock *sk, struct quic_transport_p
 				     &quic_outq(sk)->orig_dcid);
 	}
 	p = quic_put_conn_id(p, QUIC_TRANSPORT_PARAM_INITIAL_SOURCE_CONNECTION_ID, scid);
-	if (params->initial_max_stream_data_bidi_local) {
+	if (params->max_stream_data_bidi_local) {
 		p = quic_put_param(p, QUIC_TRANSPORT_PARAM_INITIAL_MAX_STREAM_DATA_BIDI_LOCAL,
-				   params->initial_max_stream_data_bidi_local);
+				   params->max_stream_data_bidi_local);
 	}
-	if (params->initial_max_stream_data_bidi_remote) {
+	if (params->max_stream_data_bidi_remote) {
 		p = quic_put_param(p, QUIC_TRANSPORT_PARAM_INITIAL_MAX_STREAM_DATA_BIDI_REMOTE,
-				   params->initial_max_stream_data_bidi_remote);
+				   params->max_stream_data_bidi_remote);
 	}
-	if (params->initial_max_stream_data_uni) {
+	if (params->max_stream_data_uni) {
 		p = quic_put_param(p, QUIC_TRANSPORT_PARAM_INITIAL_MAX_STREAM_DATA_UNI,
-				   params->initial_max_stream_data_uni);
+				   params->max_stream_data_uni);
 	}
-	if (params->initial_max_data) {
+	if (params->max_data) {
 		p = quic_put_param(p, QUIC_TRANSPORT_PARAM_INITIAL_MAX_DATA,
-				   params->initial_max_data);
+				   params->max_data);
 	}
-	if (params->initial_max_streams_bidi) {
+	if (params->max_streams_bidi) {
 		p = quic_put_param(p, QUIC_TRANSPORT_PARAM_INITIAL_MAX_STREAMS_BIDI,
-				   params->initial_max_streams_bidi);
+				   params->max_streams_bidi);
 	}
-	if (params->initial_max_streams_uni) {
+	if (params->max_streams_uni) {
 		p = quic_put_param(p, QUIC_TRANSPORT_PARAM_INITIAL_MAX_STREAMS_UNI,
-				   params->initial_max_streams_uni);
+				   params->max_streams_uni);
 	}
 	if (params->max_udp_payload_size != 65527) {
 		p = quic_put_param(p, QUIC_TRANSPORT_PARAM_MAX_UDP_PAYLOAD_SIZE,

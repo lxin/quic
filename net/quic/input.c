@@ -129,7 +129,7 @@ static int quic_do_listen_rcv(struct sock *sk, struct sk_buff *skb)
 		return quic_packet_stateless_reset_transmit(sk, &req);
 	}
 
-	if (quic_local(sk)->validate_address) {
+	if (quic_local(sk)->validate_peer_address) {
 		if (!token.len) {
 			consume_skb(skb);
 			return quic_packet_retry_transmit(sk, &req);
@@ -499,13 +499,13 @@ void quic_inq_set_param(struct sock *sk, struct quic_transport_param *p)
 	inq->ack_delay_exponent = p->ack_delay_exponent;
 	inq->max_idle_timeout = p->max_idle_timeout;
 	inq->grease_quic_bit = p->grease_quic_bit;
-	inq->window = p->initial_max_data;
+	inq->window = p->max_data;
 
-	inq->max_bytes = p->initial_max_data;
-	if (sk->sk_rcvbuf < p->initial_max_data * 2)
-		sk->sk_rcvbuf = p->initial_max_data * 2;
+	inq->max_bytes = p->max_data;
+	if (sk->sk_rcvbuf < p->max_data * 2)
+		sk->sk_rcvbuf = p->max_data * 2;
 
-	inq->probe_timeout = p->probe_timeout;
+	inq->probe_timeout = p->plpmtud_probe_timeout;
 	quic_timer_setup(sk, QUIC_TIMER_PROBE, inq->probe_timeout);
 }
 
@@ -513,7 +513,7 @@ void quic_inq_get_param(struct sock *sk, struct quic_transport_param *p)
 {
 	struct quic_inqueue *inq = quic_inq(sk);
 
-	p->initial_max_data = inq->window;
+	p->max_data = inq->window;
 	p->max_ack_delay = inq->max_ack_delay;
 	p->ack_delay_exponent = inq->ack_delay_exponent;
 	p->max_idle_timeout = inq->max_idle_timeout;

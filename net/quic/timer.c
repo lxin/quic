@@ -215,7 +215,7 @@ void quic_timers_init(struct sock *sk)
 
 	t = quic_timer(sk, QUIC_TIMER_PROBE);
 	timer_setup(&t->timer, quic_timer_probe_timeout, 0);
-	quic_timer_setup(sk, QUIC_TIMER_PROBE, p->probe_timeout);
+	quic_timer_setup(sk, QUIC_TIMER_PROBE, p->plpmtud_probe_timeout);
 
 	t = quic_timer(sk, QUIC_TIMER_PATH);
 	timer_setup(&t->timer, quic_timer_path_timeout, 0);

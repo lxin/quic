@@ -121,7 +121,7 @@ static int do_server(int argc, char *argv[])
 			return -1;
 		}
 		param.max_udp_payload_size = 1400;
-		param.cipher_type = TLS_CIPHER_CHACHA20_POLY1305;
+		param.payload_cipher_type = TLS_CIPHER_CHACHA20_POLY1305;
 		if (setsockopt(listenfd, SOL_QUIC, QUIC_SOCKOPT_TRANSPORT_PARAM,
 			       &param, sizeof(param)))
 			return -1;
@@ -141,11 +141,11 @@ static int do_server(int argc, char *argv[])
 		return -1;
 	}
 
-	param.validate_address = 1; /* trigger retry packet sending */
+	param.validate_peer_address = 1; /* trigger retry packet sending */
 	param.grease_quic_bit = 1;
-	param.cert_request = 1;
+	param.certificate_request = 1;
 	param.stateless_reset = 1;
-	param.probe_timeout = 1000000;
+	param.plpmtud_probe_timeout = 1000000;
 	if (setsockopt(listenfd, SOL_QUIC, QUIC_SOCKOPT_TRANSPORT_PARAM, &param, sizeof(param)))
 		return -1;
 
@@ -258,8 +258,8 @@ static int do_client(int argc, char *argv[])
 		inet_pton(AF_INET6, argv[2], &ra.sin6_addr);
 
 		param.version = 5; /* invalid version to trigger version negotiation */
-		param.recv_session_ticket = 1;
-		param.cipher_type = TLS_CIPHER_CHACHA20_POLY1305;
+		param.receive_session_ticket = 1;
+		param.payload_cipher_type = TLS_CIPHER_CHACHA20_POLY1305;
 		if (setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_TRANSPORT_PARAM,
 			       &param, sizeof(param)))
 			return -1;

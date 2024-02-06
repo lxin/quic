@@ -89,30 +89,29 @@ enum quic_msg_flags {
 #define QUIC_VERSION_V2			0x6b3343cf
 
 struct quic_transport_param {
-	uint8_t remote;
-	uint8_t disable_active_migration;
-	uint8_t grease_quic_bit;
-	uint8_t stateless_reset;
-	uint64_t max_udp_payload_size;
-	uint64_t ack_delay_exponent;
-	uint64_t max_ack_delay;
-	uint64_t active_connection_id_limit;
-	uint64_t max_idle_timeout;
-	uint64_t max_datagram_frame_size;
-	uint64_t initial_max_data;
-	uint64_t initial_max_stream_data_bidi_local;
-	uint64_t initial_max_stream_data_bidi_remote;
-	uint64_t initial_max_stream_data_uni;
-	uint64_t initial_max_streams_bidi;
-	uint64_t initial_max_streams_uni;
-	uint64_t initial_smoothed_rtt;
-
-	uint32_t probe_timeout;
-	uint8_t validate_address;
-	uint8_t recv_session_ticket;
-	uint8_t cert_request;
-	uint32_t cipher_type;
-	uint32_t version;
+	uint8_t		remote;
+	uint8_t 	disable_active_migration;
+	uint8_t 	grease_quic_bit;
+	uint8_t 	stateless_reset;
+	uint64_t 	max_udp_payload_size;
+	uint64_t 	ack_delay_exponent;
+	uint64_t 	max_ack_delay;
+	uint64_t 	active_connection_id_limit;
+	uint64_t 	max_idle_timeout;
+	uint64_t 	max_datagram_frame_size;
+	uint64_t 	max_data;
+	uint64_t 	max_stream_data_bidi_local;
+	uint64_t 	max_stream_data_bidi_remote;
+	uint64_t 	max_stream_data_uni;
+	uint64_t 	max_streams_bidi;
+	uint64_t 	max_streams_uni;
+	uint64_t 	initial_smoothed_rtt;
+	uint32_t	plpmtud_probe_timeout;
+	uint8_t		validate_peer_address;
+	uint8_t		receive_session_ticket;
+	uint8_t		certificate_request;
+	uint32_t	payload_cipher_type;
+	uint32_t	version;
 };
 
 struct quic_crypto_secret {

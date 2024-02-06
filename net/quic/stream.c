@@ -114,24 +114,20 @@ void quic_streams_set_param(struct quic_stream_table *streams, struct quic_trans
 			    struct quic_transport_param *remote)
 {
 	if (remote) {
-		streams->send.max_stream_data_bidi_local =
-				remote->initial_max_stream_data_bidi_local;
-		streams->send.max_stream_data_bidi_remote =
-				remote->initial_max_stream_data_bidi_remote;
-		streams->send.max_stream_data_uni = remote->initial_max_stream_data_uni;
-		streams->send.max_streams_bidi = remote->initial_max_streams_bidi;
-		streams->send.max_streams_uni = remote->initial_max_streams_uni;
+		streams->send.max_stream_data_bidi_local = remote->max_stream_data_bidi_local;
+		streams->send.max_stream_data_bidi_remote = remote->max_stream_data_bidi_remote;
+		streams->send.max_stream_data_uni = remote->max_stream_data_uni;
+		streams->send.max_streams_bidi = remote->max_streams_bidi;
+		streams->send.max_streams_uni = remote->max_streams_uni;
 		streams->send.stream_active = -1;
 	}
 
 	if (local) {
-		streams->recv.max_stream_data_bidi_local =
-				local->initial_max_stream_data_bidi_local;
-		streams->recv.max_stream_data_bidi_remote =
-				local->initial_max_stream_data_bidi_remote;
-		streams->recv.max_stream_data_uni = local->initial_max_stream_data_uni;
-		streams->recv.max_streams_bidi = local->initial_max_streams_bidi;
-		streams->recv.max_streams_uni = local->initial_max_streams_uni;
+		streams->recv.max_stream_data_bidi_local = local->max_stream_data_bidi_local;
+		streams->recv.max_stream_data_bidi_remote = local->max_stream_data_bidi_remote;
+		streams->recv.max_stream_data_uni = local->max_stream_data_uni;
+		streams->recv.max_streams_bidi = local->max_streams_bidi;
+		streams->recv.max_streams_uni = local->max_streams_uni;
 	}
 }
 

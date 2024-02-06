@@ -39,7 +39,7 @@ static int do_client(int argc, char *argv[])
 		return -1;
 	}
 
-	param.recv_session_ticket = 1;
+	param.receive_session_ticket = 1;
 	param_len = sizeof(param);
 	ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_TRANSPORT_PARAM, &param, param_len);
 	if (ret == -1)
@@ -192,7 +192,7 @@ static int do_server(int argc, char *argv[])
 		printf("socket listen failed\n");
 		return -1;
 	}
-	param.validate_address = 1;
+	param.validate_peer_address = 1;
 	if (setsockopt(listenfd, SOL_QUIC, QUIC_SOCKOPT_TRANSPORT_PARAM, &param, sizeof(param)))
 		return -1;
 	addrlen = sizeof(sa);
