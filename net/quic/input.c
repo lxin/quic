@@ -346,7 +346,7 @@ int quic_inq_reasm_tail(struct sock *sk, struct sk_buff *skb)
 	struct sk_buff *tmp;
 
 	stream = QUIC_RCV_CB(skb)->stream;
-	if (stream->recv.offset > stream_offset + skb->len) { /* dup */
+	if (stream->recv.offset >= stream_offset + skb->len) { /* dup */
 		kfree_skb(skb);
 		return 0;
 	}
