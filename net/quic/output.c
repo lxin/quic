@@ -321,7 +321,7 @@ void quic_outq_retransmit_check(struct sock *sk, u8 level, s64 largest, s64 smal
 		if (quic_frame_is_reset(snd_cb->frame_type)) {
 			update.id = stream->id;
 			update.state = QUIC_STREAM_SEND_STATE_RESET_RECVD;
-			update.errcode = snd_cb->err_code;
+			update.errcode = stream->send.errcode;
 			quic_inq_event_recv(sk, QUIC_EVENT_STREAM_UPDATE, &update);
 			stream->send.state = update.state;
 		}

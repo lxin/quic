@@ -282,18 +282,18 @@ static void quic_inq_recv_tail(struct sock *sk, struct quic_stream *stream, stru
 	struct quic_stream_update update = {};
 	u64 overlap;
 
-	overlap = stream->recv.offset - QUIC_RCV_CB(skb)->stream_offset;
+	overlap = stream->recv.offset - QUIC_RCV_CB(skb)->offset;
 	if (overlap) {
 		skb_orphan(skb);
 		skb_pull(skb, overlap);
 		quic_inq_set_owner_r(skb, sk);
-		QUIC_RCV_CB(skb)->stream_offset += overlap;
+		QUIC_RCV_CB(skb)->offset += overlap;
 	}
 
 	if (QUIC_RCV_CB(skb)->stream_fin) {
 		update.id = stream->id;
 		update.state = QUIC_STREAM_RECV_STATE_RECVD;
-		update.errcode = QUIC_RCV_CB(skb)->stream_offset + skb->len;
+		update.errcode = QUIC_RCV_CB(skb)->offset + skb->len;
 		quic_inq_event_recv(sk, QUIC_EVENT_STREAM_UPDATE, &update);
 		stream->recv.state = update.state;
 	}
@@ -337,8 +337,8 @@ int quic_inq_flow_control(struct sock *sk, struct quic_stream *stream, int len)
 
 int quic_inq_reasm_tail(struct sock *sk, struct sk_buff *skb)
 {
-	u64 stream_offset = QUIC_RCV_CB(skb)->stream_offset, offset;
 	u64 stream_id = QUIC_RCV_CB(skb)->stream->id, highest = 0;
+	u64 offset = QUIC_RCV_CB(skb)->offset, off;
 	struct quic_inqueue *inq = quic_inq(sk);
 	struct quic_stream_update update = {};
 	struct quic_stream *stream;
@@ -346,7 +346,7 @@ int quic_inq_reasm_tail(struct sock *sk, struct sk_buff *skb)
 	struct sk_buff *tmp;
 
 	stream = QUIC_RCV_CB(skb)->stream;
-	if (stream->recv.offset >= stream_offset + skb->len) { /* dup */
+	if (stream->recv.offset >= offset + skb->len) { /* dup */
 		kfree_skb(skb);
 		return 0;
 	}
@@ -356,9 +356,9 @@ int quic_inq_reasm_tail(struct sock *sk, struct sk_buff *skb)
 		return -ENOBUFS;
 
 	quic_inq_set_owner_r(skb, sk);
-	offset = stream_offset + skb->len;
-	if (offset > stream->recv.highest) {
-		highest = offset - stream->recv.highest;
+	off = offset + skb->len;
+	if (off > stream->recv.highest) {
+		highest = off - stream->recv.highest;
 		if (inq->highest + highest > inq->max_bytes ||
 		    stream->recv.highest + highest > stream->recv.max_bytes)
 			return -ENOBUFS;
@@ -370,16 +370,15 @@ int quic_inq_reasm_tail(struct sock *sk, struct sk_buff *skb)
 			return -ENOMEM;
 	}
 	head = &inq->reassemble_list;
-	if (stream->recv.offset < stream_offset) {
+	if (stream->recv.offset < offset) {
 		skb_queue_walk(head, tmp) {
 			if (QUIC_RCV_CB(tmp)->stream->id < stream_id)
 				continue;
 			if (QUIC_RCV_CB(tmp)->stream->id > stream_id)
 				break;
-			if (QUIC_RCV_CB(tmp)->stream_offset > stream_offset)
+			if (QUIC_RCV_CB(tmp)->offset > offset)
 				break;
-			if (QUIC_RCV_CB(tmp)->stream_offset + tmp->len >=
-						stream_offset + skb->len) { /* dup */
+			if (QUIC_RCV_CB(tmp)->offset + tmp->len >= offset + skb->len) { /* dup */
 				kfree_skb(skb);
 				return 0;
 			}
@@ -387,7 +386,7 @@ int quic_inq_reasm_tail(struct sock *sk, struct sk_buff *skb)
 		if (QUIC_RCV_CB(skb)->stream_fin) {
 			update.id = stream->id;
 			update.state = QUIC_STREAM_RECV_STATE_SIZE_KNOWN;
-			update.errcode = QUIC_RCV_CB(skb)->stream_offset + skb->len;
+			update.errcode = QUIC_RCV_CB(skb)->offset + skb->len;
 			if (quic_inq_event_recv(sk, QUIC_EVENT_STREAM_UPDATE, &update))
 				return -ENOMEM;
 			stream->recv.state = update.state;
@@ -399,7 +398,7 @@ int quic_inq_reasm_tail(struct sock *sk, struct sk_buff *skb)
 		return 0;
 	}
 
-	/* fast path: stream->recv.offset == stream_offset */
+	/* fast path: stream->recv.offset == offset */
 	inq->highest += highest;
 	stream->recv.highest += highest;
 	quic_inq_recv_tail(sk, stream, skb);
@@ -411,11 +410,11 @@ int quic_inq_reasm_tail(struct sock *sk, struct sk_buff *skb)
 			continue;
 		if (QUIC_RCV_CB(skb)->stream->id > stream_id)
 			break;
-		if (QUIC_RCV_CB(skb)->stream_offset > stream->recv.offset)
+		if (QUIC_RCV_CB(skb)->offset > stream->recv.offset)
 			break;
 		__skb_unlink(skb, head);
 		stream->recv.frags--;
-		if (QUIC_RCV_CB(skb)->stream_offset + skb->len <= stream->recv.offset) { /* dup */
+		if (QUIC_RCV_CB(skb)->offset + skb->len <= stream->recv.offset) { /* dup */
 			kfree_skb(skb);
 			continue;
 		}
@@ -439,7 +438,7 @@ void quic_inq_stream_purge(struct sock *sk, struct quic_stream *stream)
 
 int quic_inq_handshake_tail(struct sock *sk, struct sk_buff *skb)
 {
-	u64 crypto_offset = QUIC_RCV_CB(skb)->crypto_offset;
+	u64 offset = QUIC_RCV_CB(skb)->offset;
 	u8 level = QUIC_RCV_CB(skb)->level;
 	struct quic_crypto *crypto;
 	struct sk_buff_head *head;
@@ -447,22 +446,22 @@ int quic_inq_handshake_tail(struct sock *sk, struct sk_buff *skb)
 
 	crypto = quic_crypto(sk, level);
 	pr_debug("[QUIC] %s recv_offset: %u offset: %llu level: %u\n", __func__,
-		 crypto->recv_offset, crypto_offset, level);
-	if (crypto->recv_offset > crypto_offset) {
+		 crypto->recv_offset, offset, level);
+	if (crypto->recv_offset > offset) {
 		kfree_skb(skb);
 		return 0;
 	}
 	quic_inq_set_owner_r(skb, sk);
 	head = &quic_inq(sk)->handshake_list;
-	if (crypto->recv_offset < crypto_offset) {
+	if (crypto->recv_offset < offset) {
 		skb_queue_walk(head, tmp) {
 			if (QUIC_RCV_CB(tmp)->level < level)
 				continue;
 			if (QUIC_RCV_CB(tmp)->level > level)
 				break;
-			if (QUIC_RCV_CB(tmp)->crypto_offset > crypto_offset)
+			if (QUIC_RCV_CB(tmp)->offset > offset)
 				break;
-			if (QUIC_RCV_CB(tmp)->crypto_offset == crypto_offset) { /* dup */
+			if (QUIC_RCV_CB(tmp)->offset == offset) { /* dup */
 				kfree_skb(skb);
 				return 0;
 			}
@@ -480,7 +479,7 @@ int quic_inq_handshake_tail(struct sock *sk, struct sk_buff *skb)
 			continue;
 		if (QUIC_RCV_CB(skb)->level > level)
 			break;
-		if (QUIC_RCV_CB(skb)->crypto_offset > crypto->recv_offset)
+		if (QUIC_RCV_CB(skb)->offset > crypto->recv_offset)
 			break;
 		__skb_unlink(skb, head);
 		__skb_queue_tail(&sk->sk_receive_queue, skb);

@@ -372,7 +372,7 @@ static struct sk_buff *quic_frame_reset_stream_create(struct sock *sk, void *dat
 	if (!skb)
 		return NULL;
 	skb_put_data(skb, frame, frame_len);
-	QUIC_SND_CB(skb)->err_code = info->errcode;
+	stream->send.errcode = info->errcode;
 	QUIC_SND_CB(skb)->stream = stream;
 
 	if (streams->send.stream_active == stream->id)
@@ -604,7 +604,7 @@ static int quic_frame_crypto_process(struct sock *sk, struct sk_buff *skb, u8 ty
 		return -ENOMEM;
 	skb_pull(nskb, p - skb->data);
 	skb_trim(nskb, length);
-	QUIC_RCV_CB(nskb)->crypto_offset = offset;
+	QUIC_RCV_CB(nskb)->offset = offset;
 
 	err = quic_inq_handshake_tail(sk, nskb);
 	if (err) {
@@ -652,7 +652,7 @@ static int quic_frame_stream_process(struct sock *sk, struct sk_buff *skb, u8 ty
 
 	QUIC_RCV_CB(nskb)->stream = stream;
 	QUIC_RCV_CB(nskb)->stream_fin = (type & QUIC_STREAM_BIT_FIN);
-	QUIC_RCV_CB(nskb)->stream_offset = offset;
+	QUIC_RCV_CB(nskb)->offset = offset;
 
 	err = quic_inq_reasm_tail(sk, nskb);
 	if (err) {

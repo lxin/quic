@@ -24,6 +24,7 @@ struct quic_stream {
 		u64 bytes;
 		u64 offset;
 
+		u32 errcode;
 		u32 frags;
 		u8 state;
 

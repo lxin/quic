@@ -30,18 +30,16 @@ struct quic_inqueue {
 
 struct quic_rcv_cb {
 	struct quic_stream *stream;
-	u16 offset;
-	u16 uh_offset;
+	u64 offset; /* stream or crypto offset */
+	u16 read_offset;
+	u16 udph_offset;
 	u8 number_offset;
 	u8 event;
 	u8 level;
 	u8 dgram:1;
 	u8 backlog:1;
 	u8 stream_fin:1;
-	u8 handshake:1;
 	u8 path_alt:2;
-	u64 stream_offset;
-	u64 crypto_offset;
 };
 
 #define QUIC_RCV_CB(__skb)	((struct quic_rcv_cb *)&((__skb)->cb[0]))

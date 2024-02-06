@@ -641,7 +641,7 @@ static int quic_recvmsg(struct sock *sk, struct msghdr *msg, size_t len, int fla
 	skb = skb_peek(&sk->sk_receive_queue);
 	stream = QUIC_RCV_CB(skb)->stream;
 	do {
-		off = QUIC_RCV_CB(skb)->offset;
+		off = QUIC_RCV_CB(skb)->read_offset;
 		copy = min_t(int, skb->len - off, len - copied);
 		err = skb_copy_datagram_msg(skb, off, msg, copy);
 		if (err) {
@@ -667,7 +667,7 @@ static int quic_recvmsg(struct sock *sk, struct msghdr *msg, size_t len, int fla
 		if (flags & MSG_PEEK)
 			break;
 		if (copy != skb->len - off) {
-			QUIC_RCV_CB(skb)->offset += copy;
+			QUIC_RCV_CB(skb)->read_offset += copy;
 			break;
 		}
 		if (event) {

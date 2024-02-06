@@ -43,15 +43,14 @@ struct quic_outqueue {
 
 struct quic_snd_cb {
 	struct quic_stream *stream;
+	s64 packet_number;
+	u32 transmit_ts;
+	u16 data_bytes;
+	u8 number_offset;
 	u8 level;
 	u8 rtx_count;
 	u8 frame_type;
 	u8 path_alt:2; /* bit 1: src, bit 2: dst */
-	u32 err_code;
-	u32 data_bytes;
-	u32 transmit_ts;
-	u32 number_offset;
-	s64 packet_number;
 };
 
 #define QUIC_SND_CB(__skb)      ((struct quic_snd_cb *)&((__skb)->cb[0]))
