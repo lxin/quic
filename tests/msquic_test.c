@@ -76,6 +76,11 @@ const uint16_t UdpPort = 1234;
 const uint64_t IdleTimeoutMs = 1000;
 
 //
+// sysctl net.core.rmem_default / 2 used for the protocol.
+//
+const uint64_t ConnFlowControlWindow = 212992 / 2;
+
+//
 // The length of buffer sent over the streams in the protocol.
 //
 const uint32_t SendBufferLength = 4096;
@@ -431,6 +436,9 @@ ServerLoadConfiguration(
     Settings.PeerBidiStreamCount = 1;
     Settings.IsSet.PeerBidiStreamCount = TRUE;
 
+    Settings.ConnFlowControlWindow = ConnFlowControlWindow;
+    Settings.IsSet.ConnFlowControlWindow = TRUE;
+
     QUIC_CREDENTIAL_CONFIG_HELPER Config;
     memset(&Config, 0, sizeof(Config));
     Config.CredConfig.Flags = QUIC_CREDENTIAL_FLAG_NONE;
@@ -781,6 +789,9 @@ ClientLoadConfiguration(
     //
     Settings.IdleTimeoutMs = IdleTimeoutMs;
     Settings.IsSet.IdleTimeoutMs = TRUE;
+
+    Settings.ConnFlowControlWindow = ConnFlowControlWindow;
+    Settings.IsSet.ConnFlowControlWindow = TRUE;
 
     //
     // Configures a default client configuration, optionally disabling
