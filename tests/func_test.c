@@ -679,9 +679,9 @@ static int do_client_connection_test(int sockfd)
 	struct quic_connection_id_info info = {};
 	struct sockaddr_in addr = {};
 	unsigned int optlen, flag;
-	int ret, port, alg;
 	char opt[100] = {};
 	uint64_t sid = 0;
+	int ret, port;
 
 	printf("CONNECTION TEST:\n");
 
@@ -1015,28 +1015,6 @@ static int do_client_connection_test(int sockfd)
 	}
 	printf("test23: PASS (peer key update is done)\n");
 
-	alg = QUIC_CONG_ALG_RENO;
-	ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_CONGESTION_CONTROL, &alg, sizeof(alg));
-	if (ret == -1) {
-		printf("socket setsockopt key update error %d\n", errno);
-		return -1;
-	}
-	optlen = sizeof(alg);
-	ret = getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_CONGESTION_CONTROL, &alg, &optlen);
-	if (ret == -1 || alg != QUIC_CONG_ALG_RENO) {
-		printf("test24: FAIL ret %d, alg %d\n", ret, alg);
-		return -1;
-	}
-	printf("test24: PASS (change congestion control alg)\n");
-
-	alg = QUIC_CONG_ALG_MAX;
-	ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_CONGESTION_CONTROL, &alg, sizeof(alg));
-	if (ret != -1) {
-		printf("test25: FAIL\n");
-		return -1;
-	}
-	printf("test25: PASS (not allowed to change congestion control alg with invalid value)\n");
-
 	strcpy(msg, "client new_token");
 	ret = send(sockfd, msg, strlen(msg), MSG_SYN | MSG_FIN);
 	if (ret == -1) {
@@ -1049,25 +1027,25 @@ static int do_client_connection_test(int sockfd)
 		return 1;
 	}
 	if (strcmp(msg, "client new_token")) {
-		printf("test26: FAIL msg %s\n", msg);
+		printf("test24: FAIL msg %s\n", msg);
 		return -1;
 	}
-	printf("test26: PASS (peer new_token is done)\n");
+	printf("test24: PASS (peer new_token is done)\n");
 
 	optlen = sizeof(opt);
 	ret = getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_TOKEN, opt, &optlen);
 	if (ret == -1 || !optlen) {
-		printf("test27: FAIL ret %d, opt %s\n", ret, opt);
+		printf("test25: FAIL ret %d, opt %s\n", ret, opt);
 		return -1;
 	}
-	printf("test27: PASS (get token from socket)\n");
+	printf("test25: PASS (get token from socket)\n");
 
 	ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_TOKEN, NULL, 0);
 	if (ret != -1) {
-		printf("test28: FAIL\n");
+		printf("test26: FAIL\n");
 		return -1;
 	}
-	printf("test28: PASS (not allowed to set token with an null value on client)\n");
+	printf("test26: PASS (not allowed to set token with an null value on client)\n");
 
 	flag = QUIC_STREAM_FLAG_DATAGRAM;
 	strcpy(msg, "client datagram");
@@ -1082,14 +1060,14 @@ static int do_client_connection_test(int sockfd)
 		return -1;
 	}
 	if (strcmp(msg, "client datagram")) {
-		printf("test29: FAIL msg %s\n", msg);
+		printf("test27: FAIL msg %s\n", msg);
 		return -1;
 	}
 	if (!(flag & QUIC_STREAM_FLAG_DATAGRAM)) {
-		printf("test29: FAIL flag %d\n", flag);
+		printf("test27: FAIL flag %d\n", flag);
 		return -1;
 	}
-	printf("test29: PASS (send and recv datagram)\n");
+	printf("test27: PASS (send and recv datagram)\n");
 	return 0;
 }
 

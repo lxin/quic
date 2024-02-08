@@ -1339,9 +1339,6 @@ static int quic_setsockopt(struct sock *sk, int level, int optname,
 	case QUIC_SOCKOPT_CONNECTION_MIGRATION:
 		retval = quic_sock_change_saddr(sk, kopt, optlen);
 		break;
-	case QUIC_SOCKOPT_CONGESTION_CONTROL:
-		retval = quic_cong_set_cong_alg(sk, kopt, optlen);
-		break;
 	case QUIC_SOCKOPT_KEY_UPDATE:
 		retval = quic_crypto_key_update(quic_crypto(sk, QUIC_CRYPTO_APP));
 		break;
@@ -1618,9 +1615,6 @@ static int quic_getsockopt(struct sock *sk, int level, int optname,
 		break;
 	case QUIC_SOCKOPT_CONNECTION_CLOSE:
 		retval = quic_sock_get_connection_close(sk, len, optval, optlen);
-		break;
-	case QUIC_SOCKOPT_CONGESTION_CONTROL:
-		retval = quic_cong_get_cong_alg(sk, len, optval, optlen);
 		break;
 	case QUIC_SOCKOPT_ACTIVE_CONNECTION_ID:
 		retval = quic_sock_get_active_connection_id(sk, len, optval, optlen);

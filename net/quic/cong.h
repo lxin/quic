@@ -43,8 +43,6 @@ struct quic_cong {
 	struct quic_cong_ops *ops;
 };
 
-int quic_cong_set_cong_alg(struct sock *sk, u8 *alg, unsigned int len);
-int quic_cong_get_cong_alg(struct sock *sk, int len, char __user *optval, int __user *optlen);
 void quic_cong_set_param(struct sock *sk, struct quic_transport_param *p);
 void quic_cong_rtt_update(struct sock *sk, u32 transmit_ts, u32 ack_delay);
 void quic_cong_cwnd_update(struct sock *sk, u32 window);

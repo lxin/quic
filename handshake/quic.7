@@ -375,16 +375,6 @@ for writing only, and the parameter type is:
 to tell kernel the new local address to bind.
 
 .TP
-.B QUIC_SOCKOPT_CONGESTION_CONTROL
-This option is used to get or set the congestion control algorithm.
-
-for reading and writing, and the parameter type is:
-
-    uint8_t;
-
-Currently only support one value QUIC_CONG_ALG_RENO, which is also the default value.
-
-.TP
 .B QUIC_SOCKOPT_KEY_UPDATE
 This option is used to initiate a key update or rekeying.
 
@@ -422,6 +412,7 @@ for reading and writing, and the parameter type is:
             uint8_t         validate_peer_address; (0)
             uint8_t         receive_session_ticket; (0)
             uint8_t         certificate_request; (0)
+            uint8_t         congestion_control_alg; (QUIC_CONG_ALG_RENO)
             uint32_t        payload_cipher_type; (0)
             uint32_t        version; (QUIC_VERSION_V1)
     };
@@ -432,6 +423,7 @@ These members in the 1st group are from RFC9000, and in the 2nd group, the membe
     - validate_peer_address: for server only, verify token and send retry packet
     - receive_session_ticket: for client only, handshake done until ticket is recvd
     - certificate_request: for server only, 0: IGNORE, 1: REQUEST, 2: REQUIRE
+    - congestion_control_alg: congestion control algorithm
     - payload_cipher_type: AES_GCM_128/AES_GCM_256/AES_CCM_128/CHACHA20_POLY1305
     - version:  QUIC_VERSION_V1 or V2 for now
 

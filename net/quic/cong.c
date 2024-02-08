@@ -161,6 +161,10 @@ static void quic_cong_set_rto(struct sock *sk, u32 rto)
 void quic_cong_set_param(struct sock *sk, struct quic_transport_param *p)
 {
 	struct quic_cong *cong = quic_cong(sk);
+	u8 alg = QUIC_CONG_ALG_RENO;
+
+	if (p->congestion_control_alg < QUIC_CONG_ALG_MAX)
+		alg = p->congestion_control_alg;
 
 	cong->latest_rtt = p->initial_smoothed_rtt;
 	cong->smoothed_rtt = cong->latest_rtt;
@@ -169,7 +173,7 @@ void quic_cong_set_param(struct sock *sk, struct quic_transport_param *p)
 
 	cong->state = QUIC_CONG_SLOW_START;
 	cong->threshold = U32_MAX;
-	cong->ops = &quic_congs[QUIC_CONG_ALG_RENO];
+	cong->ops = &quic_congs[alg];
 }
 
 /* Estimating the Round-Trip Time */
@@ -200,32 +204,4 @@ void quic_cong_rtt_update(struct sock *sk, u32 transmit_ts, u32 ack_delay)
 
 	pr_debug("[QUIC] update rto %u\n", cong->smoothed_rtt + cong->rttvar);
 	quic_cong_set_rto(sk, cong->smoothed_rtt + cong->rttvar);
-}
-
-int quic_cong_set_cong_alg(struct sock *sk, u8 *alg, unsigned int len)
-{
-	struct quic_cong *cong = quic_cong(sk);
-
-	if (!quic_is_established(sk))
-		return -EINVAL;
-
-	if (!len || *alg >= QUIC_CONG_ALG_MAX)
-		return -EINVAL;
-
-	cong->ops = &quic_congs[*alg];
-	return 0;
-}
-
-int quic_cong_get_cong_alg(struct sock *sk, int len, char __user *optval, int __user *optlen)
-{
-	struct quic_cong *cong = quic_cong(sk);
-	u8 alg = 0;
-
-	if (!len)
-		return -EINVAL;
-	len = 1;
-	alg = (cong->ops - &quic_congs[0]) / sizeof(struct quic_cong_ops);
-	if (put_user(len, optlen) || copy_to_user(optval, &alg, len))
-		return -EFAULT;
-	return 0;
 }

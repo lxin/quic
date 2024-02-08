@@ -70,46 +70,42 @@ enum quic_msg_flags {
 #define QUIC_SOCKOPT_STREAM_STOP_SENDING		3
 #define QUIC_SOCKOPT_CONNECTION_CLOSE			4
 #define QUIC_SOCKOPT_CONNECTION_MIGRATION		5
-#define QUIC_SOCKOPT_CONGESTION_CONTROL			6
-#define QUIC_SOCKOPT_KEY_UPDATE				7
-#define QUIC_SOCKOPT_TRANSPORT_PARAM			8
-#define QUIC_SOCKOPT_TOKEN				9
-#define QUIC_SOCKOPT_ALPN				10
-#define QUIC_SOCKOPT_SESSION_TICKET			11
-
-/* for handshake only */
-#define QUIC_SOCKOPT_CRYPTO_SECRET			100
-#define QUIC_SOCKOPT_TRANSPORT_PARAM_EXT		101
-
-/* for testing only */
-#define QUIC_SOCKOPT_RETIRE_CONNECTION_ID		1000
-#define QUIC_SOCKOPT_ACTIVE_CONNECTION_ID		1001
+#define QUIC_SOCKOPT_KEY_UPDATE				6
+#define QUIC_SOCKOPT_TRANSPORT_PARAM			7
+#define QUIC_SOCKOPT_TOKEN				8
+#define QUIC_SOCKOPT_ALPN				9
+#define QUIC_SOCKOPT_SESSION_TICKET			10
+#define QUIC_SOCKOPT_CRYPTO_SECRET			11
+#define QUIC_SOCKOPT_TRANSPORT_PARAM_EXT		12
+#define QUIC_SOCKOPT_RETIRE_CONNECTION_ID		13
+#define QUIC_SOCKOPT_ACTIVE_CONNECTION_ID		14
 
 #define QUIC_VERSION_V1			0x1
 #define QUIC_VERSION_V2			0x6b3343cf
 
 struct quic_transport_param {
 	uint8_t		remote;
-	uint8_t 	disable_active_migration;
-	uint8_t 	grease_quic_bit;
-	uint8_t 	stateless_reset;
-	uint64_t 	max_udp_payload_size;
-	uint64_t 	ack_delay_exponent;
-	uint64_t 	max_ack_delay;
-	uint64_t 	active_connection_id_limit;
-	uint64_t 	max_idle_timeout;
-	uint64_t 	max_datagram_frame_size;
-	uint64_t 	max_data;
-	uint64_t 	max_stream_data_bidi_local;
-	uint64_t 	max_stream_data_bidi_remote;
-	uint64_t 	max_stream_data_uni;
-	uint64_t 	max_streams_bidi;
-	uint64_t 	max_streams_uni;
-	uint64_t 	initial_smoothed_rtt;
+	uint8_t		disable_active_migration;
+	uint8_t		grease_quic_bit;
+	uint8_t		stateless_reset;
+	uint64_t	max_udp_payload_size;
+	uint64_t	ack_delay_exponent;
+	uint64_t	max_ack_delay;
+	uint64_t	active_connection_id_limit;
+	uint64_t	max_idle_timeout;
+	uint64_t	max_datagram_frame_size;
+	uint64_t	max_data;
+	uint64_t	max_stream_data_bidi_local;
+	uint64_t	max_stream_data_bidi_remote;
+	uint64_t	max_stream_data_uni;
+	uint64_t	max_streams_bidi;
+	uint64_t	max_streams_uni;
+	uint64_t	initial_smoothed_rtt;
 	uint32_t	plpmtud_probe_timeout;
 	uint8_t		validate_peer_address;
 	uint8_t		receive_session_ticket;
 	uint8_t		certificate_request;
+	uint8_t		congestion_control_alg;
 	uint32_t	payload_cipher_type;
 	uint32_t	version;
 };
