@@ -110,7 +110,7 @@ static struct sk_buff *quic_frame_padding_create(struct sock *sk, void *data, u8
 
 static struct sk_buff *quic_frame_new_token_create(struct sock *sk, void *data, u8 type)
 {
-	union quic_addr *da = quic_path_addr(quic_dst(sk));
+	union quic_addr *da = quic_path_addr(quic_dst(sk), 0);
 	struct sk_buff *skb;
 	u8 buf[17], *p;
 	u32 len = 17;

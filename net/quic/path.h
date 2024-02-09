@@ -56,42 +56,39 @@ struct quic_path_dst {
 	} pl; /* plpmtud related */
 };
 
-static inline void quic_path_addr_set(struct quic_path_addr *a, union quic_addr *addr)
-{
-	memcpy(&a->addr[a->active], addr, a->addr_len);
-}
-
-static inline void quic_path_addr_sel_set(struct quic_path_addr *a, union quic_addr *addr, bool alt)
+static inline void quic_path_addr_set(struct quic_path_addr *a, union quic_addr *addr, bool alt)
 {
 	memcpy(&a->addr[a->active ^ alt], addr, a->addr_len);
 }
 
-static inline union quic_addr *quic_path_addr(struct quic_path_addr *a)
-{
-	return &a->addr[a->active];
-}
-
-static inline union quic_addr *quic_path_addr_sel(struct quic_path_addr *a, bool alt)
+static inline union quic_addr *quic_path_addr(struct quic_path_addr *a, bool alt)
 {
 	return &a->addr[a->active ^ alt];
 }
 
-static inline struct quic_bind_port *quic_path_port(struct quic_path_addr *a)
+static inline struct quic_bind_port *quic_path_port(struct quic_path_addr *a, bool alt)
 {
-	return &((struct quic_path_src *)a)->port[a->active];
+	return &((struct quic_path_src *)a)->port[a->active ^ alt];
 }
 
-static inline void quic_path_addr_init(struct quic_path_addr *a, u8 addr_len)
+static inline void quic_path_addr_init(struct quic_path_addr *a, u8 addr_len, u8 udp_bind)
 {
 	a->addr_len = addr_len;
+	a->udp_bind = udp_bind;
+}
+
+static inline int quic_path_cmp(struct quic_path_addr *a, bool alt, union quic_addr *addr)
+{
+	return memcmp(addr, quic_path_addr(a, alt), a->addr_len);
 }
 
 void quic_udp_sock_put(struct quic_udp_sock *us);
 struct quic_udp_sock *quic_udp_sock_get(struct quic_udp_sock *us);
-int quic_path_set_udp_sock(struct sock *sk, struct quic_path_addr *a);
+int quic_path_set_udp_sock(struct sock *sk, struct quic_path_addr *a, bool alt);
 void quic_bind_port_put(struct sock *sk, struct quic_bind_port *pp);
-int quic_path_set_bind_port(struct sock *sk, struct quic_path_addr *a);
+int quic_path_set_bind_port(struct sock *sk, struct quic_path_addr *a, bool alt);
 void quic_path_free(struct sock *sk, struct quic_path_addr *a);
+void quic_path_addr_free(struct sock *sk, struct quic_path_addr *path, bool alt);
 int quic_path_pl_send(struct quic_path_addr *a);
 int quic_path_pl_recv(struct quic_path_addr *a, bool *raise_timer, bool *complete);
 int quic_path_pl_toobig(struct quic_path_addr *a, u32 pmtu, bool *reset_timer);

@@ -219,6 +219,12 @@ static inline bool quic_is_closed(struct sock *sk)
 	return sk->sk_state == QUIC_SS_CLOSED;
 }
 
+static inline void quic_set_state(struct sock *sk, int state)
+{
+	inet_sk_set_state(sk, state);
+	sk->sk_state_change(sk);
+}
+
 static inline bool quic_version_supported(u32 version)
 {
 	return version == QUIC_VERSION_V1 || version == QUIC_VERSION_V2;
@@ -285,8 +291,8 @@ static inline int quic_data_dup(struct quic_data *to, u8 *data, u32 len)
 	return 0;
 }
 
-int quic_sock_change_saddr(struct sock *sk, void *data, u32 len);
-int quic_sock_change_daddr(struct sock *sk, void *data, u32 len);
+int quic_sock_change_saddr(struct sock *sk, union quic_addr *addr, u32 len);
+int quic_sock_change_daddr(struct sock *sk, union quic_addr *addr, u32 len);
 bool quic_request_sock_exists(struct sock *sk, union quic_addr *sa, union quic_addr *da);
 struct sock *quic_sock_lookup(struct sk_buff *skb, union quic_addr *sa, union quic_addr *da);
 struct quic_request_sock *quic_request_sock_dequeue(struct sock *sk);

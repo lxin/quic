@@ -359,12 +359,12 @@ int quic_packet_process(struct sock *sk, struct sk_buff *skb, u8 resume)
 
 	/* Set path_alt so that the replies will choose the correct path */
 	quic_get_msg_addr(sk, &addr, skb, 0);
-	if (!memcmp(&addr, quic_path_addr_sel(quic_src(sk), 1), quic_addr_len(sk)))
+	if (!quic_path_cmp(quic_src(sk), 1, &addr))
 		QUIC_RCV_CB(skb)->path_alt |= QUIC_PATH_ALT_SRC;
 
 	quic_get_msg_addr(sk, &addr, skb, 1);
-	if (memcmp(&addr, quic_path_addr(quic_dst(sk)), quic_addr_len(sk))) {
-		quic_path_addr_sel_set(quic_dst(sk), &addr, 1);
+	if (quic_path_cmp(quic_dst(sk), 0, &addr)) {
+		quic_path_addr_set(quic_dst(sk), &addr, 1);
 		QUIC_RCV_CB(skb)->path_alt |= QUIC_PATH_ALT_DST;
 	}
 
@@ -621,8 +621,8 @@ int quic_packet_route(struct sock *sk)
 	struct quic_packet *packet = quic_packet(sk);
 	int err, mss;
 
-	packet->sa = quic_path_addr_sel(quic_src(sk), packet->path_alt & QUIC_PATH_ALT_SRC);
-	packet->da = quic_path_addr_sel(quic_dst(sk), packet->path_alt & QUIC_PATH_ALT_DST);
+	packet->sa = quic_path_addr(quic_src(sk), packet->path_alt & QUIC_PATH_ALT_SRC);
+	packet->da = quic_path_addr(quic_dst(sk), packet->path_alt & QUIC_PATH_ALT_DST);
 	err = quic_flow_route(sk, packet->da, packet->sa);
 	if (err)
 		return err;

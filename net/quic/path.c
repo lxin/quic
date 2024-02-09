@@ -149,18 +149,17 @@ void quic_udp_sock_put(struct quic_udp_sock *us)
 		queue_work(quic_wq, &us->work);
 }
 
-int quic_path_set_udp_sock(struct sock *sk, struct quic_path_addr *a)
+int quic_path_set_udp_sock(struct sock *sk, struct quic_path_addr *path, bool alt)
 {
-	struct quic_path_src *s = (struct quic_path_src *)a;
+	struct quic_path_src *src = (struct quic_path_src *)path;
 	struct quic_udp_sock *usk;
 
-	usk = quic_udp_sock_lookup(sk, quic_path_addr(a));
+	usk = quic_udp_sock_lookup(sk, quic_path_addr(path, alt));
 	if (!usk)
 		return -EINVAL;
 
-	quic_udp_sock_put(s->udp_sk[s->a.active]);
-	s->udp_sk[s->a.active] = usk;
-	a->udp_bind = 1;
+	quic_udp_sock_put(src->udp_sk[src->a.active ^ alt]);
+	src->udp_sk[src->a.active ^ alt] = usk;
 	return 0;
 }
 
@@ -178,10 +177,10 @@ void quic_bind_port_put(struct sock *sk, struct quic_bind_port *pp)
 	spin_unlock(&head->lock);
 }
 
-int quic_path_set_bind_port(struct sock *sk, struct quic_path_addr *a)
+int quic_path_set_bind_port(struct sock *sk, struct quic_path_addr *path, bool alt)
 {
-	struct quic_bind_port *port = quic_path_port(a);
-	union quic_addr *addr = quic_path_addr(a);
+	struct quic_bind_port *port = quic_path_port(path, alt);
+	union quic_addr *addr = quic_path_addr(path, alt);
 	struct net *net = sock_net(sk);
 	struct quic_hash_head *head;
 	struct quic_bind_port *pp;
@@ -229,18 +228,25 @@ next:
 	return -EADDRINUSE;
 }
 
-void quic_path_free(struct sock *sk, struct quic_path_addr *a)
+void quic_path_addr_free(struct sock *sk, struct quic_path_addr *path, bool alt)
 {
-	struct quic_path_src *s;
+	struct quic_path_src *src;
 
-	if (!a->udp_bind)
-		return;
+	if (!path->udp_bind)
+		goto out;
 
-	s = (struct quic_path_src *)a;
-	quic_udp_sock_put(s->udp_sk[0]);
-	quic_udp_sock_put(s->udp_sk[1]);
-	quic_bind_port_put(sk, &s->port[0]);
-	quic_bind_port_put(sk, &s->port[1]);
+	src = (struct quic_path_src *)path;
+	quic_udp_sock_put(src->udp_sk[path->active ^ alt]);
+	src->udp_sk[path->active ^ alt] = NULL;
+	quic_bind_port_put(sk, &src->port[path->active ^ alt]);
+out:
+	memset(&path->addr[path->active ^ alt], 0, path->addr_len);
+}
+
+void quic_path_free(struct sock *sk, struct quic_path_addr *path)
+{
+	quic_path_addr_free(sk, path, 0);
+	quic_path_addr_free(sk, path, 1);
 }
 
 enum quic_plpmtud_state {
