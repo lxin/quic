@@ -110,6 +110,7 @@ static struct sk_buff *quic_frame_padding_create(struct sock *sk, void *data, u8
 
 static struct sk_buff *quic_frame_new_token_create(struct sock *sk, void *data, u8 type)
 {
+	struct quic_crypto *crypto = quic_crypto(sk, QUIC_CRYPTO_INITIAL);
 	union quic_addr *da = quic_path_addr(quic_dst(sk), 0);
 	struct sk_buff *skb;
 	u8 buf[17], *p;
@@ -117,8 +118,7 @@ static struct sk_buff *quic_frame_new_token_create(struct sock *sk, void *data, 
 
 	p = buf;
 	p = quic_put_int(p, 0, 1); /* regular token */
-	if (quic_crypto_generate_token(quic_crypto(sk, QUIC_CRYPTO_INITIAL),
-				       (u8 *)da, "path_verification", p, 16))
+	if (quic_crypto_generate_token(crypto, (u8 *)da, "path_verification", p, 16))
 		return NULL;
 
 	skb = alloc_skb(len + 4, GFP_ATOMIC);
@@ -132,10 +132,20 @@ static struct sk_buff *quic_frame_new_token_create(struct sock *sk, void *data, 
 	return skb;
 }
 
+/* STREAM Frame {
+ *  Type (i) = 0x08..0x0f,
+ *  Stream ID (i),
+ *  [Offset (i)],
+ *  [Length (i)],
+ *  Stream Data (..),
+ * }
+*/
+
 static struct sk_buff *quic_frame_stream_create(struct sock *sk, void *data, u8 type)
 {
 	u32 msg_len, hlen = 1, frame_len, max_frame_len;
 	struct quic_msginfo *info = data;
+	struct quic_snd_cb *snd_cb;
 	struct quic_stream *stream;
 	struct sk_buff *skb;
 	u8 *p;
@@ -176,9 +186,10 @@ static struct sk_buff *quic_frame_stream_create(struct sock *sk, void *data, u8 
 	}
 	frame_len += msg_len;
 	skb_put(skb, frame_len);
-	QUIC_SND_CB(skb)->data_bytes = msg_len;
-	QUIC_SND_CB(skb)->stream = stream;
-	QUIC_SND_CB(skb)->frame_type = type;
+	snd_cb = QUIC_SND_CB(skb);
+	snd_cb->data_bytes = msg_len;
+	snd_cb->stream = stream;
+	snd_cb->frame_type = type;
 
 	stream->send.offset += msg_len;
 	return skb;
@@ -274,6 +285,7 @@ static struct sk_buff *quic_frame_retire_connection_id_create(struct sock *sk, v
 
 static struct sk_buff *quic_frame_new_connection_id_create(struct sock *sk, void *data, u8 type)
 {
+	struct quic_crypto *crypto = quic_crypto(sk, QUIC_CRYPTO_INITIAL);
 	struct quic_connection_id scid = {};
 	u8 *p, frame[100], token[16];
 	u64 *prior = data, seqno;
@@ -289,8 +301,7 @@ static struct sk_buff *quic_frame_new_connection_id_create(struct sock *sk, void
 	p = quic_put_var(p, 16);
 	quic_generate_id(&scid, 16);
 	p = quic_put_data(p, scid.data, scid.len);
-	if (quic_crypto_generate_token(quic_crypto(sk, QUIC_CRYPTO_INITIAL),
-				       scid.data, "stateless_reset", token, 16))
+	if (quic_crypto_generate_token(crypto, scid.data, "stateless_reset", token, 16))
 		return NULL;
 	p = quic_put_data(p, token, 16);
 	frame_len = (u32)(p - frame);
@@ -480,20 +491,21 @@ static struct sk_buff *quic_frame_max_streams_bidi_create(struct sock *sk, void 
 
 static struct sk_buff *quic_frame_connection_close_create(struct sock *sk, void *data, u8 type)
 {
+	struct quic_outqueue *outq = quic_outq(sk);
 	u32 frame_len, phrase_len = 0;
 	struct sk_buff *skb;
 	u8 *p, frame[100];
 
 	p = quic_put_var(frame, type);
-	p = quic_put_var(p, quic_outq(sk)->close_errcode);
+	p = quic_put_var(p, outq->close_errcode);
 
 	if (type == QUIC_FRAME_CONNECTION_CLOSE)
-		p = quic_put_var(p, quic_outq(sk)->close_frame);
+		p = quic_put_var(p, outq->close_frame);
 
-	if (quic_outq(sk)->close_phrase)
-		phrase_len = strlen(quic_outq(sk)->close_phrase) + 1;
+	if (outq->close_phrase)
+		phrase_len = strlen(outq->close_phrase) + 1;
 	p = quic_put_var(p, phrase_len);
-	p = quic_put_data(p, quic_outq(sk)->close_phrase, phrase_len);
+	p = quic_put_data(p, outq->close_phrase, phrase_len);
 
 	frame_len = (u32)(p - frame);
 
@@ -620,6 +632,7 @@ static int quic_frame_stream_process(struct sock *sk, struct sk_buff *skb, u8 ty
 {
 	u64 stream_id, payload_len, offset = 0;
 	struct quic_stream *stream;
+	struct quic_rcv_cb *rcv_cb;
 	struct sk_buff *nskb;
 	u32 len = skb->len;
 	u8 *p = skb->data;
@@ -650,9 +663,10 @@ static int quic_frame_stream_process(struct sock *sk, struct sk_buff *skb, u8 ty
 	skb_pull(nskb, skb->len - len);
 	skb_trim(nskb, payload_len);
 
-	QUIC_RCV_CB(nskb)->stream = stream;
-	QUIC_RCV_CB(nskb)->stream_fin = (type & QUIC_STREAM_BIT_FIN);
-	QUIC_RCV_CB(nskb)->offset = offset;
+	rcv_cb = QUIC_RCV_CB(nskb);
+	rcv_cb->stream = stream;
+	rcv_cb->stream_fin = (type & QUIC_STREAM_BIT_FIN);
+	rcv_cb->offset = offset;
 
 	err = quic_inq_reasm_tail(sk, nskb);
 	if (err) {
@@ -1012,13 +1026,7 @@ static int quic_frame_connection_close_process(struct sock *sk, struct sk_buff *
 	close->frame = ftype;
 	if (quic_inq_event_recv(sk, QUIC_EVENT_CONNECTION_CLOSE, close))
 		return -ENOMEM;
-
-	inet_sk_set_state(sk, QUIC_SS_CLOSED);
-
-	/* Now that state is QUIC_STATE_USER_CLOSED, we can wake the waiting
-	 * recv thread up.
-	 */
-	sk->sk_state_change(sk);
+	quic_set_state(sk, QUIC_SS_CLOSED);
 
 	len -= phrase_len;
 	return skb->len - len;
@@ -1028,15 +1036,19 @@ static int quic_frame_data_blocked_process(struct sock *sk, struct sk_buff *skb,
 {
 	struct quic_inqueue *inq = quic_inq(sk);
 	u64 max_bytes, recv_max_bytes;
+	u32 window, len = skb->len;
 	struct sk_buff *fskb;
-	u32 len = skb->len;
 	u8 *p = skb->data;
 
 	if (!quic_get_var(&p, &len, &max_bytes))
 		return -EINVAL;
 	recv_max_bytes = inq->max_bytes;
 
-	inq->max_bytes = inq->bytes + inq->window;
+	window = inq->window;
+	if (sk_under_memory_pressure(sk))
+		window >>= 1;
+
+	inq->max_bytes = inq->bytes + window;
 	fskb = quic_frame_create(sk, QUIC_FRAME_MAX_DATA, inq);
 	if (!fskb) {
 		inq->max_bytes = recv_max_bytes;
@@ -1050,8 +1062,8 @@ static int quic_frame_stream_data_blocked_process(struct sock *sk, struct sk_buf
 {
 	u64 stream_id, max_bytes, recv_max_bytes;
 	struct quic_stream *stream;
+	u32 window, len = skb->len;
 	struct sk_buff *fskb;
-	u32 len = skb->len;
 	u8 *p = skb->data;
 
 	if (!quic_get_var(&p, &len, &stream_id) ||
@@ -1062,8 +1074,12 @@ static int quic_frame_stream_data_blocked_process(struct sock *sk, struct sk_buf
 	if (!stream)
 		return -EINVAL;
 
+	window = stream->recv.window;
+	if (sk_under_memory_pressure(sk))
+		window >>= 1;
+
 	recv_max_bytes = stream->recv.max_bytes;
-	stream->recv.max_bytes = stream->recv.bytes + stream->recv.window;
+	stream->recv.max_bytes = stream->recv.bytes + window;
 	if (recv_max_bytes != stream->recv.max_bytes) {
 		fskb = quic_frame_create(sk, QUIC_FRAME_MAX_STREAM_DATA, stream);
 		if (!fskb) {
@@ -1292,7 +1308,6 @@ int quic_frame_process(struct sock *sk, struct sk_buff *skb, struct quic_packet_
 			return 0;
 		}
 		pr_debug("[QUIC] %s type: %x level: %d\n", __func__, type, QUIC_RCV_CB(skb)->level);
-		type = array_index_nospec(type, QUIC_FRAME_MAX + 1);
 		ret = quic_frame_ops[type].frame_process(sk, skb, type);
 		if (ret < 0) {
 			pr_warn("[QUIC] %s type: %x level: %d err: %d\n", __func__, type,
@@ -1309,13 +1324,13 @@ int quic_frame_process(struct sock *sk, struct sk_buff *skb, struct quic_packet_
 
 		skb_pull(skb, ret);
 		len -= ret;
-		pr_debug("%s type %d ret %d len %d\n", __func__, type, ret, len);
 	}
 	return 0;
 }
 
 struct sk_buff *quic_frame_create(struct sock *sk, u8 type, void *data)
 {
+	struct quic_snd_cb *snd_cb;
 	struct sk_buff *skb;
 
 	if (type > QUIC_FRAME_MAX)
@@ -1326,8 +1341,9 @@ struct sk_buff *quic_frame_create(struct sock *sk, u8 type, void *data)
 		return NULL;
 	}
 	pr_debug("[QUIC] %s type: %u len: %u\n", __func__, type, skb->len);
-	if (!QUIC_SND_CB(skb)->frame_type)
-		QUIC_SND_CB(skb)->frame_type = type;
+	snd_cb = QUIC_SND_CB(skb);
+	if (!snd_cb->frame_type)
+		snd_cb->frame_type = type;
 	return skb;
 }
 

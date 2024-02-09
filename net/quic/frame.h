@@ -53,9 +53,9 @@ struct quic_frame_ops {
 static inline bool quic_frame_ack_eliciting(u8 type)
 {
 	return type != QUIC_FRAME_ACK && type != QUIC_FRAME_PADDING &&
-		type != QUIC_FRAME_PATH_RESPONSE &&
-		type != QUIC_FRAME_CONNECTION_CLOSE &&
-		type != QUIC_FRAME_CONNECTION_CLOSE_APP;
+	       type != QUIC_FRAME_PATH_RESPONSE &&
+	       type != QUIC_FRAME_CONNECTION_CLOSE &&
+	       type != QUIC_FRAME_CONNECTION_CLOSE_APP;
 }
 
 static inline bool quic_frame_retransmittable(u8 type)
