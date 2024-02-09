@@ -33,7 +33,6 @@ static void quic_outq_transmit_ctrl(struct sock *sk)
 			quic_packet_config(sk, snd_cb->level, snd_cb->path_alt);
 			WARN_ON_ONCE(!quic_packet_tail(sk, skb, 0));
 		}
-
 		skb = __skb_dequeue(head);
 	}
 }
@@ -107,9 +106,9 @@ static int quic_outq_flow_control(struct sock *sk, struct sk_buff *skb)
 		return 1;
 	}
 
+	outq->bytes += len;
 	outq->inflight += len;
 	stream->send.frags++;
-	outq->bytes += len;
 	stream->send.bytes += len;
 	return 0;
 }
@@ -207,18 +206,18 @@ void quic_outq_dgram_tail(struct sock *sk, struct sk_buff *skb, bool cork)
 
 void quic_outq_ctrl_tail(struct sock *sk, struct sk_buff *skb, bool cork)
 {
-	struct sk_buff_head *list = &quic_outq(sk)->control_list;
+	struct sk_buff_head *head = &quic_outq(sk)->control_list;
 	struct sk_buff *pos;
 
 	if (QUIC_SND_CB(skb)->level) { /* prioritize handshake frames */
-		skb_queue_walk(list, pos) {
+		skb_queue_walk(head, pos) {
 			if (!QUIC_SND_CB(pos)->level) {
-				__skb_queue_before(list, pos, skb);
+				__skb_queue_before(head, pos, skb);
 				goto out;
 			}
 		}
 	}
-	__skb_queue_tail(list, skb);
+	__skb_queue_tail(head, skb);
 out:
 	if (!cork)
 		quic_outq_flush(sk);
@@ -226,18 +225,18 @@ out:
 
 void quic_outq_rtx_tail(struct sock *sk, struct sk_buff *skb)
 {
-	struct sk_buff_head *list = &quic_outq(sk)->retransmit_list;
+	struct sk_buff_head *head = &quic_outq(sk)->retransmit_list;
 	struct sk_buff *pos;
 
 	if (QUIC_SND_CB(skb)->level) { /* prioritize handshake frames */
-		skb_queue_walk(list, pos) {
+		skb_queue_walk(head, pos) {
 			if (!QUIC_SND_CB(pos)->level) {
-				__skb_queue_before(list, pos, skb);
+				__skb_queue_before(head, pos, skb);
 				return;
 			}
 		}
 	}
-	__skb_queue_tail(list, skb);
+	__skb_queue_tail(head, skb);
 }
 
 void quic_outq_transmit_probe(struct sock *sk)
@@ -248,6 +247,7 @@ void quic_outq_transmit_probe(struct sock *sk)
 
 	if (!quic_is_established(sk))
 		return;
+
 	skb = quic_frame_create(sk, QUIC_FRAME_PING, &d->pl.probe_size);
 	if (skb) {
 		d->pl.number = quic_pnmap(sk, QUIC_CRYPTO_APP)->next_number;
@@ -315,14 +315,19 @@ void quic_outq_retransmit_check(struct sock *sk, u8 level, s64 largest, s64 smal
 				goto unlink;
 			update.id = stream->id;
 			update.state = QUIC_STREAM_SEND_STATE_RECVD;
-			quic_inq_event_recv(sk, QUIC_EVENT_STREAM_UPDATE, &update);
+			if (quic_inq_event_recv(sk, QUIC_EVENT_STREAM_UPDATE, &update)) {
+				outq->inflight += snd_cb->data_bytes;
+				acked_bytes -= snd_cb->data_bytes;
+				continue;
+			}
 			stream->send.state = update.state;
 		}
 		if (quic_frame_is_reset(snd_cb->frame_type)) {
 			update.id = stream->id;
 			update.state = QUIC_STREAM_SEND_STATE_RESET_RECVD;
 			update.errcode = stream->send.errcode;
-			quic_inq_event_recv(sk, QUIC_EVENT_STREAM_UPDATE, &update);
+			if (quic_inq_event_recv(sk, QUIC_EVENT_STREAM_UPDATE, &update))
+				continue;
 			stream->send.state = update.state;
 		}
 unlink:
@@ -354,9 +359,8 @@ void quic_outq_retransmit(struct sock *sk)
 	head = &outq->retransmit_list;
 	if (outq->rtx_count >= QUIC_RTX_MAX) {
 		pr_warn("[QUIC] %s timeout!\n", __func__);
-		inet_sk_set_state(sk, QUIC_SS_CLOSED);
 		sk->sk_err = -ETIMEDOUT;
-		sk->sk_state_change(sk);
+		quic_set_state(sk, QUIC_SS_CLOSED);
 		return;
 	}
 
@@ -419,24 +423,19 @@ void quic_outq_stream_purge(struct sock *sk, struct quic_stream *stream)
 
 void quic_outq_validate_path(struct sock *sk, struct sk_buff *skb, struct quic_path_addr *path)
 {
+	u8 local = path->udp_bind, path_alt = QUIC_PATH_ALT_DST;
 	struct quic_outqueue *outq = quic_outq(sk);
-	u8 local = 0, path_alt = QUIC_PATH_ALT_DST;
 	struct sk_buff_head *head;
 	struct sk_buff *fskb;
 
-	if (path->udp_bind) {
-		struct quic_path_src *src = (struct quic_path_src *)path;
+	if (quic_inq_event_recv(sk, QUIC_EVENT_CONNECTION_MIGRATION, &local))
+		return;
 
+	if (local) {
 		path->active = !path->active;
-		quic_udp_sock_put(src->udp_sk[!path->active]);
-		src->udp_sk[!path->active] = NULL;
-		quic_bind_port_put(sk, &src->port[!path->active]);
-
-		local = 1;
 		path_alt = QUIC_PATH_ALT_SRC;
 	}
-
-	memset(&path->addr[!path->active], 0, quic_addr_len(sk));
+	quic_path_addr_free(sk, path, 1);
 	quic_set_sk_addr(sk, &path->addr[path->active], local);
 	path->sent_cnt = 0;
 	quic_timer_stop(sk, QUIC_TIMER_PATH);
@@ -450,7 +449,6 @@ void quic_outq_validate_path(struct sock *sk, struct sk_buff *skb, struct quic_p
 		QUIC_SND_CB(fskb)->path_alt &= ~path_alt;
 
 	QUIC_RCV_CB(skb)->path_alt &= ~path_alt;
-	quic_inq_event_recv(sk, QUIC_EVENT_CONNECTION_MIGRATION, &local);
 }
 
 void quic_outq_set_param(struct sock *sk, struct quic_transport_param *p)

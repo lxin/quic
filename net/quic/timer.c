@@ -77,15 +77,16 @@ static void quic_timer_idle_timeout(struct timer_list *t)
 		goto out;
 	}
 
-	inet_sk_set_state(sk, QUIC_SS_CLOSED);
-
 	/* Notify userspace, which is most likely waiting for a packet on the
 	 * rcv queue.
 	 */
 	close = (void *)frame;
 	close->errcode = 0;	/* Not an error, only a timer runout. */
-	quic_inq_event_recv(sk, QUIC_EVENT_CONNECTION_CLOSE, close);
-	sk->sk_state_change(sk);
+	if (quic_inq_event_recv(sk, QUIC_EVENT_CONNECTION_CLOSE, close)) {
+		quic_timer_reset(sk, QUIC_TIMER_IDLE);
+		goto out;
+	}
+	quic_set_state(sk, QUIC_SS_CLOSED);
 
 out:
 	bh_unlock_sock(sk);

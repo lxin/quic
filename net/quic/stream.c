@@ -176,8 +176,10 @@ struct quic_stream *quic_stream_send_get(struct quic_stream_table *streams, u64 
 	if (quic_stream_id_exceeds(streams, stream_id))
 		return ERR_PTR(-EAGAIN);
 
-	streams->send.stream_active = stream_id;
-	return quic_stream_add(streams, stream_id, is_serv);
+	stream = quic_stream_add(streams, stream_id, is_serv);
+	if (stream)
+		streams->send.stream_active = stream_id;
+	return stream;
 }
 
 struct quic_stream *quic_stream_recv_get(struct quic_stream_table *streams, u64 stream_id,
