@@ -14,6 +14,7 @@
 #include <net/inet_common.h>
 #include <net/protocol.h>
 #include <linux/icmp.h>
+#include <net/tls.h>
 
 struct quic_hash_table quic_hash_tables[QUIC_HT_MAX_TABLES] __read_mostly;
 struct percpu_counter quic_sockets_allocated;
@@ -283,25 +284,31 @@ static int quic_inet_connect(struct socket *sock, struct sockaddr *addr, int add
 static int quic_inet_listen(struct socket *sock, int backlog)
 {
 	struct sock *sk = sock->sk;
+	struct quic_crypto *crypto;
 	int err = 0;
 
 	lock_sock(sk);
 
+	crypto = quic_crypto(sk, QUIC_CRYPTO_INITIAL);
 	sk->sk_max_ack_backlog = backlog;
 	if (!backlog) {
-		inet_sk_set_state(sk, QUIC_SS_CLOSED);
+		quic_crypto_destroy(crypto);
 		sk->sk_prot->unhash(sk);
+		quic_set_state(sk, QUIC_SS_CLOSED);
 		goto out;
 	}
 
 	if (!hlist_unhashed(&quic_sk(sk)->inet.sk.sk_node))
 		goto out;
-
-	err = quic_crypto_listen_init(quic_crypto(sk, QUIC_CRYPTO_INITIAL));
+	err = sk->sk_prot->hash(sk);
 	if (err)
 		goto out;
-	inet_sk_set_state(sk, QUIC_SS_LISTENING);
-	err = sk->sk_prot->hash(sk);
+	err = quic_crypto_set_tfms(crypto, TLS_CIPHER_AES_GCM_128);
+	if (err) {
+		sk->sk_prot->unhash(sk);
+		goto out;
+	}
+	quic_set_state(sk, QUIC_SS_LISTENING);
 out:
 	release_sock(sk);
 	return err;
@@ -529,8 +536,10 @@ static int quic_hash_tables_init(void)
 		ht = &quic_hash_tables[table];
 		ht->size = 64;
 		head = kmalloc_array(ht->size, sizeof(*head), GFP_KERNEL);
-		if (!head)
-			goto err;
+		if (!head) {
+			quic_hash_tables_destroy();
+			return -ENOMEM;
+		}
 		for (i = 0; i < ht->size; i++) {
 			spin_lock_init(&head[i].lock);
 			INIT_HLIST_HEAD(&head[i].head);
@@ -539,10 +548,6 @@ static int quic_hash_tables_init(void)
 	}
 
 	return 0;
-
-err:
-	quic_hash_tables_destroy();
-	return -ENOMEM;
 }
 
 static struct ctl_table_header *quic_sysctl_header;

@@ -1343,7 +1343,7 @@ static int quic_setsockopt(struct sock *sk, int level, int optname,
 		retval = quic_cong_set_cong_alg(sk, kopt, optlen);
 		break;
 	case QUIC_SOCKOPT_KEY_UPDATE:
-		retval = quic_crypto_key_update(quic_crypto(sk, QUIC_CRYPTO_APP), kopt, optlen);
+		retval = quic_crypto_key_update(quic_crypto(sk, QUIC_CRYPTO_APP));
 		break;
 	case QUIC_SOCKOPT_RETIRE_CONNECTION_ID:
 		retval = quic_sock_retire_connection_id(sk, kopt, optlen);
