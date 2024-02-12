@@ -81,16 +81,6 @@ static inline bool quic_frame_is_dgram(u8 type)
 	return type == QUIC_FRAME_DATAGRAM || type == QUIC_FRAME_DATAGRAM_LEN;
 }
 
-static inline bool quic_frame_is_reset(u8 type)
-{
-	return type == QUIC_FRAME_RESET_STREAM;
-}
-
-static inline bool quic_frame_is_probe(u8 type)
-{
-	return type == QUIC_FRAME_PING;
-}
-
 struct sk_buff *quic_frame_create(struct sock *sk, u8 type, void *data);
 int quic_frame_process(struct sock *sk, struct sk_buff *skb, struct quic_packet_info *pki);
 int quic_frame_new_connection_id_ack(struct sock *sk, struct sk_buff *skb);

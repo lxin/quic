@@ -316,19 +316,23 @@ void quic_outq_retransmit_check(struct sock *sk, u8 level, s64 largest, s64 smal
 			update.id = stream->id;
 			update.state = QUIC_STREAM_SEND_STATE_RECVD;
 			if (quic_inq_event_recv(sk, QUIC_EVENT_STREAM_UPDATE, &update)) {
+				stream->send.frags++;
 				outq->inflight += snd_cb->data_bytes;
 				acked_bytes -= snd_cb->data_bytes;
 				continue;
 			}
 			stream->send.state = update.state;
-		}
-		if (quic_frame_is_reset(snd_cb->frame_type)) {
+		} else if (snd_cb->frame_type == QUIC_FRAME_RESET_STREAM) {
 			update.id = stream->id;
 			update.state = QUIC_STREAM_SEND_STATE_RESET_RECVD;
 			update.errcode = stream->send.errcode;
 			if (quic_inq_event_recv(sk, QUIC_EVENT_STREAM_UPDATE, &update))
 				continue;
 			stream->send.state = update.state;
+		} else if (snd_cb->frame_type == QUIC_FRAME_STREAM_DATA_BLOCKED) {
+			stream->send.data_blocked = 0;
+		} else if (snd_cb->frame_type == QUIC_FRAME_DATA_BLOCKED) {
+			outq->data_blocked = 0;
 		}
 unlink:
 		if (outq->retransmit_skb == skb)

@@ -557,6 +557,7 @@ static struct sk_buff *quic_frame_stream_data_blocked_create(struct sock *sk, vo
 	if (!skb)
 		return NULL;
 	skb_put_data(skb, frame, frame_len);
+	QUIC_SND_CB(skb)->stream = stream;
 
 	return skb;
 }
@@ -926,10 +927,8 @@ static int quic_frame_max_data_process(struct sock *sk, struct sk_buff *skb, u8 
 	if (!quic_get_var(&p, &len, &max_bytes))
 		return -EINVAL;
 
-	if (max_bytes >= outq->max_bytes) {
+	if (max_bytes >= outq->max_bytes)
 		outq->max_bytes = max_bytes;
-		outq->data_blocked = 0;
-	}
 
 	return skb->len - len;
 }
@@ -949,10 +948,8 @@ static int quic_frame_max_stream_data_process(struct sock *sk, struct sk_buff *s
 	if (!stream)
 		return -EINVAL;
 
-	if (max_bytes >= stream->send.max_bytes) {
+	if (max_bytes >= stream->send.max_bytes)
 		stream->send.max_bytes = max_bytes;
-		stream->send.data_blocked = 0;
-	}
 
 	return skb->len - len;
 }
@@ -1087,14 +1084,12 @@ static int quic_frame_stream_data_blocked_process(struct sock *sk, struct sk_buf
 
 	recv_max_bytes = stream->recv.max_bytes;
 	stream->recv.max_bytes = stream->recv.bytes + window;
-	if (recv_max_bytes != stream->recv.max_bytes) {
-		fskb = quic_frame_create(sk, QUIC_FRAME_MAX_STREAM_DATA, stream);
-		if (!fskb) {
-			stream->recv.max_bytes = recv_max_bytes;
-			return -ENOMEM;
-		}
-		quic_outq_ctrl_tail(sk, fskb, true);
+	fskb = quic_frame_create(sk, QUIC_FRAME_MAX_STREAM_DATA, stream);
+	if (!fskb) {
+		stream->recv.max_bytes = recv_max_bytes;
+		return -ENOMEM;
 	}
+	quic_outq_ctrl_tail(sk, fskb, true);
 	return skb->len - len;
 }
 
