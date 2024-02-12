@@ -20,6 +20,7 @@ struct quic_packet {
 
 	u8  ipfragok:1;
 	u8  path_alt:2;
+	u8  padding:1;
 	u8  count;
 	u8  level;
 };

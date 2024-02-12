@@ -93,6 +93,7 @@ static struct sk_buff *quic_frame_ping_create(struct sock *sk, void *data, u8 ty
 	quic_put_var(skb->data, type);
 	skb_put(skb, 1);
 	skb_put_zero(skb, frame_len - 1);
+	QUIC_SND_CB(skb)->padding = 1;
 
 	return skb;
 }
@@ -359,6 +360,7 @@ static struct sk_buff *quic_frame_path_challenge_create(struct sock *sk, void *d
 	p = quic_put_data(p, path->entropy, sizeof(path->entropy));
 	skb_put(skb, 1 + sizeof(path->entropy));
 	skb_put_zero(skb, frame_len - 1);
+	QUIC_SND_CB(skb)->padding = 1;
 
 	return skb;
 }

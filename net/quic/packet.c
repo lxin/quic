@@ -712,6 +712,7 @@ void quic_packet_config(struct sock *sk, u8 level, u8 path_alt)
 		quic_packet_build(sk);
 	}
 	packet->ipfragok = 0;
+	packet->padding = 0;
 	hlen += 4; /* packet number */
 	hlen += quic_dest(sk)->active->id.len;
 	if (level) {
@@ -862,15 +863,17 @@ int quic_packet_tail(struct sock *sk, struct sk_buff *skb, u8 dgram)
 	struct quic_packet *packet = quic_packet(sk);
 
 	if (snd_cb->level != (packet->level % QUIC_CRYPTO_EARLY) ||
-	    snd_cb->path_alt != packet->path_alt)
+	    snd_cb->path_alt != packet->path_alt || packet->padding)
 		return 0;
 
 	if (packet->len + skb->len > packet->mss[dgram]) {
 		if (packet->len != packet->overhead)
 			return 0;
-		if (!quic_frame_is_probe(snd_cb->frame_type))
+		if (snd_cb->frame_type != QUIC_FRAME_PING)
 			packet->ipfragok = 1;
 	}
+	if (snd_cb->padding)
+		packet->padding = snd_cb->padding;
 	packet->len += skb->len;
 	__skb_queue_tail(&packet->frame_list, skb);
 	return skb->len;
