@@ -92,6 +92,10 @@ static void quic_v4_lower_xmit(struct sock *sk, struct sk_buff *skb, union quic_
 		 &da->v4.sin_addr.s_addr, ntohs(da->v4.sin_port));
 
 	dst = sk_dst_get(sk);
+	if (!dst) {
+		kfree_skb(skb);
+		return;
+	}
 	if (ip_dont_fragment(sk, dst) && !skb->ignore_df)
 		df = htons(IP_DF);
 
@@ -105,6 +109,10 @@ static void quic_v6_lower_xmit(struct sock *sk, struct sk_buff *skb, union quic_
 {
 	struct dst_entry *dst = sk_dst_get(sk);
 
+	if (!dst) {
+		kfree_skb(skb);
+		return;
+	}
 	pr_debug("[QUIC] %s: skb: %p len: %d | path: %pI6:%d -> %pI6:%d\n", __func__, skb, skb->len,
 		 &sa->v6.sin6_addr, ntohs(sa->v6.sin6_port),
 		 &da->v6.sin6_addr, ntohs(da->v6.sin6_port));
