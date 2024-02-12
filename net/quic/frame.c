@@ -773,8 +773,10 @@ static int quic_frame_retire_connection_id_process(struct sock *sk, struct sk_bu
 
 	if (!quic_get_var(&p, &len, &seqno))
 		return -EINVAL;
-	last  = quic_connection_id_last_number(id_set);
 	first = quic_connection_id_first_number(id_set);
+	if (seqno < first) /* dup */
+		goto out;
+	last  = quic_connection_id_last_number(id_set);
 	if (seqno != first || seqno == last)
 		return -EINVAL;
 
