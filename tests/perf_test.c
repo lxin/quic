@@ -5,6 +5,7 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
+#include <getopt.h>
 #include <sys/stat.h>
 #include <linux/tls.h>
 #include <arpa/inet.h>
@@ -82,7 +83,90 @@ static int read_cert_file(char *file, gnutls_pcert_st **cert)
 	return ret;
 }
 
-static int do_server(int argc, char *argv[])
+struct options {
+	char *pkey;
+	char *cert;
+	char *addr;
+	char *port;
+	uint8_t is_serv;
+	uint64_t tot_len;
+	uint64_t msg_len;
+};
+
+static struct option long_options[] = {
+	{"addr",	required_argument,	0,	'a'},
+	{"port",	required_argument,	0,	'p'},
+	{"pkey",	required_argument,	0,	'k'},
+	{"cert",	required_argument,	0,	'c'},
+	{"msg_len",	required_argument,	0,	'm'},
+	{"tot_len",	required_argument,	0,	't'},
+	{"listen",	no_argument,		0,	'l'},
+	{"help",	no_argument,		0,	'h'},
+	{0,		0,			0,	 0 }
+};
+
+static void print_usage(char *cmd)
+{
+	printf("%s:\n\n", cmd);
+	printf("    --listen/-l:            work as a server\n");
+	printf("    --addr/-a <a>:          server IP address\n");
+	printf("    --port/-p <p>:          server port\n");
+	printf("    --pkey/-k <k>:          private key\n");
+	printf("    --cert/-c <c>:          certificate\n");
+	printf("    --help/-h <h>:          show help\n");
+	printf("    --msg_len/-m <m>:       msg_len to send\n");
+	printf("    --tot_len/-t <t>:       tot_len to send\n\n");
+}
+
+static int parse_options(int argc, char *argv[], struct options *opts)
+{
+	int c, option_index = 0;
+
+	while (1) {
+		c = getopt_long(argc, argv, "la:p:m:t:k:c:h", long_options, &option_index);
+		if (c == -1)
+			break;
+
+		switch (c) {
+		case 'l':
+			opts->is_serv = 1;
+			break;
+		case 'a':
+			opts->addr = optarg;
+			break;
+		case 'p':
+			opts->port = optarg;
+			break;
+		case 'c':
+			opts->cert = optarg;
+			break;
+		case 'k':
+			opts->pkey = optarg;
+			break;
+		case 'm':
+			opts->msg_len = atoi(optarg);
+			if (opts->msg_len > SND_MSG_LEN)
+				return -1;
+			break;
+		case 't':
+			opts->tot_len = atoll(optarg);
+			if (opts->tot_len > TOT_LEN)
+				return -1;
+			break;
+		case 'h':
+			print_usage(argv[0]);
+			return 1;
+		default:
+			return -1;
+		}
+	}
+
+	if (opts->is_serv && (!opts->cert || !opts->pkey))
+		return -1;
+	return 0;
+}
+
+static int do_server(struct options *opts)
 {
 	struct quic_handshake_parms parms = {};
 	struct quic_transport_param param = {};
@@ -91,16 +175,10 @@ static int do_server(int argc, char *argv[])
 	uint32_t flag = 0, addrlen;
 	uint64_t len = 0,  sid = 0;
 	int ret, sockfd, listenfd;
-	char *mode, *pkey, *cert;
 	gnutls_pcert_st gcert;
 	struct addrinfo *rp;
 
-	if (argc != 6) {
-		printf("%s server <LOCAL ADDR> <LOCAL PORT> <-pkey_file:PRIVATE_KEY_FILE> <-cert_file:CERTIFICATE_FILE>\n", argv[0]);
-		return 0;
-	}
-
-	if (getaddrinfo(argv[2], argv[3], NULL, &rp)) {
+	if (getaddrinfo(opts->addr, opts->port, NULL, &rp)) {
 		printf("getaddrinfo error\n");
 		return -1;
 	}
@@ -109,8 +187,8 @@ static int do_server(int argc, char *argv[])
 		struct sockaddr_in6 la = {};
 
 		la.sin6_family = AF_INET6;
-		la.sin6_port = htons(atoi(argv[3]));
-		inet_pton(AF_INET6, argv[2], &la.sin6_addr);
+		la.sin6_port = htons(atoi(opts->port));
+		inet_pton(AF_INET6, opts->addr, &la.sin6_addr);
 		listenfd = socket(AF_INET6, SOCK_DGRAM, IPPROTO_QUIC);
 		if (listenfd < 0) {
 			printf("socket create failed\n");
@@ -129,8 +207,8 @@ static int do_server(int argc, char *argv[])
 	}
 
 	la.sin_family = AF_INET;
-	la.sin_port = htons(atoi(argv[3]));
-	inet_pton(AF_INET, argv[2], &la.sin_addr.s_addr);
+	la.sin_port = htons(atoi(opts->port));
+	inet_pton(AF_INET, opts->addr, &la.sin_addr.s_addr);
 	listenfd = socket(AF_INET, SOCK_DGRAM, IPPROTO_QUIC);
 	if (listenfd < 0) {
 		printf("socket create failed\n");
@@ -155,16 +233,6 @@ listen:
 		return -1;
 	}
 
-	mode = strtok(argv[4], ":");
-	if (strcmp(mode, "-pkey_file"))
-		return -1;
-	pkey = strtok(NULL, ":");
-
-	mode = strtok(argv[5], ":");
-	if (strcmp(mode, "-cert_file"))
-		return -1;
-	cert = strtok(NULL, ":");
-
 loop:
 	printf("Waiting for New Socket...\n");
 	addrlen = sizeof(ra);
@@ -180,7 +248,8 @@ loop:
 
 	/* start doing handshake with tlshd API */
 	parms.cert = &gcert;
-	if (read_pkey_file(pkey, &parms.privkey) || read_cert_file(cert, &parms.cert)) {
+	if (read_pkey_file(opts->pkey, &parms.privkey) ||
+	    read_cert_file(opts->cert, &parms.cert)) {
 		printf("parse prikey or cert files failed\n");
 		return -1;
 	}
@@ -191,7 +260,7 @@ loop:
 	printf("HANDSHAKE DONE: received cert number: '%d'\n", parms.num_keys);
 
 	while (1) {
-		ret = quic_recvmsg(sockfd, &rcv_msg, RCV_MSG_LEN, &sid, &flag);
+		ret = quic_recvmsg(sockfd, &rcv_msg, opts->msg_len * 16, &sid, &flag);
 		if (ret == -1) {
 			printf("recv error %d %d\n", ret, errno);
 			return 1;
@@ -221,9 +290,8 @@ loop:
 	return 0;
 }
 
-static int do_client(int argc, char *argv[])
+static int do_client(struct options *opts)
 {
-	char *mode, *pkey = NULL, *cert = NULL;
 	struct quic_handshake_parms parms = {};
 	struct sockaddr_in ra = {};
 	uint64_t len = 0, sid = 0;
@@ -233,12 +301,7 @@ static int do_client(int argc, char *argv[])
 	int ret, sockfd;
 	uint32_t flag;
 
-	if (argc != 4 && argc != 6) {
-		printf("%s client <PEER ADDR> <PEER PORT> [<-pkey_file:PRIVATE_KEY_FILE> <-cert_file:CERTIFICATE_FILE>]\n", argv[0]);
-		return 0;
-	}
-
-	if (getaddrinfo(argv[2], argv[3], NULL, &rp)) {
+	if (getaddrinfo(opts->addr, opts->port, NULL, &rp)) {
 		printf("getaddrinfo error\n");
 		return -1;
 	}
@@ -254,8 +317,8 @@ static int do_client(int argc, char *argv[])
 		}
 
 		ra.sin6_family = AF_INET6;
-		ra.sin6_port = htons(atoi(argv[3]));
-		inet_pton(AF_INET6, argv[2], &ra.sin6_addr);
+		ra.sin6_port = htons(atoi(opts->port));
+		inet_pton(AF_INET6, opts->addr, &ra.sin6_addr);
 
 		param.version = 5; /* invalid version to trigger version negotiation */
 		param.receive_session_ticket = 1;
@@ -278,8 +341,8 @@ static int do_client(int argc, char *argv[])
 	}
 
         ra.sin_family = AF_INET;
-        ra.sin_port = htons(atoi(argv[3]));
-        inet_pton(AF_INET, argv[2], &ra.sin_addr.s_addr);
+        ra.sin_port = htons(atoi(opts->port));
+        inet_pton(AF_INET, opts->addr, &ra.sin_addr.s_addr);
 
 	if (connect(sockfd, (struct sockaddr *)&ra, sizeof(ra))) {
 		printf("socket connect failed\n");
@@ -291,20 +354,10 @@ handshake:
 		return -1;
 
 	/* start doing handshake with tlshd API */
-	if (argc == 6) {
+	if (opts->pkey && opts->cert) {
 		parms.cert = &gcert;
-
-		mode = strtok(argv[4], ":");
-		if (strcmp(mode, "-pkey_file"))
-			return -1;
-		pkey = strtok(NULL, ":");
-
-		mode = strtok(argv[5], ":");
-		if (strcmp(mode, "-cert_file"))
-			return -1;
-		cert = strtok(NULL, ":");
-
-		if (read_pkey_file(pkey, &parms.privkey) || read_cert_file(cert, &parms.cert)) {
+		if (read_pkey_file(opts->pkey, &parms.privkey) ||
+		    read_cert_file(opts->cert, &parms.cert)) {
 			printf("parse prikey or cert files failed\n");
 			return -1;
 		}
@@ -317,7 +370,7 @@ handshake:
 
 	time(&start);
 	flag = QUIC_STREAM_FLAG_NEW; /* open stream when send first msg */
-	ret = quic_sendmsg(sockfd, snd_msg, SND_MSG_LEN, sid, flag);
+	ret = quic_sendmsg(sockfd, snd_msg, opts->msg_len, sid, flag);
 	if (ret == -1) {
 		printf("send %d %d\n", ret, errno);
 		return -1;
@@ -325,19 +378,19 @@ handshake:
 	len += ret;
 	flag = 0;
 	while (1) {
-		ret = quic_sendmsg(sockfd, snd_msg, SND_MSG_LEN, sid, flag);
+		ret = quic_sendmsg(sockfd, snd_msg, opts->msg_len, sid, flag);
 		if (ret == -1) {
 			printf("send %d %d\n", ret, errno);
 			return -1;
 		}
 		len += ret;
-		if (!(len % (SND_MSG_LEN * 1024)))
+		if (!(len % (opts->msg_len * 1024)))
 			printf("  send len: %lu, stream_id: %lu, flag: %u.\n", len, sid, flag);
-		if (len > TOT_LEN - SND_MSG_LEN)
+		if (len > opts->tot_len - opts->msg_len)
 			break;
 	}
 	flag = QUIC_STREAM_FLAG_FIN; /* close stream when send last msg */
-	ret = quic_sendmsg(sockfd, snd_msg, SND_MSG_LEN, sid, flag);
+	ret = quic_sendmsg(sockfd, snd_msg, opts->msg_len, sid, flag);
 	if (ret == -1) {
 		printf("send %d %d\n", ret, errno);
 		return -1;
@@ -346,14 +399,17 @@ handshake:
 	printf("SEND DONE: tot_len: %lu, stream_id: %lu, flag: %u.\n", len, sid, flag);
 
 	memset(rcv_msg, 0, sizeof(rcv_msg));
-	ret = quic_recvmsg(sockfd, rcv_msg, RCV_MSG_LEN, &sid, &flag);
+	ret = quic_recvmsg(sockfd, rcv_msg, opts->msg_len * 16, &sid, &flag);
 	if (ret == -1) {
 		printf("recv error %d %d\n", ret, errno);
 		return 1;
 	}
 	time(&end);
 	start = end - start;
-	printf("ALL RECVD: %lu MBytes/Sec\n", TOT_LEN/1024/1024/start);
+	if (opts->tot_len/1024/start < 1024)
+		printf("ALL RECVD: %lu KBytes/Sec\n", opts->tot_len/1024/start);
+	else
+		printf("ALL RECVD: %lu MBytes/Sec\n", opts->tot_len/1024/1024/start);
 
 	close(sockfd);
 	return 0;
@@ -361,13 +417,23 @@ handshake:
 
 int main(int argc, char *argv[])
 {
-	if (argc < 2 || (strcmp(argv[1], "client") && strcmp(argv[1], "server"))) {
-		printf("%s client|server ... \n", argv[0]);
-		return 0;
+	struct options opts = {};
+	int ret;
+
+	opts.msg_len = SND_MSG_LEN;
+	opts.tot_len = TOT_LEN;
+	opts.addr = "0.0.0.0";
+	opts.port = "1234";
+
+	ret = parse_options(argc, argv, &opts);
+	if (ret) {
+		if (ret < 0)
+			printf("parse options error\n");
+		return -1;
 	}
 
-	if (!strcmp(argv[1], "client"))
-		return do_client(argc, argv);
+	if (!opts.is_serv)
+		return do_client(&opts);
 
-	return do_server(argc, argv);
+	return do_server(&opts);
 }
