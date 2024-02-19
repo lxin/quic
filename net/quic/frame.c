@@ -660,8 +660,8 @@ static int quic_frame_stream_process(struct sock *sk, struct sk_buff *skb, u8 ty
 	}
 
 	stream = quic_stream_recv_get(quic_streams(sk), stream_id, quic_is_serv(sk));
-	if (!stream)
-		return -EINVAL;
+	if (IS_ERR(stream))
+		return PTR_ERR(stream);
 
 	nskb = skb_clone(skb, GFP_ATOMIC);
 	if (!nskb)
@@ -731,7 +731,8 @@ static int quic_frame_new_connection_id_process(struct sock *sk, struct sk_buff 
 
 	if (!quic_get_var(&p, &len, &seqno) ||
 	    !quic_get_var(&p, &len, &prior) ||
-	    !quic_get_var(&p, &len, &length) || length + 16 > len)
+	    !quic_get_var(&p, &len, &length) ||
+	    !length || length > 20 || length + 16 > len)
 		return -EINVAL;
 
 	memcpy(dcid.data, p, length);

@@ -190,9 +190,9 @@ struct quic_stream *quic_stream_recv_get(struct quic_stream_table *streams, u64 
 
 	if (is_serv) {
 		if (type == QUIC_STREAM_TYPE_SERVER_UNI)
-			return NULL;
+			return ERR_PTR(-EINVAL);
 	} else if (type == QUIC_STREAM_TYPE_CLIENT_UNI) {
-		return NULL;
+		return ERR_PTR(-EINVAL);
 	}
 
 	stream = quic_stream_find(streams, stream_id);
@@ -200,10 +200,13 @@ struct quic_stream *quic_stream_recv_get(struct quic_stream_table *streams, u64 
 		return stream;
 	if (stream_id & QUIC_STREAM_TYPE_UNI_MASK) {
 		if ((stream_id >> 2) >= streams->recv.max_streams_uni)
-			return NULL;
+			return ERR_PTR(-EINVAL);
 	} else {
 		if ((stream_id >> 2) >= streams->recv.max_streams_bidi)
-			return NULL;
+			return ERR_PTR(-EINVAL);
 	}
-	return quic_stream_add(streams, stream_id, is_serv);
+	stream = quic_stream_add(streams, stream_id, is_serv);
+	if (!stream)
+		return ERR_PTR(-ENOMEM);
+	return stream;
 }
