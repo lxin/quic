@@ -499,3 +499,50 @@ void quic_outq_get_param(struct sock *sk, struct quic_transport_param *p)
 	p->max_udp_payload_size = outq->max_udp_payload_size;
 	p->max_datagram_frame_size = outq->max_datagram_frame_size;
 }
+
+static void quic_outq_encrypted_work(struct work_struct *work)
+{
+	struct quic_sock *qs = container_of(work, struct quic_sock, outq.work);
+	struct sock *sk = &qs->inet.sk;
+	struct sk_buff_head *head;
+	struct sk_buff *skb;
+
+	lock_sock(sk);
+	head = &quic_outq(sk)->encrypted_list;
+	if (sock_flag(sk, SOCK_DEAD)) {
+		skb_queue_purge(head);
+		goto out;
+	}
+
+	skb = skb_dequeue(head);
+	while (skb) {
+		struct quic_snd_cb *snd_cb = QUIC_SND_CB(skb);
+
+		quic_packet_config(sk, snd_cb->level, snd_cb->path_alt);
+		/* the skb here is ready to send */
+		quic_packet_xmit(sk, skb, 1);
+		skb = skb_dequeue(head);
+	}
+	quic_packet_flush(sk);
+out:
+	release_sock(sk);
+	sock_put(sk);
+}
+
+void quic_outq_init(struct quic_outqueue *outq)
+{
+	skb_queue_head_init(&outq->control_list);
+	skb_queue_head_init(&outq->datagram_list);
+	skb_queue_head_init(&outq->encrypted_list);
+	skb_queue_head_init(&outq->retransmit_list);
+	INIT_WORK(&outq->work, quic_outq_encrypted_work);
+}
+
+void quic_outq_free(struct sock *sk, struct quic_outqueue *outq)
+{
+	__skb_queue_purge(&sk->sk_write_queue);
+	__skb_queue_purge(&outq->retransmit_list);
+	__skb_queue_purge(&outq->datagram_list);
+	__skb_queue_purge(&outq->control_list);
+	kfree(outq->close_phrase);
+}

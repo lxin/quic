@@ -971,8 +971,8 @@ static void quic_close(struct sock *sk, long timeout)
 
 	quic_set_state(sk, QUIC_SS_CLOSED);
 
-	quic_outq_purge(sk, quic_outq(sk));
-	quic_inq_purge(sk, quic_inq(sk));
+	quic_outq_free(sk, quic_outq(sk));
+	quic_inq_free(sk, quic_inq(sk));
 
 	quic_path_free(sk, quic_src(sk));
 	quic_path_free(sk, quic_dst(sk));

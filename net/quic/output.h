@@ -11,9 +11,11 @@
 struct quic_outqueue {
 	struct quic_connection_id orig_dcid;
 	struct sk_buff_head retransmit_list;
+	struct sk_buff_head encrypted_list;
 	struct sk_buff_head datagram_list;
 	struct sk_buff_head control_list;
 	struct sk_buff *retransmit_skb;
+	struct work_struct work;
 	u64 max_bytes;
 	u64 inflight;
 	u64 window;
@@ -55,22 +57,6 @@ struct quic_snd_cb {
 };
 
 #define QUIC_SND_CB(__skb)      ((struct quic_snd_cb *)&((__skb)->cb[0]))
-
-static inline void quic_outq_init(struct quic_outqueue *outq)
-{
-	skb_queue_head_init(&outq->control_list);
-	skb_queue_head_init(&outq->datagram_list);
-	skb_queue_head_init(&outq->retransmit_list);
-}
-
-static inline void quic_outq_purge(struct sock *sk, struct quic_outqueue *outq)
-{
-	__skb_queue_purge(&sk->sk_write_queue);
-	__skb_queue_purge(&outq->retransmit_list);
-	__skb_queue_purge(&outq->datagram_list);
-	__skb_queue_purge(&outq->control_list);
-	kfree(outq->close_phrase);
-}
 
 static inline void quic_outq_reset(struct quic_outqueue *outq)
 {
@@ -116,3 +102,5 @@ void quic_outq_stream_purge(struct sock *sk, struct quic_stream *stream);
 void quic_outq_set_param(struct sock *sk, struct quic_transport_param *p);
 void quic_outq_get_param(struct sock *sk, struct quic_transport_param *p);
 void quic_outq_transmit_probe(struct sock *sk);
+void quic_outq_init(struct quic_outqueue *outq);
+void quic_outq_free(struct sock *sk, struct quic_outqueue *outq);

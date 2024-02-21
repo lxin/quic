@@ -157,6 +157,32 @@ err:
 	return -EINVAL;
 }
 
+#if KERNEL_VERSION(6, 2, 0) <= LINUX_VERSION_CODE
+static void quic_packet_decrypt_done(void *data, int err)
+{
+	struct sk_buff *skb = data;
+#else
+static void quic_packet_decrypt_done(struct crypto_async_request *base, int err)
+{
+	struct sk_buff *skb = base->data;
+#endif
+	struct sock *sk = skb->sk;
+	struct quic_inqueue *inq;
+
+	if (err) {
+		kfree_skb(skb);
+		pr_warn_once("%s: err %d\n", __func__, err);
+		return;
+	}
+
+	sock_hold(sk);
+	inq = quic_inq(sk);
+	skb_queue_tail(&inq->decrypted_list, skb);
+
+	if (!schedule_work(&inq->work))
+		sock_put(sk);
+}
+
 static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb, u8 resume)
 {
 	struct quic_packet_info pki = {};
@@ -236,6 +262,7 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb, u
 		if (!quic_get_var(&p, &len, &pki.length) || pki.length > len)
 			goto err;
 		pki.number_offset = p - (u8 *)hshdr;
+		pki.crypto_done = quic_packet_decrypt_done;
 		pki.resume = resume;
 		err = quic_crypto_decrypt(quic_crypto(sk, level), skb, &pki);
 		if (err) {
@@ -291,24 +318,6 @@ err:
 		quic_is_serv(sk), pki.number, level, err);
 	kfree_skb(skb);
 	return err;
-}
-
-#if KERNEL_VERSION(6, 2, 0) <= LINUX_VERSION_CODE
-static void quic_packet_decrypt_done(void *data, int err)
-{
-	struct sk_buff *skb = data;
-#else
-static void quic_packet_decrypt_done(struct crypto_async_request *base, int err)
-{
-	struct sk_buff *skb = base->data;
-#endif
-	struct sock *sk = skb->sk;
-
-	lock_sock(sk);
-	quic_packet_process(sk, skb, 1);
-	release_sock(sk);
-
-	pr_info_once("%s\n", __func__);
 }
 
 int quic_packet_process(struct sock *sk, struct sk_buff *skb, u8 resume)
@@ -732,8 +741,6 @@ void quic_packet_config(struct sock *sk, u8 level, u8 path_alt)
 	quic_packet_route(sk);
 }
 
-static int quic_packet_xmit(struct sock *sk, struct sk_buff *skb, u8 resume);
-
 #if KERNEL_VERSION(6, 2, 0) <= LINUX_VERSION_CODE
 static void quic_packet_encrypt_done(void *data, int err)
 {
@@ -743,18 +750,21 @@ static void quic_packet_encrypt_done(struct crypto_async_request *base, int err)
 {
 	struct sk_buff *skb = base->data;
 #endif
-	struct quic_snd_cb *snd_cb;
+	struct quic_outqueue *outq;
 	struct sock *sk = skb->sk;
 
-	lock_sock(sk);
-	snd_cb = QUIC_SND_CB(skb);
-	quic_packet_config(sk, snd_cb->level, snd_cb->path_alt);
-	/* the skb here is ready to send */
-	quic_packet_xmit(sk, skb, 1);
-	quic_packet_flush(sk);
-	release_sock(sk);
+	if (err) {
+		kfree_skb(skb);
+		pr_warn_once("%s: err %d\n", __func__, err);
+		return;
+	}
 
-	pr_info_once("%s\n", __func__);
+	sock_hold(sk);
+	outq = quic_outq(sk);
+	skb_queue_tail(&outq->encrypted_list, skb);
+
+	if (!schedule_work(&outq->work))
+		sock_put(sk);
 }
 
 static int quic_packet_bundle(struct sock *sk, struct sk_buff *skb)
@@ -789,7 +799,7 @@ out:
 	return !QUIC_SND_CB(skb)->level;
 }
 
-static int quic_packet_xmit(struct sock *sk, struct sk_buff *skb, u8 resume)
+int quic_packet_xmit(struct sock *sk, struct sk_buff *skb, u8 resume)
 {
 	struct quic_snd_cb *snd_cb = QUIC_SND_CB(skb);
 	struct quic_packet *packet = quic_packet(sk);

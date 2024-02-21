@@ -608,3 +608,44 @@ int quic_inq_dgram_tail(struct sock *sk, struct sk_buff *skb)
 	sk->sk_data_ready(sk);
 	return 0;
 }
+
+static void quic_inq_decrypted_work(struct work_struct *work)
+{
+	struct quic_sock *qs = container_of(work, struct quic_sock, inq.work);
+	struct sock *sk = &qs->inet.sk;
+	struct sk_buff_head *head;
+	struct sk_buff *skb;
+
+	lock_sock(sk);
+	head = &quic_inq(sk)->decrypted_list;
+	if (sock_flag(sk, SOCK_DEAD)) {
+		skb_queue_purge(head);
+		goto out;
+	}
+
+	skb = skb_dequeue(head);
+	while (skb) {
+		quic_packet_process(sk, skb, 1);
+		skb = skb_dequeue(head);
+	}
+out:
+	release_sock(sk);
+	sock_put(sk);
+}
+
+void quic_inq_init(struct quic_inqueue *inq)
+{
+	skb_queue_head_init(&inq->reassemble_list);
+	skb_queue_head_init(&inq->decrypted_list);
+	skb_queue_head_init(&inq->handshake_list);
+	skb_queue_head_init(&inq->backlog_list);
+	INIT_WORK(&inq->work, quic_inq_decrypted_work);
+}
+
+void quic_inq_free(struct sock *sk, struct quic_inqueue *inq)
+{
+	__skb_queue_purge(&sk->sk_receive_queue);
+	__skb_queue_purge(&inq->reassemble_list);
+	__skb_queue_purge(&inq->handshake_list);
+	__skb_queue_purge(&inq->backlog_list);
+}
