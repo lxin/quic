@@ -25,7 +25,6 @@ struct quic_packet_info {
 	void *crypto_done;
 };
 
-#define QUIC_KEY_LEN	32
 #define QUIC_TAG_LEN	16
 #define QUIC_IV_LEN	12
 #define QUIC_SECRET_LEN	48
@@ -39,27 +38,25 @@ struct quic_cipher {
 };
 
 struct quic_crypto {
+	struct crypto_skcipher *tx_hp_tfm;
+	struct crypto_skcipher *rx_hp_tfm;
 	struct crypto_shash *secret_tfm;
-	u8 tx_secret[QUIC_SECRET_LEN];
-	u8 rx_secret[QUIC_SECRET_LEN];
-
-	struct crypto_aead *aead_tfm;
+	struct crypto_aead *tx_tfm[2];
+	struct crypto_aead *rx_tfm[2];
+	struct crypto_aead *tag_tfm;
 	struct quic_cipher *cipher;
 	u32 cipher_type;
-	u8 tx_key[2][QUIC_KEY_LEN];
+
+	u8 tx_secret[QUIC_SECRET_LEN];
+	u8 rx_secret[QUIC_SECRET_LEN];
 	u8 tx_iv[2][QUIC_IV_LEN];
-	u8 rx_key[2][QUIC_KEY_LEN];
 	u8 rx_iv[2][QUIC_IV_LEN];
 
-	struct crypto_skcipher *skc_tfm;
-	u8 tx_hp_key[QUIC_KEY_LEN];
-	u8 rx_hp_key[QUIC_KEY_LEN];
+	u32 key_update_send_ts;
+	u32 key_update_ts;
 	u32 send_offset;
 	u32 recv_offset;
 	u32 version;
-
-	u32 key_update_ts;
-	u32 key_update_send_ts;
 
 	u8 key_phase:1;
 	u8 key_pending:1;
@@ -80,7 +77,7 @@ int quic_crypto_key_update(struct quic_crypto *crypto);
 void quic_crypto_set_key_update_ts(struct quic_crypto *crypto, u32 key_update_ts);
 int quic_crypto_get_retry_tag(struct quic_crypto *crypto, struct sk_buff *skb,
 			      struct quic_connection_id *odcid, u32 version, u8 *tag);
-int quic_crypto_set_tfms(struct quic_crypto *crypto, u32 type);
+int quic_crypto_set_cipher(struct quic_crypto *crypto, u32 type);
 int quic_crypto_generate_token(struct quic_crypto *crypto, void *data, char *label,
 			       u8 *token, u32 len);
 int quic_crypto_generate_session_ticket_key(struct quic_crypto *crypto, void *data,

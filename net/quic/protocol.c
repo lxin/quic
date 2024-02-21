@@ -311,7 +311,7 @@ static int quic_inet_listen(struct socket *sock, int backlog)
 	err = sk->sk_prot->hash(sk);
 	if (err)
 		goto out;
-	err = quic_crypto_set_tfms(crypto, TLS_CIPHER_AES_GCM_128);
+	err = quic_crypto_set_cipher(crypto, TLS_CIPHER_AES_GCM_128);
 	if (err) {
 		sk->sk_prot->unhash(sk);
 		goto out;
