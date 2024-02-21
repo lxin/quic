@@ -1818,8 +1818,11 @@ reply:
 			printf("send %d %d\n", ret, errno);
 			return -1;
 		}
-		if (!strcmp(msg, "client close"))
+		if (!strcmp(msg, "client close")) {
+			sleep(1);
+			shutdown(sockfd, SHUT_WR);
 			break;
+		}
 reset:
 		len = 0;
 		memset(msg, 0, sizeof(msg));
