@@ -91,7 +91,8 @@ static int quic_packet_handshake_retry_process(struct sock *sk, struct sk_buff *
 		goto err;
 
 	quic_crypto_destroy(crypto);
-	quic_crypto_initial_keys_install(crypto, &scid, version, 0);
+	if (quic_crypto_initial_keys_install(crypto, &scid, version, 0))
+		goto err;
 	quic_dest(sk)->active->id = scid;
 	quic_outq_retransmit(sk);
 
@@ -146,7 +147,8 @@ static int quic_packet_handshake_version_process(struct sock *sk, struct sk_buff
 	if (best) {
 		quic_local(sk)->version = best;
 		quic_crypto_destroy(crypto);
-		quic_crypto_initial_keys_install(crypto, &scid, best, 0);
+		if (quic_crypto_initial_keys_install(crypto, &scid, best, 0))
+			goto err;
 		quic_outq_retransmit(sk);
 	}
 
