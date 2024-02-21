@@ -143,7 +143,7 @@ static struct sk_buff *quic_frame_new_token_create(struct sock *sk, void *data, 
  *  [Length (i)],
  *  Stream Data (..),
  * }
-*/
+ */
 
 static struct sk_buff *quic_frame_stream_create(struct sock *sk, void *data, u8 type)
 {
