@@ -82,6 +82,41 @@ static inline int quic_path_cmp(struct quic_path_addr *a, bool alt, union quic_a
 	return memcmp(addr, quic_path_addr(a, alt), a->addr_len);
 }
 
+static inline u32 quic_path_mtu_info(struct quic_path_addr *a)
+{
+	return ((struct quic_path_dst *)a)->mtu_info;
+}
+
+static inline void quic_path_set_mtu_info(struct quic_path_addr *a, u32 mtu_info)
+{
+	((struct quic_path_dst *)a)->mtu_info = mtu_info;
+}
+
+static inline u8 quic_path_sent_cnt(struct quic_path_addr *a)
+{
+	return a->sent_cnt;
+}
+
+static inline void quic_path_set_sent_cnt(struct quic_path_addr *a, u8 cnt)
+{
+	a->sent_cnt = cnt;
+}
+
+static inline void quic_path_swap_active(struct quic_path_addr *a)
+{
+	a->active = !a->active;
+}
+
+static inline u8 *quic_path_entropy(struct quic_path_addr *a)
+{
+	return a->entropy;
+}
+
+static inline u8 quic_path_udp_bind(struct quic_path_addr *a)
+{
+	return a->udp_bind;
+}
+
 void quic_udp_sock_put(struct quic_udp_sock *us);
 struct quic_udp_sock *quic_udp_sock_get(struct quic_udp_sock *us);
 int quic_path_set_udp_sock(struct sock *sk, struct quic_path_addr *a, bool alt);

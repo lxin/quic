@@ -446,7 +446,7 @@ void quic_outq_stream_purge(struct sock *sk, struct quic_stream *stream)
 
 void quic_outq_validate_path(struct sock *sk, struct sk_buff *skb, struct quic_path_addr *path)
 {
-	u8 local = path->udp_bind, path_alt = QUIC_PATH_ALT_DST;
+	u8 local = quic_path_udp_bind(path), path_alt = QUIC_PATH_ALT_DST;
 	struct quic_outqueue *outq = quic_outq(sk);
 	struct sk_buff_head *head;
 	struct sk_buff *fskb;
@@ -455,12 +455,12 @@ void quic_outq_validate_path(struct sock *sk, struct sk_buff *skb, struct quic_p
 		return;
 
 	if (local) {
-		path->active = !path->active;
+		quic_path_swap_active(path);
 		path_alt = QUIC_PATH_ALT_SRC;
 	}
 	quic_path_addr_free(sk, path, 1);
-	quic_set_sk_addr(sk, &path->addr[path->active], local);
-	path->sent_cnt = 0;
+	quic_set_sk_addr(sk, quic_path_addr(path, 0), local);
+	quic_path_set_sent_cnt(path, 0);
 	quic_timer_stop(sk, QUIC_TIMER_PATH);
 
 	head = &outq->control_list;

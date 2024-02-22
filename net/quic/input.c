@@ -224,15 +224,17 @@ err:
 
 void quic_rcv_err_icmp(struct sock *sk)
 {
-	u32 pathmtu, info = ((struct quic_path_dst *)quic_dst(sk))->mtu_info;
+	struct quic_path_addr *path = quic_dst(sk);
+	u32 pathmtu, info;
 	bool reset_timer;
 
+	info = quic_path_mtu_info(path);
 	if (!quic_inq(sk)->probe_timeout) {
 		quic_packet_mss_update(sk, info - quic_encap_len(sk));
 		return;
 	}
 	info = info - quic_encap_len(sk) - QUIC_TAG_LEN;
-	pathmtu = quic_path_pl_toobig(quic_dst(sk), info, &reset_timer);
+	pathmtu = quic_path_pl_toobig(path, info, &reset_timer);
 	if (reset_timer) {
 		quic_timer_setup(sk, QUIC_TIMER_PROBE, quic_inq(sk)->probe_timeout);
 		quic_timer_reset(sk, QUIC_TIMER_PROBE);
@@ -245,6 +247,7 @@ int quic_rcv_err(struct sk_buff *skb)
 {
 	struct quic_addr_family_ops *af_ops;
 	union quic_addr daddr, saddr;
+	struct quic_path_addr *path;
 	struct sock *sk = NULL;
 	int ret = 0;
 	u32 info;
@@ -265,7 +268,8 @@ int quic_rcv_err(struct sk_buff *skb)
 		goto out;
 
 	ret = 1; /* processed with common mtud */
-	((struct quic_path_dst *)quic_dst(sk))->mtu_info = info;
+	path = quic_dst(sk);
+	quic_path_set_mtu_info(path, info);
 	if (sock_owned_by_user(sk)) {
 		if (!test_and_set_bit(QUIC_MTU_REDUCED_DEFERRED, &sk->sk_tsq_flags))
 			sock_hold(sk);

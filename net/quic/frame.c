@@ -356,14 +356,14 @@ static struct sk_buff *quic_frame_path_challenge_create(struct sock *sk, void *d
 
 	quic_packet_config(sk, 0, 0);
 	frame_len = 1184 - quic_packet_overhead(packet);
-	get_random_bytes(path->entropy, sizeof(path->entropy));
+	get_random_bytes(quic_path_entropy(path), 8);
 
 	skb = alloc_skb(frame_len, GFP_ATOMIC);
 	if (!skb)
 		return NULL;
 	p = quic_put_var(skb->data, type);
-	p = quic_put_data(p, path->entropy, sizeof(path->entropy));
-	skb_put(skb, 1 + sizeof(path->entropy));
+	p = quic_put_data(p, quic_path_entropy(path), 8);
+	skb_put(skb, 1 + 8);
 	skb_put_zero(skb, frame_len - 1);
 	QUIC_SND_CB(skb)->padding = 1;
 
@@ -1151,11 +1151,11 @@ static int quic_frame_path_response_process(struct sock *sk, struct sk_buff *skb
 	memcpy(entropy, skb->data, 8);
 
 	path = quic_src(sk); /* source address validation */
-	if (!memcmp(path->entropy, entropy, 8) && path->sent_cnt)
+	if (!memcmp(quic_path_entropy(path), entropy, 8) && quic_path_sent_cnt(path))
 		quic_outq_validate_path(sk, skb, path);
 
 	path = quic_dst(sk); /* dest address validation */
-	if (!memcmp(path->entropy, entropy, 8) && path->sent_cnt)
+	if (!memcmp(quic_path_entropy(path), entropy, 8) && quic_path_sent_cnt(path))
 		quic_outq_validate_path(sk, skb, path);
 
 	len -= 8;

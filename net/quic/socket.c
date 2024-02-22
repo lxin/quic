@@ -1006,19 +1006,20 @@ static void quic_close(struct sock *sk, long timeout)
 int quic_sock_change_daddr(struct sock *sk, union quic_addr *addr, u32 len)
 {
 	struct quic_path_addr *path = quic_dst(sk);
+	u8 cnt = quic_path_sent_cnt(path);
 	struct sk_buff *skb;
 
-	if (path->sent_cnt)
+	if (cnt)
 		return -EINVAL;
 
-	path->active = !path->active;
+	quic_path_swap_active(path);
 	quic_path_addr_set(path, addr, 0);
 
 	skb = quic_frame_create(sk, QUIC_FRAME_PATH_CHALLENGE, path);
 	if (skb)
 		quic_outq_ctrl_tail(sk, skb, false);
 
-	path->sent_cnt++;
+	quic_path_set_sent_cnt(path, cnt + 1);
 	quic_timer_reset(sk, QUIC_TIMER_PATH);
 	return 0;
 }
@@ -1026,11 +1027,12 @@ int quic_sock_change_daddr(struct sock *sk, union quic_addr *addr, u32 len)
 int quic_sock_change_saddr(struct sock *sk, union quic_addr *addr, u32 len)
 {
 	struct quic_path_addr *path = quic_src(sk);
+	u8 cnt = quic_path_sent_cnt(path);
 	struct sk_buff *skb;
 	u64 number;
 	int err;
 
-	if (path->sent_cnt || !quic_is_established(sk))
+	if (cnt || !quic_is_established(sk))
 		return -EINVAL;
 
 	if (quic_source(sk)->disable_active_migration)
@@ -1063,7 +1065,7 @@ int quic_sock_change_saddr(struct sock *sk, union quic_addr *addr, u32 len)
 		quic_outq_ctrl_tail(sk, skb, false);
 	}
 
-	path->sent_cnt++;
+	quic_path_set_sent_cnt(path, cnt + 1);
 	quic_timer_reset(sk, QUIC_TIMER_PATH);
 	return 0;
 err:

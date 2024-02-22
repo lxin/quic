@@ -122,6 +122,7 @@ static void quic_timer_path_timeout(struct timer_list *t)
 	struct sock *sk = &qs->inet.sk;
 	struct quic_path_addr *path;
 	struct sk_buff *skb;
+	u8 cnt;
 
 	bh_lock_sock(sk);
 	if (sock_owned_by_user(sk)) {
@@ -134,29 +135,31 @@ static void quic_timer_path_timeout(struct timer_list *t)
 		goto out;
 
 	path = quic_src(sk);
-	if (path->sent_cnt) {
-		if (path->sent_cnt >= 5) {
-			path->sent_cnt = 0;
+	cnt = quic_path_sent_cnt(path);
+	if (cnt) {
+		if (cnt >= 5) {
+			quic_path_set_sent_cnt(path, 0);
 			goto out;
 		}
 		skb = quic_frame_create(sk, QUIC_FRAME_PATH_CHALLENGE, path);
 		if (skb)
 			quic_outq_ctrl_tail(sk, skb, false);
-		path->sent_cnt++;
+		quic_path_set_sent_cnt(path, cnt + 1);
 		quic_timer_reset(sk, QUIC_TIMER_PATH);
 	}
 
 	path = quic_dst(sk);
-	if (path->sent_cnt) {
-		if (path->sent_cnt >= 5) {
-			path->sent_cnt = 0;
-			path->active = !path->active;
+	cnt = quic_path_sent_cnt(path);
+	if (cnt) {
+		if (cnt >= 5) {
+			quic_path_set_sent_cnt(path, 0);
+			quic_path_swap_active(path);
 			goto out;
 		}
 		skb = quic_frame_create(sk, QUIC_FRAME_PATH_CHALLENGE, path);
 		if (skb)
 			quic_outq_ctrl_tail(sk, skb, false);
-		path->sent_cnt++;
+		quic_path_set_sent_cnt(path, cnt + 1);
 		quic_timer_reset(sk, QUIC_TIMER_PATH);
 	}
 
