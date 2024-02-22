@@ -451,22 +451,23 @@ void quic_inq_stream_purge(struct sock *sk, struct quic_stream *stream)
 int quic_inq_handshake_tail(struct sock *sk, struct sk_buff *skb)
 {
 	struct quic_rcv_cb *rcv_cb = QUIC_RCV_CB(skb);
-	u64 offset = rcv_cb->offset;
+	u64 offset = rcv_cb->offset, crypto_offset;
 	struct quic_crypto *crypto;
 	struct sk_buff_head *head;
 	u8 level = rcv_cb->level;
 	struct sk_buff *tmp;
 
 	crypto = quic_crypto(sk, level);
-	pr_debug("[QUIC] %s recv_offset: %u offset: %llu level: %u\n", __func__,
-		 crypto->recv_offset, offset, level);
-	if (crypto->recv_offset > offset) {
+	crypto_offset = quic_crypto_recv_offset(crypto);
+	pr_debug("[QUIC] %s recv_offset: %llu offset: %llu level: %u\n", __func__,
+		 crypto_offset, offset, level);
+	if (crypto_offset > offset) {
 		kfree_skb(skb);
 		return 0;
 	}
 	quic_inq_set_owner_r(skb, sk);
 	head = &quic_inq(sk)->handshake_list;
-	if (crypto->recv_offset < offset) {
+	if (crypto_offset < offset) {
 		skb_queue_walk(head, tmp) {
 			rcv_cb = QUIC_RCV_CB(tmp);
 			if (rcv_cb->level < level)
@@ -486,7 +487,7 @@ int quic_inq_handshake_tail(struct sock *sk, struct sk_buff *skb)
 
 	__skb_queue_tail(&sk->sk_receive_queue, skb);
 	sk->sk_data_ready(sk);
-	crypto->recv_offset += skb->len;
+	quic_crypto_increase_recv_offset(crypto, skb->len);
 
 	skb_queue_walk_safe(head, skb, tmp) {
 		rcv_cb = QUIC_RCV_CB(skb);
@@ -494,12 +495,12 @@ int quic_inq_handshake_tail(struct sock *sk, struct sk_buff *skb)
 			continue;
 		if (rcv_cb->level > level)
 			break;
-		if (rcv_cb->offset > crypto->recv_offset)
+		if (rcv_cb->offset > crypto_offset)
 			break;
 		__skb_unlink(skb, head);
 		__skb_queue_tail(&sk->sk_receive_queue, skb);
 		sk->sk_data_ready(sk);
-		crypto->recv_offset += skb->len;
+		quic_crypto_increase_recv_offset(crypto, skb->len);
 	}
 	return 0;
 }

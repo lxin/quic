@@ -76,6 +76,11 @@ static inline s64 quic_pnmap_next_number(const struct quic_pnmap *map)
 	return map->next_number;
 }
 
+static inline s64 quic_pnmap_increase_next_number(struct quic_pnmap *map)
+{
+	return map->next_number++;
+}
+
 static inline s64 quic_pnmap_base_pn(const struct quic_pnmap *map)
 {
 	return map->base_pn;

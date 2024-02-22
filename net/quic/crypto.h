@@ -54,8 +54,8 @@ struct quic_crypto {
 
 	u32 key_update_send_ts;
 	u32 key_update_ts;
-	u32 send_offset;
-	u32 recv_offset;
+	u64 send_offset;
+	u64 recv_offset;
 	u32 version;
 
 	u8 key_phase:1;
@@ -63,6 +63,56 @@ struct quic_crypto {
 	u8 send_ready:1;
 	u8 recv_ready:1;
 };
+
+static inline u32 quic_crypto_cipher_type(struct quic_crypto *crypto)
+{
+	return crypto->cipher_type;
+}
+
+static inline void quic_crypto_set_cipher_type(struct quic_crypto *crypto, u32 type)
+{
+	crypto->cipher_type = type;
+}
+
+static inline u64 quic_crypto_recv_offset(struct quic_crypto *crypto)
+{
+	return crypto->recv_offset;
+}
+
+static inline void quic_crypto_increase_recv_offset(struct quic_crypto *crypto, u64 offset)
+{
+	crypto->recv_offset += offset;
+}
+
+static inline u64 quic_crypto_send_offset(struct quic_crypto *crypto)
+{
+	return crypto->send_offset;
+}
+
+static inline void quic_crypto_increase_send_offset(struct quic_crypto *crypto, u64 offset)
+{
+	crypto->send_offset += offset;
+}
+
+static inline u8 quic_crypto_recv_ready(struct quic_crypto *crypto)
+{
+	return crypto->recv_ready;
+}
+
+static inline u8 quic_crypto_send_ready(struct quic_crypto *crypto)
+{
+	return crypto->send_ready;
+}
+
+static inline void quic_crypto_set_key_pending(struct quic_crypto *crypto, u8 pending)
+{
+	crypto->key_pending = pending;
+}
+
+static inline void quic_crypto_set_key_update_send_ts(struct quic_crypto *crypto, u32 send_ts)
+{
+	crypto->key_update_send_ts = send_ts;
+}
 
 int quic_crypto_initial_keys_install(struct quic_crypto *crypto, struct quic_connection_id *conn_id,
 				     u32 version, bool is_serv);

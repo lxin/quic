@@ -224,6 +224,7 @@ static struct sk_buff *quic_frame_crypto_create(struct sock *sk, void *data, u8 
 	u32 msg_len, hlen, max_frame_len;
 	struct quic_crypto *crypto;
 	struct sk_buff *skb;
+	u64 offset;
 	u8 *p;
 
 	quic_packet_config(sk, info->level, 0);
@@ -252,19 +253,20 @@ static struct sk_buff *quic_frame_crypto_create(struct sock *sk, void *data, u8 
 
 	if (msg_len > max_frame_len)
 		msg_len = max_frame_len;
-	hlen = 1 + quic_var_len(msg_len) + quic_var_len(crypto->send_offset);
+	offset = quic_crypto_send_offset(crypto);
+	hlen = 1 + quic_var_len(msg_len) + quic_var_len(offset);
 	skb = alloc_skb(msg_len + hlen, GFP_ATOMIC);
 	if (!skb)
 		return NULL;
 	p = quic_put_var(skb->data, type);
-	p = quic_put_var(p, crypto->send_offset);
+	p = quic_put_var(p, offset);
 	p = quic_put_var(p, msg_len);
 	if (!copy_from_iter_full(p, msg_len, info->msg)) {
 		kfree_skb(skb);
 		return NULL;
 	}
 	skb_put(skb, msg_len + hlen);
-	crypto->send_offset += msg_len;
+	quic_crypto_increase_send_offset(crypto, msg_len);
 	QUIC_SND_CB(skb)->level = info->level;
 	return skb;
 }

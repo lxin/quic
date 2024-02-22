@@ -459,6 +459,7 @@ out:
 
 static struct quic_stream *quic_sock_send_stream(struct sock *sk, struct quic_stream_info *sinfo)
 {
+	struct quic_crypto *crypto = quic_crypto(sk, QUIC_CRYPTO_APP);
 	u8 type = QUIC_FRAME_STREAMS_BLOCKED_BIDI;
 	struct quic_stream *stream;
 	struct sk_buff *skb;
@@ -476,7 +477,7 @@ static struct quic_stream *quic_sock_send_stream(struct sock *sk, struct quic_st
 	}
 
 	/* 0rtt data should return err if stream is not found */
-	if (!quic_crypto(sk, QUIC_CRYPTO_APP)->send_ready)
+	if (!quic_crypto_send_ready(crypto))
 		return ERR_PTR(-EINVAL);
 
 	if (sinfo->stream_id & QUIC_STREAM_TYPE_UNI_MASK)
@@ -501,6 +502,7 @@ static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 	struct quic_handshake_info hinfo = {};
 	struct quic_stream_info sinfo = {};
 	struct quic_msginfo msginfo;
+	struct quic_crypto *crypto;
 	struct quic_stream *stream;
 	bool has_hinfo = false;
 	struct sk_buff *skb;
@@ -513,8 +515,12 @@ static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 		goto err;
 
 	if (has_hinfo) {
-		if (hinfo.crypto_level >= QUIC_CRYPTO_MAX ||
-		    !quic_crypto(sk, hinfo.crypto_level)->send_ready) {
+		if (hinfo.crypto_level >= QUIC_CRYPTO_MAX) {
+			err = -EINVAL;
+			goto err;
+		}
+		crypto = quic_crypto(sk, hinfo.crypto_level);
+		if (!quic_crypto_send_ready(crypto)) {
 			err = -EINVAL;
 			goto err;
 		}
@@ -824,10 +830,11 @@ static int quic_sock_set_transport_param(struct sock *sk, struct quic_transport_
 
 static int quic_copy_sock(struct sock *nsk, struct sock *sk, struct quic_request_sock *req)
 {
+	struct quic_crypto *crypto = quic_crypto(sk, QUIC_CRYPTO_APP);
 	struct quic_inqueue *inq = quic_inq(sk);
 	struct sk_buff *skb, *tmp;
 	union quic_addr sa, da;
-	u32 events;
+	u32 events, type;
 
 	if (quic_data_dup(quic_alpn(nsk), quic_alpn(sk)->data, quic_alpn(sk)->len))
 		return -ENOMEM;
@@ -862,9 +869,13 @@ static int quic_copy_sock(struct sock *nsk, struct sock *sk, struct quic_request
 	quic_sock_set_transport_param(nsk, quic_local(sk),
 				      sizeof(struct quic_transport_param));
 	events = quic_inq_events(inq);
-	quic_inq_set_events(quic_inq(nsk), events);
-	quic_crypto(nsk, QUIC_CRYPTO_APP)->cipher_type =
-		quic_crypto(sk, QUIC_CRYPTO_APP)->cipher_type;
+	inq = quic_inq(nsk);
+	quic_inq_set_events(inq, events);
+
+	type = quic_crypto_cipher_type(crypto);
+	crypto = quic_crypto(nsk, QUIC_CRYPTO_APP);
+	quic_crypto_set_cipher_type(crypto, type);
+
 	return 0;
 }
 

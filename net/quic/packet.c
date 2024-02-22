@@ -182,6 +182,7 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb, u
 {
 	struct quic_packet_info pki = {};
 	u8 *p, level = 0, *scid, type;
+	struct quic_crypto *crypto;
 	struct quichshdr *hshdr;
 	struct sk_buff *fskb;
 	u64 dlen, slen, tlen;
@@ -212,14 +213,16 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb, u
 			break;
 		case QUIC_PACKET_HANDSHAKE:
 			level = QUIC_CRYPTO_HANDSHAKE;
-			if (!quic_crypto(sk, level)->recv_ready) {
+			crypto = quic_crypto(sk, level);
+			if (!quic_crypto_recv_ready(crypto)) {
 				quic_inq_backlog_tail(sk, skb);
 				return 0;
 			}
 			break;
 		case QUIC_PACKET_0RTT:
 			level = QUIC_CRYPTO_EARLY;
-			if (!quic_crypto(sk, QUIC_CRYPTO_APP)->recv_ready) {
+			crypto = quic_crypto(sk, QUIC_CRYPTO_APP);
+			if (!quic_crypto_recv_ready(crypto)) {
 				quic_inq_backlog_tail(sk, skb);
 				return 0;
 			}
@@ -335,7 +338,7 @@ int quic_packet_process(struct sock *sk, struct sk_buff *skb, u8 resume)
 	if (!quic_hdr(skb)->fixed && !quic_inq_grease_quic_bit(inq))
 		goto err;
 
-	if (!crypto->recv_ready) {
+	if (!quic_crypto_recv_ready(crypto)) {
 		quic_inq_backlog_tail(sk, skb);
 		return 0;
 	}
@@ -399,8 +402,8 @@ int quic_packet_process(struct sock *sk, struct sk_buff *skb, u8 resume)
 	if (pki.key_update) {
 		key_phase = pki.key_phase;
 		if (!quic_inq_event_recv(sk, QUIC_EVENT_KEY_UPDATE, &key_phase)) {
-			crypto->key_pending = 0;
-			crypto->key_update_send_ts = 0;
+			quic_crypto_set_key_pending(crypto, 0);
+			quic_crypto_set_key_update_send_ts(crypto, 0);
 		}
 	}
 
@@ -479,6 +482,7 @@ static struct sk_buff *quic_packet_handshake_create(struct sock *sk)
 	struct quic_snd_cb *snd_cb;
 	struct sk_buff *fskb, *skb;
 	struct sk_buff_head *head;
+	struct quic_pnmap *pnmap;
 	int len, hlen, plen = 0;
 	struct quichshdr *hdr;
 	u32 number_len;
@@ -506,7 +510,8 @@ static struct sk_buff *quic_packet_handshake_create(struct sock *sk)
 		type = QUIC_PACKET_0RTT;
 		level = QUIC_CRYPTO_APP; /* pnmap level */
 	}
-	number = quic_pnmap(sk, level)->next_number++;
+	pnmap = quic_pnmap(sk, level);
+	number = quic_pnmap_increase_next_number(pnmap);
 	number_len = 4; /* make it fixed for easy coding */
 	hdr = skb_push(skb, len);
 	hdr->form = 1;
@@ -609,6 +614,7 @@ static struct sk_buff *quic_packet_create(struct sock *sk)
 	struct sk_buff *fskb, *skb;
 	struct quic_snd_cb *snd_cb;
 	struct sk_buff_head *head;
+	struct quic_pnmap *pnmap;
 	struct quichdr *hdr;
 	u32 number_len;
 	int len, hlen;
@@ -618,7 +624,8 @@ static struct sk_buff *quic_packet_create(struct sock *sk)
 	packet = quic_packet(sk);
 	if (packet->level)
 		return quic_packet_handshake_create(sk);
-	number = quic_pnmap(sk, packet->level)->next_number++;
+	pnmap = quic_pnmap(sk, packet->level);
+	number = quic_pnmap_increase_next_number(pnmap);
 	number_len = 4; /* make it fixed for easy coding */
 	len = packet->len;
 	hlen = quic_encap_len(sk) + MAX_HEADER;
