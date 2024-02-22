@@ -141,7 +141,7 @@ static void quic_transport_param_init(struct sock *sk)
 	param->version = QUIC_VERSION_V1;
 
 	quic_inq_set_param(sk, param);
-	quic_cong_set_param(sk, param);
+	quic_cong_set_param(quic_cong(sk), param);
 	quic_connection_id_set_param(quic_dest(sk), param);
 	quic_streams_set_param(quic_streams(sk), param, NULL);
 }
@@ -813,7 +813,7 @@ static int quic_sock_set_transport_param(struct sock *sk, struct quic_transport_
 	}
 
 	quic_inq_set_param(sk, param);
-	quic_cong_set_param(sk, param);
+	quic_cong_set_param(quic_cong(sk), param);
 	quic_connection_id_set_param(quic_dest(sk), param);
 	quic_streams_set_param(quic_streams(sk), param, NULL);
 	return 0;
@@ -1101,6 +1101,7 @@ static int quic_sock_set_crypto_secret(struct sock *sk, struct quic_crypto_secre
 	struct sk_buff *skb;
 	int err, seqno;
 	u64 prior = 1;
+	u32 window;
 
 	if (len != sizeof(*secret) || !quic_is_establishing(sk))
 		return -EINVAL;
@@ -1181,7 +1182,9 @@ static int quic_sock_set_crypto_secret(struct sock *sk, struct quic_crypto_secre
 		quic_outq_ctrl_tail(sk, skb, true);
 		skb = __skb_dequeue(&list);
 	}
-	quic_cong_cwnd_update(sk, min_t(u32, quic_packet_mss(quic_packet(sk)) * 10, 14720));
+	window = min_t(u32, quic_packet_mss(quic_packet(sk)) * 10, 14720);
+	quic_outq_set_window(quic_outq(sk), window);
+	quic_cong_set_window(quic_cong(sk), window);
 	return 0;
 }
 

@@ -18,12 +18,6 @@ enum quic_cong_state {
 	QUIC_CONG_CONGESTION_AVOIDANCE,
 };
 
-struct quic_cong_ops {
-	void (*quic_cwnd_update_after_timeout)(struct sock *sk, s64 packet_number, u32 transmit_ts);
-	void (*quic_cwnd_update_after_sack)(struct sock *sk, s64 acked_number, u32 transmit_ts,
-					    u32 acked_bytes);
-};
-
 struct quic_cong {
 	u32 rto;
 	u32 rttvar;
@@ -34,7 +28,12 @@ struct quic_cong {
 	s64 last_sent_number;
 	s64 max_acked_number;
 	u32 max_acked_transmit_ts;
+	u32 ack_delay_exponent;
+	u32 max_ack_delay;
+
+	u32 mss;
 	u32 window;
+	u32 max_window;
 	u32 prior_window;
 	u32 threshold;
 	u32 prior_threshold;
@@ -43,9 +42,36 @@ struct quic_cong {
 	struct quic_cong_ops *ops;
 };
 
-void quic_cong_set_param(struct sock *sk, struct quic_transport_param *p);
-void quic_cong_rtt_update(struct sock *sk, u32 transmit_ts, u32 ack_delay);
-void quic_cong_cwnd_update(struct sock *sk, u32 window);
-void quic_cong_cwnd_update_after_timeout(struct sock *sk, s64 packet_number, u32 transmit_ts);
-void quic_cong_cwnd_update_after_sack(struct sock *sk, s64 acked_number, u32 transmit_ts,
-				      u32 acked_bytes);
+struct quic_cong_ops {
+	void (*quic_cwnd_update_after_timeout)(struct quic_cong *cong, s64 number,
+					       u32 transmit_ts, s64 last_sent_number);
+	void (*quic_cwnd_update_after_sack)(struct quic_cong *cong, s64 acked_number,
+					    u32 transmit_ts, u32 acked_bytes, u32 inflight);
+};
+
+static inline void quic_cong_set_window(struct quic_cong *cong, u32 window)
+{
+	cong->window = window;
+}
+
+static inline void quic_cong_set_mss(struct quic_cong *cong, u32 mss)
+{
+	cong->mss = mss;
+}
+
+static inline u32 quic_cong_window(struct quic_cong *cong)
+{
+	return cong->window;
+}
+
+static inline u32 quic_cong_rto(struct quic_cong *cong)
+{
+	return cong->rto;
+}
+
+void quic_cong_set_param(struct quic_cong *cong, struct quic_transport_param *p);
+void quic_cong_rtt_update(struct quic_cong *cong, u32 transmit_ts, u32 ack_delay);
+void quic_cong_cwnd_update_after_timeout(struct quic_cong *cong, s64 number,
+					 u32 transmit_ts, s64 last_sent_number);
+void quic_cong_cwnd_update_after_sack(struct quic_cong *cong, s64 acked_number,
+				      u32 transmit_ts, u32 acked_bytes, u32 inflight);

@@ -68,6 +68,7 @@ struct quic_sock {
 	struct quic_connection_id_set	source;
 	struct quic_connection_id_set	dest;
 	struct quic_stream_table	streams;
+	struct quic_cong		cong;
 	struct quic_crypto		crypto[QUIC_CRYPTO_MAX];
 	struct quic_pnmap		pn_map[QUIC_CRYPTO_MAX];
 
@@ -80,7 +81,6 @@ struct quic_sock {
 	struct quic_outqueue		outq;
 	struct quic_inqueue		inq;
 	struct quic_packet		packet;
-	struct quic_cong		cong;
 	struct quic_timer		timers[QUIC_TIMER_MAX];
 };
 

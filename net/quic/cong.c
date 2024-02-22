@@ -10,15 +10,15 @@
  *    Xin Long <lucien.xin@gmail.com>
  */
 
-#include "socket.h"
+#include <uapi/linux/quic.h>
+#include "cong.h"
 
-static void quic_reno_cwnd_update_after_timeout(struct sock *sk, s64 packet_number, u32 transmit_ts)
+static void quic_reno_cwnd_update_after_timeout(struct quic_cong *cong, s64 number,
+						u32 transmit_ts, s64 last_number)
 {
-	struct quic_packet *packet = quic_packet(sk);
-	struct quic_cong *cong = quic_cong(sk);
 	u32 time_threshold;
 
-	if (packet_number + 3 <= cong->max_acked_number) { /* packet loss check */
+	if (number + 3 <= cong->max_acked_number) { /* packet loss check */
 		time_threshold = 9 * max(cong->smoothed_rtt, cong->latest_rtt) / 8;
 		time_threshold = max(time_threshold, 1000U);
 		if (jiffies_to_usecs(jiffies) - transmit_ts <= time_threshold)
@@ -26,11 +26,11 @@ static void quic_reno_cwnd_update_after_timeout(struct sock *sk, s64 packet_numb
 
 		/* persistent congestion check */
 		time_threshold = cong->smoothed_rtt + max(4 * cong->rttvar, 1000U);
-		time_threshold = (time_threshold + quic_inq_max_ack_delay(quic_inq(sk))) * 3;
+		time_threshold = (time_threshold + cong->max_ack_delay) * 3;
 		if (jiffies_to_usecs(jiffies) - cong->max_acked_transmit_ts > time_threshold) {
 			pr_debug("[QUIC] %s permanent congestion, cwnd: %u threshold: %u\n",
 				 __func__, cong->window, cong->threshold);
-			cong->window = quic_packet_mss(packet) * 2;
+			cong->window = cong->mss * 2;
 			cong->state = QUIC_CONG_SLOW_START;
 		}
 	}
@@ -53,23 +53,18 @@ static void quic_reno_cwnd_update_after_timeout(struct sock *sk, s64 packet_numb
 		return;
 	}
 
-	cong->last_sent_number = quic_pnmap_next_number(quic_pnmap(sk, QUIC_CRYPTO_APP)) - 1;
+	cong->last_sent_number = last_number;
 	cong->state = QUIC_CONG_RECOVERY_PERIOD;
-	cong->threshold = max(cong->window >> 1U, quic_packet_mss(packet) * 2);
+	cong->threshold = max(cong->window >> 1U, cong->mss * 2);
 	cong->window = cong->threshold;
-
-	quic_outq_set_window(quic_outq(sk), cong->window);
 }
 
-static void quic_reno_cwnd_update_after_sack(struct sock *sk, s64 acked_number, u32 transmit_ts,
-					     u32 acked_bytes)
+static void quic_reno_cwnd_update_after_sack(struct quic_cong *cong, s64 acked_number,
+					     u32 transmit_ts, u32 acked_bytes, u32 inflight)
 {
-	u32 inflight = quic_outq_inflight(quic_outq(sk));
-	struct quic_cong *cong = quic_cong(sk);
-
 	switch (cong->state) {
 	case QUIC_CONG_SLOW_START:
-		cong->window = min_t(u32, cong->window + acked_bytes, sk->sk_sndbuf / 2);
+		cong->window = min_t(u32, cong->window + acked_bytes, cong->max_window);
 		if (cong->window > cong->threshold) {
 			cong->prior_window = cong->window;
 			cong->prior_threshold = cong->threshold;
@@ -101,8 +96,7 @@ static void quic_reno_cwnd_update_after_sack(struct sock *sk, s64 acked_number, 
 			pr_debug("[QUIC] %s cong_avoid -> slow_start, cwnd: %u threshold: %u\n",
 				 __func__, cong->window, cong->threshold);
 		} else {
-			cong->window +=
-				quic_packet_mss(quic_packet(sk)) * acked_bytes / cong->window;
+			cong->window += cong->mss * acked_bytes / cong->window;
 		}
 		break;
 	default:
@@ -114,8 +108,6 @@ static void quic_reno_cwnd_update_after_sack(struct sock *sk, s64 acked_number, 
 		cong->max_acked_number = acked_number;
 		cong->max_acked_transmit_ts = transmit_ts;
 	}
-
-	quic_outq_set_window(quic_outq(sk), cong->window);
 }
 
 static struct quic_cong_ops quic_congs[] = {
@@ -125,51 +117,49 @@ static struct quic_cong_ops quic_congs[] = {
 	},
 };
 
-void quic_cong_cwnd_update_after_timeout(struct sock *sk, s64 packet_number, u32 transmit_ts)
+void quic_cong_cwnd_update_after_timeout(struct quic_cong *cong, s64 number, u32 transmit_ts,
+					 s64 last_number)
 {
-	quic_cong(sk)->ops->quic_cwnd_update_after_timeout(sk, packet_number, transmit_ts);
+	cong->ops->quic_cwnd_update_after_timeout(cong, number, transmit_ts,
+						  last_number);
 }
 
-void quic_cong_cwnd_update_after_sack(struct sock *sk, s64 acked_number, u32 transmit_ts,
-				      u32 acked_bytes)
+void quic_cong_cwnd_update_after_sack(struct quic_cong *cong, s64 acked_number, u32 transmit_ts,
+				      u32 acked_bytes, u32 inflight)
 {
-	quic_cong(sk)->ops->quic_cwnd_update_after_sack(sk, acked_number, transmit_ts,
-							acked_bytes);
+	cong->ops->quic_cwnd_update_after_sack(cong, acked_number, transmit_ts,
+					       acked_bytes, inflight);
 }
 
-void quic_cong_cwnd_update(struct sock *sk, u32 window)
+static void quic_cong_rto_update(struct quic_cong *cong)
 {
-	quic_cong(sk)->window = window;
-	quic_outq_set_window(quic_outq(sk), window);
-}
+	u32 rto;
 
-static void quic_cong_set_rto(struct sock *sk, u32 rto)
-{
-	struct quic_cong *cong = quic_cong(sk);
+	rto = cong->smoothed_rtt + cong->rttvar;
 
 	if (rto < QUIC_RTO_MIN)
 		rto = QUIC_RTO_MIN;
 	else if (rto > QUIC_RTO_MAX)
 		rto = QUIC_RTO_MAX;
+
+	pr_debug("[QUIC] update rto %u\n", rto);
 	cong->rto = rto;
-	quic_pnmap_set_max_record_ts(quic_pnmap(sk, QUIC_CRYPTO_APP), cong->rto * 2);
-	quic_crypto_set_key_update_ts(quic_crypto(sk, QUIC_CRYPTO_APP), cong->rto * 2);
-	quic_timer_setup(sk, QUIC_TIMER_RTX, cong->rto);
-	quic_timer_setup(sk, QUIC_TIMER_PATH, cong->rto * 3);
 }
 
-void quic_cong_set_param(struct sock *sk, struct quic_transport_param *p)
+void quic_cong_set_param(struct quic_cong *cong, struct quic_transport_param *p)
 {
-	struct quic_cong *cong = quic_cong(sk);
 	u8 alg = QUIC_CONG_ALG_RENO;
 
 	if (p->congestion_control_alg < QUIC_CONG_ALG_MAX)
 		alg = p->congestion_control_alg;
 
+	cong->max_window = p->max_data;
+	cong->max_ack_delay = p->max_ack_delay;
+	cong->ack_delay_exponent = p->ack_delay_exponent;
 	cong->latest_rtt = p->initial_smoothed_rtt;
 	cong->smoothed_rtt = cong->latest_rtt;
 	cong->rttvar = cong->smoothed_rtt / 2;
-	quic_cong_set_rto(sk, cong->smoothed_rtt + cong->rttvar);
+	quic_cong_rto_update(cong);
 
 	cong->state = QUIC_CONG_SLOW_START;
 	cong->threshold = U32_MAX;
@@ -177,14 +167,12 @@ void quic_cong_set_param(struct sock *sk, struct quic_transport_param *p)
 }
 
 /* Estimating the Round-Trip Time */
-void quic_cong_rtt_update(struct sock *sk, u32 transmit_ts, u32 ack_delay)
+void quic_cong_rtt_update(struct quic_cong *cong, u32 transmit_ts, u32 ack_delay)
 {
-	struct quic_inqueue *inq = quic_inq(sk);
-	struct quic_cong *cong = quic_cong(sk);
 	u32 adjusted_rtt, rttvar_sample;
 
-	ack_delay = ack_delay * BIT(quic_inq_ack_delay_exponent(inq));
-	ack_delay = min(ack_delay, quic_inq_max_ack_delay(inq));
+	ack_delay = ack_delay * BIT(cong->ack_delay_exponent);
+	ack_delay = min(ack_delay, cong->max_ack_delay);
 
 	cong->latest_rtt = jiffies_to_usecs(jiffies) - transmit_ts;
 
@@ -201,7 +189,5 @@ void quic_cong_rtt_update(struct sock *sk, u32 transmit_ts, u32 ack_delay)
 	cong->smoothed_rtt = (cong->smoothed_rtt * 7 + adjusted_rtt) / 8;
 	rttvar_sample = abs(cong->smoothed_rtt - adjusted_rtt);
 	cong->rttvar = (cong->rttvar * 3 + rttvar_sample) / 4;
-
-	pr_debug("[QUIC] update rto %u\n", cong->smoothed_rtt + cong->rttvar);
-	quic_cong_set_rto(sk, cong->smoothed_rtt + cong->rttvar);
+	quic_cong_rto_update(cong);
 }

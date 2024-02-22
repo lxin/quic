@@ -683,6 +683,7 @@ void quic_packet_mss_update(struct sock *sk, int mss)
 	if (max_udp && mss > max_udp)
 		mss = max_udp;
 	packet->mss[0] = mss - QUIC_TAG_LEN;
+	quic_cong_set_mss(quic_cong(sk), packet->mss[0]);
 
 	mss_dgram = quic_outq_max_dgram(quic_outq(sk));
 	if (!mss_dgram)
