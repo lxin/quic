@@ -18,29 +18,17 @@
 
 static int quic_packet_stateless_reset_process(struct sock *sk, struct sk_buff *skb)
 {
-	struct quic_common_connection_id *common;
+	struct quic_connection_id_set *id_set = quic_dest(sk);
 	struct quic_connection_close close = {};
-	struct quic_dest_connection_id *dcid;
 	u8 *token;
 
 	if (skb->len < 22)
 		return -EINVAL;
 
 	token = skb->data + skb->len - 16;
-	dcid = (struct quic_dest_connection_id *)quic_dest(sk)->active;
-	if (!memcmp(dcid->token, token, 16)) /* fast path */
-		goto reset;
+	if (!quic_connection_id_token_exists(id_set, token))
+		return -EINVAL; /* not a stateless reset and the caller will free skb */
 
-	list_for_each_entry(common, &quic_dest(sk)->head, list) {
-		dcid = (struct quic_dest_connection_id *)common;
-		if (common == quic_dest(sk)->active)
-			continue;
-		if (!memcmp(dcid->token, token, 16))
-			goto reset;
-	}
-	return -EINVAL; /* not a stateless reset and the caller will free skb */
-
-reset:
 	close.errcode = QUIC_TRANS_ERR_CRYPTO;
 	if (quic_inq_event_recv(sk, QUIC_EVENT_CONNECTION_CLOSE, &close))
 		return -ENOMEM;
@@ -53,7 +41,8 @@ reset:
 static int quic_packet_handshake_retry_process(struct sock *sk, struct sk_buff *skb)
 {
 	struct quic_crypto *crypto = quic_crypto(sk, QUIC_CRYPTO_INITIAL);
-	struct quic_connection_id dcid, scid = {};
+	struct quic_connection_id_set *id_set = quic_dest(sk);
+	struct quic_connection_id dcid, scid = {}, *active;
 	u32 len = skb->len, dlen, slen, version;
 	u8 *p = skb->data, tag[16];
 
@@ -93,7 +82,8 @@ static int quic_packet_handshake_retry_process(struct sock *sk, struct sk_buff *
 	quic_crypto_destroy(crypto);
 	if (quic_crypto_initial_keys_install(crypto, &scid, version, 0))
 		goto err;
-	quic_dest(sk)->active->id = scid;
+	active = quic_connection_id_active(id_set);
+	quic_connection_id_update(active, scid.data, scid.len);
 	quic_outq_retransmit(sk);
 
 	consume_skb(skb);
@@ -180,6 +170,8 @@ static void quic_packet_decrypt_done(struct crypto_async_request *base, int err)
 
 static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb, u8 resume)
 {
+	struct quic_connection_id_set *id_set = quic_dest(sk);
+	struct quic_connection_id *active;
 	struct quic_packet_info pki = {};
 	u8 *p, level = 0, *scid, type;
 	struct quic_crypto *crypto;
@@ -293,8 +285,8 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb, u
 		skb_pull(skb, QUIC_TAG_LEN);
 		if (pki.ack_eliciting) {
 			if (!quic_is_serv(sk) && level == QUIC_CRYPTO_INITIAL) {
-				quic_dest(sk)->active->id.len = slen;
-				memcpy(quic_dest(sk)->active->id.data, scid, slen);
+				active = quic_connection_id_active(id_set);
+				quic_connection_id_update(active, scid, slen);
 			}
 			fskb = quic_frame_create(sk, QUIC_FRAME_ACK, &level);
 			if (fskb) {
@@ -322,6 +314,7 @@ int quic_packet_process(struct sock *sk, struct sk_buff *skb, u8 resume)
 {
 	struct quic_crypto *crypto = quic_crypto(sk, QUIC_CRYPTO_APP);
 	struct quic_pnmap *pnmap = quic_pnmap(sk, QUIC_CRYPTO_APP);
+	struct quic_connection_id_set *id_set = quic_source(sk);
 	struct quic_rcv_cb *rcv_cb = QUIC_RCV_CB(skb);
 	struct quic_inqueue *inq = quic_inq(sk);
 	struct quic_packet_info pki = {};
@@ -343,7 +336,7 @@ int quic_packet_process(struct sock *sk, struct sk_buff *skb, u8 resume)
 		return 0;
 	}
 
-	pki.number_offset = quic_source(sk)->active->id.len + sizeof(struct quichdr);
+	pki.number_offset = quic_connection_id_active(id_set)->len + sizeof(struct quichdr);
 	if (rcv_cb->number_offset)
 		pki.number_offset = rcv_cb->number_offset;
 
@@ -395,7 +388,8 @@ int quic_packet_process(struct sock *sk, struct sk_buff *skb, u8 resume)
 	/* connection migration check: an endpoint only changes the address to which
 	 * it sends packets in response to the highest-numbered non-probing packet.
 	 */
-	if (!quic_dest(sk)->disable_active_migration && pki.non_probing &&
+	id_set = quic_dest(sk);
+	if (!quic_connection_id_disable_active_migration(id_set) && pki.non_probing &&
 	    pki.number == quic_pnmap_max_pn_seen(pnmap) && (rcv_cb->path_alt & QUIC_PATH_ALT_DST))
 		quic_sock_change_daddr(sk, &addr, quic_addr_len(sk));
 
@@ -478,7 +472,9 @@ static struct sk_buff *quic_packet_handshake_create(struct sock *sk)
 {
 	struct quic_packet *packet = quic_packet(sk);
 	struct quic_outqueue *outq = quic_outq(sk);
+	struct quic_connection_id_set *id_set;
 	u8 *p, type, level = packet->level;
+	struct quic_connection_id *active;
 	struct quic_snd_cb *snd_cb;
 	struct sk_buff *fskb, *skb;
 	struct sk_buff_head *head;
@@ -523,10 +519,17 @@ static struct sk_buff *quic_packet_handshake_create(struct sock *sk)
 
 	p = (u8 *)hdr + 1;
 	p = quic_put_int(p, quic_local(sk)->version, 4);
-	p = quic_put_int(p, quic_dest(sk)->active->id.len, 1);
-	p = quic_put_data(p, quic_dest(sk)->active->id.data, quic_dest(sk)->active->id.len);
-	p = quic_put_int(p, quic_source(sk)->active->id.len, 1);
-	p = quic_put_data(p, quic_source(sk)->active->id.data, quic_source(sk)->active->id.len);
+
+	id_set = quic_dest(sk);
+	active = quic_connection_id_active(id_set);
+	p = quic_put_int(p, active->len, 1);
+	p = quic_put_data(p, active->data, active->len);
+
+	id_set = quic_source(sk);
+	active = quic_connection_id_active(id_set);
+	p = quic_put_int(p, active->len, 1);
+	p = quic_put_data(p, active->data, active->len);
+
 	if (level == QUIC_CRYPTO_INITIAL) {
 		p = quic_put_var(p, quic_token(sk)->len);
 		p = quic_put_data(p, quic_token(sk)->data, quic_token(sk)->len);
@@ -609,7 +612,9 @@ static int quic_packet_number_check(struct sock *sk)
 
 static struct sk_buff *quic_packet_create(struct sock *sk)
 {
+	struct quic_connection_id_set *id_set = quic_dest(sk);
 	struct quic_outqueue *outq = quic_outq(sk);
+	struct quic_connection_id *active;
 	struct quic_packet *packet;
 	struct sk_buff *fskb, *skb;
 	struct quic_snd_cb *snd_cb;
@@ -646,10 +651,11 @@ static struct sk_buff *quic_packet_create(struct sock *sk)
 	skb_reset_transport_header(skb);
 
 	p = (u8 *)hdr + 1;
-	p = quic_put_data(p, quic_dest(sk)->active->id.data, quic_dest(sk)->active->id.len);
+	active = quic_connection_id_active(id_set);
+	p = quic_put_data(p, active->data, active->len);
 
 	snd_cb = QUIC_SND_CB(skb);
-	snd_cb->number_offset = quic_dest(sk)->active->id.len + sizeof(struct quichdr);
+	snd_cb->number_offset = active->len + sizeof(struct quichdr);
 	snd_cb->packet_number = number;
 	snd_cb->level = packet->level;
 	snd_cb->path_alt = packet->path_alt;
@@ -719,6 +725,7 @@ int quic_packet_route(struct sock *sk)
 
 void quic_packet_config(struct sock *sk, u8 level, u8 path_alt)
 {
+	struct quic_connection_id_set *id_set = quic_dest(sk);
 	struct quic_packet *packet = quic_packet(sk);
 	struct quic_inqueue *inq = quic_inq(sk);
 	int hlen = sizeof(struct quichdr);
@@ -731,10 +738,11 @@ void quic_packet_config(struct sock *sk, u8 level, u8 path_alt)
 	packet->ipfragok = 0;
 	packet->padding = 0;
 	hlen += 4; /* packet number */
-	hlen += quic_dest(sk)->active->id.len;
+	hlen += quic_connection_id_active(id_set)->len;
 	if (level) {
 		hlen += 1;
-		hlen += 1 + quic_source(sk)->active->id.len;
+		id_set = quic_source(sk);
+		hlen += 1 + quic_connection_id_active(id_set)->len;
 		if (level == QUIC_CRYPTO_INITIAL)
 			hlen += 1 + quic_token(sk)->len;
 		hlen += 4; /* version */

@@ -14,8 +14,8 @@ struct quic_connection_id {
 };
 
 struct quic_common_connection_id {
-	struct list_head list;
 	struct quic_connection_id id;
+	struct list_head list;
 	u32 number;
 	u8 hashed;
 };
@@ -35,10 +35,10 @@ struct quic_dest_connection_id {
 struct quic_connection_id_set {
 	struct quic_common_connection_id *active;
 	struct list_head head;
-	u32 disable_active_migration;
 	u32 entry_size;
 	u32 max_count;
 	u32 count;
+	u8 disable_active_migration;
 	u8 pending;
 };
 
@@ -58,14 +58,51 @@ static inline u32 quic_connection_id_first_number(struct quic_connection_id_set 
 	return common->number;
 }
 
-static inline void quic_generate_id(struct quic_connection_id *conn_id, int conn_id_len)
+static inline void quic_connection_id_generate(struct quic_connection_id *conn_id, int conn_id_len)
 {
 	get_random_bytes(conn_id->data, conn_id_len);
 	conn_id->len = conn_id_len;
 }
 
-struct quic_source_connection_id *quic_source_connection_id_lookup(struct net *net, u8 *scid,
-								   u32 len);
+static inline void quic_connection_id_update(struct quic_connection_id *conn_id, u8 *data, u32 len)
+{
+	memcpy(conn_id->data, data, len);
+	conn_id->len = len;
+}
+
+static inline u8 quic_connection_id_disable_active_migration(struct quic_connection_id_set *id_set)
+{
+	return id_set->disable_active_migration;
+}
+
+static inline u32 quic_connection_id_max_count(struct quic_connection_id_set *id_set)
+{
+	return id_set->max_count;
+}
+
+static inline
+struct quic_connection_id *quic_connection_id_active(struct quic_connection_id_set *id_set)
+{
+	return &id_set->active->id;
+}
+
+static inline u32 quic_connection_id_number(struct quic_connection_id *conn_id)
+{
+	return ((struct quic_common_connection_id *)conn_id)->number;
+}
+
+static inline struct sock *quic_connection_id_sk(struct quic_connection_id *conn_id)
+{
+	return ((struct quic_source_connection_id *)conn_id)->sk;
+}
+
+static inline void quic_connection_id_set_token(struct quic_connection_id *conn_id, u8 *token)
+{
+	memcpy(((struct quic_dest_connection_id *)conn_id)->token, token, 16);
+}
+
+struct quic_connection_id *quic_connection_id_lookup(struct net *net, u8 *scid, u32 len);
+bool quic_connection_id_token_exists(struct quic_connection_id_set *id_set, u8 *token);
 int quic_connection_id_add(struct quic_connection_id_set *id_set,
 			   struct quic_connection_id *conn_id, u32 number, void *data);
 void quic_connection_id_remove(struct quic_connection_id_set *id_set, u32 number);

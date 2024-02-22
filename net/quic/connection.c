@@ -17,8 +17,7 @@
 #include "hashtable.h"
 #include "connection.h"
 
-struct quic_source_connection_id *quic_source_connection_id_lookup(struct net *net, u8 *scid,
-								   u32 len)
+struct quic_connection_id *quic_connection_id_lookup(struct net *net, u8 *scid, u32 len)
 {
 	struct quic_hash_head *head = quic_source_connection_id_head(net, scid);
 	struct quic_source_connection_id *tmp, *s_conn_id = NULL;
@@ -33,7 +32,26 @@ struct quic_source_connection_id *quic_source_connection_id_lookup(struct net *n
 	}
 
 	spin_unlock(&head->lock);
-	return s_conn_id;
+	return &s_conn_id->common.id;
+}
+
+bool quic_connection_id_token_exists(struct quic_connection_id_set *id_set, u8 *token)
+{
+	struct quic_common_connection_id *common;
+	struct quic_dest_connection_id *dcid;
+
+	dcid = (struct quic_dest_connection_id *)id_set->active;
+	if (!memcmp(dcid->token, token, 16)) /* fast path */
+		return true;
+
+	list_for_each_entry(common, &id_set->head, list) {
+		dcid = (struct quic_dest_connection_id *)common;
+		if (common == id_set->active)
+			continue;
+		if (!memcmp(dcid->token, token, 16))
+			return true;
+	}
+	return false;
 }
 
 static void quic_source_connection_id_free_rcu(struct rcu_head *head)

@@ -307,7 +307,7 @@ static struct sk_buff *quic_frame_new_connection_id_create(struct sock *sk, void
 	p = quic_put_var(p, seqno);
 	p = quic_put_var(p, *prior);
 	p = quic_put_var(p, 16);
-	quic_generate_id(&scid, 16);
+	quic_connection_id_generate(&scid, 16);
 	p = quic_put_data(p, scid.data, scid.len);
 	if (quic_crypto_generate_token(crypto, scid.data, "stateless_reset", token, 16))
 		return NULL;
@@ -791,7 +791,7 @@ static int quic_frame_retire_connection_id_process(struct sock *sk, struct sk_bu
 		return -EINVAL;
 
 	quic_connection_id_remove(id_set, seqno);
-	if (last - seqno >= quic_source(sk)->max_count)
+	if (last - seqno >= quic_connection_id_max_count(id_set))
 		goto out;
 	seqno++;
 	fskb = quic_frame_create(sk, QUIC_FRAME_NEW_CONNECTION_ID, &seqno);
@@ -1375,7 +1375,8 @@ static int quic_get_param(u64 *pdest, u8 **pp, u32 *plen)
 int quic_frame_set_transport_params_ext(struct sock *sk, struct quic_transport_param *params,
 					u8 *data, u32 len)
 {
-	struct quic_dest_connection_id *dcid;
+	struct quic_connection_id_set *id_set = quic_dest(sk);
+	struct quic_connection_id *active;
 	u64 type, valuelen;
 	u8 *p = data;
 
@@ -1465,8 +1466,8 @@ int quic_frame_set_transport_params_ext(struct sock *sk, struct quic_transport_p
 			if (!quic_get_var(&p, &len, &valuelen) || len < valuelen ||
 			    valuelen != 16)
 				return -1;
-			dcid = (struct quic_dest_connection_id *)quic_dest(sk)->active;
-			memcpy(dcid->token, p, 16);
+			active = quic_connection_id_active(id_set);
+			quic_connection_id_set_token(active, p);
 			params->stateless_reset = 1;
 			len -= valuelen;
 			p += valuelen;
@@ -1504,10 +1505,12 @@ static u8 *quic_put_param(u8 *p, enum quic_transport_param_id id, u64 value)
 int quic_frame_get_transport_params_ext(struct sock *sk, struct quic_transport_param *params,
 					u8 *data, u32 *len)
 {
-	struct quic_connection_id *scid = &quic_source(sk)->active->id;
+	struct quic_connection_id_set *id_set = quic_source(sk);
 	struct quic_outqueue *outq = quic_outq(sk);
+	struct quic_connection_id *scid;
 	u8 *p = data, token[16];
 
+	scid = quic_connection_id_active(id_set);
 	if (quic_is_serv(sk)) {
 		p = quic_put_conn_id(p, QUIC_TRANSPORT_PARAM_ORIGINAL_DESTINATION_CONNECTION_ID,
 				     quic_outq_orig_dcid(outq));

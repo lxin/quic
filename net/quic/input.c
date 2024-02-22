@@ -176,8 +176,8 @@ int quic_do_rcv(struct sock *sk, struct sk_buff *skb)
 int quic_rcv(struct sk_buff *skb)
 {
 	struct quic_rcv_cb *rcv_cb = QUIC_RCV_CB(skb);
-	struct quic_source_connection_id *s_conn_id;
 	struct quic_addr_family_ops *af_ops;
+	struct quic_connection_id *conn_id;
 	union quic_addr daddr, saddr;
 	struct sock *sk = NULL;
 	int err = -EINVAL;
@@ -191,10 +191,10 @@ int quic_rcv(struct sk_buff *skb)
 
 	if (!quic_hdr(skb)->form) { /* search scid hashtable for post-handshake packets */
 		dcid = (u8 *)quic_hdr(skb) + 1;
-		s_conn_id = quic_source_connection_id_lookup(dev_net(skb->dev), dcid, skb->len - 1);
-		if (s_conn_id) {
-			rcv_cb->number_offset = s_conn_id->common.id.len + sizeof(struct quichdr);
-			sk = s_conn_id->sk;
+		conn_id = quic_connection_id_lookup(dev_net(skb->dev), dcid, skb->len - 1);
+		if (conn_id) {
+			rcv_cb->number_offset = conn_id->len + sizeof(struct quichdr);
+			sk = quic_connection_id_sk(conn_id);
 		}
 	}
 	if (!sk) {
