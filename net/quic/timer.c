@@ -197,7 +197,7 @@ void quic_timer_setup(struct sock *sk, u8 type, u32 timeout)
 	quic_timer(sk, type)->timeout = usecs_to_jiffies(timeout);
 }
 
-void quic_timers_init(struct sock *sk)
+void quic_timer_init(struct sock *sk)
 {
 	struct quic_transport_param *p = quic_local(sk);
 	struct quic_timer *t;
@@ -226,7 +226,7 @@ void quic_timers_init(struct sock *sk)
 	quic_timer_setup(sk, QUIC_TIMER_PATH, p->initial_smoothed_rtt * 3);
 }
 
-void quic_timers_free(struct sock *sk)
+void quic_timer_free(struct sock *sk)
 {
 	quic_timer_stop(sk, QUIC_TIMER_RTX);
 	quic_timer_stop(sk, QUIC_TIMER_ACK);

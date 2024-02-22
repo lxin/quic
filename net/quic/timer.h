@@ -25,5 +25,5 @@ void quic_timer_setup(struct sock *sk, u8 type, u32 timeout);
 void quic_timer_reset(struct sock *sk, u8 type);
 void quic_timer_start(struct sock *sk, u8 type);
 void quic_timer_stop(struct sock *sk, u8 type);
-void quic_timers_init(struct sock *sk);
-void quic_timers_free(struct sock *sk);
+void quic_timer_init(struct sock *sk);
+void quic_timer_free(struct sock *sk);

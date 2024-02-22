@@ -181,14 +181,15 @@ static void quic_outq_set_owner_w(struct sk_buff *skb, struct sock *sk)
 void quic_outq_data_tail(struct sock *sk, struct sk_buff *skb, bool cork)
 {
 	struct quic_stream *stream = QUIC_SND_CB(skb)->stream;
+	struct quic_stream_table *streams = quic_streams(sk);
 
 	if (stream->send.state == QUIC_STREAM_SEND_STATE_READY)
 		stream->send.state = QUIC_STREAM_SEND_STATE_SEND;
 
 	if (QUIC_SND_CB(skb)->frame_type & QUIC_STREAM_BIT_FIN &&
 	    stream->send.state == QUIC_STREAM_SEND_STATE_SEND) {
-		if (quic_streams(sk)->send.stream_active == stream->id)
-			quic_streams(sk)->send.stream_active = -1;
+		if (quic_stream_send_active(streams) == stream->id)
+			quic_stream_set_send_active(streams, -1);
 		stream->send.state = QUIC_STREAM_SEND_STATE_SENT;
 	}
 

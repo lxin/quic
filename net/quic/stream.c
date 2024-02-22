@@ -74,7 +74,7 @@ out:
 	return stream;
 }
 
-int quic_streams_init(struct quic_stream_table *streams)
+int quic_stream_init(struct quic_stream_table *streams)
 {
 	struct quic_hash_table *ht = &streams->ht;
 	struct quic_hash_head *head;
@@ -92,7 +92,7 @@ int quic_streams_init(struct quic_stream_table *streams)
 	return 0;
 }
 
-void quic_streams_free(struct quic_stream_table *streams)
+void quic_stream_free(struct quic_stream_table *streams)
 {
 	struct quic_hash_table *ht = &streams->ht;
 	struct quic_hash_head *head;
@@ -110,8 +110,8 @@ void quic_streams_free(struct quic_stream_table *streams)
 	kfree(ht->hash);
 }
 
-void quic_streams_set_param(struct quic_stream_table *streams, struct quic_transport_param *local,
-			    struct quic_transport_param *remote)
+void quic_stream_set_param(struct quic_stream_table *streams, struct quic_transport_param *local,
+			   struct quic_transport_param *remote)
 {
 	if (remote) {
 		streams->send.max_stream_data_bidi_local = remote->max_stream_data_bidi_local;

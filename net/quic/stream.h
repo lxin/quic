@@ -64,10 +64,80 @@ struct quic_stream_table {
 	} recv;
 };
 
-int quic_streams_init(struct quic_stream_table *streams);
-void quic_streams_free(struct quic_stream_table *streams);
-void quic_streams_set_param(struct quic_stream_table *streams, struct quic_transport_param *local,
-			    struct quic_transport_param *remote);
+static inline u64 quic_stream_send_active(struct quic_stream_table *streams)
+{
+	return streams->send.stream_active;
+}
+
+static inline void quic_stream_set_send_active(struct quic_stream_table *streams, u64 active)
+{
+	streams->send.stream_active = active;
+}
+
+static inline u64 quic_stream_send_max_bidi(struct quic_stream_table *streams)
+{
+	return streams->send.max_streams_bidi;
+}
+
+static inline void quic_stream_set_send_max_bidi(struct quic_stream_table *streams, u64 max)
+{
+	streams->send.max_streams_bidi = max;
+}
+
+static inline u64 quic_stream_send_max_uni(struct quic_stream_table *streams)
+{
+	return streams->send.max_streams_uni;
+}
+
+static inline void quic_stream_set_send_max_uni(struct quic_stream_table *streams, u64 max)
+{
+	streams->send.max_streams_uni = max;
+}
+
+static inline u64 quic_stream_send_bidi(struct quic_stream_table *streams)
+{
+	return streams->send.streams_bidi;
+}
+
+static inline void quic_stream_set_send_bidi(struct quic_stream_table *streams, u64 bidi)
+{
+	streams->send.streams_bidi = bidi;
+}
+
+static inline u64 quic_stream_send_uni(struct quic_stream_table *streams)
+{
+	return streams->send.streams_uni;
+}
+
+static inline void quic_stream_set_send_uni(struct quic_stream_table *streams, u64 uni)
+{
+	streams->send.streams_uni = uni;
+}
+
+static inline u64 quic_stream_recv_max_uni(struct quic_stream_table *streams)
+{
+	return streams->recv.max_streams_uni;
+}
+
+static inline void quic_stream_set_recv_max_uni(struct quic_stream_table *streams, u64 max)
+{
+	streams->recv.max_streams_uni = max;
+}
+
+static inline u64 quic_stream_recv_max_bidi(struct quic_stream_table *streams)
+{
+	return streams->recv.max_streams_bidi;
+}
+
+static inline void quic_stream_set_recv_max_bidi(struct quic_stream_table *streams, u64 max)
+{
+	streams->recv.max_streams_bidi = max;
+}
+
+int quic_stream_init(struct quic_stream_table *streams);
+void quic_stream_free(struct quic_stream_table *streams);
+void quic_stream_set_param(struct quic_stream_table *streams, struct quic_transport_param *local,
+			   struct quic_transport_param *remote);
 struct quic_stream *quic_stream_send_get(struct quic_stream_table *streams, u64 stream_id,
 					 u32 flag, bool is_serv);
 struct quic_stream *quic_stream_recv_get(struct quic_stream_table *streams, u64 stream_id,

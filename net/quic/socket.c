@@ -143,7 +143,7 @@ static void quic_transport_param_init(struct sock *sk)
 	quic_inq_set_param(sk, param);
 	quic_cong_set_param(quic_cong(sk), param);
 	quic_connection_id_set_param(quic_dest(sk), param);
-	quic_streams_set_param(quic_streams(sk), param, NULL);
+	quic_stream_set_param(quic_streams(sk), param, NULL);
 }
 
 static int quic_init_sock(struct sock *sk)
@@ -163,7 +163,7 @@ static int quic_init_sock(struct sock *sk)
 	quic_outq_init(sk);
 	quic_inq_init(sk);
 	quic_packet_init(sk);
-	quic_timers_init(sk);
+	quic_timer_init(sk);
 
 	sk->sk_destruct = inet_sock_destruct;
 	sk->sk_write_space = quic_write_space;
@@ -173,7 +173,7 @@ static int quic_init_sock(struct sock *sk)
 		if (quic_pnmap_init(quic_pnmap(sk, i)))
 			return -ENOMEM;
 	}
-	if (quic_streams_init(quic_streams(sk)))
+	if (quic_stream_init(quic_streams(sk)))
 		return -ENOMEM;
 	INIT_LIST_HEAD(quic_reqs(sk));
 
@@ -194,8 +194,8 @@ static void quic_destroy_sock(struct sock *sk)
 		quic_crypto_destroy(quic_crypto(sk, i));
 	}
 
-	quic_timers_free(sk);
-	quic_streams_free(quic_streams(sk));
+	quic_timer_free(sk);
+	quic_stream_free(quic_streams(sk));
 
 	kfree(quic_token(sk)->data);
 	kfree(quic_ticket(sk)->data);
@@ -351,6 +351,7 @@ static int quic_msghdr_parse(struct sock *sk, struct msghdr *msg, struct quic_ha
 	struct quic_stream_info *s = NULL;
 	struct quic_stream_table *streams;
 	struct cmsghdr *cmsg;
+	u64 active;
 
 	for_each_cmsghdr(cmsg, msg) {
 		if (!CMSG_OK(msg, cmsg))
@@ -399,13 +400,14 @@ static int quic_msghdr_parse(struct sock *sk, struct msghdr *msg, struct quic_ha
 		return 0;
 
 	streams = quic_streams(sk);
-	if (streams->send.stream_active != -1) {
-		sinfo->stream_id = streams->send.stream_active;
+	active = quic_stream_send_active(streams);
+	if (active != -1) {
+		sinfo->stream_id = active;
 		return 0;
 	}
-	sinfo->stream_id = (streams->send.streams_bidi << 2);
+	sinfo->stream_id = (quic_stream_send_bidi(streams) << 2);
 	if (sinfo->stream_flag & QUIC_STREAM_FLAG_UNI) {
-		sinfo->stream_id = (streams->send.streams_uni << 2);
+		sinfo->stream_id = (quic_stream_send_uni(streams) << 2);
 		sinfo->stream_id |= QUIC_STREAM_TYPE_UNI_MASK;
 	}
 	sinfo->stream_id |= quic_is_serv(sk);
@@ -461,13 +463,14 @@ out:
 static struct quic_stream *quic_sock_send_stream(struct sock *sk, struct quic_stream_info *sinfo)
 {
 	struct quic_crypto *crypto = quic_crypto(sk, QUIC_CRYPTO_APP);
+	struct quic_stream_table *streams = quic_streams(sk);
 	u8 type = QUIC_FRAME_STREAMS_BLOCKED_BIDI;
 	struct quic_stream *stream;
 	struct sk_buff *skb;
 	long timeo;
 	int err;
 
-	stream = quic_stream_send_get(quic_streams(sk), sinfo->stream_id,
+	stream = quic_stream_send_get(streams, sinfo->stream_id,
 				      sinfo->stream_flag, quic_is_serv(sk));
 	if (!IS_ERR(stream)) {
 		if (stream->send.state >= QUIC_STREAM_SEND_STATE_SENT)
@@ -494,7 +497,7 @@ static struct quic_stream *quic_sock_send_stream(struct sock *sk, struct quic_st
 	if (err)
 		return ERR_PTR(err);
 
-	return quic_stream_send_get(quic_streams(sk), sinfo->stream_id,
+	return quic_stream_send_get(streams, sinfo->stream_id,
 				    sinfo->stream_flag, quic_is_serv(sk));
 }
 
@@ -818,14 +821,14 @@ static int quic_sock_set_transport_param(struct sock *sk, struct quic_transport_
 		param->remote = 1;
 		quic_outq_set_param(sk, param);
 		quic_connection_id_set_param(quic_source(sk), param);
-		quic_streams_set_param(quic_streams(sk), NULL, param);
+		quic_stream_set_param(quic_streams(sk), NULL, param);
 		return 0;
 	}
 
 	quic_inq_set_param(sk, param);
 	quic_cong_set_param(quic_cong(sk), param);
 	quic_connection_id_set_param(quic_dest(sk), param);
-	quic_streams_set_param(quic_streams(sk), param, NULL);
+	quic_stream_set_param(quic_streams(sk), param, NULL);
 	return 0;
 }
 
@@ -1114,7 +1117,7 @@ static int quic_sock_set_transport_params_ext(struct sock *sk, u8 *p, u32 len)
 	param->remote = 1;
 	quic_outq_set_param(sk, param);
 	quic_connection_id_set_param(quic_source(sk), param);
-	quic_streams_set_param(quic_streams(sk), NULL, param);
+	quic_stream_set_param(quic_streams(sk), NULL, param);
 	return 0;
 }
 
@@ -1259,13 +1262,14 @@ static int quic_sock_set_alpn(struct sock *sk, char *data, u32 len)
 
 static int quic_sock_stream_reset(struct sock *sk, struct quic_errinfo *info, u32 len)
 {
+	struct quic_stream_table *streams = quic_streams(sk);
 	struct quic_stream *stream;
 	struct sk_buff *skb;
 
 	if (len != sizeof(*info) || !quic_is_established(sk))
 		return -EINVAL;
 
-	stream = quic_stream_send_get(quic_streams(sk), info->stream_id, 0, quic_is_serv(sk));
+	stream = quic_stream_send_get(streams, info->stream_id, 0, quic_is_serv(sk));
 	if (IS_ERR(stream))
 		return PTR_ERR(stream);
 
@@ -1284,13 +1288,14 @@ static int quic_sock_stream_reset(struct sock *sk, struct quic_errinfo *info, u3
 
 static int quic_sock_stream_stop_sending(struct sock *sk, struct quic_errinfo *info, u32 len)
 {
+	struct quic_stream_table *streams = quic_streams(sk);
 	struct quic_stream *stream;
 	struct sk_buff *skb;
 
 	if (len != sizeof(*info) || !quic_is_established(sk))
 		return -EINVAL;
 
-	stream = quic_stream_recv_get(quic_streams(sk), info->stream_id, quic_is_serv(sk));
+	stream = quic_stream_recv_get(streams, info->stream_id, quic_is_serv(sk));
 	if (IS_ERR(stream))
 		return PTR_ERR(stream);
 
@@ -1555,6 +1560,7 @@ static int quic_sock_get_alpn(struct sock *sk, int len, char __user *optval, int
 
 static int quic_sock_stream_open(struct sock *sk, int len, char __user *optval, int __user *optlen)
 {
+	struct quic_stream_table *streams = quic_streams(sk);
 	struct quic_stream_info sinfo;
 	struct quic_stream *stream;
 
@@ -1566,9 +1572,9 @@ static int quic_sock_stream_open(struct sock *sk, int len, char __user *optval, 
 		return -EFAULT;
 
 	if (sinfo.stream_id == -1) {
-		sinfo.stream_id = (quic_streams(sk)->send.streams_bidi << 2);
+		sinfo.stream_id = (quic_stream_send_bidi(streams) << 2);
 		if (sinfo.stream_flag & QUIC_STREAM_FLAG_UNI) {
-			sinfo.stream_id = (quic_streams(sk)->send.streams_uni << 2);
+			sinfo.stream_id = (quic_stream_send_uni(streams) << 2);
 			sinfo.stream_id |= QUIC_STREAM_TYPE_UNI_MASK;
 		}
 		sinfo.stream_id |= quic_is_serv(sk);
