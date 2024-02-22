@@ -69,6 +69,11 @@ static inline u32 quic_cong_rto(struct quic_cong *cong)
 	return cong->rto;
 }
 
+static inline u32 quic_cong_latest_rtt(struct quic_cong *cong)
+{
+	return cong->latest_rtt;
+}
+
 void quic_cong_set_param(struct quic_cong *cong, struct quic_transport_param *p);
 void quic_cong_rtt_update(struct quic_cong *cong, u32 transmit_ts, u32 ack_delay);
 void quic_cong_cwnd_update_after_timeout(struct quic_cong *cong, s64 number,

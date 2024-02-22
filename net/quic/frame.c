@@ -606,6 +606,7 @@ static struct sk_buff *quic_frame_streams_blocked_bidi_create(struct sock *sk, v
 
 static int quic_frame_crypto_process(struct sock *sk, struct sk_buff *skb, u8 type)
 {
+	struct quic_inqueue *inq = quic_inq(sk);
 	struct sk_buff *nskb;
 	u64 offset, length;
 	u32 len = skb->len;
@@ -618,9 +619,9 @@ static int quic_frame_crypto_process(struct sock *sk, struct sk_buff *skb, u8 ty
 		return -EINVAL;
 
 	if (!QUIC_RCV_CB(skb)->level) {
-		if (!quic_local(sk)->receive_session_ticket)
+		if (!quic_inq_receive_session_ticket(inq))
 			goto out;
-		quic_local(sk)->receive_session_ticket = 0;
+		quic_inq_set_receive_session_ticket(inq, 0);
 	}
 
 	nskb = skb_clone(skb, GFP_ATOMIC);
@@ -643,6 +644,7 @@ out:
 static int quic_frame_stream_process(struct sock *sk, struct sk_buff *skb, u8 type)
 {
 	struct quic_stream_table *streams = quic_streams(sk);
+	struct quic_inqueue *inq = quic_inq(sk);
 	u64 stream_id, payload_len, offset = 0;
 	struct quic_stream *stream;
 	struct quic_rcv_cb *rcv_cb;
@@ -651,7 +653,7 @@ static int quic_frame_stream_process(struct sock *sk, struct sk_buff *skb, u8 ty
 	u8 *p = skb->data;
 	int err;
 
-	if (quic_local(sk)->receive_session_ticket)
+	if (quic_inq_receive_session_ticket(inq))
 		return -EINVAL;
 	if (!quic_get_var(&p, &len, &stream_id))
 		return -EINVAL;
@@ -1221,7 +1223,7 @@ static int quic_frame_datagram_process(struct sock *sk, struct sk_buff *skb, u8 
 	u64 payload_len;
 	int err;
 
-	if (quic_local(sk)->receive_session_ticket)
+	if (quic_inq_receive_session_ticket(inq))
 		return -EINVAL;
 
 	if (!quic_inq_max_dgram(inq))

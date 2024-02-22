@@ -43,6 +43,7 @@ static int quic_packet_handshake_retry_process(struct sock *sk, struct sk_buff *
 	struct quic_crypto *crypto = quic_crypto(sk, QUIC_CRYPTO_INITIAL);
 	struct quic_connection_id_set *id_set = quic_dest(sk);
 	struct quic_connection_id dcid, scid = {}, *active;
+	struct quic_inqueue *inq = quic_inq(sk);
 	u32 len = skb->len, dlen, slen, version;
 	u8 *p = skb->data, tag[16];
 
@@ -72,7 +73,7 @@ static int quic_packet_handshake_retry_process(struct sock *sk, struct sk_buff *
 	p += slen;
 	if (len < 16)
 		goto err;
-	version = quic_local(sk)->version;
+	version = quic_inq_version(inq);
 	if (quic_crypto_get_retry_tag(crypto, skb, &scid, version, tag) ||
 	    memcmp(tag, p + len - 16, 16))
 		goto err;
@@ -96,6 +97,7 @@ err:
 static int quic_packet_handshake_version_process(struct sock *sk, struct sk_buff *skb)
 {
 	struct quic_crypto *crypto = quic_crypto(sk, QUIC_CRYPTO_INITIAL);
+	struct quic_inqueue *inq = quic_inq(sk);
 	struct quic_connection_id dcid, scid;
 	u32 len = skb->len, dlen, slen;
 	u32 version, best = 0;
@@ -135,7 +137,7 @@ static int quic_packet_handshake_version_process(struct sock *sk, struct sk_buff
 			best = version;
 	}
 	if (best) {
-		quic_local(sk)->version = best;
+		quic_inq_set_version(inq, best);
 		quic_crypto_destroy(crypto);
 		if (quic_crypto_initial_keys_install(crypto, &scid, best, 0))
 			goto err;
@@ -171,6 +173,7 @@ static void quic_packet_decrypt_done(struct crypto_async_request *base, int err)
 static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb, u8 resume)
 {
 	struct quic_connection_id_set *id_set = quic_dest(sk);
+	struct quic_inqueue *inq = quic_inq(sk);
 	struct quic_connection_id *active;
 	struct quic_packet_info pki = {};
 	u8 *p, level = 0, *scid, type;
@@ -195,7 +198,7 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb, u
 		version = quic_get_int(&p, 4);
 		if (!version)
 			return quic_packet_handshake_version_process(sk, skb);
-		else if (version != quic_local(sk)->version)
+		else if (version != quic_inq_version(inq))
 			goto err;
 		len -= 4;
 		type = quic_version_get_type(version, hshdr->type);
@@ -472,6 +475,7 @@ static struct sk_buff *quic_packet_handshake_create(struct sock *sk)
 {
 	struct quic_packet *packet = quic_packet(sk);
 	struct quic_outqueue *outq = quic_outq(sk);
+	struct quic_inqueue *inq = quic_inq(sk);
 	struct quic_connection_id_set *id_set;
 	u8 *p, type, level = packet->level;
 	struct quic_connection_id *active;
@@ -479,9 +483,9 @@ static struct sk_buff *quic_packet_handshake_create(struct sock *sk)
 	struct sk_buff *fskb, *skb;
 	struct sk_buff_head *head;
 	struct quic_pnmap *pnmap;
+	u32 number_len, version;
 	int len, hlen, plen = 0;
 	struct quichshdr *hdr;
-	u32 number_len;
 	s64 number;
 
 	type = QUIC_PACKET_INITIAL;
@@ -509,16 +513,17 @@ static struct sk_buff *quic_packet_handshake_create(struct sock *sk)
 	pnmap = quic_pnmap(sk, level);
 	number = quic_pnmap_increase_next_number(pnmap);
 	number_len = 4; /* make it fixed for easy coding */
+	version = quic_inq_version(inq);
 	hdr = skb_push(skb, len);
 	hdr->form = 1;
 	hdr->fixed = !quic_outq_grease_quic_bit(outq);
-	hdr->type = quic_version_put_type(quic_local(sk)->version, type);
+	hdr->type = quic_version_put_type(version, type);
 	hdr->reserved = 0;
 	hdr->pnl = 0x3;
 	skb_reset_transport_header(skb);
 
 	p = (u8 *)hdr + 1;
-	p = quic_put_int(p, quic_local(sk)->version, 4);
+	p = quic_put_int(p, version, 4);
 
 	id_set = quic_dest(sk);
 	active = quic_connection_id_active(id_set);
@@ -917,6 +922,7 @@ static struct sk_buff *quic_packet_retry_create(struct sock *sk, struct quic_req
 {
 	struct quic_crypto *crypto = quic_crypto(sk, QUIC_CRYPTO_INITIAL);
 	struct quic_outqueue *outq = quic_outq(sk);
+	struct quic_inqueue *inq = quic_inq(sk);
 	int len, hlen, tokenlen = 17;
 	u8 *p, token[17], tag[16];
 	struct quichshdr *hdr;
@@ -943,7 +949,7 @@ static struct sk_buff *quic_packet_retry_create(struct sock *sk, struct quic_req
 	skb_reset_transport_header(skb);
 
 	p = (u8 *)hdr + 1;
-	p = quic_put_int(p, quic_local(sk)->version, 4);
+	p = quic_put_int(p, quic_inq_version(inq), 4);
 	p = quic_put_int(p, req->scid.len, 1);
 	p = quic_put_data(p, req->scid.data, req->scid.len);
 	p = quic_put_int(p, req->dcid.len, 1);

@@ -90,6 +90,7 @@ static int quic_get_connid_and_token(struct sk_buff *skb, struct quic_connection
 static int quic_do_listen_rcv(struct sock *sk, struct sk_buff *skb)
 {
 	u8 *p = (u8 *)quic_hshdr(skb) + 1, type, data[16];
+	struct quic_inqueue *inq = quic_inq(sk);
 	struct quic_request_sock req = {};
 	struct quic_crypto *crypto;
 	struct quic_data token;
@@ -130,7 +131,7 @@ static int quic_do_listen_rcv(struct sock *sk, struct sk_buff *skb)
 		return quic_packet_stateless_reset_transmit(sk, &req);
 	}
 
-	if (quic_local(sk)->validate_peer_address) {
+	if (quic_inq_validate_peer_address(inq)) {
 		if (!token.len) {
 			consume_skb(skb);
 			return quic_packet_retry_transmit(sk, &req);
@@ -526,6 +527,9 @@ void quic_inq_set_param(struct sock *sk, struct quic_transport_param *p)
 		sk->sk_rcvbuf = p->max_data * 2;
 
 	inq->probe_timeout = p->plpmtud_probe_timeout;
+	inq->version = p->version;
+	inq->validate_peer_address = p->validate_peer_address;
+	inq->receive_session_ticket = p->receive_session_ticket;
 	quic_timer_setup(sk, QUIC_TIMER_PROBE, inq->probe_timeout);
 }
 

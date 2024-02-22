@@ -27,7 +27,10 @@ struct quic_inqueue {
 	u32 max_ack_delay;
 	u32 events;
 	u32 probe_timeout;
-	u8 grease_quic_bit;
+	u32 version;
+	u8 grease_quic_bit:1;
+	u8 validate_peer_address:1;
+	u8 receive_session_ticket:1;
 };
 
 struct quic_rcv_cb {
@@ -49,6 +52,11 @@ struct quic_rcv_cb {
 static inline u32 quic_inq_max_idle_timeout(struct quic_inqueue *inq)
 {
 	return inq->max_idle_timeout;
+}
+
+static inline u32 quic_inq_max_ack_delay(struct quic_inqueue *inq)
+{
+	return inq->max_ack_delay;
 }
 
 static inline u32 quic_inq_max_dgram(struct quic_inqueue *inq)
@@ -104,6 +112,31 @@ static inline u32 quic_inq_events(struct quic_inqueue *inq)
 static inline void quic_inq_set_events(struct quic_inqueue *inq, u32 events)
 {
 	inq->events = events;
+}
+
+static inline u32 quic_inq_version(struct quic_inqueue *inq)
+{
+	return inq->version;
+}
+
+static inline void quic_inq_set_version(struct quic_inqueue *inq, u32 version)
+{
+	inq->version = version;
+}
+
+static inline u8 quic_inq_receive_session_ticket(struct quic_inqueue *inq)
+{
+	return inq->receive_session_ticket;
+}
+
+static inline void quic_inq_set_receive_session_ticket(struct quic_inqueue *inq, u8 rcv)
+{
+	inq->receive_session_ticket = rcv;
+}
+
+static inline u8 quic_inq_validate_peer_address(struct quic_inqueue *inq)
+{
+	return inq->validate_peer_address;
 }
 
 static inline struct sk_buff_head *quic_inq_backlog_list(struct quic_inqueue *inq)

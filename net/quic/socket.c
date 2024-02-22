@@ -245,6 +245,7 @@ static int quic_connect(struct sock *sk, struct sockaddr *addr, int addr_len)
 	struct quic_connection_id_set *id_set = quic_dest(sk);
 	struct quic_path_addr *path = quic_src(sk);
 	struct quic_outqueue *outq = quic_outq(sk);
+	struct quic_inqueue *inq = quic_inq(sk);
 	struct quic_connection_id conn_id;
 	union quic_addr *sa;
 	int err = -EINVAL;
@@ -287,7 +288,7 @@ static int quic_connect(struct sock *sk, struct sockaddr *addr, int addr_len)
 		goto free;
 	err = quic_crypto_initial_keys_install(quic_crypto(sk, QUIC_CRYPTO_INITIAL),
 					       quic_connection_id_active(id_set),
-					       quic_local(sk)->version, 0);
+					       quic_inq_version(inq), 0);
 	if (err)
 		goto free;
 
@@ -835,6 +836,7 @@ static int quic_sock_set_transport_param(struct sock *sk, struct quic_transport_
 static int quic_copy_sock(struct sock *nsk, struct sock *sk, struct quic_request_sock *req)
 {
 	struct quic_crypto *crypto = quic_crypto(sk, QUIC_CRYPTO_APP);
+	struct quic_transport_param *param = quic_local(sk);
 	struct quic_inqueue *inq = quic_inq(sk);
 	struct sk_buff *skb, *tmp;
 	union quic_addr sa, da;
@@ -870,8 +872,7 @@ static int quic_copy_sock(struct sock *nsk, struct sock *sk, struct quic_request
 	if (nsk->sk_family == AF_INET6)
 		inet_sk(nsk)->pinet6 = &((struct quic6_sock *)nsk)->inet6;
 
-	quic_sock_set_transport_param(nsk, quic_local(sk),
-				      sizeof(struct quic_transport_param));
+	quic_sock_set_transport_param(nsk, param, sizeof(*param));
 	events = quic_inq_events(inq);
 	inq = quic_inq(nsk);
 	quic_inq_set_events(inq, events);
@@ -905,11 +906,11 @@ static int quic_accept_sock_init(struct sock *sk, struct quic_request_sock *req)
 	if (err)
 		goto out;
 	quic_outq_set_orig_dcid(outq, &req->dcid);
-	quic_local(sk)->version = req->version;
+	quic_inq_set_version(inq, req->version);
 	err = quic_connection_id_add(quic_dest(sk), &req->scid, 0, NULL);
 	if (err)
 		goto out;
-	err = quic_crypto_initial_keys_install(crypto, &req->dcid, quic_local(sk)->version, 1);
+	err = quic_crypto_initial_keys_install(crypto, &req->dcid, req->version, 1);
 	if (err)
 		goto out;
 
@@ -1136,7 +1137,7 @@ static int quic_sock_set_crypto_secret(struct sock *sk, struct quic_crypto_secre
 		return -EINVAL;
 
 	err = quic_crypto_set_secret(quic_crypto(sk, secret->level), secret,
-				     quic_local(sk)->version);
+				     quic_inq_version(inq));
 	if (err)
 		return err;
 

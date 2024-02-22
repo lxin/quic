@@ -199,31 +199,32 @@ void quic_timer_setup(struct sock *sk, u8 type, u32 timeout)
 
 void quic_timer_init(struct sock *sk)
 {
-	struct quic_transport_param *p = quic_local(sk);
+	struct quic_inqueue *inq = quic_inq(sk);
+	struct quic_cong *cong = quic_cong(sk);
 	struct quic_timer *t;
 
 	t = quic_timer(sk, QUIC_TIMER_RTX);
 	timer_setup(&t->timer, quic_timer_rtx_timeout, 0);
-	quic_timer_setup(sk, QUIC_TIMER_RTX, p->initial_smoothed_rtt);
+	quic_timer_setup(sk, QUIC_TIMER_RTX, quic_cong_latest_rtt(cong));
 
 	t = quic_timer(sk, QUIC_TIMER_ACK);
 	timer_setup(&t->timer, quic_timer_delay_ack_timeout, 0);
-	quic_timer_setup(sk, QUIC_TIMER_ACK, p->max_ack_delay);
+	quic_timer_setup(sk, QUIC_TIMER_ACK, quic_inq_max_ack_delay(inq));
 
 	/* Initialize the idle timer's handler. The timeout value isn't known
 	 * until the socket context is set.
 	 */
 	t = quic_timer(sk, QUIC_TIMER_IDLE);
 	timer_setup(&t->timer, quic_timer_idle_timeout, 0);
-	quic_timer_setup(sk, QUIC_TIMER_IDLE, p->max_idle_timeout);
+	quic_timer_setup(sk, QUIC_TIMER_IDLE, quic_inq_max_idle_timeout(inq));
 
 	t = quic_timer(sk, QUIC_TIMER_PROBE);
 	timer_setup(&t->timer, quic_timer_probe_timeout, 0);
-	quic_timer_setup(sk, QUIC_TIMER_PROBE, p->plpmtud_probe_timeout);
+	quic_timer_setup(sk, QUIC_TIMER_PROBE, quic_inq_probe_timeout(inq));
 
 	t = quic_timer(sk, QUIC_TIMER_PATH);
 	timer_setup(&t->timer, quic_timer_path_timeout, 0);
-	quic_timer_setup(sk, QUIC_TIMER_PATH, p->initial_smoothed_rtt * 3);
+	quic_timer_setup(sk, QUIC_TIMER_PATH, quic_cong_latest_rtt(cong) * 3);
 }
 
 void quic_timer_free(struct sock *sk)
