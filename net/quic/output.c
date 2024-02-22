@@ -242,6 +242,7 @@ void quic_outq_rtx_tail(struct sock *sk, struct sk_buff *skb)
 void quic_outq_transmit_probe(struct sock *sk)
 {
 	struct quic_path_dst *d = (struct quic_path_dst *)quic_dst(sk);
+	struct quic_inqueue *inq = quic_inq(sk);
 	struct sk_buff *skb;
 	u32 pathmtu;
 
@@ -258,7 +259,7 @@ void quic_outq_transmit_probe(struct sock *sk)
 			quic_packet_mss_update(sk, pathmtu + QUIC_TAG_LEN);
 	}
 
-	quic_timer_setup(sk, QUIC_TIMER_PROBE, quic_inq(sk)->probe_timeout);
+	quic_timer_setup(sk, QUIC_TIMER_PROBE, quic_inq_probe_timeout(inq));
 	quic_timer_reset(sk, QUIC_TIMER_PROBE);
 }
 
@@ -267,6 +268,7 @@ void quic_outq_retransmit_check(struct sock *sk, u8 level, s64 largest, s64 smal
 {
 	u32 pathmtu, acked_bytes = 0, transmit_ts = 0, rto;
 	struct quic_outqueue *outq = quic_outq(sk);
+	struct quic_inqueue *inq = quic_inq(sk);
 	struct quic_cong *cong = quic_cong(sk);
 	struct sk_buff *skb, *tmp, *first;
 	struct quic_stream_update update;
@@ -284,7 +286,7 @@ void quic_outq_retransmit_check(struct sock *sk, u8 level, s64 largest, s64 smal
 		if (!complete)
 			quic_outq_transmit_probe(sk);
 		if (raise_timer) { /* reuse probe timer as raise timer */
-			quic_timer_setup(sk, QUIC_TIMER_PROBE, quic_inq(sk)->probe_timeout * 30);
+			quic_timer_setup(sk, QUIC_TIMER_PROBE, quic_inq_probe_timeout(inq) * 30);
 			quic_timer_reset(sk, QUIC_TIMER_PROBE);
 		}
 	}
@@ -543,8 +545,10 @@ out:
 	sock_put(sk);
 }
 
-void quic_outq_init(struct quic_outqueue *outq)
+void quic_outq_init(struct sock *sk)
 {
+	struct quic_outqueue *outq = quic_outq(sk);
+
 	skb_queue_head_init(&outq->control_list);
 	skb_queue_head_init(&outq->datagram_list);
 	skb_queue_head_init(&outq->encrypted_list);
@@ -552,11 +556,24 @@ void quic_outq_init(struct quic_outqueue *outq)
 	INIT_WORK(&outq->work, quic_outq_encrypted_work);
 }
 
-void quic_outq_free(struct sock *sk, struct quic_outqueue *outq)
+void quic_outq_free(struct sock *sk)
 {
+	struct quic_outqueue *outq = quic_outq(sk);
+
 	__skb_queue_purge(&sk->sk_write_queue);
 	__skb_queue_purge(&outq->retransmit_list);
 	__skb_queue_purge(&outq->datagram_list);
 	__skb_queue_purge(&outq->control_list);
 	kfree(outq->close_phrase);
+}
+
+void quic_outq_encrypted_tail(struct sock *sk, struct sk_buff *skb)
+{
+	struct quic_outqueue *outq = quic_outq(sk);
+
+	sock_hold(sk);
+	skb_queue_tail(&outq->encrypted_list, skb);
+
+	if (!schedule_work(&outq->work))
+		sock_put(sk);
 }

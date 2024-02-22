@@ -47,6 +47,11 @@ static inline u32 quic_packet_mss(struct quic_packet *packet)
 	return packet->mss[0];
 }
 
+static inline u32 quic_packet_overhead(struct quic_packet *packet)
+{
+	return packet->overhead;
+}
+
 static inline u32 quic_packet_max_payload(struct quic_packet *packet)
 {
 	return packet->mss[0] - packet->overhead;
@@ -62,11 +67,6 @@ static inline bool quic_packet_empty(struct quic_packet *packet)
 	return skb_queue_empty(&packet->frame_list);
 }
 
-static inline void quic_packet_init(struct quic_packet *packet)
-{
-	skb_queue_head_init(&packet->frame_list);
-}
-
 void quic_packet_config(struct sock *sk, u8 level, u8 path_alt);
 void quic_packet_build(struct sock *sk);
 int quic_packet_route(struct sock *sk);
@@ -78,3 +78,4 @@ int quic_packet_version_transmit(struct sock *sk, struct quic_request_sock *req)
 int quic_packet_stateless_reset_transmit(struct sock *sk, struct quic_request_sock *req);
 void quic_packet_mss_update(struct sock *sk, int mss);
 int quic_packet_xmit(struct sock *sk, struct sk_buff *skb, u8 resume);
+void quic_packet_init(struct sock *sk);

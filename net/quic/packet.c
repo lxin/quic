@@ -168,8 +168,6 @@ static void quic_packet_decrypt_done(struct crypto_async_request *base, int err)
 {
 	struct sk_buff *skb = base->data;
 #endif
-	struct sock *sk = skb->sk;
-	struct quic_inqueue *inq;
 
 	if (err) {
 		kfree_skb(skb);
@@ -177,12 +175,7 @@ static void quic_packet_decrypt_done(struct crypto_async_request *base, int err)
 		return;
 	}
 
-	sock_hold(sk);
-	inq = quic_inq(sk);
-	skb_queue_tail(&inq->decrypted_list, skb);
-
-	if (!schedule_work(&inq->work))
-		sock_put(sk);
+	quic_inq_decrypted_tail(skb->sk, skb);
 }
 
 static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb, u8 resume)
@@ -220,14 +213,14 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb, u
 		case QUIC_PACKET_HANDSHAKE:
 			level = QUIC_CRYPTO_HANDSHAKE;
 			if (!quic_crypto(sk, level)->recv_ready) {
-				__skb_queue_tail(&quic_inq(sk)->backlog_list, skb);
+				quic_inq_backlog_tail(sk, skb);
 				return 0;
 			}
 			break;
 		case QUIC_PACKET_0RTT:
 			level = QUIC_CRYPTO_EARLY;
 			if (!quic_crypto(sk, QUIC_CRYPTO_APP)->recv_ready) {
-				__skb_queue_tail(&quic_inq(sk)->backlog_list, skb);
+				quic_inq_backlog_tail(sk, skb);
 				return 0;
 			}
 			break;
@@ -327,6 +320,7 @@ int quic_packet_process(struct sock *sk, struct sk_buff *skb, u8 resume)
 	struct quic_crypto *crypto = quic_crypto(sk, QUIC_CRYPTO_APP);
 	struct quic_pnmap *pnmap = quic_pnmap(sk, QUIC_CRYPTO_APP);
 	struct quic_rcv_cb *rcv_cb = QUIC_RCV_CB(skb);
+	struct quic_inqueue *inq = quic_inq(sk);
 	struct quic_packet_info pki = {};
 	u8 key_phase, level = 0;
 	union quic_addr addr;
@@ -338,11 +332,11 @@ int quic_packet_process(struct sock *sk, struct sk_buff *skb, u8 resume)
 	if (quic_hdr(skb)->form)
 		return quic_packet_handshake_process(sk, skb, resume);
 
-	if (!quic_hdr(skb)->fixed && !quic_inq(sk)->grease_quic_bit)
+	if (!quic_hdr(skb)->fixed && !quic_inq_grease_quic_bit(inq))
 		goto err;
 
 	if (!crypto->recv_ready) {
-		__skb_queue_tail(&quic_inq(sk)->backlog_list, skb);
+		quic_inq_backlog_tail(sk, skb);
 		return 0;
 	}
 
@@ -480,6 +474,7 @@ err:
 static struct sk_buff *quic_packet_handshake_create(struct sock *sk)
 {
 	struct quic_packet *packet = quic_packet(sk);
+	struct quic_outqueue *outq = quic_outq(sk);
 	u8 *p, type, level = packet->level;
 	struct quic_snd_cb *snd_cb;
 	struct sk_buff *fskb, *skb;
@@ -515,7 +510,7 @@ static struct sk_buff *quic_packet_handshake_create(struct sock *sk)
 	number_len = 4; /* make it fixed for easy coding */
 	hdr = skb_push(skb, len);
 	hdr->form = 1;
-	hdr->fixed = !quic_outq(sk)->grease_quic_bit;
+	hdr->fixed = !quic_outq_grease_quic_bit(outq);
 	hdr->type = quic_version_put_type(quic_local(sk)->version, type);
 	hdr->reserved = 0;
 	hdr->pnl = 0x3;
@@ -609,6 +604,7 @@ static int quic_packet_number_check(struct sock *sk)
 
 static struct sk_buff *quic_packet_create(struct sock *sk)
 {
+	struct quic_outqueue *outq = quic_outq(sk);
 	struct quic_packet *packet;
 	struct sk_buff *fskb, *skb;
 	struct quic_snd_cb *snd_cb;
@@ -636,7 +632,7 @@ static struct sk_buff *quic_packet_create(struct sock *sk)
 
 	hdr = skb_push(skb, len);
 	hdr->form = 0;
-	hdr->fixed = !quic_outq(sk)->grease_quic_bit;
+	hdr->fixed = !quic_outq_grease_quic_bit(outq);
 	hdr->spin = 0;
 	hdr->reserved = 0;
 	hdr->pnl = 0x3;
@@ -696,6 +692,7 @@ void quic_packet_mss_update(struct sock *sk, int mss)
 int quic_packet_route(struct sock *sk)
 {
 	struct quic_packet *packet = quic_packet(sk);
+	struct quic_inqueue *inq = quic_inq(sk);
 	int err, mss;
 
 	packet->sa = quic_path_addr(quic_src(sk), packet->path_alt & QUIC_PATH_ALT_SRC);
@@ -708,7 +705,7 @@ int quic_packet_route(struct sock *sk)
 	quic_packet_mss_update(sk, mss);
 
 	quic_path_pl_reset(quic_dst(sk));
-	quic_timer_setup(sk, QUIC_TIMER_PROBE, quic_inq(sk)->probe_timeout);
+	quic_timer_setup(sk, QUIC_TIMER_PROBE, quic_inq_probe_timeout(inq));
 	quic_timer_reset(sk, QUIC_TIMER_PROBE);
 	return 0;
 }
@@ -716,6 +713,7 @@ int quic_packet_route(struct sock *sk)
 void quic_packet_config(struct sock *sk, u8 level, u8 path_alt)
 {
 	struct quic_packet *packet = quic_packet(sk);
+	struct quic_inqueue *inq = quic_inq(sk);
 	int hlen = sizeof(struct quichdr);
 
 	if (!quic_packet_empty(packet)) {
@@ -734,7 +732,7 @@ void quic_packet_config(struct sock *sk, u8 level, u8 path_alt)
 			hlen += 1 + quic_token(sk)->len;
 		hlen += 4; /* version */
 		hlen += 4; /* length number */
-		packet->ipfragok = !!quic_inq(sk)->probe_timeout;
+		packet->ipfragok = !!quic_inq_probe_timeout(inq);
 	}
 	packet->len = hlen;
 	packet->overhead = hlen;
@@ -753,8 +751,6 @@ static void quic_packet_encrypt_done(struct crypto_async_request *base, int err)
 {
 	struct sk_buff *skb = base->data;
 #endif
-	struct quic_outqueue *outq;
-	struct sock *sk = skb->sk;
 
 	if (err) {
 		kfree_skb(skb);
@@ -762,12 +758,7 @@ static void quic_packet_encrypt_done(struct crypto_async_request *base, int err)
 		return;
 	}
 
-	sock_hold(sk);
-	outq = quic_outq(sk);
-	skb_queue_tail(&outq->encrypted_list, skb);
-
-	if (!schedule_work(&outq->work))
-		sock_put(sk);
+	quic_outq_encrypted_tail(skb->sk, skb);
 }
 
 static int quic_packet_bundle(struct sock *sk, struct sk_buff *skb)
@@ -910,6 +901,7 @@ int quic_packet_tail(struct sock *sk, struct sk_buff *skb, u8 dgram)
 static struct sk_buff *quic_packet_retry_create(struct sock *sk, struct quic_request_sock *req)
 {
 	struct quic_crypto *crypto = quic_crypto(sk, QUIC_CRYPTO_INITIAL);
+	struct quic_outqueue *outq = quic_outq(sk);
 	int len, hlen, tokenlen = 17;
 	u8 *p, token[17], tag[16];
 	struct quichshdr *hdr;
@@ -929,7 +921,7 @@ static struct sk_buff *quic_packet_retry_create(struct sock *sk, struct quic_req
 
 	hdr = skb_push(skb, len);
 	hdr->form = 1;
-	hdr->fixed = !quic_outq(sk)->grease_quic_bit;
+	hdr->fixed = !quic_outq_grease_quic_bit(outq);
 	hdr->type = quic_version_put_type(req->version, QUIC_PACKET_RETRY);
 	hdr->reserved = 0;
 	hdr->pnl = 0;
@@ -979,6 +971,7 @@ int quic_packet_retry_transmit(struct sock *sk, struct quic_request_sock *req)
 
 static struct sk_buff *quic_packet_version_create(struct sock *sk, struct quic_request_sock *req)
 {
+	struct quic_outqueue *outq = quic_outq(sk);
 	struct quichshdr *hdr;
 	struct sk_buff *skb;
 	int len, hlen;
@@ -993,7 +986,7 @@ static struct sk_buff *quic_packet_version_create(struct sock *sk, struct quic_r
 
 	hdr = skb_push(skb, len);
 	hdr->form = 1;
-	hdr->fixed = !quic_outq(sk)->grease_quic_bit;
+	hdr->fixed = !quic_outq_grease_quic_bit(outq);
 	hdr->type = 0;
 	hdr->reserved = 0;
 	hdr->pnl = 0;
@@ -1075,4 +1068,9 @@ int quic_packet_stateless_reset_transmit(struct sock *sk, struct quic_request_so
 		return -ENOMEM;
 	quic_lower_xmit(sk, skb, &req->da, &req->sa);
 	return 0;
+}
+
+void quic_packet_init(struct sock *sk)
+{
+	skb_queue_head_init(&quic_packet(sk)->frame_list);
 }

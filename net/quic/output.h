@@ -63,11 +63,6 @@ static inline void quic_outq_reset(struct quic_outqueue *outq)
 	outq->rtx_count = 0;
 }
 
-static inline u32 quic_outq_inflight(struct quic_outqueue *outq)
-{
-	return outq->inflight;
-}
-
 static inline void quic_outq_set_window(struct quic_outqueue *outq, u32 window)
 {
 	outq->window = window;
@@ -83,9 +78,80 @@ static inline u32 quic_outq_max_udp(struct quic_outqueue *outq)
 	return outq->max_udp_payload_size;
 }
 
+static inline u64 quic_outq_max_bytes(struct quic_outqueue *outq)
+{
+	return outq->max_bytes;
+}
+
+static inline void quic_outq_set_max_bytes(struct quic_outqueue *outq, u64 bytes)
+{
+	outq->max_bytes = bytes;
+}
+
+static inline u32 quic_outq_close_errcode(struct quic_outqueue *outq)
+{
+	return outq->close_errcode;
+}
+
+static inline void quic_outq_set_close_errcode(struct quic_outqueue *outq, u32 errcode)
+{
+	outq->close_errcode = errcode;
+}
+
+static inline u8 quic_outq_close_frame(struct quic_outqueue *outq)
+{
+	return outq->close_frame;
+}
+
+static inline u8 *quic_outq_close_phrase(struct quic_outqueue *outq)
+{
+	return outq->close_phrase;
+}
+
+static inline void quic_outq_set_close_phrase(struct quic_outqueue *outq, u8 *phrase)
+{
+	outq->close_phrase = phrase;
+}
+
+static inline u8 quic_outq_retry(struct quic_outqueue *outq)
+{
+	return outq->retry;
+}
+
+static inline void quic_outq_set_retry(struct quic_outqueue *outq, u8 retry)
+{
+	outq->retry = retry;
+}
+
 static inline u32 quic_outq_max_dgram(struct quic_outqueue *outq)
 {
 	return outq->max_datagram_frame_size;
+}
+
+static inline u8 quic_outq_grease_quic_bit(struct quic_outqueue *outq)
+{
+	return outq->grease_quic_bit;
+}
+
+static inline struct quic_connection_id *quic_outq_orig_dcid(struct quic_outqueue *outq)
+{
+	return &outq->orig_dcid;
+}
+
+static inline void quic_outq_set_orig_dcid(struct quic_outqueue *outq,
+					   struct quic_connection_id *dcid)
+{
+	outq->orig_dcid = *dcid;
+}
+
+static inline void quic_outq_set_serv(struct quic_outqueue *outq)
+{
+	outq->serv = 1;
+}
+
+static inline void quic_outq_set_level(struct quic_outqueue *outq, u8 level)
+{
+	outq->level = level;
 }
 
 void quic_outq_dgram_tail(struct sock *sk, struct sk_buff *skb, bool cork);
@@ -102,5 +168,6 @@ void quic_outq_stream_purge(struct sock *sk, struct quic_stream *stream);
 void quic_outq_set_param(struct sock *sk, struct quic_transport_param *p);
 void quic_outq_get_param(struct sock *sk, struct quic_transport_param *p);
 void quic_outq_transmit_probe(struct sock *sk);
-void quic_outq_init(struct quic_outqueue *outq);
-void quic_outq_free(struct sock *sk, struct quic_outqueue *outq);
+void quic_outq_init(struct sock *sk);
+void quic_outq_free(struct sock *sk);
+void quic_outq_encrypted_tail(struct sock *sk, struct sk_buff *skb);

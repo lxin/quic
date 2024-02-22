@@ -29,6 +29,7 @@
 static struct sk_buff *quic_frame_ack_create(struct sock *sk, void *data, u8 type)
 {
 	struct quic_gap_ack_block gabs[QUIC_PN_MAX_GABS];
+	struct quic_outqueue *outq = quic_outq(sk);
 	u32 frame_len, num_gabs, pn_ts;
 	u8 *p, level = *((u8 *)data);
 	u64 largest, smallest, range;
@@ -51,7 +52,7 @@ static struct sk_buff *quic_frame_ack_create(struct sock *sk, void *data, u8 typ
 	if (!skb)
 		return NULL;
 	pn_ts = jiffies_to_usecs(jiffies) - pn_ts;
-	pn_ts = pn_ts / BIT(quic_outq_ack_delay_exponent(quic_outq(sk)));
+	pn_ts = pn_ts / BIT(quic_outq_ack_delay_exponent(outq));
 	p = quic_put_var(skb->data, type);
 	p = quic_put_var(p, largest); /* Largest Acknowledged */
 	p = quic_put_var(p, pn_ts); /* ACK Delay */
@@ -79,12 +80,13 @@ static struct sk_buff *quic_frame_ack_create(struct sock *sk, void *data, u8 typ
 
 static struct sk_buff *quic_frame_ping_create(struct sock *sk, void *data, u8 type)
 {
+	struct quic_packet *packet = quic_packet(sk);
 	u16 *probe_size = data;
 	struct sk_buff *skb;
 	u32 frame_len = 1;
 
 	quic_packet_config(sk, 0, 0);
-	frame_len = *probe_size - quic_packet(sk)->overhead;
+	frame_len = *probe_size - quic_packet_overhead(packet);
 
 	skb = alloc_skb(frame_len, GFP_ATOMIC);
 	if (!skb)
@@ -344,13 +346,14 @@ static struct sk_buff *quic_frame_path_response_create(struct sock *sk, void *da
 
 static struct sk_buff *quic_frame_path_challenge_create(struct sock *sk, void *data, u8 type)
 {
+	struct quic_packet *packet = quic_packet(sk);
 	struct quic_path_addr *path = data;
 	struct sk_buff *skb;
 	u32 frame_len;
 	u8 *p;
 
 	quic_packet_config(sk, 0, 0);
-	frame_len = 1184 - quic_packet(sk)->overhead;
+	frame_len = 1184 - quic_packet_overhead(packet);
 	get_random_bytes(path->entropy, sizeof(path->entropy));
 
 	skb = alloc_skb(frame_len, GFP_ATOMIC);
@@ -425,7 +428,7 @@ static struct sk_buff *quic_frame_max_data_create(struct sock *sk, void *data, u
 	u32 frame_len;
 
 	p = quic_put_var(frame, type);
-	p = quic_put_var(p, inq->max_bytes);
+	p = quic_put_var(p, quic_inq_max_bytes(inq));
 	frame_len = (u32)(p - frame);
 
 	skb = alloc_skb(frame_len, GFP_ATOMIC);
@@ -498,19 +501,20 @@ static struct sk_buff *quic_frame_connection_close_create(struct sock *sk, void 
 {
 	struct quic_outqueue *outq = quic_outq(sk);
 	u32 frame_len, phrase_len = 0;
+	u8 *p, frame[100], *phrase;
 	struct sk_buff *skb;
-	u8 *p, frame[100];
 
 	p = quic_put_var(frame, type);
-	p = quic_put_var(p, outq->close_errcode);
+	p = quic_put_var(p, quic_outq_close_errcode(outq));
 
 	if (type == QUIC_FRAME_CONNECTION_CLOSE)
-		p = quic_put_var(p, outq->close_frame);
+		p = quic_put_var(p, quic_outq_close_frame(outq));
 
-	if (outq->close_phrase)
-		phrase_len = strlen(outq->close_phrase) + 1;
+	phrase = quic_outq_close_phrase(outq);
+	if (phrase)
+		phrase_len = strlen(phrase) + 1;
 	p = quic_put_var(p, phrase_len);
-	p = quic_put_data(p, outq->close_phrase, phrase_len);
+	p = quic_put_data(p, phrase, phrase_len);
 
 	frame_len = (u32)(p - frame);
 
@@ -530,7 +534,7 @@ static struct sk_buff *quic_frame_data_blocked_create(struct sock *sk, void *dat
 	u32 frame_len;
 
 	p = quic_put_var(frame, type);
-	p = quic_put_var(p, outq->max_bytes);
+	p = quic_put_var(p, quic_outq_max_bytes(outq));
 	frame_len = (u32)(p - frame);
 
 	skb = alloc_skb(frame_len, GFP_ATOMIC);
@@ -928,8 +932,8 @@ static int quic_frame_max_data_process(struct sock *sk, struct sk_buff *skb, u8 
 	if (!quic_get_var(&p, &len, &max_bytes))
 		return -EINVAL;
 
-	if (max_bytes >= outq->max_bytes)
-		outq->max_bytes = max_bytes;
+	if (max_bytes >= quic_outq_max_bytes(outq))
+		quic_outq_set_max_bytes(outq, max_bytes);
 
 	return skb->len - len;
 }
@@ -1047,16 +1051,16 @@ static int quic_frame_data_blocked_process(struct sock *sk, struct sk_buff *skb,
 
 	if (!quic_get_var(&p, &len, &max_bytes))
 		return -EINVAL;
-	recv_max_bytes = inq->max_bytes;
+	recv_max_bytes = quic_inq_max_bytes(inq);
 
-	window = inq->window;
+	window = quic_inq_window(inq);
 	if (sk_under_memory_pressure(sk))
 		window >>= 1;
 
-	inq->max_bytes = inq->bytes + window;
+	quic_inq_set_max_bytes(inq, quic_inq_bytes(inq) + window);
 	fskb = quic_frame_create(sk, QUIC_FRAME_MAX_DATA, inq);
 	if (!fskb) {
-		inq->max_bytes = recv_max_bytes;
+		quic_inq_set_max_bytes(inq, recv_max_bytes);
 		return -ENOMEM;
 	}
 	quic_outq_ctrl_tail(sk, fskb, true);
@@ -1201,6 +1205,7 @@ static int quic_frame_invalid_process(struct sock *sk, struct sk_buff *skb, u8 t
 
 static int quic_frame_datagram_process(struct sock *sk, struct sk_buff *skb, u8 type)
 {
+	struct quic_inqueue *inq = quic_inq(sk);
 	struct sk_buff *nskb;
 	u32 len = skb->len;
 	u8 *p = skb->data;
@@ -1210,7 +1215,7 @@ static int quic_frame_datagram_process(struct sock *sk, struct sk_buff *skb, u8 
 	if (quic_local(sk)->receive_session_ticket)
 		return -EINVAL;
 
-	if (!quic_inq_max_dgram(quic_inq(sk)))
+	if (!quic_inq_max_dgram(inq))
 		return -EINVAL;
 
 	payload_len = skb->len;
@@ -1498,11 +1503,12 @@ int quic_frame_get_transport_params_ext(struct sock *sk, struct quic_transport_p
 					u8 *data, u32 *len)
 {
 	struct quic_connection_id *scid = &quic_source(sk)->active->id;
+	struct quic_outqueue *outq = quic_outq(sk);
 	u8 *p = data, token[16];
 
 	if (quic_is_serv(sk)) {
 		p = quic_put_conn_id(p, QUIC_TRANSPORT_PARAM_ORIGINAL_DESTINATION_CONNECTION_ID,
-				     &quic_outq(sk)->orig_dcid);
+				     quic_outq_orig_dcid(outq));
 		if (params->stateless_reset) {
 			p = quic_put_var(p, QUIC_TRANSPORT_PARAM_STATELESS_RESET_TOKEN);
 			p = quic_put_var(p, 16);
@@ -1512,9 +1518,9 @@ int quic_frame_get_transport_params_ext(struct sock *sk, struct quic_transport_p
 			p = quic_put_data(p, token, 16);
 		}
 	}
-	if (quic_outq(sk)->retry) {
+	if (quic_outq_retry(outq)) {
 		p = quic_put_conn_id(p, QUIC_TRANSPORT_PARAM_RETRY_SOURCE_CONNECTION_ID,
-				     &quic_outq(sk)->orig_dcid);
+				     quic_outq_orig_dcid(outq));
 	}
 	p = quic_put_conn_id(p, QUIC_TRANSPORT_PARAM_INITIAL_SOURCE_CONNECTION_ID, scid);
 	if (params->max_stream_data_bidi_local) {

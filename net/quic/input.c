@@ -633,8 +633,26 @@ out:
 	sock_put(sk);
 }
 
-void quic_inq_init(struct quic_inqueue *inq)
+void quic_inq_decrypted_tail(struct sock *sk, struct sk_buff *skb)
 {
+	struct quic_inqueue *inq = quic_inq(sk);
+
+	sock_hold(sk);
+	skb_queue_tail(&inq->decrypted_list, skb);
+
+	if (!schedule_work(&inq->work))
+		sock_put(sk);
+}
+
+void quic_inq_backlog_tail(struct sock *sk, struct sk_buff *skb)
+{
+	__skb_queue_tail(&quic_inq(sk)->backlog_list, skb);
+}
+
+void quic_inq_init(struct sock *sk)
+{
+	struct quic_inqueue *inq = quic_inq(sk);
+
 	skb_queue_head_init(&inq->reassemble_list);
 	skb_queue_head_init(&inq->decrypted_list);
 	skb_queue_head_init(&inq->handshake_list);
@@ -642,8 +660,10 @@ void quic_inq_init(struct quic_inqueue *inq)
 	INIT_WORK(&inq->work, quic_inq_decrypted_work);
 }
 
-void quic_inq_free(struct sock *sk, struct quic_inqueue *inq)
+void quic_inq_free(struct sock *sk)
 {
+	struct quic_inqueue *inq = quic_inq(sk);
+
 	__skb_queue_purge(&sk->sk_receive_queue);
 	__skb_queue_purge(&inq->reassemble_list);
 	__skb_queue_purge(&inq->handshake_list);
