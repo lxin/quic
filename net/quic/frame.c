@@ -1308,6 +1308,7 @@ static struct quic_frame_ops quic_frame_ops[QUIC_FRAME_MAX + 1] = {
 
 int quic_frame_process(struct sock *sk, struct sk_buff *skb, struct quic_packet_info *pki)
 {
+	struct quic_rcv_cb *rcv_cb = QUIC_RCV_CB(skb);
 	int ret, len = pki->length;
 	u8 type;
 
@@ -1326,11 +1327,13 @@ int quic_frame_process(struct sock *sk, struct sk_buff *skb, struct quic_packet_
 			skb_pull(skb, len);
 			return 0;
 		}
-		pr_debug("[QUIC] %s type: %x level: %d\n", __func__, type, QUIC_RCV_CB(skb)->level);
+		pr_debug("[QUIC] %s type: %x level: %d\n", __func__, type, rcv_cb->level);
 		ret = quic_frame_ops[type].frame_process(sk, skb, type);
 		if (ret < 0) {
 			pr_warn("[QUIC] %s type: %x level: %d err: %d\n", __func__, type,
-				QUIC_RCV_CB(skb)->level, ret);
+				rcv_cb->level, ret);
+			pki->errcode = rcv_cb->errcode;
+			pki->frame = type;
 			return ret;
 		}
 		if (quic_frame_ack_eliciting(type)) {

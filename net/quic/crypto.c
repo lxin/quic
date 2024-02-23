@@ -24,6 +24,8 @@
 #include "protocol.h"
 #include "crypto.h"
 #include "number.h"
+#include "stream.h"
+#include "frame.h"
 
 struct tls_vec {
 	u8 *data;
@@ -533,8 +535,10 @@ int quic_crypto_decrypt(struct quic_crypto *crypto, struct sk_buff *skb,
 
 	if (pki->key_phase != crypto->key_phase && !crypto->key_pending) {
 		err = quic_crypto_key_update(crypto);
-		if (err)
+		if (err) {
+			pki->errcode = QUIC_TRANSPORT_ERROR_KEY_UPDATE;
 			return err;
+		}
 	}
 
 	phase = pki->key_phase;

@@ -29,7 +29,7 @@ static int quic_packet_stateless_reset_process(struct sock *sk, struct sk_buff *
 	if (!quic_connection_id_token_exists(id_set, token))
 		return -EINVAL; /* not a stateless reset and the caller will free skb */
 
-	close.errcode = QUIC_TRANS_ERR_CRYPTO;
+	close.errcode = QUIC_TRANSPORT_ERROR_CRYPTO;
 	if (quic_inq_event_recv(sk, QUIC_EVENT_CONNECTION_CLOSE, &close))
 		return -ENOMEM;
 	quic_set_state(sk, QUIC_SS_CLOSED);
@@ -309,6 +309,7 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb, u
 err:
 	pr_warn("[QUIC] %s serv: %d number: %llu level: %d err: %d\n", __func__,
 		quic_is_serv(sk), pki.number, level, err);
+	quic_outq_transmit_close(sk, pki.frame, pki.errcode, level);
 	kfree_skb(skb);
 	return err;
 }
@@ -432,6 +433,7 @@ out:
 err:
 	pr_warn("[QUIC] %s serv: %d number: %llu len: %d err: %d\n", __func__,
 		quic_is_serv(sk), pki.number, skb->len, err);
+	quic_outq_transmit_close(sk, pki.frame, pki.errcode, level);
 	kfree_skb(skb);
 	return err;
 }

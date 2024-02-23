@@ -16,6 +16,8 @@ struct quic_packet_info {
 	u32 number_len;
 	u32 number_offset;
 	u64 length;
+	u32 errcode;
+	u8 frame;
 	u8 key_phase:1;
 	u8 key_update:1;
 	u8 ack_eliciting:1;

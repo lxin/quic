@@ -267,6 +267,31 @@ void quic_outq_transmit_probe(struct sock *sk)
 	quic_timer_reset(sk, QUIC_TIMER_PROBE);
 }
 
+void quic_outq_transmit_close(struct sock *sk, u8 frame, u32 errcode, u8 level)
+{
+	struct quic_outqueue *outq = quic_outq(sk);
+	struct quic_connection_close close = {};
+	struct sk_buff *skb;
+
+	if (!errcode)
+		return;
+
+	close.errcode = errcode;
+	close.frame = frame;
+	if (quic_inq_event_recv(sk, QUIC_EVENT_CONNECTION_CLOSE, &close))
+		return;
+
+	quic_outq_set_close_errcode(outq, errcode);
+	quic_outq_set_close_frame(outq, frame);
+
+	skb = quic_frame_create(sk, QUIC_FRAME_CONNECTION_CLOSE, NULL);
+	if (skb) {
+		QUIC_SND_CB(skb)->level = level;
+		quic_outq_ctrl_tail(sk, skb, false);
+	}
+	quic_set_state(sk, QUIC_SS_CLOSED);
+}
+
 void quic_outq_retransmit_check(struct sock *sk, u8 level, s64 largest, s64 smallest,
 				s64 ack_largest, u32 ack_delay)
 {

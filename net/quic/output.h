@@ -103,6 +103,11 @@ static inline u8 quic_outq_close_frame(struct quic_outqueue *outq)
 	return outq->close_frame;
 }
 
+static inline void quic_outq_set_close_frame(struct quic_outqueue *outq, u8 type)
+{
+	outq->close_frame = type;
+}
+
 static inline u8 *quic_outq_close_phrase(struct quic_outqueue *outq)
 {
 	return outq->close_phrase;
@@ -167,6 +172,7 @@ void quic_outq_validate_path(struct sock *sk, struct sk_buff *skb,
 void quic_outq_stream_purge(struct sock *sk, struct quic_stream *stream);
 void quic_outq_set_param(struct sock *sk, struct quic_transport_param *p);
 void quic_outq_get_param(struct sock *sk, struct quic_transport_param *p);
+void quic_outq_transmit_close(struct sock *sk, u8 frame, u32 errcode, u8 level);
 void quic_outq_transmit_probe(struct sock *sk);
 void quic_outq_init(struct sock *sk);
 void quic_outq_free(struct sock *sk);
