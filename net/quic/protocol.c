@@ -291,35 +291,57 @@ static int quic_inet_connect(struct socket *sock, struct sockaddr *addr, int add
 
 static int quic_inet_listen(struct socket *sock, int backlog)
 {
-	struct sock *sk = sock->sk;
+	struct quic_connection_id_set *source, *dest;
+	struct quic_connection_id conn_id, *active;
 	struct quic_crypto *crypto;
-	int err = 0;
+	struct quic_outqueue *outq;
+	struct sock *sk = sock->sk;
+	struct quic_inqueue *inq;
+	int err = 0, flag;
 
 	lock_sock(sk);
 
 	crypto = quic_crypto(sk, QUIC_CRYPTO_INITIAL);
+	source = quic_source(sk);
+	dest = quic_dest(sk);
+
 	sk->sk_max_ack_backlog = backlog;
-	if (!backlog) {
-		quic_crypto_destroy(crypto);
-		sk->sk_prot->unhash(sk);
-		quic_set_state(sk, QUIC_SS_CLOSED);
-		goto out;
-	}
+	if (!backlog)
+		goto free;
 
 	if (!hlist_unhashed(&quic_sk(sk)->inet.sk.sk_node))
 		goto out;
+	quic_connection_id_generate(&conn_id, 18);
+	err = quic_connection_id_add(dest, &conn_id, 0, NULL);
+	if (err)
+		goto free;
+	quic_connection_id_generate(&conn_id, 16);
+	err = quic_connection_id_add(source, &conn_id, 0, sk);
+	if (err)
+		goto free;
 	err = sk->sk_prot->hash(sk);
 	if (err)
-		goto out;
-	err = quic_crypto_set_cipher(crypto, TLS_CIPHER_AES_GCM_128);
-	if (err) {
-		sk->sk_prot->unhash(sk);
-		goto out;
-	}
+		goto free;
+	active = quic_connection_id_active(dest);
+	flag = CRYPTO_ALG_ASYNC;
+	outq = quic_outq(sk);
+	quic_outq_set_serv(outq);
+
+	inq = quic_inq(sk);
+	err = quic_crypto_initial_keys_install(crypto, active, quic_inq_version(inq), flag, 1);
+	if (err)
+		goto free;
 	quic_set_state(sk, QUIC_SS_LISTENING);
 out:
 	release_sock(sk);
 	return err;
+free:
+	sk->sk_prot->unhash(sk);
+	quic_crypto_destroy(crypto);
+	quic_connection_id_set_free(dest);
+	quic_connection_id_set_free(source);
+	quic_set_state(sk, QUIC_SS_CLOSED);
+	goto out;
 }
 
 static int quic_inet_getname(struct socket *sock, struct sockaddr *uaddr, int peer)

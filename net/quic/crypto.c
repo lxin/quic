@@ -561,37 +561,8 @@ out:
 }
 EXPORT_SYMBOL_GPL(quic_crypto_decrypt);
 
-int quic_crypto_set_cipher(struct quic_crypto *crypto, u32 type)
-{
-	struct quic_cipher *cipher;
-	void *tfm;
-	int err;
-
-	if (type < QUIC_CIPHER_MIN || type > QUIC_CIPHER_MAX)
-		return -EINVAL;
-
-	cipher = &ciphers[type - QUIC_CIPHER_MIN];
-	tfm = crypto_alloc_shash(cipher->shash, 0, 0);
-	if (IS_ERR(tfm))
-		return PTR_ERR(tfm);
-	crypto->secret_tfm = tfm;
-
-	tfm = crypto_alloc_aead(cipher->aead, 0, CRYPTO_ALG_ASYNC);
-	if (IS_ERR(tfm)) {
-		err = PTR_ERR(tfm);
-		goto err;
-	}
-	crypto->tag_tfm = tfm;
-	crypto->cipher = cipher;
-	crypto->cipher_type = type;
-	return 0;
-err:
-	quic_crypto_destroy(crypto);
-	return err;
-}
-EXPORT_SYMBOL_GPL(quic_crypto_set_cipher);
-
-int quic_crypto_set_secret(struct quic_crypto *crypto, struct quic_crypto_secret *srt, u32 version)
+int quic_crypto_set_secret(struct quic_crypto *crypto, struct quic_crypto_secret *srt,
+			   u32 version, u8 flag)
 {
 	int err, secretlen, keylen;
 	struct quic_cipher *cipher;
@@ -599,9 +570,23 @@ int quic_crypto_set_secret(struct quic_crypto *crypto, struct quic_crypto_secret
 
 	if (!crypto->cipher) {
 		crypto->version = version;
-		err = quic_crypto_set_cipher(crypto, srt->type);
-		if (err)
-			return err;
+		if (srt->type < QUIC_CIPHER_MIN || srt->type > QUIC_CIPHER_MAX)
+			return -EINVAL;
+
+		cipher = &ciphers[srt->type - QUIC_CIPHER_MIN];
+		tfm = crypto_alloc_shash(cipher->shash, 0, 0);
+		if (IS_ERR(tfm))
+			return PTR_ERR(tfm);
+		crypto->secret_tfm = tfm;
+
+		tfm = crypto_alloc_aead(cipher->aead, 0, CRYPTO_ALG_ASYNC);
+		if (IS_ERR(tfm)) {
+			err = PTR_ERR(tfm);
+			goto err;
+		}
+		crypto->tag_tfm = tfm;
+		crypto->cipher = cipher;
+		crypto->cipher_type = srt->type;
 	}
 
 	cipher = crypto->cipher;
@@ -609,13 +594,13 @@ int quic_crypto_set_secret(struct quic_crypto *crypto, struct quic_crypto_secret
 	keylen = cipher->keylen;
 	if (!srt->send) {
 		memcpy(crypto->rx_secret, srt->secret, secretlen);
-		tfm = crypto_alloc_aead(cipher->aead, 0, 0);
+		tfm = crypto_alloc_aead(cipher->aead, 0, flag);
 		if (IS_ERR(tfm)) {
 			err = PTR_ERR(tfm);
 			goto err;
 		}
 		crypto->rx_tfm[0] = tfm;
-		tfm = crypto_alloc_aead(cipher->aead, 0, 0);
+		tfm = crypto_alloc_aead(cipher->aead, 0, flag);
 		if (IS_ERR(tfm)) {
 			err = PTR_ERR(tfm);
 			goto err;
@@ -636,13 +621,13 @@ int quic_crypto_set_secret(struct quic_crypto *crypto, struct quic_crypto_secret
 	}
 
 	memcpy(crypto->tx_secret, srt->secret, secretlen);
-	tfm = crypto_alloc_aead(cipher->aead, 0, 0);
+	tfm = crypto_alloc_aead(cipher->aead, 0, flag);
 	if (IS_ERR(tfm)) {
 		err = PTR_ERR(tfm);
 		goto err;
 	}
 	crypto->tx_tfm[0] = tfm;
-	tfm = crypto_alloc_aead(cipher->aead, 0, 0);
+	tfm = crypto_alloc_aead(cipher->aead, 0, flag);
 	if (IS_ERR(tfm)) {
 		err = PTR_ERR(tfm);
 		goto err;
@@ -751,7 +736,7 @@ EXPORT_SYMBOL_GPL(quic_crypto_destroy);
 	"\x0d\xed\xe3\xde\xf7\x00\xa6\xdb\x81\x93\x81\xbe\x6e\x26\x9d\xcb\xf9\xbd\x2e\xd9"
 
 int quic_crypto_initial_keys_install(struct quic_crypto *crypto, struct quic_connection_id *conn_id,
-				     u32 version, bool is_serv)
+				     u32 version, u8 flag, bool is_serv)
 {
 	struct tls_vec salt, s, k, l, dcid, z = {NULL, 0};
 	struct quic_crypto_secret srt = {};
@@ -788,7 +773,7 @@ int quic_crypto_initial_keys_install(struct quic_crypto *crypto, struct quic_con
 	err = tls_crypto_hkdf_expand(tfm, &s, &l, &z, &k);
 	if (err)
 		goto out;
-	err = quic_crypto_set_secret(crypto, &srt, version);
+	err = quic_crypto_set_secret(crypto, &srt, version, flag);
 	if (err)
 		goto out;
 
@@ -799,7 +784,7 @@ int quic_crypto_initial_keys_install(struct quic_crypto *crypto, struct quic_con
 	err = tls_crypto_hkdf_expand(tfm, &s, &l, &z, &k);
 	if (err)
 		goto out;
-	err = quic_crypto_set_secret(crypto, &srt, version);
+	err = quic_crypto_set_secret(crypto, &srt, version, flag);
 out:
 	crypto_free_shash(tfm);
 	return err;
