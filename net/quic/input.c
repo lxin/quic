@@ -93,8 +93,8 @@ static int quic_do_listen_rcv(struct sock *sk, struct sk_buff *skb)
 	struct quic_inqueue *inq = quic_inq(sk);
 	struct quic_request_sock req = {};
 	struct quic_crypto *crypto;
+	int err = -EINVAL, errcode;
 	struct quic_data token;
-	int err = -EINVAL;
 
 	quic_get_msg_addr(sk, &req.sa, skb, 0);
 	quic_get_msg_addr(sk, &req.da, skb, 1);
@@ -139,14 +139,20 @@ static int quic_do_listen_rcv(struct sock *sk, struct sk_buff *skb)
 		crypto = quic_crypto(sk, QUIC_CRYPTO_INITIAL);
 		p = token.data;
 		if (quic_crypto_generate_token(crypto, &req.da, "path_verification", data, 16) ||
-		    memcmp(p + 1, data, 16))
-			goto err;
+		    memcmp(p + 1, data, 16)) {
+			consume_skb(skb);
+			errcode = QUIC_TRANSPORT_ERROR_INVALID_TOKEN;
+			return quic_packet_refuse_close_transmit(sk, &req, errcode);
+		}
 		req.retry = *p;
 	}
 
 	err = quic_request_sock_enqueue(sk, &req);
-	if (err)
-		goto err;
+	if (err) {
+		consume_skb(skb);
+		errcode = QUIC_TRANSPORT_ERROR_CONNECTION_REFUSED;
+		return quic_packet_refuse_close_transmit(sk, &req, errcode);
+	}
 out:
 	if (atomic_read(&sk->sk_rmem_alloc) + skb->len > sk->sk_rcvbuf) {
 		err = -ENOBUFS;

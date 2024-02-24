@@ -1111,6 +1111,36 @@ int quic_packet_stateless_reset_transmit(struct sock *sk, struct quic_request_so
 	return 0;
 }
 
+int quic_packet_refuse_close_transmit(struct sock *sk, struct quic_request_sock *req, u32 errcode)
+{
+	struct quic_crypto *crypto = quic_crypto(sk, QUIC_CRYPTO_INITIAL);
+	struct quic_connection_id_set *source = quic_source(sk);
+	struct quic_outqueue *outq = quic_outq(sk);
+	struct quic_connection_id *active;
+	u8 flag = CRYPTO_ALG_ASYNC;
+	struct sk_buff *skb;
+	int err;
+
+	active = quic_connection_id_active(source);
+	quic_connection_id_update(active, req->dcid.data, req->dcid.len);
+	quic_path_addr_set(quic_src(sk), &req->sa, 1);
+	quic_path_addr_set(quic_dst(sk), &req->da, 1);
+
+	quic_crypto_destroy(crypto);
+	err = quic_crypto_initial_keys_install(crypto, active, req->version, flag, 1);
+	if (err)
+		return err;
+
+	quic_outq_set_close_errcode(outq, errcode);
+	skb = quic_frame_create(sk, QUIC_FRAME_CONNECTION_CLOSE, NULL);
+	if (skb) {
+		QUIC_SND_CB(skb)->level = QUIC_CRYPTO_INITIAL;
+		QUIC_SND_CB(skb)->path_alt = (QUIC_PATH_ALT_SRC | QUIC_PATH_ALT_DST);
+		quic_outq_ctrl_tail(sk, skb, false);
+	}
+	return 0;
+}
+
 void quic_packet_init(struct sock *sk)
 {
 	skb_queue_head_init(&quic_packet(sk)->frame_list);
