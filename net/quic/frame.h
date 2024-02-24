@@ -131,6 +131,23 @@ static inline bool quic_frame_is_dgram(u8 type)
 	return type == QUIC_FRAME_DATAGRAM || type == QUIC_FRAME_DATAGRAM_LEN;
 }
 
+static inline int quic_frame_level_check(u8 level, u8 type)
+{
+	if (level == QUIC_CRYPTO_APP)
+		return 0;
+
+	if (level == QUIC_CRYPTO_EARLY &&
+	    (type == QUIC_FRAME_ACK || type == QUIC_FRAME_CRYPTO ||
+	     type == QUIC_FRAME_HANDSHAKE_DONE || type == QUIC_FRAME_NEW_TOKEN ||
+	     type == QUIC_FRAME_PATH_RESPONSE || type == QUIC_FRAME_RETIRE_CONNECTION_ID))
+		return 1;
+
+	if (type != QUIC_FRAME_ACK && type != QUIC_FRAME_PADDING && type != QUIC_FRAME_PING &&
+	    type != QUIC_FRAME_CRYPTO && type != QUIC_FRAME_CONNECTION_CLOSE)
+		return 1;
+	return 0;
+}
+
 struct sk_buff *quic_frame_create(struct sock *sk, u8 type, void *data);
 int quic_frame_process(struct sock *sk, struct sk_buff *skb, struct quic_packet_info *pki);
 int quic_frame_new_connection_id_ack(struct sock *sk, struct sk_buff *skb);

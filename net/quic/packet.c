@@ -248,6 +248,10 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb, u
 			/* TOKEN */
 			if (!quic_get_var(&p, &len, &tlen) || len < tlen)
 				goto err;
+			if (!quic_is_serv(sk) && tlen) {
+				pki.errcode = QUIC_TRANSPORT_ERROR_PROTOCOL_VIOLATION;
+				goto err;
+			}
 			p += tlen;
 			len -= tlen;
 		}
@@ -261,6 +265,11 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb, u
 		if (err) {
 			if (err == -EINPROGRESS)
 				return err;
+			goto err;
+		}
+
+		if (hshdr->reserved) {
+			pki.errcode = QUIC_TRANSPORT_ERROR_PROTOCOL_VIOLATION;
 			goto err;
 		}
 
@@ -321,6 +330,7 @@ int quic_packet_process(struct sock *sk, struct sk_buff *skb, u8 resume)
 	struct quic_connection_id_set *id_set = quic_source(sk);
 	struct quic_rcv_cb *rcv_cb = QUIC_RCV_CB(skb);
 	struct quic_inqueue *inq = quic_inq(sk);
+	struct quichdr *hdr = quic_hdr(skb);
 	struct quic_packet_info pki = {};
 	u8 key_phase, level = 0;
 	union quic_addr addr;
@@ -329,10 +339,10 @@ int quic_packet_process(struct sock *sk, struct sk_buff *skb, u8 resume)
 
 	WARN_ON(!skb_set_owner_sk_safe(skb, sk));
 
-	if (quic_hdr(skb)->form)
+	if (hdr->form)
 		return quic_packet_handshake_process(sk, skb, resume);
 
-	if (!quic_hdr(skb)->fixed && !quic_inq_grease_quic_bit(inq))
+	if (!hdr->fixed && !quic_inq_grease_quic_bit(inq))
 		goto err;
 
 	if (!quic_crypto_recv_ready(crypto)) {
@@ -340,7 +350,7 @@ int quic_packet_process(struct sock *sk, struct sk_buff *skb, u8 resume)
 		return 0;
 	}
 
-	pki.number_offset = quic_connection_id_active(id_set)->len + sizeof(struct quichdr);
+	pki.number_offset = quic_connection_id_active(id_set)->len + sizeof(*hdr);
 	if (rcv_cb->number_offset)
 		pki.number_offset = rcv_cb->number_offset;
 
@@ -357,11 +367,17 @@ int quic_packet_process(struct sock *sk, struct sk_buff *skb, u8 resume)
 		goto err;
 	}
 
+	if (hdr->reserved) {
+		pki.errcode = QUIC_TRANSPORT_ERROR_PROTOCOL_VIOLATION;
+		goto err;
+	}
+
 	pr_debug("[QUIC] %s serv: %d number: %llu len: %d\n", __func__,
 		 quic_is_serv(sk), pki.number, skb->len);
 
 	err = quic_pnmap_check(pnmap, pki.number);
 	if (err) {
+		pki.errcode = QUIC_TRANSPORT_ERROR_INTERNAL;
 		err = -EINVAL;
 		goto err;
 	}
@@ -481,12 +497,12 @@ static struct sk_buff *quic_packet_handshake_create(struct sock *sk)
 	struct quic_connection_id_set *id_set;
 	u8 *p, type, level = packet->level;
 	struct quic_connection_id *active;
+	int len, hlen, plen = 0, tlen = 0;
 	struct quic_snd_cb *snd_cb;
 	struct sk_buff *fskb, *skb;
 	struct sk_buff_head *head;
 	struct quic_pnmap *pnmap;
 	u32 number_len, version;
-	int len, hlen, plen = 0;
 	struct quichshdr *hdr;
 	s64 number;
 
@@ -538,8 +554,10 @@ static struct sk_buff *quic_packet_handshake_create(struct sock *sk)
 	p = quic_put_data(p, active->data, active->len);
 
 	if (level == QUIC_CRYPTO_INITIAL) {
-		p = quic_put_var(p, quic_token(sk)->len);
-		p = quic_put_data(p, quic_token(sk)->data, quic_token(sk)->len);
+		if (!quic_is_serv(sk))
+			tlen = quic_token(sk)->len;
+		p = quic_put_var(p, tlen);
+		p = quic_put_data(p, quic_token(sk)->data, tlen);
 	}
 
 	snd_cb = QUIC_SND_CB(skb);

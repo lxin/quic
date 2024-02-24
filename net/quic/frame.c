@@ -606,6 +606,7 @@ static struct sk_buff *quic_frame_streams_blocked_bidi_create(struct sock *sk, v
 
 static int quic_frame_crypto_process(struct sock *sk, struct sk_buff *skb, u8 type)
 {
+	struct quic_rcv_cb *rcv_cb = QUIC_RCV_CB(skb);
 	struct quic_inqueue *inq = quic_inq(sk);
 	struct sk_buff *nskb;
 	u64 offset, length;
@@ -618,7 +619,7 @@ static int quic_frame_crypto_process(struct sock *sk, struct sk_buff *skb, u8 ty
 	if (!quic_get_var(&p, &len, &length) || length > len)
 		return -EINVAL;
 
-	if (!QUIC_RCV_CB(skb)->level) {
+	if (!rcv_cb->level) {
 		if (!quic_inq_receive_session_ticket(inq))
 			goto out;
 		quic_inq_set_receive_session_ticket(inq, 0);
@@ -633,6 +634,7 @@ static int quic_frame_crypto_process(struct sock *sk, struct sk_buff *skb, u8 ty
 
 	err = quic_inq_handshake_tail(sk, nskb);
 	if (err) {
+		rcv_cb->errcode = QUIC_RCV_CB(nskb)->errcode;
 		kfree_skb(nskb);
 		return err;
 	}
@@ -685,6 +687,7 @@ static int quic_frame_stream_process(struct sock *sk, struct sk_buff *skb, u8 ty
 
 	err = quic_inq_reasm_tail(sk, nskb);
 	if (err) {
+		QUIC_RCV_CB(skb)->errcode = rcv_cb->errcode;
 		kfree_skb(nskb);
 		return err;
 	}
@@ -705,6 +708,11 @@ static int quic_frame_ack_process(struct sock *sk, struct sk_buff *skb, u8 type)
 	    !quic_get_var(&p, &len, &count) || count > QUIC_PN_MAX_GABS ||
 	    !quic_get_var(&p, &len, &range))
 		return -EINVAL;
+
+	if (largest >= quic_pnmap_next_number(quic_pnmap(sk, level))) {
+		QUIC_RCV_CB(skb)->errcode = QUIC_TRANSPORT_ERROR_PROTOCOL_VIOLATION;
+		return -EINVAL;
+	}
 
 	smallest = largest - range;
 	quic_outq_retransmit_check(sk, level, largest, smallest, largest, delay);
@@ -755,13 +763,17 @@ static int quic_frame_new_connection_id_process(struct sock *sk, struct sk_buff 
 	if (seqno > last + 1 || prior > seqno)
 		return -EINVAL;
 
+	first = quic_connection_id_first_number(id_set);
+	if (prior < first)
+		prior = first;
+	if (seqno - prior + 1 > quic_connection_id_max_count(id_set)) {
+		QUIC_RCV_CB(skb)->errcode = QUIC_TRANSPORT_ERROR_CONNECTION_ID_LIMIT;
+		return -EINVAL;
+	}
+
 	err = quic_connection_id_add(id_set, &dcid, seqno, token);
 	if (err)
 		return err;
-
-	first = quic_connection_id_first_number(id_set);
-	if (prior <= first)
-		goto out;
 
 	for (; first < prior; first++) {
 		fskb = quic_frame_create(sk, QUIC_FRAME_RETIRE_CONNECTION_ID, &first);
@@ -790,8 +802,10 @@ static int quic_frame_retire_connection_id_process(struct sock *sk, struct sk_bu
 	if (seqno < first) /* dup */
 		goto out;
 	last  = quic_connection_id_last_number(id_set);
-	if (seqno != first || seqno == last)
+	if (seqno != first || seqno == last) {
+		QUIC_RCV_CB(skb)->errcode = QUIC_TRANSPORT_ERROR_PROTOCOL_VIOLATION;
 		return -EINVAL;
+	}
 
 	quic_connection_id_remove(id_set, seqno);
 	if (last - seqno >= quic_connection_id_max_count(id_set))
@@ -813,6 +827,11 @@ static int quic_frame_new_token_process(struct sock *sk, struct sk_buff *skb, u8
 	u8 *p = skb->data;
 	u64 length;
 
+	if (quic_is_serv(sk)) {
+		QUIC_RCV_CB(skb)->errcode = QUIC_TRANSPORT_ERROR_PROTOCOL_VIOLATION;
+		return -EINVAL;
+	}
+
 	if (!quic_get_var(&p, &len, &length) || length > len)
 		return -EINVAL;
 
@@ -828,6 +847,10 @@ static int quic_frame_new_token_process(struct sock *sk, struct sk_buff *skb, u8
 
 static int quic_frame_handshake_done_process(struct sock *sk, struct sk_buff *skb, u8 type)
 {
+	if (quic_is_serv(sk)) {
+		QUIC_RCV_CB(skb)->errcode = QUIC_TRANSPORT_ERROR_PROTOCOL_VIOLATION;
+		return -EINVAL;
+	}
 	/* some implementations don't send ACKs to handshake packets, so ACK them manually */
 	quic_outq_retransmit_check(sk, QUIC_CRYPTO_INITIAL, QUIC_PN_MAP_MAX_PN, 0, 0, 0);
 	quic_outq_retransmit_check(sk, QUIC_CRYPTO_HANDSHAKE, QUIC_PN_MAP_MAX_PN, 0, 0, 0);
@@ -1019,6 +1042,7 @@ out:
 
 static int quic_frame_connection_close_process(struct sock *sk, struct sk_buff *skb, u8 type)
 {
+	struct quic_rcv_cb *rcv_cb = QUIC_RCV_CB(skb);
 	struct quic_connection_close *close;
 	u64 err_code, phrase_len, ftype = 0;
 	u8 *p = skb->data, frame[100] = {};
@@ -1026,9 +1050,12 @@ static int quic_frame_connection_close_process(struct sock *sk, struct sk_buff *
 
 	if (!quic_get_var(&p, &len, &err_code))
 		return -EINVAL;
-	if (type == QUIC_FRAME_CONNECTION_CLOSE &&
-	    !quic_get_var(&p, &len, &ftype))
+	if (type == QUIC_FRAME_CONNECTION_CLOSE && !quic_get_var(&p, &len, &ftype))
 		return -EINVAL;
+	if (type == QUIC_FRAME_CONNECTION_CLOSE_APP && rcv_cb->level != QUIC_CRYPTO_APP) {
+		rcv_cb->errcode = QUIC_TRANSPORT_ERROR_PROTOCOL_VIOLATION;
+		return -EINVAL;
+	}
 
 	if (!quic_get_var(&p, &len, &phrase_len) || phrase_len > len)
 		return -EINVAL;
@@ -1211,6 +1238,7 @@ static struct sk_buff *quic_frame_datagram_create(struct sock *sk, void *data, u
 
 static int quic_frame_invalid_process(struct sock *sk, struct sk_buff *skb, u8 type)
 {
+	QUIC_RCV_CB(skb)->errcode = QUIC_TRANSPORT_ERROR_FRAME_ENCODING;
 	return -EPROTONOSUPPORT;
 }
 
@@ -1309,11 +1337,13 @@ static struct quic_frame_ops quic_frame_ops[QUIC_FRAME_MAX + 1] = {
 int quic_frame_process(struct sock *sk, struct sk_buff *skb, struct quic_packet_info *pki)
 {
 	struct quic_rcv_cb *rcv_cb = QUIC_RCV_CB(skb);
+	u8 type, level = rcv_cb->level;
 	int ret, len = pki->length;
-	u8 type;
 
-	if (!len)
+	if (!len) {
+		pki->errcode = QUIC_TRANSPORT_ERROR_PROTOCOL_VIOLATION;
 		return -EINVAL;
+	}
 
 	while (len > 0) {
 		type = *(u8 *)(skb->data);
@@ -1322,16 +1352,20 @@ int quic_frame_process(struct sock *sk, struct sk_buff *skb, struct quic_packet_
 
 		if (type > QUIC_FRAME_MAX) {
 			pr_err_once("[QUIC] %s unsupported frame %x\n", __func__, type);
+			pki->errcode = QUIC_TRANSPORT_ERROR_FRAME_ENCODING;
 			return -EPROTONOSUPPORT;
+		} else if (quic_frame_level_check(level, type)) {
+			pki->errcode = QUIC_TRANSPORT_ERROR_PROTOCOL_VIOLATION;
+			return -EINVAL;
 		} else if (!type) { /* skip padding */
 			skb_pull(skb, len);
 			return 0;
 		}
-		pr_debug("[QUIC] %s type: %x level: %d\n", __func__, type, rcv_cb->level);
+		pr_debug("[QUIC] %s type: %x level: %d\n", __func__, type, level);
 		ret = quic_frame_ops[type].frame_process(sk, skb, type);
 		if (ret < 0) {
-			pr_warn("[QUIC] %s type: %x level: %d err: %d\n", __func__, type,
-				rcv_cb->level, ret);
+			pr_warn("[QUIC] %s type: %x level: %d err: %d\n", __func__,
+				type, level, ret);
 			pki->errcode = rcv_cb->errcode;
 			pki->frame = type;
 			return ret;

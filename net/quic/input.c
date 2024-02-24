@@ -374,8 +374,10 @@ int quic_inq_reasm_tail(struct sock *sk, struct sk_buff *skb)
 	if (off > stream->recv.highest) {
 		highest = off - stream->recv.highest;
 		if (inq->highest + highest > inq->max_bytes ||
-		    stream->recv.highest + highest > stream->recv.max_bytes)
+		    stream->recv.highest + highest > stream->recv.max_bytes) {
+			rcv_cb->errcode = QUIC_TRANSPORT_ERROR_FLOW_CONTROL;
 			return -ENOBUFS;
+		}
 	}
 	if (!stream->recv.highest && !rcv_cb->stream_fin) {
 		update.id = stream->id;
@@ -466,9 +468,13 @@ int quic_inq_handshake_tail(struct sock *sk, struct sk_buff *skb)
 	crypto_offset = quic_crypto_recv_offset(crypto);
 	pr_debug("[QUIC] %s recv_offset: %llu offset: %llu level: %u\n", __func__,
 		 crypto_offset, offset, level);
-	if (crypto_offset > offset) {
+	if (crypto_offset > offset + skb->len) { /* dup */
 		kfree_skb(skb);
 		return 0;
+	}
+	if (atomic_read(&sk->sk_rmem_alloc) + skb->len > sk->sk_rcvbuf) {
+		rcv_cb->errcode = QUIC_TRANSPORT_ERROR_CRYPTO_BUF_EXCEEDED;
+		return -ENOBUFS;
 	}
 	quic_inq_set_owner_r(skb, sk);
 	head = &quic_inq(sk)->handshake_list;

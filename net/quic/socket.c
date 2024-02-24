@@ -1108,12 +1108,16 @@ static int quic_sock_set_session_ticket(struct sock *sk, u8 *data, u32 len)
 static int quic_sock_set_transport_params_ext(struct sock *sk, u8 *p, u32 len)
 {
 	struct quic_transport_param *param = quic_remote(sk);
+	u32 errcode;
 
 	if (!quic_is_establishing(sk))
 		return -EINVAL;
 
-	if (quic_frame_set_transport_params_ext(sk, param, p, len))
+	if (quic_frame_set_transport_params_ext(sk, param, p, len)) {
+		errcode = QUIC_TRANSPORT_ERROR_TRANSPORT_PARAM;
+		quic_outq_transmit_close(sk, 0, errcode, QUIC_CRYPTO_INITIAL);
 		return -EINVAL;
+	}
 
 	param->remote = 1;
 	quic_outq_set_param(sk, param);
