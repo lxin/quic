@@ -36,6 +36,7 @@ struct quic_stream {
 		u64 bytes;
 		u64 offset;
 		u64 highest;
+		u64 finalsz;
 
 		u32 frags;
 		u8 state;
@@ -143,4 +144,4 @@ struct quic_stream *quic_stream_send_get(struct quic_stream_table *streams, u64 
 struct quic_stream *quic_stream_recv_get(struct quic_stream_table *streams, u64 stream_id,
 					 bool is_serv);
 struct quic_stream *quic_stream_find(struct quic_stream_table *streams, u64 stream_id);
-bool quic_stream_id_exceeds(struct quic_stream_table *streams, u64 stream_id);
+bool quic_stream_id_send_exceeds(struct quic_stream_table *streams, u64 stream_id);

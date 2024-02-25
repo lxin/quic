@@ -378,6 +378,10 @@ int quic_inq_reasm_tail(struct sock *sk, struct sk_buff *skb)
 			rcv_cb->errcode = QUIC_TRANSPORT_ERROR_FLOW_CONTROL;
 			return -ENOBUFS;
 		}
+		if (stream->recv.finalsz && off > stream->recv.finalsz) {
+			rcv_cb->errcode = QUIC_TRANSPORT_ERROR_FINAL_SIZE;
+			return -EINVAL;
+		}
 	}
 	if (!stream->recv.highest && !rcv_cb->stream_fin) {
 		update.id = stream->id;
@@ -402,12 +406,18 @@ int quic_inq_reasm_tail(struct sock *sk, struct sk_buff *skb)
 		}
 		rcv_cb = QUIC_RCV_CB(skb);
 		if (rcv_cb->stream_fin) {
+			if (off < stream->recv.highest ||
+			    (stream->recv.finalsz && stream->recv.finalsz != off)) {
+				rcv_cb->errcode = QUIC_TRANSPORT_ERROR_FINAL_SIZE;
+				return -EINVAL;
+			}
 			update.id = stream->id;
 			update.state = QUIC_STREAM_RECV_STATE_SIZE_KNOWN;
-			update.errcode = rcv_cb->offset + skb->len;
+			update.finalsz = off;
 			if (quic_inq_event_recv(sk, QUIC_EVENT_STREAM_UPDATE, &update))
 				return -ENOMEM;
 			stream->recv.state = update.state;
+			stream->recv.finalsz = update.finalsz;
 		}
 		__skb_queue_before(head, tmp, skb);
 		stream->recv.frags++;

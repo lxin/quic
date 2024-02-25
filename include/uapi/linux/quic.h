@@ -169,7 +169,8 @@ enum {
 struct quic_stream_update {
 	uint64_t id;
 	uint32_t state;
-	uint32_t errcode; /* or known_size */
+	uint32_t errcode;
+	uint64_t finalsz;
 };
 
 struct quic_connection_close {

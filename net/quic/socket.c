@@ -442,7 +442,7 @@ static int quic_wait_for_send(struct sock *sk, u64 stream_id, long timeo, u32 ms
 		}
 
 		if (stream_id) {
-			if (!quic_stream_id_exceeds(quic_streams(sk), stream_id))
+			if (!quic_stream_id_send_exceeds(quic_streams(sk), stream_id))
 				goto out;
 		} else {
 			if ((int)msg_len <= sk_stream_wspace(sk) &&

@@ -131,7 +131,33 @@ void quic_stream_set_param(struct quic_stream_table *streams, struct quic_transp
 	}
 }
 
-bool quic_stream_id_exceeds(struct quic_stream_table *streams, u64 stream_id)
+static bool quic_stream_id_is_send(u64 stream_id, bool is_serv)
+{
+	u8 type = (stream_id & QUIC_STREAM_TYPE_MASK);
+
+	if (is_serv) {
+		if (type == QUIC_STREAM_TYPE_CLIENT_UNI)
+			return false;
+	} else if (type == QUIC_STREAM_TYPE_SERVER_UNI) {
+		return false;
+	}
+	return true;
+}
+
+static bool quic_stream_id_is_recv(u64 stream_id, bool is_serv)
+{
+	u8 type = (stream_id & QUIC_STREAM_TYPE_MASK);
+
+	if (is_serv) {
+		if (type == QUIC_STREAM_TYPE_SERVER_UNI)
+			return false;
+	} else if (type == QUIC_STREAM_TYPE_CLIENT_UNI) {
+		return false;
+	}
+	return true;
+}
+
+bool quic_stream_id_send_exceeds(struct quic_stream_table *streams, u64 stream_id)
 {
 	if (stream_id & QUIC_STREAM_TYPE_UNI_MASK) {
 		if ((stream_id >> 2) >= streams->send.max_streams_uni)
@@ -143,18 +169,39 @@ bool quic_stream_id_exceeds(struct quic_stream_table *streams, u64 stream_id)
 	return false;
 }
 
+static bool quic_stream_id_recv_exceeds(struct quic_stream_table *streams, u64 stream_id)
+{
+	if (stream_id & QUIC_STREAM_TYPE_UNI_MASK) {
+		if ((stream_id >> 2) >= streams->recv.max_streams_uni)
+			return true;
+	} else {
+		if ((stream_id >> 2) >= streams->recv.max_streams_bidi)
+			return true;
+	}
+	return false;
+}
+
+static bool quic_stream_id_send_allowed(u64 stream_id, bool is_serv)
+{
+	u8 type = (stream_id & QUIC_STREAM_TYPE_MASK);
+
+	if (is_serv) {
+		if (type == QUIC_STREAM_TYPE_CLIENT_BI)
+			return false;
+	} else {
+		if (type == QUIC_STREAM_TYPE_SERVER_BI)
+			return false;
+	}
+	return true;
+}
+
 struct quic_stream *quic_stream_send_get(struct quic_stream_table *streams, u64 stream_id,
 					 u32 flag, bool is_serv)
 {
-	u8 type = (stream_id & QUIC_STREAM_TYPE_MASK);
 	struct quic_stream *stream;
 
-	if (is_serv) {
-		if (type == QUIC_STREAM_TYPE_CLIENT_UNI)
-			return ERR_PTR(-EINVAL);
-	} else if (type == QUIC_STREAM_TYPE_SERVER_UNI) {
+	if (!quic_stream_id_is_send(stream_id, is_serv))
 		return ERR_PTR(-EINVAL);
-	}
 
 	stream = quic_stream_find(streams, stream_id);
 	if (stream) {
@@ -166,45 +213,34 @@ struct quic_stream *quic_stream_send_get(struct quic_stream_table *streams, u64 
 	if (!(flag & QUIC_STREAM_FLAG_NEW))
 		return ERR_PTR(-EINVAL);
 
-	if (is_serv) {
-		if (type == QUIC_STREAM_TYPE_CLIENT_BI)
-			return ERR_PTR(-EINVAL);
-	} else {
-		if (type == QUIC_STREAM_TYPE_SERVER_BI)
-			return ERR_PTR(-EINVAL);
-	}
-	if (quic_stream_id_exceeds(streams, stream_id))
+	if (!quic_stream_id_send_allowed(stream_id, is_serv))
+		return ERR_PTR(-EINVAL);
+
+	if (quic_stream_id_send_exceeds(streams, stream_id))
 		return ERR_PTR(-EAGAIN);
 
 	stream = quic_stream_add(streams, stream_id, is_serv);
-	if (stream)
-		streams->send.stream_active = stream_id;
+	if (!stream)
+		return ERR_PTR(-ENOMEM);
+	streams->send.stream_active = stream_id;
 	return stream;
 }
 
 struct quic_stream *quic_stream_recv_get(struct quic_stream_table *streams, u64 stream_id,
 					 bool is_serv)
 {
-	u8 type = (stream_id & QUIC_STREAM_TYPE_MASK);
 	struct quic_stream *stream;
 
-	if (is_serv) {
-		if (type == QUIC_STREAM_TYPE_SERVER_UNI)
-			return ERR_PTR(-EINVAL);
-	} else if (type == QUIC_STREAM_TYPE_CLIENT_UNI) {
+	if (!quic_stream_id_is_recv(stream_id, is_serv))
 		return ERR_PTR(-EINVAL);
-	}
 
 	stream = quic_stream_find(streams, stream_id);
 	if (stream)
 		return stream;
-	if (stream_id & QUIC_STREAM_TYPE_UNI_MASK) {
-		if ((stream_id >> 2) >= streams->recv.max_streams_uni)
-			return ERR_PTR(-EINVAL);
-	} else {
-		if ((stream_id >> 2) >= streams->recv.max_streams_bidi)
-			return ERR_PTR(-EINVAL);
-	}
+
+	if (quic_stream_id_recv_exceeds(streams, stream_id))
+		return ERR_PTR(-EAGAIN);
+
 	stream = quic_stream_add(streams, stream_id, is_serv);
 	if (!stream)
 		return ERR_PTR(-ENOMEM);

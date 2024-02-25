@@ -380,8 +380,7 @@ static struct sk_buff *quic_frame_reset_stream_create(struct sock *sk, void *dat
 	u32 frame_len;
 
 	stream = quic_stream_find(streams, info->stream_id);
-	if (!stream)
-		return NULL;
+	WARN_ON(!stream);
 
 	p = quic_put_var(frame, type);
 	p = quic_put_var(p, info->stream_id);
@@ -646,10 +645,10 @@ out:
 static int quic_frame_stream_process(struct sock *sk, struct sk_buff *skb, u8 type)
 {
 	struct quic_stream_table *streams = quic_streams(sk);
+	struct quic_rcv_cb *rcv_cb = QUIC_RCV_CB(skb);
 	struct quic_inqueue *inq = quic_inq(sk);
 	u64 stream_id, payload_len, offset = 0;
 	struct quic_stream *stream;
-	struct quic_rcv_cb *rcv_cb;
 	struct sk_buff *nskb;
 	u32 len = skb->len;
 	u8 *p = skb->data;
@@ -671,8 +670,14 @@ static int quic_frame_stream_process(struct sock *sk, struct sk_buff *skb, u8 ty
 	}
 
 	stream = quic_stream_recv_get(streams, stream_id, quic_is_serv(sk));
-	if (IS_ERR(stream))
-		return PTR_ERR(stream);
+	if (IS_ERR(stream)) {
+		err = PTR_ERR(stream);
+		if (err == -EAGAIN)
+			rcv_cb->errcode = QUIC_TRANSPORT_ERROR_STREAM_LIMIT;
+		else if (err != -ENOMEM)
+			rcv_cb->errcode = QUIC_TRANSPORT_ERROR_STREAM_STATE;
+		return err;
+	}
 
 	nskb = skb_clone(skb, GFP_ATOMIC);
 	if (!nskb)
@@ -889,11 +894,13 @@ static int quic_frame_path_challenge_process(struct sock *sk, struct sk_buff *sk
 static int quic_frame_reset_stream_process(struct sock *sk, struct sk_buff *skb, u8 type)
 {
 	struct quic_stream_table *streams = quic_streams(sk);
+	struct quic_rcv_cb *rcv_cb = QUIC_RCV_CB(skb);
 	struct quic_stream_update update = {};
 	u64 stream_id, errcode, finalsz;
 	struct quic_stream *stream;
 	u32 len = skb->len;
 	u8 *p = skb->data;
+	int err;
 
 	if (!quic_get_var(&p, &len, &stream_id) ||
 	    !quic_get_var(&p, &len, &errcode) ||
@@ -901,15 +908,29 @@ static int quic_frame_reset_stream_process(struct sock *sk, struct sk_buff *skb,
 		return -EINVAL;
 
 	stream = quic_stream_recv_get(streams, stream_id, quic_is_serv(sk));
-	if (IS_ERR(stream))
-		return PTR_ERR(stream);
+	if (IS_ERR(stream)) {
+		err = PTR_ERR(stream);
+		if (err == -EAGAIN)
+			rcv_cb->errcode = QUIC_TRANSPORT_ERROR_STREAM_LIMIT;
+		else if (err != -ENOMEM)
+			rcv_cb->errcode = QUIC_TRANSPORT_ERROR_STREAM_STATE;
+		return err;
+	}
+
+	if (finalsz < stream->recv.highest ||
+	    (stream->recv.finalsz && stream->recv.finalsz != finalsz)) {
+		rcv_cb->errcode = QUIC_TRANSPORT_ERROR_FINAL_SIZE;
+		return -EINVAL;
+	}
 
 	update.id = stream_id;
 	update.state = QUIC_STREAM_RECV_STATE_RESET_RECVD;
 	update.errcode = errcode;
+	update.finalsz = finalsz;
 	if (quic_inq_event_recv(sk, QUIC_EVENT_STREAM_UPDATE, &update))
 		return -ENOMEM;
 	stream->recv.state = update.state;
+	stream->recv.finalsz = update.finalsz;
 	quic_inq_stream_purge(sk, stream);
 	return skb->len - len;
 }
@@ -917,6 +938,7 @@ static int quic_frame_reset_stream_process(struct sock *sk, struct sk_buff *skb,
 static int quic_frame_stop_sending_process(struct sock *sk, struct sk_buff *skb, u8 type)
 {
 	struct quic_stream_table *streams = quic_streams(sk);
+	struct quic_rcv_cb *rcv_cb = QUIC_RCV_CB(skb);
 	struct quic_stream_update update = {};
 	struct quic_stream *stream;
 	struct quic_errinfo info;
@@ -924,14 +946,21 @@ static int quic_frame_stop_sending_process(struct sock *sk, struct sk_buff *skb,
 	struct sk_buff *fskb;
 	u32 len = skb->len;
 	u8 *p = skb->data;
+	int err;
 
 	if (!quic_get_var(&p, &len, &stream_id) ||
 	    !quic_get_var(&p, &len, &errcode))
 		return -EINVAL;
 
 	stream = quic_stream_send_get(streams, stream_id, 0, quic_is_serv(sk));
-	if (IS_ERR(stream))
-		return PTR_ERR(stream);
+	if (IS_ERR(stream)) {
+		err = PTR_ERR(stream);
+		if (err == -EAGAIN)
+			rcv_cb->errcode = QUIC_TRANSPORT_ERROR_STREAM_LIMIT;
+		else if (err != -ENOMEM)
+			rcv_cb->errcode = QUIC_TRANSPORT_ERROR_STREAM_STATE;
+		return err;
+	}
 
 	info.stream_id = stream_id;
 	info.errcode = errcode;
@@ -971,18 +1000,26 @@ static int quic_frame_max_data_process(struct sock *sk, struct sk_buff *skb, u8 
 static int quic_frame_max_stream_data_process(struct sock *sk, struct sk_buff *skb, u8 type)
 {
 	struct quic_stream_table *streams = quic_streams(sk);
+	struct quic_rcv_cb *rcv_cb = QUIC_RCV_CB(skb);
 	struct quic_stream *stream;
 	u64 max_bytes, stream_id;
 	u32 len = skb->len;
 	u8 *p = skb->data;
+	int err;
 
 	if (!quic_get_var(&p, &len, &stream_id) ||
 	    !quic_get_var(&p, &len, &max_bytes))
 		return -EINVAL;
 
-	stream = quic_stream_find(streams, stream_id);
-	if (!stream)
-		return -EINVAL;
+	stream = quic_stream_send_get(streams, stream_id, 0, quic_is_serv(sk));
+	if (IS_ERR(stream)) {
+		err = PTR_ERR(stream);
+		if (err == -EAGAIN)
+			rcv_cb->errcode = QUIC_TRANSPORT_ERROR_STREAM_LIMIT;
+		else if (err != -ENOMEM)
+			rcv_cb->errcode = QUIC_TRANSPORT_ERROR_STREAM_STATE;
+		return err;
+	}
 
 	if (max_bytes >= stream->send.max_bytes)
 		stream->send.max_bytes = max_bytes;
@@ -1105,19 +1142,27 @@ static int quic_frame_data_blocked_process(struct sock *sk, struct sk_buff *skb,
 static int quic_frame_stream_data_blocked_process(struct sock *sk, struct sk_buff *skb, u8 type)
 {
 	struct quic_stream_table *streams = quic_streams(sk);
+	struct quic_rcv_cb *rcv_cb = QUIC_RCV_CB(skb);
 	u64 stream_id, max_bytes, recv_max_bytes;
 	struct quic_stream *stream;
 	u32 window, len = skb->len;
 	struct sk_buff *fskb;
 	u8 *p = skb->data;
+	int err;
 
 	if (!quic_get_var(&p, &len, &stream_id) ||
 	    !quic_get_var(&p, &len, &max_bytes))
 		return -EINVAL;
 
-	stream = quic_stream_find(streams, stream_id);
-	if (!stream)
-		return -EINVAL;
+	stream = quic_stream_recv_get(streams, stream_id, quic_is_serv(sk));
+	if (IS_ERR(stream)) {
+		err = PTR_ERR(stream);
+		if (err == -EAGAIN)
+			rcv_cb->errcode = QUIC_TRANSPORT_ERROR_STREAM_LIMIT;
+		else if (err != -ENOMEM)
+			rcv_cb->errcode = QUIC_TRANSPORT_ERROR_STREAM_STATE;
+		return err;
+	}
 
 	window = stream->recv.window;
 	if (sk_under_memory_pressure(sk))
