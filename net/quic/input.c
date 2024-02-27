@@ -553,19 +553,8 @@ void quic_inq_set_param(struct sock *sk, struct quic_transport_param *p)
 	inq->version = p->version;
 	inq->validate_peer_address = p->validate_peer_address;
 	inq->receive_session_ticket = p->receive_session_ticket;
+	inq->disable_1rtt_encryption = p->disable_1rtt_encryption;
 	quic_timer_setup(sk, QUIC_TIMER_PROBE, inq->probe_timeout);
-}
-
-void quic_inq_get_param(struct sock *sk, struct quic_transport_param *p)
-{
-	struct quic_inqueue *inq = quic_inq(sk);
-
-	p->max_data = inq->window;
-	p->max_ack_delay = inq->max_ack_delay;
-	p->ack_delay_exponent = inq->ack_delay_exponent;
-	p->max_idle_timeout = inq->max_idle_timeout;
-	p->max_udp_payload_size = inq->max_udp_payload_size;
-	p->max_datagram_frame_size = inq->max_datagram_frame_size;
 }
 
 int quic_inq_event_recv(struct sock *sk, u8 event, void *args)

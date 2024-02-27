@@ -530,9 +530,10 @@ void quic_outq_validate_path(struct sock *sk, struct sk_buff *skb, struct quic_p
 
 void quic_outq_set_param(struct sock *sk, struct quic_transport_param *p)
 {
-	u32 local_ito = quic_inq_max_idle_timeout(quic_inq(sk));
 	struct quic_outqueue *outq = quic_outq(sk);
-	u32 remote_ito, min_ito = 0;
+	struct quic_inqueue *inq = quic_inq(sk);
+	u32 remote_ito, min_ito = 0, local_ito;
+	u8 local_crypto;
 
 	outq->max_datagram_frame_size = p->max_datagram_frame_size;
 	outq->max_udp_payload_size = p->max_udp_payload_size;
@@ -540,6 +541,7 @@ void quic_outq_set_param(struct sock *sk, struct quic_transport_param *p)
 	outq->max_idle_timeout = p->max_idle_timeout;
 	outq->max_ack_delay = p->max_ack_delay;
 	outq->grease_quic_bit = p->grease_quic_bit;
+	outq->disable_1rtt_encryption = p->disable_1rtt_encryption;
 	quic_timer_setup(sk, QUIC_TIMER_ACK, outq->max_ack_delay);
 
 	outq->max_bytes = p->max_data;
@@ -550,6 +552,7 @@ void quic_outq_set_param(struct sock *sk, struct quic_transport_param *p)
 	 * max_idle_timeout, we don't set one. Effectively, this means that
 	 * there is no idle timer.
 	 */
+	local_ito = quic_inq_max_idle_timeout(inq);
 	remote_ito = outq->max_idle_timeout;
 	if (local_ito && !remote_ito)
 		min_ito = local_ito;
@@ -558,19 +561,11 @@ void quic_outq_set_param(struct sock *sk, struct quic_transport_param *p)
 	else if (local_ito && remote_ito)
 		min_ito = min(local_ito, remote_ito);
 
+	local_crypto = quic_inq_disable_1rtt_encryption(inq);
+	if (local_crypto && outq->disable_1rtt_encryption)
+		quic_packet_set_taglen(quic_packet(sk), 0);
+
 	quic_timer_setup(sk, QUIC_TIMER_IDLE, min_ito);
-}
-
-void quic_outq_get_param(struct sock *sk, struct quic_transport_param *p)
-{
-	struct quic_outqueue *outq = quic_outq(sk);
-
-	p->max_data = outq->window;
-	p->max_ack_delay = outq->max_ack_delay;
-	p->ack_delay_exponent = outq->ack_delay_exponent;
-	p->max_idle_timeout = outq->max_idle_timeout;
-	p->max_udp_payload_size = outq->max_udp_payload_size;
-	p->max_datagram_frame_size = outq->max_datagram_frame_size;
 }
 
 static void quic_outq_encrypted_work(struct work_struct *work)

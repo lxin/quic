@@ -260,6 +260,13 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb, u
 		if (!quic_get_var(&p, &len, &pki.length) || pki.length > len)
 			goto err;
 		pki.number_offset = p - (u8 *)hshdr;
+		if (resume) {
+			p = (u8 *)hshdr + pki.number_offset;
+			pki.number_len = hshdr->pnl + 1;
+			pki.number = quic_get_int(&p, pki.number_len);
+			pki.number = quic_get_num(pki.number_max, pki.number, pki.number_len);
+			goto skip;
+		}
 		pki.crypto_done = quic_packet_decrypt_done;
 		pki.resume = resume;
 		err = quic_crypto_decrypt(quic_crypto(sk, level), skb, &pki);
@@ -269,6 +276,7 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb, u
 			goto err;
 		}
 
+skip:
 		if (hshdr->reserved) {
 			pki.errcode = QUIC_TRANSPORT_ERROR_PROTOCOL_VIOLATION;
 			goto err;
@@ -334,7 +342,7 @@ int quic_packet_process(struct sock *sk, struct sk_buff *skb, u8 resume)
 	struct quic_inqueue *inq = quic_inq(sk);
 	struct quichdr *hdr = quic_hdr(skb);
 	struct quic_packet_info pki = {};
-	u8 key_phase, level = 0;
+	u8 *p, key_phase, level = 0;
 	union quic_addr addr;
 	struct sk_buff *fskb;
 	int err = -EINVAL;
@@ -358,6 +366,14 @@ int quic_packet_process(struct sock *sk, struct sk_buff *skb, u8 resume)
 
 	pki.length = skb->len - pki.number_offset;
 	pki.number_max = quic_pnmap_max_pn_seen(pnmap);
+	if (resume || !packet->taglen[0]) {
+		p = (u8 *)hdr + pki.number_offset;
+		pki.number_len = hdr->pnl + 1;
+		pki.number = quic_get_int(&p, pki.number_len);
+		pki.number = quic_get_num(pki.number_max, pki.number, pki.number_len);
+		pki.key_phase = hdr->key;
+		goto skip;
+	}
 	pki.crypto_done = quic_packet_decrypt_done;
 	pki.resume = resume;
 	err = quic_crypto_decrypt(crypto, skb, &pki);
@@ -369,6 +385,7 @@ int quic_packet_process(struct sock *sk, struct sk_buff *skb, u8 resume)
 		goto err;
 	}
 
+skip:
 	if (hdr->reserved) {
 		pki.errcode = QUIC_TRANSPORT_ERROR_PROTOCOL_VIOLATION;
 		goto err;
@@ -844,6 +861,9 @@ int quic_packet_xmit(struct sock *sk, struct sk_buff *skb, u8 resume)
 
 	WARN_ON(!skb_set_owner_sk_safe(skb, sk));
 
+	if (!quic_hdr(skb)->form && !packet->taglen[0])
+		goto skip;
+
 	pki.number_len = 4;
 	pki.number_offset = snd_cb->number_offset;
 	pki.number = snd_cb->packet_number;
@@ -857,6 +877,7 @@ int quic_packet_xmit(struct sock *sk, struct sk_buff *skb, u8 resume)
 		return err;
 	}
 
+skip:
 	if (quic_packet_bundle(sk, skb)) {
 		quic_lower_xmit(sk, packet->head, packet->da, packet->sa);
 		packet->count++;

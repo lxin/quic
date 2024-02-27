@@ -110,5 +110,3 @@ void quic_connection_id_set_init(struct quic_connection_id_set *id_set, bool sou
 void quic_connection_id_set_free(struct quic_connection_id_set *id_set);
 void quic_connection_id_set_param(struct quic_connection_id_set *id_set,
 				  struct quic_transport_param *p);
-void quic_connection_id_get_param(struct quic_connection_id_set *id_set,
-				  struct quic_transport_param *p);

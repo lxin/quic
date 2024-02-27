@@ -31,6 +31,7 @@ struct quic_inqueue {
 	u8 grease_quic_bit:1;
 	u8 validate_peer_address:1;
 	u8 receive_session_ticket:1;
+	u8 disable_1rtt_encryption:1;
 };
 
 struct quic_rcv_cb {
@@ -145,6 +146,11 @@ static inline struct sk_buff_head *quic_inq_backlog_list(struct quic_inqueue *in
 	return &inq->backlog_list;
 }
 
+static inline u8 quic_inq_disable_1rtt_encryption(struct quic_inqueue *inq)
+{
+	return inq->disable_1rtt_encryption;
+}
+
 int quic_do_rcv(struct sock *sk, struct sk_buff *skb);
 int quic_rcv(struct sk_buff *skb);
 int quic_rcv_err(struct sk_buff *skb);
@@ -154,7 +160,6 @@ int quic_inq_dgram_tail(struct sock *sk, struct sk_buff *skb);
 int quic_inq_flow_control(struct sock *sk, struct quic_stream *stream, int len);
 void quic_inq_stream_purge(struct sock *sk, struct quic_stream *stream);
 void quic_inq_set_param(struct sock *sk, struct quic_transport_param *p);
-void quic_inq_get_param(struct sock *sk, struct quic_transport_param *p);
 void quic_inq_set_owner_r(struct sk_buff *skb, struct sock *sk);
 int quic_inq_event_recv(struct sock *sk, u8 event, void *args);
 int quic_inq_handshake_tail(struct sock *sk, struct sk_buff *skb);

@@ -26,7 +26,8 @@ struct quic_outqueue {
 	u32 ack_delay_exponent;
 	u32 max_idle_timeout;
 	u32 max_ack_delay;
-	u8 grease_quic_bit;
+	u8 grease_quic_bit:1;
+	u8 disable_1rtt_encryption:1;
 	/* Use for 0-RTT/1-RTT DATA (re)transmit,
 	 * as QUIC_SND_CB(skb)->level is always QUIC_CRYPTO_APP.
 	 * Set this level to QUIC_CRYPTO_EARLY or QUIC_CRYPTO_APP
@@ -171,7 +172,6 @@ void quic_outq_validate_path(struct sock *sk, struct sk_buff *skb,
 			     struct quic_path_addr *path);
 void quic_outq_stream_purge(struct sock *sk, struct quic_stream *stream);
 void quic_outq_set_param(struct sock *sk, struct quic_transport_param *p);
-void quic_outq_get_param(struct sock *sk, struct quic_transport_param *p);
 void quic_outq_transmit_close(struct sock *sk, u8 frame, u32 errcode, u8 level);
 void quic_outq_transmit_app_close(struct sock *sk);
 void quic_outq_transmit_probe(struct sock *sk);

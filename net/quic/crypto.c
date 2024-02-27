@@ -513,18 +513,11 @@ EXPORT_SYMBOL_GPL(quic_crypto_encrypt);
 int quic_crypto_decrypt(struct quic_crypto *crypto, struct sk_buff *skb,
 			struct quic_packet_info *pki)
 {
-	struct quichdr *hdr = quic_hdr(skb);
-	u8 *iv, *p, cha, ccm;
 	int err = 0, phase;
+	u8 *iv, cha, ccm;
 
-	if (pki->resume) {
-		p = (u8 *)hdr + pki->number_offset;
-		pki->number_len = hdr->pnl + 1;
-		pki->number = quic_get_int(&p, pki->number_len);
-		pki->number = quic_get_num(pki->number_max, pki->number, pki->number_len);
-		pki->key_phase = hdr->key;
+	if (pki->resume)
 		goto out;
-	}
 
 	cha = quic_crypto_is_cipher_chacha(crypto);
 	err = quic_crypto_header_decrypt(crypto->rx_hp_tfm, skb, pki, cha);

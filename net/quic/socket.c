@@ -811,6 +811,7 @@ static int quic_sock_set_transport_param(struct sock *sk, struct quic_transport_
 	quic_set_param_if_not_zero(max_streams_uni);
 	quic_set_param_if_not_zero(initial_smoothed_rtt);
 	quic_set_param_if_not_zero(disable_active_migration);
+	quic_set_param_if_not_zero(disable_1rtt_encryption);
 	quic_set_param_if_not_zero(plpmtud_probe_timeout);
 	quic_set_param_if_not_zero(validate_peer_address);
 	quic_set_param_if_not_zero(grease_quic_bit);
