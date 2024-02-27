@@ -604,21 +604,22 @@ static int quic_wait_for_packet(struct sock *sk, long timeo)
 		if (!skb_queue_empty(&sk->sk_receive_queue))
 			goto out;
 
+		err = sk->sk_err;
+		if (err) {
+			pr_warn("wait rcv pkt sk_err %d\n", err);
+			goto out;
+		}
+
+		err = -ENOTCONN;
+		if (quic_is_closed(sk))
+			goto out;
+
 		err = -EAGAIN;
 		if (!timeo)
 			goto out;
 
 		err = sock_intr_errno(timeo);
 		if (signal_pending(current))
-			goto out;
-
-		if (sk->sk_err) {
-			err = sk->sk_err;
-			pr_warn("wait rcv pkt sk_err %d\n", err);
-			goto out;
-		}
-
-		if (quic_is_closed(sk))
 			goto out;
 
 		exit = 0;
