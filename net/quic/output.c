@@ -292,6 +292,31 @@ void quic_outq_transmit_close(struct sock *sk, u8 frame, u32 errcode, u8 level)
 	quic_set_state(sk, QUIC_SS_CLOSED);
 }
 
+void quic_outq_transmit_app_close(struct sock *sk)
+{
+	u32 errcode = QUIC_TRANSPORT_ERROR_APPLICATION;
+	u8 type = QUIC_FRAME_CONNECTION_CLOSE, level;
+	struct quic_outqueue *outq = quic_outq(sk);
+	struct sk_buff *skb;
+
+	if (quic_is_established(sk)) {
+		level = QUIC_CRYPTO_APP;
+		type = QUIC_FRAME_CONNECTION_CLOSE_APP;
+	} else if (quic_is_establishing(sk)) {
+		level = QUIC_CRYPTO_INITIAL;
+		quic_outq_set_close_errcode(outq, errcode);
+	} else {
+		return;
+	}
+
+	/* send close frame only when it's NOT idle timeout or closed by peer */
+	skb = quic_frame_create(sk, type, NULL);
+	if (skb) {
+		QUIC_SND_CB(skb)->level = level;
+		quic_outq_ctrl_tail(sk, skb, false);
+	}
+}
+
 void quic_outq_retransmit_check(struct sock *sk, u8 level, s64 largest, s64 smallest,
 				s64 ack_largest, u32 ack_delay)
 {

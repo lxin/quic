@@ -173,6 +173,7 @@ void quic_outq_stream_purge(struct sock *sk, struct quic_stream *stream);
 void quic_outq_set_param(struct sock *sk, struct quic_transport_param *p);
 void quic_outq_get_param(struct sock *sk, struct quic_transport_param *p);
 void quic_outq_transmit_close(struct sock *sk, u8 frame, u32 errcode, u8 level);
+void quic_outq_transmit_app_close(struct sock *sk);
 void quic_outq_transmit_probe(struct sock *sk);
 void quic_outq_init(struct sock *sk);
 void quic_outq_free(struct sock *sk);

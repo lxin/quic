@@ -983,15 +983,9 @@ free:
 
 static void quic_close(struct sock *sk, long timeout)
 {
-	struct sk_buff *skb;
-
 	lock_sock(sk);
-	/* send close frame only when it's NOT idle timeout or closed by peer */
-	if (quic_is_established(sk)) {
-		skb = quic_frame_create(sk, QUIC_FRAME_CONNECTION_CLOSE_APP, NULL);
-		if (skb)
-			quic_outq_ctrl_tail(sk, skb, false);
-	}
+
+	quic_outq_transmit_app_close(sk);
 
 	quic_set_state(sk, QUIC_SS_CLOSED);
 
@@ -1716,16 +1710,10 @@ static int quic_disconnect(struct sock *sk, int flags)
 
 static void quic_shutdown(struct sock *sk, int how)
 {
-	struct sk_buff *skb;
-
 	if (!(how & SEND_SHUTDOWN))
 		goto out;
 
-	if (quic_is_established(sk)) {
-		skb = quic_frame_create(sk, QUIC_FRAME_CONNECTION_CLOSE_APP, NULL);
-		if (skb)
-			quic_outq_ctrl_tail(sk, skb, false);
-	}
+	quic_outq_transmit_app_close(sk);
 out:
 	quic_set_state(sk, QUIC_SS_CLOSED);
 }
