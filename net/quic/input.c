@@ -231,6 +231,7 @@ err:
 
 void quic_rcv_err_icmp(struct sock *sk)
 {
+	u8 taglen = quic_packet_taglen(quic_packet(sk));
 	struct quic_path_addr *path = quic_dst(sk);
 	u32 pathmtu, info;
 	bool reset_timer;
@@ -240,14 +241,14 @@ void quic_rcv_err_icmp(struct sock *sk)
 		quic_packet_mss_update(sk, info - quic_encap_len(sk));
 		return;
 	}
-	info = info - quic_encap_len(sk) - QUIC_TAG_LEN;
+	info = info - quic_encap_len(sk) - taglen;
 	pathmtu = quic_path_pl_toobig(path, info, &reset_timer);
 	if (reset_timer) {
 		quic_timer_setup(sk, QUIC_TIMER_PROBE, quic_inq(sk)->probe_timeout);
 		quic_timer_reset(sk, QUIC_TIMER_PROBE);
 	}
 	if (pathmtu)
-		quic_packet_mss_update(sk, pathmtu + QUIC_TAG_LEN);
+		quic_packet_mss_update(sk, pathmtu + taglen);
 }
 
 int quic_rcv_err(struct sk_buff *skb)

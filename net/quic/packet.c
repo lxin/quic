@@ -173,6 +173,7 @@ static void quic_packet_decrypt_done(struct crypto_async_request *base, int err)
 static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb, u8 resume)
 {
 	struct quic_connection_id_set *id_set = quic_dest(sk);
+	struct quic_packet *packet = quic_packet(sk);
 	struct quic_inqueue *inq = quic_inq(sk);
 	struct quic_connection_id *active;
 	struct quic_packet_info pki = {};
@@ -286,7 +287,7 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb, u
 
 		skb_pull(skb, pki.number_offset + pki.number_len);
 		pki.length -= pki.number_len;
-		pki.length -= QUIC_TAG_LEN;
+		pki.length -= packet->taglen[1];
 		QUIC_RCV_CB(skb)->level = level;
 		err = quic_frame_process(sk, skb, &pki);
 		if (err)
@@ -294,7 +295,7 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb, u
 		err = quic_pnmap_mark(quic_pnmap(sk, level), pki.number);
 		if (err)
 			goto err;
-		skb_pull(skb, QUIC_TAG_LEN);
+		skb_pull(skb, packet->taglen[1]);
 		if (pki.ack_eliciting) {
 			if (!quic_is_serv(sk) && level == QUIC_CRYPTO_INITIAL) {
 				active = quic_connection_id_active(id_set);
@@ -329,6 +330,7 @@ int quic_packet_process(struct sock *sk, struct sk_buff *skb, u8 resume)
 	struct quic_pnmap *pnmap = quic_pnmap(sk, QUIC_CRYPTO_APP);
 	struct quic_connection_id_set *id_set = quic_source(sk);
 	struct quic_rcv_cb *rcv_cb = QUIC_RCV_CB(skb);
+	struct quic_packet *packet = quic_packet(sk);
 	struct quic_inqueue *inq = quic_inq(sk);
 	struct quichdr *hdr = quic_hdr(skb);
 	struct quic_packet_info pki = {};
@@ -395,7 +397,7 @@ int quic_packet_process(struct sock *sk, struct sk_buff *skb, u8 resume)
 
 	skb_pull(skb, pki.number_offset + pki.number_len);
 	pki.length -= pki.number_len;
-	pki.length -= QUIC_TAG_LEN;
+	pki.length -= packet->taglen[0];
 	rcv_cb->level = 0;
 	err = quic_frame_process(sk, skb, &pki);
 	if (err)
@@ -403,7 +405,7 @@ int quic_packet_process(struct sock *sk, struct sk_buff *skb, u8 resume)
 	err = quic_pnmap_mark(pnmap, pki.number);
 	if (err)
 		goto err;
-	skb_pull(skb, QUIC_TAG_LEN);
+	skb_pull(skb, packet->taglen[0]);
 
 	/* connection migration check: an endpoint only changes the address to which
 	 * it sends packets in response to the highest-numbered non-probing packet.
@@ -514,7 +516,7 @@ static struct sk_buff *quic_packet_handshake_create(struct sock *sk)
 		plen = len - packet->len;
 	}
 	hlen = quic_encap_len(sk) + MAX_HEADER;
-	skb = alloc_skb(hlen + len + QUIC_TAG_LEN, GFP_ATOMIC);
+	skb = alloc_skb(hlen + len + packet->taglen[1], GFP_ATOMIC);
 	if (!skb) {
 		__skb_queue_purge(&packet->frame_list);
 		return NULL;
@@ -659,7 +661,7 @@ static struct sk_buff *quic_packet_create(struct sock *sk)
 	number_len = 4; /* make it fixed for easy coding */
 	len = packet->len;
 	hlen = quic_encap_len(sk) + MAX_HEADER;
-	skb = alloc_skb(hlen + len + QUIC_TAG_LEN, GFP_ATOMIC);
+	skb = alloc_skb(hlen + len + packet->taglen[0], GFP_ATOMIC);
 	if (!skb) {
 		__skb_queue_purge(&packet->frame_list);
 		return NULL;
@@ -716,15 +718,15 @@ void quic_packet_mss_update(struct sock *sk, int mss)
 	max_udp = quic_outq_max_udp(quic_outq(sk));
 	if (max_udp && mss > max_udp)
 		mss = max_udp;
-	packet->mss[0] = mss - QUIC_TAG_LEN;
-	quic_cong_set_mss(quic_cong(sk), packet->mss[0]);
+	packet->mss[0] = mss;
+	quic_cong_set_mss(quic_cong(sk), packet->mss[0] - packet->taglen[0]);
 
 	mss_dgram = quic_outq_max_dgram(quic_outq(sk));
 	if (!mss_dgram)
 		return;
 	if (mss_dgram > mss)
 		mss_dgram = mss;
-	packet->mss[1] = mss_dgram - QUIC_TAG_LEN;
+	packet->mss[1] = mss_dgram;
 }
 
 int quic_packet_route(struct sock *sk)
@@ -905,12 +907,14 @@ int quic_packet_tail(struct sock *sk, struct sk_buff *skb, u8 dgram)
 {
 	struct quic_snd_cb *snd_cb = QUIC_SND_CB(skb);
 	struct quic_packet *packet = quic_packet(sk);
+	u8 taglen;
 
 	if (snd_cb->level != (packet->level % QUIC_CRYPTO_EARLY) ||
 	    snd_cb->path_alt != packet->path_alt || packet->padding)
 		return 0;
 
-	if (packet->len + skb->len > packet->mss[dgram]) {
+	taglen = packet->taglen[!!packet->level];
+	if (packet->len + skb->len > packet->mss[dgram] - taglen) {
 		if (packet->len != packet->overhead)
 			return 0;
 		if (snd_cb->frame_type != QUIC_FRAME_PING)
@@ -1143,5 +1147,9 @@ int quic_packet_refuse_close_transmit(struct sock *sk, struct quic_request_sock 
 
 void quic_packet_init(struct sock *sk)
 {
-	skb_queue_head_init(&quic_packet(sk)->frame_list);
+	struct quic_packet *packet = quic_packet(sk);
+
+	skb_queue_head_init(&packet->frame_list);
+	packet->taglen[0] = QUIC_TAG_LEN;
+	packet->taglen[1] = QUIC_TAG_LEN;
 }

@@ -21,6 +21,7 @@ struct quic_packet {
 	u8  ipfragok:1;
 	u8  path_alt:2;
 	u8  padding:1;
+	u8  taglen[2];
 	u8  count;
 	u8  level;
 };
@@ -42,9 +43,14 @@ struct quic_packet {
 
 struct quic_request_sock;
 
+static inline u32 quic_packet_taglen(struct quic_packet *packet)
+{
+	return packet->taglen[0];
+}
+
 static inline u32 quic_packet_mss(struct quic_packet *packet)
 {
-	return packet->mss[0];
+	return packet->mss[0] - packet->taglen[!!packet->level];
 }
 
 static inline u32 quic_packet_overhead(struct quic_packet *packet)
@@ -54,17 +60,22 @@ static inline u32 quic_packet_overhead(struct quic_packet *packet)
 
 static inline u32 quic_packet_max_payload(struct quic_packet *packet)
 {
-	return packet->mss[0] - packet->overhead;
+	return packet->mss[0] - packet->overhead - packet->taglen[!!packet->level];
 }
 
 static inline u32 quic_packet_max_payload_dgram(struct quic_packet *packet)
 {
-	return packet->mss[1] - packet->overhead;
+	return packet->mss[1] - packet->overhead - packet->taglen[!!packet->level];
 }
 
 static inline bool quic_packet_empty(struct quic_packet *packet)
 {
 	return skb_queue_empty(&packet->frame_list);
+}
+
+static inline void quic_packet_set_taglen(struct quic_packet *packet, u8 taglen)
+{
+	packet->taglen[0] = taglen;
 }
 
 void quic_packet_config(struct sock *sk, u8 level, u8 path_alt);

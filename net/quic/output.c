@@ -246,6 +246,7 @@ void quic_outq_transmit_probe(struct sock *sk)
 {
 	struct quic_path_dst *d = (struct quic_path_dst *)quic_dst(sk);
 	struct quic_pnmap *pnmap = quic_pnmap(sk, QUIC_CRYPTO_APP);
+	u8 taglen = quic_packet_taglen(quic_packet(sk));
 	struct quic_inqueue *inq = quic_inq(sk);
 	struct sk_buff *skb;
 	u32 pathmtu;
@@ -260,7 +261,7 @@ void quic_outq_transmit_probe(struct sock *sk)
 
 		pathmtu = quic_path_pl_send(quic_dst(sk));
 		if (pathmtu)
-			quic_packet_mss_update(sk, pathmtu + QUIC_TAG_LEN);
+			quic_packet_mss_update(sk, pathmtu + taglen);
 	}
 
 	quic_timer_setup(sk, QUIC_TIMER_PROBE, quic_inq_probe_timeout(inq));
@@ -320,7 +321,7 @@ void quic_outq_transmit_app_close(struct sock *sk)
 void quic_outq_retransmit_check(struct sock *sk, u8 level, s64 largest, s64 smallest,
 				s64 ack_largest, u32 ack_delay)
 {
-	u32 pathmtu, acked_bytes = 0, transmit_ts = 0, rto;
+	u32 pathmtu, acked_bytes = 0, transmit_ts = 0, rto, taglen;
 	struct quic_outqueue *outq = quic_outq(sk);
 	struct quic_inqueue *inq = quic_inq(sk);
 	struct quic_cong *cong = quic_cong(sk);
@@ -335,8 +336,10 @@ void quic_outq_retransmit_check(struct sock *sk, u8 level, s64 largest, s64 smal
 	pr_debug("[QUIC] %s largest: %llu, smallest: %llu\n", __func__, largest, smallest);
 	if (quic_path_pl_confirm(quic_dst(sk), largest, smallest)) {
 		pathmtu = quic_path_pl_recv(quic_dst(sk), &raise_timer, &complete);
-		if (pathmtu)
-			quic_packet_mss_update(sk, pathmtu + QUIC_TAG_LEN);
+		if (pathmtu) {
+			taglen = quic_packet_taglen(quic_packet(sk));
+			quic_packet_mss_update(sk, pathmtu + taglen);
+		}
 		if (!complete)
 			quic_outq_transmit_probe(sk);
 		if (raise_timer) { /* reuse probe timer as raise timer */
