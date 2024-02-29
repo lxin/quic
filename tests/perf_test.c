@@ -290,6 +290,13 @@ loop:
 	return 0;
 }
 
+static uint64_t get_now_time()
+{
+	struct timespec t ;
+	clock_gettime ( CLOCK_REALTIME , & t ) ;
+	return t.tv_sec * 1000 + ( t.tv_nsec + 500000 ) / 1000000 ;
+}
+
 static int do_client(struct options *opts)
 {
 	struct quic_handshake_parms parms = {};
@@ -297,9 +304,10 @@ static int do_client(struct options *opts)
 	uint64_t len = 0, sid = 0;
 	gnutls_pcert_st gcert;
 	struct addrinfo *rp;
-	time_t start, end;
+	uint64_t start, end;
 	int ret, sockfd;
 	uint32_t flag;
+	float rate;
 
 	if (getaddrinfo(opts->addr, opts->port, NULL, &rp)) {
 		printf("getaddrinfo error\n");
@@ -368,7 +376,7 @@ handshake:
 
 	printf("HANDSHAKE DONE: received cert number: '%d'.\n", parms.num_keys);
 
-	time(&start);
+	start = get_now_time();
 	flag = QUIC_STREAM_FLAG_NEW; /* open stream when send first msg */
 	ret = quic_sendmsg(sockfd, snd_msg, opts->msg_len, sid, flag);
 	if (ret == -1) {
@@ -404,12 +412,13 @@ handshake:
 		printf("recv error %d %d\n", ret, errno);
 		return 1;
 	}
-	time(&end);
+	end = get_now_time();
 	start = end - start;
-	if (opts->tot_len/1024/start < 1024)
-		printf("ALL RECVD: %lu KBytes/Sec\n", opts->tot_len/1024/start);
+	rate = ((float)opts->tot_len * 8 * 1000) / 1024 / start;
+	if (rate < 1024)
+		printf("ALL RECVD: %.1f Kbits/Sec\n", rate);
 	else
-		printf("ALL RECVD: %lu MBytes/Sec\n", opts->tot_len/1024/1024/start);
+		printf("ALL RECVD: %.1f Mbits/Sec\n", rate / 1024);
 
 	close(sockfd);
 	return 0;

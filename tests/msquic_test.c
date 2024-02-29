@@ -85,7 +85,8 @@ const uint64_t ConnFlowControlWindow = 212992 / 2;
 //
 const uint32_t SendBufferLength = 4096;
 const uint64_t TotalLength = 1 * 1024 * 1024 * 1024;
-time_t StartTime, EndTime;
+uint64_t StartTime, EndTime;
+float Rate;
 
 //
 // The QUIC API/function table returned from MsQuicOpen2. It contains all the
@@ -557,6 +558,13 @@ Error:
     }
 }
 
+static uint64_t GetNowTime()
+{
+    struct timespec t ;
+    clock_gettime ( CLOCK_REALTIME , & t ) ;
+    return t.tv_sec * 1000 + ( t.tv_nsec + 500000 ) / 1000000 ;
+}
+
 //
 // The clients's callback for stream events from MsQuic.
 //
@@ -613,9 +621,10 @@ ClientStreamCallback(
         //
         // Data was received from the peer on the stream.
         //
-        time(&EndTime);
+        EndTime = GetNowTime();
         StartTime = EndTime - StartTime;
-        printf("[strm][%p] ALL RECVD: %lu MBytes/Sec\n", Stream, TotalSentLength/1024/1024/StartTime);
+        Rate = ((float)TotalSentLength * 8 * 1000) / 1024 / 1024 / StartTime;
+        printf("[strm][%p] ALL RECVD: %.1f Mbits/Sec\n", Stream, Rate);
         break;
     case QUIC_STREAM_EVENT_PEER_SEND_ABORTED:
         //
@@ -694,7 +703,7 @@ ClientSend(
     // the buffer. This indicates this is the last buffer on the stream and the
     // the stream is shut down (in the send direction) immediately after.
     //
-    time(&StartTime);
+    StartTime = GetNowTime();
     if (QUIC_FAILED(Status = MsQuic->StreamSend(Stream, SendBuffer, 1, QUIC_SEND_FLAG_NONE, SendBuffer))) {
         printf("StreamSend failed, 0x%x!\n", Status);
         free(SendBufferRaw);
