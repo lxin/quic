@@ -165,7 +165,7 @@ static int quic_test_do_client(void)
 {
 	struct quic_test_priv priv = {};
 	struct sockaddr_in ra = {};
-	u64 len = 0, sid = 0;
+	u64 len = 0, sid = 0, rate;
 	struct socket *sock;
 	int err, flag = 0;
 	u32 start, end;
@@ -225,8 +225,9 @@ static int quic_test_do_client(void)
 		goto free;
 	}
 	end = jiffies_to_msecs(jiffies);
-	start = (end - start) / 1000;
-	pr_info("ALL RECVD: %u MBytes/Sec\n", TOT_LEN / 1024 / 1024 / start);
+	start = (end - start);
+	rate = ((u64)TOT_LEN * 8 * 1000) / 1024 / 1024 / start;
+	pr_info("ALL RECVD: %llu Mbits/sec\n", rate);
 	err = 0;
 free:
 	fput(priv.filp);
