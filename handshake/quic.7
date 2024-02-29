@@ -423,7 +423,8 @@ These members in the 1st group are from RFC9000, and in the 2nd group, the membe
     - plpmtud_probe_timeout: plpmtud probe timeout in usec, 0: disabled
     - validate_peer_address: for server only, verify token and send retry packet
     - receive_session_ticket: for client only, handshake done until ticket is recvd
-    - certificate_request: for server only, 0: IGNORE, 1: REQUEST, 2: REQUIRE
+    - certificate_request: for server, 0: IGNORE 1: REQUEST 2: REQUIRE
+                           for client, 3: NO CERTIFICATE VALIDATION
     - congestion_control_alg: congestion control algorithm
     - payload_cipher_type: AES_GCM_128/AES_GCM_256/AES_CCM_128/CHACHA20_POLY1305
     - version:  QUIC_VERSION_V1 or V2 for now

@@ -89,6 +89,8 @@ static int client_x509_verify(gnutls_session_t session)
 	unsigned int i, status;
 	int ret;
 
+	if (conn->cert_req == 3) /* no certificate verification */
+		return 0;
 	ret = gnutls_certificate_verify_peers3(session, parms->peername, &status);
 	if (ret != GNUTLS_E_SUCCESS || status)
 		return -1;

@@ -81,7 +81,6 @@ in [ktls-utils](https://github.com/lxin/ktls-utils) will handle the handshake re
 - Handshake APIs for tlshd Use - *NFS/SMB over QUIC*
 
 #### some are still ongoing:
-- Transport Error Codes for All Error Cases
 - Performance Optimization
 
 ## INSTALL
