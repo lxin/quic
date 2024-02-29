@@ -485,7 +485,7 @@ int quic_inq_handshake_tail(struct sock *sk, struct sk_buff *skb)
 	crypto_offset = quic_crypto_recv_offset(crypto);
 	pr_debug("[QUIC] %s recv_offset: %llu offset: %llu level: %u\n", __func__,
 		 crypto_offset, offset, level);
-	if (crypto_offset > offset + skb->len) { /* dup */
+	if (offset < crypto_offset) { /* dup */
 		kfree_skb(skb);
 		return 0;
 	}
@@ -495,7 +495,7 @@ int quic_inq_handshake_tail(struct sock *sk, struct sk_buff *skb)
 	}
 	quic_inq_set_owner_r(skb, sk);
 	head = &quic_inq(sk)->handshake_list;
-	if (crypto_offset < offset) {
+	if (offset > crypto_offset) {
 		skb_queue_walk(head, tmp) {
 			rcv_cb = QUIC_RCV_CB(tmp);
 			if (rcv_cb->level < level)
