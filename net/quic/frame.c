@@ -1473,13 +1473,33 @@ static int quic_get_param(u64 *pdest, u8 **pp, u32 *plen)
 	return 0;
 }
 
+static int quic_get_version_info(u32 *versions, u8 *count, u8 **pp, u32 *plen)
+{
+	u64 valuelen;
+	u8 i;
+
+	if (!quic_get_var(pp, plen, &valuelen))
+		return -1;
+
+	if (*plen < valuelen || valuelen > 64)
+		return -1;
+
+	*count = valuelen / 4;
+	for (i = 0; i < *count; i++)
+		versions[i] = quic_get_int(pp, 4);
+
+	*plen -= valuelen;
+	return 0;
+}
+
 int quic_frame_set_transport_params_ext(struct sock *sk, struct quic_transport_param *params,
 					u8 *data, u32 len)
 {
 	struct quic_connection_id_set *id_set = quic_dest(sk);
 	struct quic_connection_id *active;
+	u8 *p = data, count = 0;
 	u64 type, valuelen;
-	u8 *p = data;
+	u32 versions[16];
 
 	params->max_udp_payload_size = 65527;
 	params->ack_delay_exponent = 3;
@@ -1582,6 +1602,12 @@ int quic_frame_set_transport_params_ext(struct sock *sk, struct quic_transport_p
 			len -= valuelen;
 			p += valuelen;
 			break;
+		case QUIC_TRANSPORT_PARAM_VERSION_INFORMATION:
+			if (quic_get_version_info(versions, &count, &p, &len))
+				return -1;
+			if (!count || quic_select_version(sk, versions, count))
+				return -1;
+			break;
 		default:
 			/* Ignore unknown parameter */
 			if (!quic_get_var(&p, &len, &valuelen))
@@ -1610,6 +1636,25 @@ static u8 *quic_put_param(u8 *p, enum quic_transport_param_id id, u64 value)
 	p = quic_put_var(p, id);
 	p = quic_put_var(p, quic_var_len(value));
 	return quic_put_var(p, value);
+}
+
+static u8 *quic_put_version_info(u8 *p, enum quic_transport_param_id id, u32 version)
+{
+	u32 *versions, i, len = 0;
+
+	versions = quic_compatible_versions(version);
+	if (!versions)
+		return p;
+
+	for (i = 0; versions[i]; i++)
+		len += 4;
+	p = quic_put_var(p, id);
+	p = quic_put_var(p, len);
+
+	for (i = 0; versions[i]; i++)
+		p = quic_put_int(p, versions[i], 4);
+
+	return p;
 }
 
 int quic_frame_get_transport_params_ext(struct sock *sk, struct quic_transport_param *params,
@@ -1677,6 +1722,10 @@ int quic_frame_get_transport_params_ext(struct sock *sk, struct quic_transport_p
 	if (params->disable_1rtt_encryption) {
 		p = quic_put_var(p, QUIC_TRANSPORT_PARAM_DISABLE_1RTT_ENCRYPTION);
 		p = quic_put_var(p, 0);
+	}
+	if (!params->disable_compatible_version) {
+		p = quic_put_version_info(p, QUIC_TRANSPORT_PARAM_VERSION_INFORMATION,
+					  quic_inq_version(quic_inq(sk)));
 	}
 	if (params->grease_quic_bit) {
 		p = quic_put_var(p, QUIC_TRANSPORT_PARAM_GREASE_QUIC_BIT);

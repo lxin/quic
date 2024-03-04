@@ -77,6 +77,7 @@ in [ktls-utils](https://github.com/lxin/ktls-utils) will handle the handshake re
 - RFC9002 - *QUIC Loss Detection and Congestion Control*
 - RFC9221 - *An Unreliable Datagram Extension to QUIC*
 - RFC9287 - *Greasing the QUIC Bit*
+- RFC9368 - *Compatible Version Negotiation for QUIC*
 - RFC9369 - *QUIC Version 2*
 - Handshake APIs for tlshd Use - *NFS/SMB over QUIC*
 

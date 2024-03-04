@@ -225,16 +225,8 @@ static inline void quic_set_state(struct sock *sk, int state)
 	sk->sk_state_change(sk);
 }
 
-static inline bool quic_version_supported(u32 version)
-{
-	return version == QUIC_VERSION_V1 || version == QUIC_VERSION_V2;
-}
-
 static inline u8 quic_version_get_type(u32 version, u8 type)
 {
-	if (!quic_version_supported(version))
-		return -1;
-
 	if (version == QUIC_VERSION_V1)
 		return type;
 
@@ -255,9 +247,6 @@ static inline u8 quic_version_get_type(u32 version, u8 type)
 
 static inline u8 quic_version_put_type(u32 version, u8 type)
 {
-	if (!quic_version_supported(version))
-		return -1;
-
 	if (version == QUIC_VERSION_V1)
 		return type;
 
@@ -297,5 +286,7 @@ bool quic_request_sock_exists(struct sock *sk, union quic_addr *sa, union quic_a
 struct sock *quic_sock_lookup(struct sk_buff *skb, union quic_addr *sa, union quic_addr *da);
 struct quic_request_sock *quic_request_sock_dequeue(struct sock *sk);
 int quic_request_sock_enqueue(struct sock *sk, struct quic_request_sock *req);
+int quic_select_version(struct sock *sk, u32 *versions, u8 count);
+u32 *quic_compatible_versions(u32 version);
 
 #endif /* __net_quic_h__ */

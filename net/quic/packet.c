@@ -133,7 +133,7 @@ static int quic_packet_handshake_version_process(struct sock *sk, struct sk_buff
 	while (len >= 4) {
 		version = quic_get_int(&p, 4);
 		len -= 4;
-		if (quic_version_supported(version) && best < version)
+		if (quic_compatible_versions(version) && best < version)
 			best = version;
 	}
 	if (best) {

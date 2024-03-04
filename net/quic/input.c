@@ -119,7 +119,7 @@ static int quic_do_listen_rcv(struct sock *sk, struct sk_buff *skb)
 		goto err;
 
 	req.version = quic_get_int(&p, 4);
-	if (!quic_version_supported(req.version)) {
+	if (!quic_compatible_versions(req.version)) {
 		consume_skb(skb);
 		/* version negotication */
 		return quic_packet_version_transmit(sk, &req);
