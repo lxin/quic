@@ -89,10 +89,8 @@ static int quic_get_connid_and_token(struct sk_buff *skb, struct quic_connection
 
 static int quic_do_listen_rcv(struct sock *sk, struct sk_buff *skb)
 {
-	struct quic_outqueue *outq = quic_outq(sk);
 	struct quic_inqueue *inq = quic_inq(sk);
 	u8 *p = (u8 *)quic_hshdr(skb) + 1, type;
-	struct quic_connection_id conn_id;
 	struct quic_request_sock req = {};
 	struct quic_crypto *crypto;
 	int err = -EINVAL, errcode;
@@ -133,6 +131,7 @@ static int quic_do_listen_rcv(struct sock *sk, struct sk_buff *skb)
 		return quic_packet_stateless_reset_transmit(sk, &req);
 	}
 
+	quic_connection_id_update(&req.orig_dcid, req.dcid.data, req.dcid.len);
 	if (quic_inq_validate_peer_address(inq)) {
 		if (!token.len) {
 			consume_skb(skb);
@@ -140,16 +139,13 @@ static int quic_do_listen_rcv(struct sock *sk, struct sk_buff *skb)
 		}
 		crypto = quic_crypto(sk, QUIC_CRYPTO_INITIAL);
 		err = quic_crypto_verify_token(crypto, &req.da, quic_addr_len(sk),
-					       &conn_id, token.data, token.len);
+					       &req.orig_dcid, token.data, token.len);
 		if (err) {
 			consume_skb(skb);
 			errcode = QUIC_TRANSPORT_ERROR_INVALID_TOKEN;
 			return quic_packet_refuse_close_transmit(sk, &req, errcode);
 		}
-		if (*(u8 *)token.data) {
-			req.retry = 1;
-			quic_outq_set_orig_dcid(outq, &conn_id);
-		}
+		req.retry = *(u8 *)token.data;
 	}
 
 	err = quic_request_sock_enqueue(sk, &req);

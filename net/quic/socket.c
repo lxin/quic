@@ -946,7 +946,6 @@ static int quic_accept_sock_init(struct sock *sk, struct quic_request_sock *req)
 	err = quic_connection_id_add(quic_source(sk), &conn_id, 0, sk);
 	if (err)
 		goto out;
-	quic_outq_set_orig_dcid(outq, &req->dcid);
 	quic_inq_set_version(inq, req->version);
 	err = quic_connection_id_add(quic_dest(sk), &req->scid, 0, NULL);
 	if (err)
@@ -956,7 +955,11 @@ static int quic_accept_sock_init(struct sock *sk, struct quic_request_sock *req)
 		goto out;
 
 	quic_outq_set_serv(outq);
-	quic_outq_set_retry(outq, req->retry);
+	quic_outq_set_orig_dcid(outq, &req->orig_dcid);
+	if (req->retry) {
+		quic_outq_set_retry(outq, 1);
+		quic_outq_set_retry_dcid(outq, &req->dcid);
+	}
 	quic_set_state(sk, QUIC_SS_ESTABLISHING);
 	err = sk->sk_prot->hash(sk);
 

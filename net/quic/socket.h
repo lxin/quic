@@ -50,6 +50,7 @@ struct quic_request_sock {
 	union quic_addr			sa;
 	struct quic_connection_id	dcid;
 	struct quic_connection_id	scid;
+	struct quic_connection_id	orig_dcid;
 	u8				retry;
 	u32				version;
 };

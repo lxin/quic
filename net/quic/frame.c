@@ -1460,6 +1460,24 @@ struct sk_buff *quic_frame_create(struct sock *sk, u8 type, void *data)
 	return skb;
 }
 
+static int quic_get_conn_id(struct quic_connection_id *conn_id, u8 **pp, u32 *plen)
+{
+	u64 valuelen;
+
+	if (!quic_get_var(pp, plen, &valuelen))
+		return -1;
+
+	if (*plen < valuelen || valuelen > 20)
+		return -1;
+
+	memcpy(conn_id->data, *pp, valuelen);
+	conn_id->len = valuelen;
+
+	*pp += valuelen;
+	*plen -= valuelen;
+	return 0;
+}
+
 static int quic_get_param(u64 *pdest, u8 **pp, u32 *plen)
 {
 	u64 valuelen;
@@ -1498,7 +1516,8 @@ int quic_frame_set_transport_params_ext(struct sock *sk, struct quic_transport_p
 					u8 *data, u32 len)
 {
 	struct quic_connection_id_set *id_set = quic_dest(sk);
-	struct quic_connection_id *active;
+	struct quic_outqueue *outq = quic_outq(sk);
+	struct quic_connection_id *active, conn_id;
 	u8 *p = data, count = 0;
 	u64 type, valuelen;
 	u32 versions[16];
@@ -1507,12 +1526,35 @@ int quic_frame_set_transport_params_ext(struct sock *sk, struct quic_transport_p
 	params->ack_delay_exponent = 3;
 	params->max_ack_delay = 25000;
 	params->active_connection_id_limit = 2;
+	active = quic_connection_id_active(id_set);
 
 	while (len > 0) {
 		if (!quic_get_var(&p, &len, &type))
 			return -1;
 
 		switch (type) {
+		case QUIC_TRANSPORT_PARAM_ORIGINAL_DESTINATION_CONNECTION_ID:
+			if (quic_is_serv(sk))
+				return -1;
+			if (quic_get_conn_id(&conn_id, &p, &len))
+				return -1;
+			if (quic_connection_id_cmp(quic_outq_orig_dcid(outq), &conn_id))
+				return -1;
+			break;
+		case QUIC_TRANSPORT_PARAM_RETRY_SOURCE_CONNECTION_ID:
+			if (quic_is_serv(sk))
+				return -1;
+			if (quic_get_conn_id(&conn_id, &p, &len))
+				return -1;
+			if (quic_connection_id_cmp(quic_outq_retry_dcid(outq), &conn_id))
+				return -1;
+			break;
+		case QUIC_TRANSPORT_PARAM_INITIAL_SOURCE_CONNECTION_ID:
+			if (quic_get_conn_id(&conn_id, &p, &len))
+				return -1;
+			if (quic_connection_id_cmp(active, &conn_id))
+				return -1;
+			break;
 		case QUIC_TRANSPORT_PARAM_INITIAL_MAX_STREAM_DATA_BIDI_LOCAL:
 			if (quic_get_param(&params->max_stream_data_bidi_local, &p, &len))
 				return -1;
@@ -1587,7 +1629,8 @@ int quic_frame_set_transport_params_ext(struct sock *sk, struct quic_transport_p
 			params->max_ack_delay *= 1000;
 			break;
 		case QUIC_TRANSPORT_PARAM_ACTIVE_CONNECTION_ID_LIMIT:
-			if (quic_get_param(&params->active_connection_id_limit, &p, &len))
+			if (quic_get_param(&params->active_connection_id_limit, &p, &len) ||
+			    params->active_connection_id_limit < 2)
 				return -1;
 			break;
 		case QUIC_TRANSPORT_PARAM_MAX_DATAGRAM_FRAME_SIZE:
@@ -1595,10 +1638,11 @@ int quic_frame_set_transport_params_ext(struct sock *sk, struct quic_transport_p
 				return -1;
 			break;
 		case QUIC_TRANSPORT_PARAM_STATELESS_RESET_TOKEN:
+			if (quic_is_serv(sk))
+				return -1;
 			if (!quic_get_var(&p, &len, &valuelen) || len < valuelen ||
 			    valuelen != 16)
 				return -1;
-			active = quic_connection_id_active(id_set);
 			quic_connection_id_set_token(active, p);
 			params->stateless_reset = 1;
 			len -= valuelen;
@@ -1681,10 +1725,10 @@ int quic_frame_get_transport_params_ext(struct sock *sk, struct quic_transport_p
 				return -1;
 			p = quic_put_data(p, token, 16);
 		}
-	}
-	if (quic_outq_retry(outq)) {
-		p = quic_put_conn_id(p, QUIC_TRANSPORT_PARAM_RETRY_SOURCE_CONNECTION_ID,
-				     quic_outq_orig_dcid(outq));
+		if (quic_outq_retry(outq)) {
+			p = quic_put_conn_id(p, QUIC_TRANSPORT_PARAM_RETRY_SOURCE_CONNECTION_ID,
+					     quic_outq_retry_dcid(outq));
+		}
 	}
 	p = quic_put_conn_id(p, QUIC_TRANSPORT_PARAM_INITIAL_SOURCE_CONNECTION_ID, scid);
 	if (params->max_stream_data_bidi_local) {

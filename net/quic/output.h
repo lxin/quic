@@ -9,6 +9,7 @@
  */
 
 struct quic_outqueue {
+	struct quic_connection_id retry_dcid;
 	struct quic_connection_id orig_dcid;
 	struct sk_buff_head retransmit_list;
 	struct sk_buff_head encrypted_list;
@@ -150,6 +151,17 @@ static inline void quic_outq_set_orig_dcid(struct quic_outqueue *outq,
 					   struct quic_connection_id *dcid)
 {
 	outq->orig_dcid = *dcid;
+}
+
+static inline struct quic_connection_id *quic_outq_retry_dcid(struct quic_outqueue *outq)
+{
+	return &outq->retry_dcid;
+}
+
+static inline void quic_outq_set_retry_dcid(struct quic_outqueue *outq,
+					    struct quic_connection_id *dcid)
+{
+	outq->retry_dcid = *dcid;
 }
 
 static inline void quic_outq_set_serv(struct quic_outqueue *outq)

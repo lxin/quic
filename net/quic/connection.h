@@ -101,6 +101,11 @@ static inline void quic_connection_id_set_token(struct quic_connection_id *conn_
 	memcpy(((struct quic_dest_connection_id *)conn_id)->token, token, 16);
 }
 
+static inline int quic_connection_id_cmp(struct quic_connection_id *a, struct quic_connection_id *b)
+{
+	return a->len != b->len || memcmp(a->data, b->data, a->len);
+}
+
 struct quic_connection_id *quic_connection_id_lookup(struct net *net, u8 *scid, u32 len);
 bool quic_connection_id_token_exists(struct quic_connection_id_set *id_set, u8 *token);
 int quic_connection_id_add(struct quic_connection_id_set *id_set,

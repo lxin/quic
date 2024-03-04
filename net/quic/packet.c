@@ -43,6 +43,7 @@ static int quic_packet_handshake_retry_process(struct sock *sk, struct sk_buff *
 	struct quic_crypto *crypto = quic_crypto(sk, QUIC_CRYPTO_INITIAL);
 	struct quic_connection_id_set *id_set = quic_dest(sk);
 	struct quic_connection_id dcid, scid = {}, *active;
+	struct quic_outqueue *outq = quic_outq(sk);
 	struct quic_inqueue *inq = quic_inq(sk);
 	u32 len = skb->len, dlen, slen, version;
 	u8 *p = skb->data, tag[16];
@@ -74,7 +75,7 @@ static int quic_packet_handshake_retry_process(struct sock *sk, struct sk_buff *
 	if (len < 16)
 		goto err;
 	version = quic_inq_version(inq);
-	if (quic_crypto_get_retry_tag(crypto, skb, &scid, version, tag) ||
+	if (quic_crypto_get_retry_tag(crypto, skb, quic_outq_orig_dcid(outq), version, tag) ||
 	    memcmp(tag, p + len - 16, 16))
 		goto err;
 	if (quic_data_dup(quic_token(sk), p, len - 16))
@@ -85,6 +86,8 @@ static int quic_packet_handshake_retry_process(struct sock *sk, struct sk_buff *
 		goto err;
 	active = quic_connection_id_active(id_set);
 	quic_connection_id_update(active, scid.data, scid.len);
+	quic_outq_set_retry(outq, 1);
+	quic_outq_set_retry_dcid(outq, active);
 	quic_outq_retransmit(sk);
 
 	consume_skb(skb);
@@ -976,6 +979,7 @@ static struct sk_buff *quic_packet_retry_create(struct sock *sk, struct quic_req
 	struct quic_crypto *crypto = quic_crypto(sk, QUIC_CRYPTO_INITIAL);
 	struct quic_outqueue *outq = quic_outq(sk);
 	struct quic_inqueue *inq = quic_inq(sk);
+	struct quic_connection_id dcid;
 	u8 *p, token[72], tag[16];
 	int len, hlen, tokenlen;
 	struct quichshdr *hdr;
@@ -987,7 +991,8 @@ static struct sk_buff *quic_packet_retry_create(struct sock *sk, struct quic_req
 				       &req->dcid, token, &tokenlen))
 		return NULL;
 
-	len = 1 + 4 + 1 + req->scid.len + 1 + req->dcid.len + tokenlen + 16;
+	quic_connection_id_generate(&dcid, 18); /* new dcid for retry */
+	len = 1 + 4 + 1 + req->scid.len + 1 + dcid.len + tokenlen + 16;
 	hlen = quic_encap_len(sk) + MAX_HEADER;
 	skb = alloc_skb(hlen + len, GFP_ATOMIC);
 	if (!skb)
@@ -1006,8 +1011,8 @@ static struct sk_buff *quic_packet_retry_create(struct sock *sk, struct quic_req
 	p = quic_put_int(p, quic_inq_version(inq), 4);
 	p = quic_put_int(p, req->scid.len, 1);
 	p = quic_put_data(p, req->scid.data, req->scid.len);
-	p = quic_put_int(p, req->dcid.len, 1);
-	p = quic_put_data(p, req->dcid.data, req->dcid.len);
+	p = quic_put_int(p, dcid.len, 1);
+	p = quic_put_data(p, dcid.data, dcid.len);
 	p = quic_put_data(p, token, tokenlen);
 	if (quic_crypto_get_retry_tag(crypto, skb, &req->dcid, req->version, tag)) {
 		kfree_skb(skb);
