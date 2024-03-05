@@ -125,22 +125,24 @@ static struct sk_buff *quic_frame_padding_create(struct sock *sk, void *data, u8
 static struct sk_buff *quic_frame_new_token_create(struct sock *sk, void *data, u8 type)
 {
 	struct quic_crypto *crypto = quic_crypto(sk, QUIC_CRYPTO_INITIAL);
+	struct quic_connection_id_set *id_set = quic_source(sk);
 	union quic_addr *da = quic_path_addr(quic_dst(sk), 0);
 	struct sk_buff *skb;
-	u8 buf[17], *p;
-	u32 len = 17;
+	u8 token[72], *p;
+	u32 tokenlen;
 
-	p = buf;
+	p = token;
 	p = quic_put_int(p, 0, 1); /* regular token */
-	if (quic_crypto_generate_token(crypto, (u8 *)da, "path_verification", p, 16))
+	if (quic_crypto_generate_token(crypto, da, quic_addr_len(sk),
+				       quic_connection_id_active(id_set), token, &tokenlen))
 		return NULL;
 
-	skb = alloc_skb(len + 4, GFP_ATOMIC);
+	skb = alloc_skb(tokenlen + 4, GFP_ATOMIC);
 	if (!skb)
 		return NULL;
 	p = quic_put_var(skb->data, type);
-	p = quic_put_var(p, len);
-	p = quic_put_data(p, buf, len);
+	p = quic_put_var(p, tokenlen);
+	p = quic_put_data(p, token, tokenlen);
 	skb_put(skb, (u32)(p - skb->data));
 
 	return skb;
@@ -317,7 +319,7 @@ static struct sk_buff *quic_frame_new_connection_id_create(struct sock *sk, void
 	p = quic_put_var(p, 16);
 	quic_connection_id_generate(&scid, 16);
 	p = quic_put_data(p, scid.data, scid.len);
-	if (quic_crypto_generate_token(crypto, scid.data, "stateless_reset", token, 16))
+	if (quic_crypto_generate_stateless_reset_token(crypto, scid.data, scid.len, token, 16))
 		return NULL;
 	p = quic_put_data(p, token, 16);
 	frame_len = (u32)(p - frame);
@@ -1663,6 +1665,7 @@ int quic_frame_get_transport_params_ext(struct sock *sk, struct quic_transport_p
 	struct quic_connection_id_set *id_set = quic_source(sk);
 	struct quic_outqueue *outq = quic_outq(sk);
 	struct quic_connection_id *scid;
+	struct quic_crypto *crypto;
 	u8 *p = data, token[16];
 
 	scid = quic_connection_id_active(id_set);
@@ -1672,8 +1675,9 @@ int quic_frame_get_transport_params_ext(struct sock *sk, struct quic_transport_p
 		if (params->stateless_reset) {
 			p = quic_put_var(p, QUIC_TRANSPORT_PARAM_STATELESS_RESET_TOKEN);
 			p = quic_put_var(p, 16);
-			if (quic_crypto_generate_token(quic_crypto(sk, QUIC_CRYPTO_INITIAL),
-						       scid->data, "stateless_reset", token, 16))
+			crypto = quic_crypto(sk, QUIC_CRYPTO_INITIAL);
+			if (quic_crypto_generate_stateless_reset_token(crypto, scid->data,
+								       scid->len, token, 16))
 				return -1;
 			p = quic_put_data(p, token, 16);
 		}

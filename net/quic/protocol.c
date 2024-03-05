@@ -19,7 +19,7 @@
 struct quic_hash_table quic_hash_tables[QUIC_HT_MAX_TABLES] __read_mostly;
 struct percpu_counter quic_sockets_allocated;
 struct workqueue_struct *quic_wq;
-u8 random_data[16];
+u8 random_data[32];
 
 long sysctl_quic_mem[3];
 int sysctl_quic_rmem[3];
@@ -673,7 +673,7 @@ static __init int quic_init(void)
 
 	quic_sysctl_register();
 
-	get_random_bytes(random_data, 16);
+	get_random_bytes(random_data, 32);
 	pr_info("[QUIC] init\n");
 	return 0;
 

@@ -976,14 +976,15 @@ static struct sk_buff *quic_packet_retry_create(struct sock *sk, struct quic_req
 	struct quic_crypto *crypto = quic_crypto(sk, QUIC_CRYPTO_INITIAL);
 	struct quic_outqueue *outq = quic_outq(sk);
 	struct quic_inqueue *inq = quic_inq(sk);
-	int len, hlen, tokenlen = 17;
-	u8 *p, token[17], tag[16];
+	u8 *p, token[72], tag[16];
+	int len, hlen, tokenlen;
 	struct quichshdr *hdr;
 	struct sk_buff *skb;
 
 	p = token;
 	p = quic_put_int(p, 1, 1); /* retry token */
-	if (quic_crypto_generate_token(crypto, &req->da, "path_verification", p, 16))
+	if (quic_crypto_generate_token(crypto, &req->da, quic_addr_len(sk),
+				       &req->dcid, token, &tokenlen))
 		return NULL;
 
 	len = 1 + 4 + 1 + req->scid.len + 1 + req->dcid.len + tokenlen + 16;
@@ -1107,7 +1108,8 @@ static struct sk_buff *quic_packet_stateless_reset_create(struct sock *sk,
 	u8 *p, token[16];
 	int len, hlen;
 
-	if (quic_crypto_generate_token(crypto, req->dcid.data, "stateless_reset", token, 16))
+	if (quic_crypto_generate_stateless_reset_token(crypto, req->dcid.data,
+						       req->dcid.len, token, 16))
 		return NULL;
 
 	len = 64;

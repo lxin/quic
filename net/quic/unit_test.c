@@ -374,11 +374,12 @@ static void quic_decrypt_done(struct crypto_async_request *base, int err)
 
 static void quic_crypto_test1(struct kunit *test)
 {
+	struct quic_connection_id conn_id, tmpid = {};
 	struct quic_crypto_secret srt = {};
-	struct quic_connection_id conn_id;
+	struct sockaddr_in addr = {};
 	struct sk_buff *skb;
-	u8 token[16];
-	int ret;
+	int ret, tokenlen;
+	u8 token[72];
 
 	srt.send = 1;
 	memcpy(srt.secret, secret, 48);
@@ -412,11 +413,25 @@ static void quic_crypto_test1(struct kunit *test)
 	ret = quic_crypto_initial_keys_install(&crypto, &conn_id, QUIC_VERSION_V2, 0, 1);
 	KUNIT_EXPECT_EQ(test, ret, 0);
 
-	ret = quic_crypto_generate_token(&crypto, conn_id.data, "stateless_reset", token, 16);
+	ret = quic_crypto_generate_stateless_reset_token(&crypto, conn_id.data,
+							 conn_id.len, token, 16);
 	KUNIT_EXPECT_EQ(test, ret, 0);
 
-	ret = quic_crypto_generate_session_ticket_key(&crypto, conn_id.data, token, 16);
+	ret = quic_crypto_generate_session_ticket_key(&crypto, conn_id.data,
+						      conn_id.len, token, 16);
 	KUNIT_EXPECT_EQ(test, ret, 0);
+
+	addr.sin_port = htons(1234);
+	token[0] = 1;
+	ret = quic_crypto_generate_token(&crypto, &addr, sizeof(addr),
+					 &conn_id, token, &tokenlen);
+	KUNIT_EXPECT_EQ(test, ret, 0);
+	KUNIT_EXPECT_EQ(test, tokenlen, 1 + sizeof(addr) + 4 + conn_id.len + QUIC_TAG_LEN);
+
+	ret = quic_crypto_verify_token(&crypto, &addr, sizeof(addr), &tmpid, token, tokenlen);
+	KUNIT_EXPECT_EQ(test, ret, 0);
+	KUNIT_EXPECT_EQ(test, tmpid.len, conn_id.len);
+	KUNIT_EXPECT_MEMEQ(test, tmpid.data, conn_id.data, tmpid.len);
 
 	skb = alloc_skb(296, GFP_ATOMIC);
 	if (!skb)

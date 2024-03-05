@@ -834,33 +834,146 @@ int quic_crypto_get_retry_tag(struct quic_crypto *crypto, struct sk_buff *skb,
 }
 EXPORT_SYMBOL_GPL(quic_crypto_get_retry_tag);
 
-int quic_crypto_generate_token(struct quic_crypto *crypto, void *data, char *label,
-			       u8 *token, u32 len)
+int quic_crypto_generate_token(struct quic_crypto *crypto, void *addr, u32 addrlen,
+			       struct quic_connection_id *conn_id, u8 *token, u32 *tokenlen)
+{
+	u8 key[16], iv[12], *retry_token, *tx_iv, *p;
+	struct crypto_aead *tfm = crypto->tag_tfm;
+	struct tls_vec srt = {NULL, 0}, k, i;
+	u32 ts = jiffies_to_usecs(jiffies);
+	struct aead_request *req;
+	struct scatterlist *sg;
+	int err, len;
+
+	tls_vec(&srt, random_data, 32);
+	tls_vec(&k, key, 16);
+	tls_vec(&i, iv, 12);
+	err = quic_crypto_keys_derive(crypto->secret_tfm, &srt, &k, &i, NULL, QUIC_VERSION_V1);
+	if (err)
+		return err;
+	err = crypto_aead_setauthsize(tfm, QUIC_TAG_LEN);
+	if (err)
+		return err;
+	err = crypto_aead_setkey(tfm, key, 16);
+	if (err)
+		return err;
+	token++;
+	len = addrlen + sizeof(ts) + conn_id->len + QUIC_TAG_LEN;
+	retry_token = quic_crypto_aead_mem_alloc(tfm, len, &tx_iv, &req, &sg, 1);
+	if (!retry_token)
+		return -ENOMEM;
+
+	p = retry_token;
+	p = quic_put_data(p, addr, addrlen);
+	p = quic_put_int(p, ts, sizeof(ts));
+	p = quic_put_data(p, conn_id->data, conn_id->len);
+	sg_init_one(sg, retry_token, len);
+	aead_request_set_tfm(req, tfm);
+	aead_request_set_ad(req, addrlen);
+	aead_request_set_crypt(req, sg, sg, len - addrlen - QUIC_TAG_LEN, iv);
+	err = crypto_aead_encrypt(req);
+
+	memcpy(token, retry_token, len);
+	*tokenlen = len + 1;
+	kfree(retry_token);
+	return err;
+}
+EXPORT_SYMBOL_GPL(quic_crypto_generate_token);
+
+int quic_crypto_verify_token(struct quic_crypto *crypto, void *addr, u32 addrlen,
+			     struct quic_connection_id *conn_id, u8 *token, u32 len)
+{
+	u8 key[16], iv[12], *retry_token, *rx_iv, *p, retry = *token;
+	struct crypto_aead *tfm = crypto->tag_tfm;
+	u32 ts = jiffies_to_usecs(jiffies), t;
+	struct tls_vec srt = {NULL, 0}, k, i;
+	struct aead_request *req;
+	struct scatterlist *sg;
+	u32 timeout = 3000000;
+	int err;
+
+	tls_vec(&srt, random_data, 32);
+	tls_vec(&k, key, 16);
+	tls_vec(&i, iv, 12);
+	err = quic_crypto_keys_derive(crypto->secret_tfm, &srt, &k, &i, NULL, QUIC_VERSION_V1);
+	if (err)
+		return err;
+	err = crypto_aead_setauthsize(tfm, QUIC_TAG_LEN);
+	if (err)
+		return err;
+	err = crypto_aead_setkey(tfm, key, 16);
+	if (err)
+		return err;
+	len--;
+	token++;
+	retry_token = quic_crypto_aead_mem_alloc(tfm, len, &rx_iv, &req, &sg, 1);
+	if (!retry_token)
+		return -ENOMEM;
+
+	memcpy(retry_token, token, len);
+	sg_init_one(sg, retry_token, len);
+	aead_request_set_tfm(req, tfm);
+	aead_request_set_ad(req, addrlen);
+	aead_request_set_crypt(req, sg, sg, len - addrlen, iv);
+	err = crypto_aead_decrypt(req);
+	if (err)
+		goto out;
+
+	err = -EINVAL;
+	p = retry_token;
+	if (memcmp(p, addr, addrlen))
+		goto out;
+	p += addrlen;
+	len -= addrlen;
+	if (!retry)
+		timeout = 36000000;
+	t = quic_get_int(&p, sizeof(t));
+	len -= sizeof(t);
+	if (t + timeout < ts)
+		goto out;
+	len -= QUIC_TAG_LEN;
+	if (len > 20)
+		goto out;
+
+	if (retry)
+		quic_connection_id_update(conn_id, p, len);
+	err = 0;
+out:
+	kfree(retry_token);
+	return err;
+}
+EXPORT_SYMBOL_GPL(quic_crypto_verify_token);
+
+static int quic_crypto_generate_key(struct quic_crypto *crypto, void *data, u32 len,
+				    char *label, u8 *token, u32 key_len)
 {
 	struct crypto_shash *tfm = crypto->secret_tfm;
 	struct tls_vec salt, s, l, k, z = {NULL, 0};
 	u8 secret[32];
 	int err;
 
-	if (!tfm)
-		return -EINVAL;
-
-	tls_vec(&salt, data, 16);
-	tls_vec(&k, random_data, 16);
+	tls_vec(&salt, data, len);
+	tls_vec(&k, random_data, 32);
 	tls_vec(&s, secret, 32);
 	err = tls_crypto_hkdf_extract(tfm, &salt, &k, &s);
 	if (err)
 		return err;
 
 	tls_vec(&l, label, strlen(label));
-	tls_vec(&k, token, len);
+	tls_vec(&k, token, key_len);
 	return tls_crypto_hkdf_expand(tfm, &s, &l, &z, &k);
 }
-EXPORT_SYMBOL_GPL(quic_crypto_generate_token);
+
+int quic_crypto_generate_stateless_reset_token(struct quic_crypto *crypto, void *data,
+					       u32 len, u8 *key, u32 key_len)
+{
+	return quic_crypto_generate_key(crypto, data, len, "stateless_reset", key, key_len);
+}
+EXPORT_SYMBOL_GPL(quic_crypto_generate_stateless_reset_token);
 
 int quic_crypto_generate_session_ticket_key(struct quic_crypto *crypto, void *data,
-					    u8 *key, u32 len)
+					    u32 len, u8 *key, u32 key_len)
 {
-	return quic_crypto_generate_token(crypto, data, "session_ticket", key, len);
+	return quic_crypto_generate_key(crypto, data, len, "session_ticket", key, key_len);
 }
 EXPORT_SYMBOL_GPL(quic_crypto_generate_session_ticket_key);

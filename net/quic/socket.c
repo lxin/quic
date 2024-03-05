@@ -1470,14 +1470,15 @@ static int quic_sock_get_session_ticket(struct sock *sk, int len,
 					char __user *optval, int __user *optlen)
 {
 	struct quic_crypto *crypto;
+	u32 ticket_len, addr_len;
 	union quic_addr *da;
 	u8 *ticket, key[64];
-	u32 ticket_len;
 
 	if (quic_is_serv(sk)) { /* get ticket_key for server */
 		crypto = quic_crypto(sk, QUIC_CRYPTO_INITIAL);
 		da = quic_path_addr(quic_dst(sk), 0);
-		if (quic_crypto_generate_session_ticket_key(crypto, da, key, 64))
+		addr_len = quic_addr_len(sk);
+		if (quic_crypto_generate_session_ticket_key(crypto, da, addr_len, key, 64))
 			return -EINVAL;
 		ticket = key;
 		ticket_len = 64;
