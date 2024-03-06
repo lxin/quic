@@ -110,10 +110,36 @@ static void quic_reno_cwnd_update_after_sack(struct quic_cong *cong, s64 acked_n
 	}
 }
 
+static void quic_reno_cwnd_update_after_ecn(struct quic_cong *cong)
+{
+	switch (cong->state) {
+	case QUIC_CONG_SLOW_START:
+		cong->prior_window = cong->window;
+		cong->prior_threshold = cong->threshold;
+		pr_debug("[QUIC] %s slow_start -> recovery, cwnd: %u threshold: %u\n",
+			 __func__, cong->window, cong->threshold);
+		break;
+	case QUIC_CONG_RECOVERY_PERIOD:
+		return;
+	case QUIC_CONG_CONGESTION_AVOIDANCE:
+		pr_debug("[QUIC] %s cong_avoid -> recovery, cwnd: %u threshold: %u\n",
+			 __func__, cong->window, cong->threshold);
+		break;
+	default:
+		pr_warn_once("[QUIC] %s wrong congestion state: %d", __func__, cong->state);
+		return;
+	}
+
+	cong->state = QUIC_CONG_RECOVERY_PERIOD;
+	cong->threshold = max(cong->window >> 1U, cong->mss * 2);
+	cong->window = cong->threshold;
+}
+
 static struct quic_cong_ops quic_congs[] = {
 	{ /* QUIC_CONG_ALG_RENO */
 		.quic_cwnd_update_after_sack = quic_reno_cwnd_update_after_sack,
 		.quic_cwnd_update_after_timeout = quic_reno_cwnd_update_after_timeout,
+		.quic_cwnd_update_after_ecn = quic_reno_cwnd_update_after_ecn,
 	},
 };
 
@@ -129,6 +155,11 @@ void quic_cong_cwnd_update_after_sack(struct quic_cong *cong, s64 acked_number, 
 {
 	cong->ops->quic_cwnd_update_after_sack(cong, acked_number, transmit_ts,
 					       acked_bytes, inflight);
+}
+
+void quic_cong_cwnd_update_after_ecn(struct quic_cong *cong)
+{
+	cong->ops->quic_cwnd_update_after_ecn(cong);
 }
 
 static void quic_cong_rto_update(struct quic_cong *cong)

@@ -47,6 +47,7 @@ struct quic_cong_ops {
 					       u32 transmit_ts, s64 last_sent_number);
 	void (*quic_cwnd_update_after_sack)(struct quic_cong *cong, s64 acked_number,
 					    u32 transmit_ts, u32 acked_bytes, u32 inflight);
+	void (*quic_cwnd_update_after_ecn)(struct quic_cong *cong);
 };
 
 static inline void quic_cong_set_window(struct quic_cong *cong, u32 window)
@@ -80,3 +81,4 @@ void quic_cong_cwnd_update_after_timeout(struct quic_cong *cong, s64 number,
 					 u32 transmit_ts, s64 last_sent_number);
 void quic_cong_cwnd_update_after_sack(struct quic_cong *cong, s64 acked_number,
 				      u32 transmit_ts, u32 acked_bytes, u32 inflight);
+void quic_cong_cwnd_update_after_ecn(struct quic_cong *cong);
