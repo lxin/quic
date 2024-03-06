@@ -30,16 +30,17 @@ static struct sk_buff *quic_frame_ack_create(struct sock *sk, void *data, u8 typ
 {
 	struct quic_gap_ack_block gabs[QUIC_PN_MAX_GABS];
 	struct quic_outqueue *outq = quic_outq(sk);
+	u64 largest, smallest, range, *ecn_count;
 	u32 frame_len, num_gabs, pn_ts;
 	u8 *p, level = *((u8 *)data);
-	u64 largest, smallest, range;
 	struct quic_pnmap *map;
 	struct sk_buff *skb;
 	int i;
 
 	map = quic_pnmap(sk, level);
+	type += quic_pnmap_has_ecn_count(map);
 	num_gabs = quic_pnmap_num_gabs(map, gabs);
-	frame_len = sizeof(type) + sizeof(u32) * 4;
+	frame_len = sizeof(type) + sizeof(u32) * 7;
 	frame_len += sizeof(struct quic_gap_ack_block) * num_gabs;
 
 	largest = quic_pnmap_max_pn_seen(map);
@@ -71,9 +72,16 @@ static struct sk_buff *quic_frame_ack_create(struct sock *sk, void *data, u8 typ
 			range -= map->min_pn_seen;
 		p = quic_put_var(p, range); /* ACK Range Length */
 	}
+	if (type == QUIC_FRAME_ACK_ECN) {
+		ecn_count = quic_pnmap_ecn_count(map);
+		p = quic_put_var(p, ecn_count[1]); /* ECT0 Count */
+		p = quic_put_var(p, ecn_count[0]); /* ECT1 Count */
+		p = quic_put_var(p, ecn_count[2]); /* ECN-CE Count */
+	}
 	frame_len = (u32)(p - skb->data);
 	skb_put(skb, frame_len);
 	QUIC_SND_CB(skb)->level = level;
+	QUIC_SND_CB(skb)->frame_type = type;
 
 	return skb;
 }
@@ -703,18 +711,18 @@ static int quic_frame_stream_process(struct sock *sk, struct sk_buff *skb, u8 ty
 
 static int quic_frame_ack_process(struct sock *sk, struct sk_buff *skb, u8 type)
 {
-	u64 largest, smallest, range, delay, count, gap, i;
-	u8 *p = skb->data, level;
+	u64 largest, smallest, range, delay, count, gap, i, ecn_count[3];
+	u8 *p = skb->data, level = QUIC_RCV_CB(skb)->level;
+	struct quic_pnmap *map = quic_pnmap(sk, level);
 	u32 len = skb->len;
 
-	level = QUIC_RCV_CB(skb)->level;
 	if (!quic_get_var(&p, &len, &largest) ||
 	    !quic_get_var(&p, &len, &delay) ||
 	    !quic_get_var(&p, &len, &count) || count > QUIC_PN_MAX_GABS ||
 	    !quic_get_var(&p, &len, &range))
 		return -EINVAL;
 
-	if (largest >= quic_pnmap_next_number(quic_pnmap(sk, level))) {
+	if (largest >= quic_pnmap_next_number(map)) {
 		QUIC_RCV_CB(skb)->errcode = QUIC_TRANSPORT_ERROR_PROTOCOL_VIOLATION;
 		return -EINVAL;
 	}
@@ -731,11 +739,13 @@ static int quic_frame_ack_process(struct sock *sk, struct sk_buff *skb, u8 type)
 		quic_outq_retransmit_check(sk, level, largest, smallest, 0, 0);
 	}
 
-	if (type == QUIC_FRAME_ACK_ECN) { /* TODO */
-		if (!quic_get_var(&p, &len, &count) ||
-		    !quic_get_var(&p, &len, &count) ||
-		    !quic_get_var(&p, &len, &count))
+	if (type == QUIC_FRAME_ACK_ECN) {
+		if (!quic_get_var(&p, &len, &ecn_count[1]) ||
+		    !quic_get_var(&p, &len, &ecn_count[0]) ||
+		    !quic_get_var(&p, &len, &ecn_count[2]))
 			return -EINVAL;
+		if (quic_pnmap_set_ecn_count(map, ecn_count))
+			quic_cong_cwnd_update_after_ecn(quic_cong(sk));
 	}
 
 	return skb->len - len;
