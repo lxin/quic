@@ -36,6 +36,7 @@
 struct quic_pnmap {
 	unsigned long *pn_map;
 	s64 next_number; /* next packet number to send */
+	u64 ecn_count[2][3]; /* ECT_1, ECT_0, CE count of local and peer */
 	u16 len;
 
 	s64 base_pn;
@@ -94,6 +95,36 @@ static inline u32 quic_pnmap_max_pn_ts(const struct quic_pnmap *map)
 static inline bool quic_pnmap_has_gap(const struct quic_pnmap *map)
 {
 	return map->cum_ack_point != map->max_pn_seen;
+}
+
+static inline void quic_pnmap_increase_ecn_count(struct quic_pnmap *map, u8 ecn)
+{
+	if (!ecn)
+		return;
+	map->ecn_count[0][ecn - 1]++;
+}
+
+static inline int quic_pnmap_set_ecn_count(struct quic_pnmap *map, u64 *ecn_count)
+{
+	if (map->ecn_count[1][0] < ecn_count[0])
+		map->ecn_count[1][0] = ecn_count[0];
+	if (map->ecn_count[1][1] < ecn_count[1])
+		map->ecn_count[1][1] = ecn_count[1];
+	if (map->ecn_count[1][2] < ecn_count[2]) {
+		map->ecn_count[1][2] = ecn_count[2];
+		return 1;
+	}
+	return 0;
+}
+
+static inline u64 *quic_pnmap_ecn_count(struct quic_pnmap *map)
+{
+	return map->ecn_count[0];
+}
+
+static inline bool quic_pnmap_has_ecn_count(struct quic_pnmap *map)
+{
+	return map->ecn_count[0][0] || map->ecn_count[0][1] || map->ecn_count[0][2];
 }
 
 int quic_pnmap_init(struct quic_pnmap *map);
