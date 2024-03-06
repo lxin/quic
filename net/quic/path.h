@@ -124,7 +124,7 @@ void quic_bind_port_put(struct sock *sk, struct quic_bind_port *pp);
 int quic_path_set_bind_port(struct sock *sk, struct quic_path_addr *a, bool alt);
 void quic_path_free(struct sock *sk, struct quic_path_addr *a);
 void quic_path_addr_free(struct sock *sk, struct quic_path_addr *path, bool alt);
-int quic_path_pl_send(struct quic_path_addr *a);
+int quic_path_pl_send(struct quic_path_addr *a, s64 number);
 int quic_path_pl_recv(struct quic_path_addr *a, bool *raise_timer, bool *complete);
 int quic_path_pl_toobig(struct quic_path_addr *a, u32 pmtu, bool *reset_timer);
 void quic_path_pl_reset(struct quic_path_addr *a);

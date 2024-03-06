@@ -266,11 +266,12 @@ enum quic_plpmtud_state {
 #define QUIC_PL_BIG_STEP        32
 #define QUIC_PL_MIN_STEP        4
 
-int quic_path_pl_send(struct quic_path_addr *a)
+int quic_path_pl_send(struct quic_path_addr *a, s64 number)
 {
 	struct quic_path_dst *d = (struct quic_path_dst *)a;
 	int pathmtu = 0;
 
+	d->pl.number = number;
 	if (d->pl.probe_count < QUIC_MAX_PROBES)
 		goto out;
 

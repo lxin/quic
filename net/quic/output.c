@@ -250,16 +250,17 @@ void quic_outq_transmit_probe(struct sock *sk)
 	struct quic_inqueue *inq = quic_inq(sk);
 	struct sk_buff *skb;
 	u32 pathmtu;
+	s64 number;
 
 	if (!quic_is_established(sk))
 		return;
 
 	skb = quic_frame_create(sk, QUIC_FRAME_PING, &d->pl.probe_size);
 	if (skb) {
-		d->pl.number = quic_pnmap_next_number(pnmap);
+		number = quic_pnmap_next_number(pnmap);
 		quic_outq_ctrl_tail(sk, skb, false);
 
-		pathmtu = quic_path_pl_send(quic_dst(sk));
+		pathmtu = quic_path_pl_send(quic_dst(sk), number);
 		if (pathmtu)
 			quic_packet_mss_update(sk, pathmtu + taglen);
 	}
