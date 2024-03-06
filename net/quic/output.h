@@ -55,6 +55,7 @@ struct quic_snd_cb {
 	u8 frame_type;
 	u8 path_alt:2; /* bit 1: src, bit 2: dst */
 	u8 padding:1;
+	u8 ecn:2;
 };
 
 #define QUIC_SND_CB(__skb)      ((struct quic_snd_cb *)&((__skb)->cb[0]))

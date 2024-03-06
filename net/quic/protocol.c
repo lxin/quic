@@ -84,6 +84,7 @@ static int quic_v4_flow_route(struct sock *sk, union quic_addr *da, union quic_a
 static void quic_v4_lower_xmit(struct sock *sk, struct sk_buff *skb, union quic_addr *da,
 			       union quic_addr *sa)
 {
+	u8 tos = (inet_sk(sk)->tos | QUIC_SND_CB(skb)->ecn);
 	struct dst_entry *dst;
 	__be16 df = 0;
 
@@ -100,13 +101,14 @@ static void quic_v4_lower_xmit(struct sock *sk, struct sk_buff *skb, union quic_
 		df = htons(IP_DF);
 
 	udp_tunnel_xmit_skb((struct rtable *)dst, sk, skb, sa->v4.sin_addr.s_addr,
-			    da->v4.sin_addr.s_addr, inet_sk(sk)->tos, ip4_dst_hoplimit(dst), df,
+			    da->v4.sin_addr.s_addr, tos, ip4_dst_hoplimit(dst), df,
 			    sa->v4.sin_port, da->v4.sin_port, false, false);
 }
 
 static void quic_v6_lower_xmit(struct sock *sk, struct sk_buff *skb, union quic_addr *da,
 			       union quic_addr *sa)
 {
+	u8 tclass = (inet6_sk(sk)->tclass | QUIC_SND_CB(skb)->ecn);
 	struct dst_entry *dst = sk_dst_get(sk);
 
 	if (!dst) {
@@ -118,7 +120,7 @@ static void quic_v6_lower_xmit(struct sock *sk, struct sk_buff *skb, union quic_
 		 &da->v6.sin6_addr, ntohs(da->v6.sin6_port));
 
 	udp_tunnel6_xmit_skb(dst, sk, skb, NULL, &sa->v6.sin6_addr, &da->v6.sin6_addr,
-			     inet6_sk(sk)->tclass, ip6_dst_hoplimit(dst), 0,
+			     tclass, ip6_dst_hoplimit(dst), 0,
 			     sa->v6.sin6_port, da->v6.sin6_port, false);
 }
 
@@ -234,6 +236,26 @@ static int quic_v6_get_mtu_info(struct sk_buff *skb, u32 *info)
 	return 1;
 }
 
+static int quic_v4_get_msg_ecn(struct sk_buff *skb)
+{
+	return (ip_hdr(skb)->tos & INET_ECN_MASK);
+}
+
+static int quic_v6_get_msg_ecn(struct sk_buff *skb)
+{
+	return (ipv6_get_dsfield(ipv6_hdr(skb)) & INET_ECN_MASK);
+}
+
+static void quic_v4_set_sk_ecn(struct sock *sk, u8 ecn)
+{
+	inet_sk(sk)->tos = ((inet_sk(sk)->tos & ~INET_ECN_MASK) | ecn);
+}
+
+static void quic_v6_set_sk_ecn(struct sock *sk, u8 ecn)
+{
+	inet6_sk(sk)->tclass = ((inet6_sk(sk)->tclass & ~INET_ECN_MASK) | ecn);
+}
+
 static struct quic_addr_family_ops quic_af_inet = {
 	.sa_family		= AF_INET,
 	.addr_len		= sizeof(struct sockaddr_in),
@@ -245,6 +267,8 @@ static struct quic_addr_family_ops quic_af_inet = {
 	.set_sk_addr		= quic_v4_set_sk_addr,
 	.get_sk_addr		= quic_v4_get_sk_addr,
 	.get_mtu_info		= quic_v4_get_mtu_info,
+	.set_sk_ecn		= quic_v4_set_sk_ecn,
+	.get_msg_ecn		= quic_v4_get_msg_ecn,
 	.setsockopt		= ip_setsockopt,
 	.getsockopt		= ip_getsockopt,
 };
@@ -260,6 +284,8 @@ static struct quic_addr_family_ops quic_af_inet6 = {
 	.set_sk_addr		= quic_v6_set_sk_addr,
 	.get_sk_addr		= quic_v6_get_sk_addr,
 	.get_mtu_info		= quic_v6_get_mtu_info,
+	.set_sk_ecn		= quic_v6_set_sk_ecn,
+	.get_msg_ecn		= quic_v6_get_msg_ecn,
 	.setsockopt		= ipv6_setsockopt,
 	.getsockopt		= ipv6_getsockopt,
 };
@@ -398,6 +424,16 @@ void quic_lower_xmit(struct sock *sk, struct sk_buff *skb, union quic_addr *da,
 int quic_flow_route(struct sock *sk, union quic_addr *da, union quic_addr *sa)
 {
 	return quic_af_ops(sk)->flow_route(sk, da, sa);
+}
+
+int quic_get_msg_ecn(struct sock *sk, struct sk_buff *skb)
+{
+	return quic_af_ops(sk)->get_msg_ecn(skb);
+}
+
+void quic_set_sk_ecn(struct sock *sk, u8 ecn)
+{
+	quic_af_ops(sk)->set_sk_ecn(sk, ecn);
 }
 
 static struct ctl_table quic_table[] = {
