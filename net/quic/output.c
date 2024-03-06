@@ -323,6 +323,7 @@ void quic_outq_retransmit_check(struct sock *sk, u8 level, s64 largest, s64 smal
 				s64 ack_largest, u32 ack_delay)
 {
 	u32 pathmtu, acked_bytes = 0, transmit_ts = 0, rto, taglen;
+	struct quic_path_addr *path = quic_dst(sk);
 	struct quic_outqueue *outq = quic_outq(sk);
 	struct quic_inqueue *inq = quic_inq(sk);
 	struct quic_cong *cong = quic_cong(sk);
@@ -335,8 +336,8 @@ void quic_outq_retransmit_check(struct sock *sk, u8 level, s64 largest, s64 smal
 	s64 acked_number = 0;
 
 	pr_debug("[QUIC] %s largest: %llu, smallest: %llu\n", __func__, largest, smallest);
-	if (quic_path_pl_confirm(quic_dst(sk), largest, smallest)) {
-		pathmtu = quic_path_pl_recv(quic_dst(sk), &raise_timer, &complete);
+	if (quic_path_pl_confirm(path, largest, smallest)) {
+		pathmtu = quic_path_pl_recv(path, &raise_timer, &complete);
 		if (pathmtu) {
 			taglen = quic_packet_taglen(quic_packet(sk));
 			quic_packet_mss_update(sk, pathmtu + taglen);
@@ -371,6 +372,10 @@ void quic_outq_retransmit_check(struct sock *sk, u8 level, s64 largest, s64 smal
 			acked_number = snd_cb->packet_number;
 			transmit_ts = snd_cb->transmit_ts;
 		}
+
+		if (snd_cb->ecn)
+			quic_set_sk_ecn(sk, INET_ECN_ECT_0);
+
 		stream = snd_cb->stream;
 		if (snd_cb->data_bytes) {
 			outq->inflight -= snd_cb->data_bytes;
@@ -527,6 +532,7 @@ void quic_outq_validate_path(struct sock *sk, struct sk_buff *skb, struct quic_p
 		QUIC_SND_CB(fskb)->path_alt &= ~path_alt;
 
 	QUIC_RCV_CB(skb)->path_alt &= ~path_alt;
+	quic_packet_set_ecn_probes(quic_packet(sk), 0);
 }
 
 void quic_outq_set_param(struct sock *sk, struct quic_transport_param *p)

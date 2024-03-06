@@ -18,6 +18,7 @@ struct quic_packet {
 
 	u32 mss[2];
 
+	u8  ecn_probes;
 	u8  ipfragok:1;
 	u8  path_alt:2;
 	u8  padding:1;
@@ -76,6 +77,11 @@ static inline bool quic_packet_empty(struct quic_packet *packet)
 static inline void quic_packet_set_taglen(struct quic_packet *packet, u8 taglen)
 {
 	packet->taglen[0] = taglen;
+}
+
+static inline void quic_packet_set_ecn_probes(struct quic_packet *packet, u8 probes)
+{
+	packet->ecn_probes = probes;
 }
 
 void quic_packet_config(struct sock *sk, u8 level, u8 path_alt);

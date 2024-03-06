@@ -46,6 +46,7 @@ struct quic_outqueue {
 
 struct quic_snd_cb {
 	struct quic_stream *stream;
+	struct sk_buff *last;
 	s64 packet_number;
 	u32 transmit_ts;
 	u16 data_bytes;

@@ -423,6 +423,7 @@ skip:
 	if (err)
 		goto err;
 	skb_pull(skb, packet->taglen[0]);
+	quic_pnmap_increase_ecn_count(pnmap, quic_get_msg_ecn(sk, skb));
 
 	/* connection migration check: an endpoint only changes the address to which
 	 * it sends packets in response to the highest-numbered non-probing packet.
@@ -666,9 +667,9 @@ static struct sk_buff *quic_packet_create(struct sock *sk)
 	struct quic_pnmap *pnmap;
 	struct quichdr *hdr;
 	u32 number_len;
+	u8 *p, ecn = 0;
 	int len, hlen;
 	s64 number;
-	u8 *p;
 
 	packet = quic_packet(sk);
 	if (packet->level)
@@ -718,9 +719,15 @@ static struct sk_buff *quic_packet_create(struct sock *sk)
 			fskb =  __skb_dequeue(head);
 			continue;
 		}
+		if (!ecn && packet->ecn_probes < 3) {
+			packet->ecn_probes++;
+			ecn = INET_ECN_ECT_0;
+		}
 		quic_outq_rtx_tail(sk, fskb);
 		snd_cb->packet_number = number;
 		snd_cb->transmit_ts = jiffies_to_usecs(jiffies);
+		snd_cb->ecn = ecn;
+		QUIC_SND_CB(skb)->ecn = ecn;
 		fskb =  __skb_dequeue(head);
 	}
 
@@ -827,7 +834,7 @@ static int quic_packet_bundle(struct sock *sk, struct sk_buff *skb)
 
 	if (!packet->head) {
 		packet->head = skb;
-		NAPI_GRO_CB(packet->head)->last = skb;
+		QUIC_SND_CB(packet->head)->last = skb;
 		goto out;
 	}
 
@@ -835,18 +842,19 @@ static int quic_packet_bundle(struct sock *sk, struct sk_buff *skb)
 		quic_lower_xmit(sk, packet->head, packet->da, packet->sa);
 		packet->count++;
 		packet->head = skb;
-		NAPI_GRO_CB(packet->head)->last = skb;
+		QUIC_SND_CB(packet->head)->last = skb;
 		goto out;
 	}
 	p = packet->head;
-	if (NAPI_GRO_CB(p)->last == p)
+	if (QUIC_SND_CB(p)->last == p)
 		skb_shinfo(p)->frag_list = skb;
 	else
-		NAPI_GRO_CB(p)->last->next = skb;
-	NAPI_GRO_CB(p)->last = skb;
+		QUIC_SND_CB(p)->last->next = skb;
 	p->data_len += skb->len;
 	p->truesize += skb->truesize;
 	p->len += skb->len;
+	QUIC_SND_CB(p)->last = skb;
+	QUIC_SND_CB(p)->ecn |= QUIC_SND_CB(skb)->ecn;
 
 out:
 	return !QUIC_SND_CB(skb)->level;

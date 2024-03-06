@@ -121,6 +121,7 @@ static void quic_timer_path_timeout(struct timer_list *t)
 	struct quic_sock *qs = from_timer(qs, t, timers[QUIC_TIMER_PATH].timer);
 	struct sock *sk = &qs->inet.sk;
 	struct quic_path_addr *path;
+	struct quic_packet *packet;
 	struct sk_buff *skb;
 	u8 cnt;
 
@@ -134,11 +135,13 @@ static void quic_timer_path_timeout(struct timer_list *t)
 	if (quic_is_closed(sk))
 		goto out;
 
+	packet = quic_packet(sk);
 	path = quic_src(sk);
 	cnt = quic_path_sent_cnt(path);
 	if (cnt) {
 		if (cnt >= 5) {
 			quic_path_set_sent_cnt(path, 0);
+			quic_packet_set_ecn_probes(packet, 0);
 			goto out;
 		}
 		skb = quic_frame_create(sk, QUIC_FRAME_PATH_CHALLENGE, path);
@@ -154,6 +157,7 @@ static void quic_timer_path_timeout(struct timer_list *t)
 		if (cnt >= 5) {
 			quic_path_set_sent_cnt(path, 0);
 			quic_path_swap_active(path);
+			quic_packet_set_ecn_probes(packet, 0);
 			goto out;
 		}
 		skb = quic_frame_create(sk, QUIC_FRAME_PATH_CHALLENGE, path);
