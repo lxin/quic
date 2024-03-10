@@ -716,6 +716,7 @@ static int quic_frame_ack_process(struct sock *sk, struct sk_buff *skb, u8 type)
 	u64 largest, smallest, range, delay, count, gap, i, ecn_count[3];
 	u8 *p = skb->data, level = QUIC_RCV_CB(skb)->level;
 	struct quic_pnmap *map = quic_pnmap(sk, level);
+	struct quic_cong *cong = quic_cong(sk);
 	u32 len = skb->len;
 
 	if (!quic_get_var(&p, &len, &largest) ||
@@ -746,8 +747,10 @@ static int quic_frame_ack_process(struct sock *sk, struct sk_buff *skb, u8 type)
 		    !quic_get_var(&p, &len, &ecn_count[0]) ||
 		    !quic_get_var(&p, &len, &ecn_count[2]))
 			return -EINVAL;
-		if (quic_pnmap_set_ecn_count(map, ecn_count))
-			quic_cong_cwnd_update_after_ecn(quic_cong(sk));
+		if (quic_pnmap_set_ecn_count(map, ecn_count)) {
+			quic_cong_cwnd_update_after_ecn(cong);
+			quic_outq_set_window(quic_outq(sk), quic_cong_window(cong));
+		}
 	}
 
 	return skb->len - len;
