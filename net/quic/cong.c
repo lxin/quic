@@ -149,6 +149,7 @@ void quic_cong_cwnd_update_after_timeout(struct quic_cong *cong, s64 number, u32
 	cong->ops->quic_cwnd_update_after_timeout(cong, number, transmit_ts,
 						  last_number);
 }
+EXPORT_SYMBOL_GPL(quic_cong_cwnd_update_after_timeout);
 
 void quic_cong_cwnd_update_after_sack(struct quic_cong *cong, s64 acked_number, u32 transmit_ts,
 				      u32 acked_bytes, u32 inflight)
@@ -156,11 +157,13 @@ void quic_cong_cwnd_update_after_sack(struct quic_cong *cong, s64 acked_number, 
 	cong->ops->quic_cwnd_update_after_sack(cong, acked_number, transmit_ts,
 					       acked_bytes, inflight);
 }
+EXPORT_SYMBOL_GPL(quic_cong_cwnd_update_after_sack);
 
 void quic_cong_cwnd_update_after_ecn(struct quic_cong *cong)
 {
 	cong->ops->quic_cwnd_update_after_ecn(cong);
 }
+EXPORT_SYMBOL_GPL(quic_cong_cwnd_update_after_ecn);
 
 static void quic_cong_rto_update(struct quic_cong *cong)
 {
@@ -196,6 +199,7 @@ void quic_cong_set_param(struct quic_cong *cong, struct quic_transport_param *p)
 	cong->threshold = U32_MAX;
 	cong->ops = &quic_congs[alg];
 }
+EXPORT_SYMBOL_GPL(quic_cong_set_param);
 
 /* Estimating the Round-Trip Time */
 void quic_cong_rtt_update(struct quic_cong *cong, u32 transmit_ts, u32 ack_delay)
@@ -222,3 +226,4 @@ void quic_cong_rtt_update(struct quic_cong *cong, u32 transmit_ts, u32 ack_delay
 	cong->rttvar = (cong->rttvar * 3 + rttvar_sample) / 4;
 	quic_cong_rto_update(cong);
 }
+EXPORT_SYMBOL_GPL(quic_cong_rtt_update);
