@@ -11,8 +11,12 @@
 #ifndef __uapi_quic_h__
 #define __uapi_quic_h__
 
-#include <linux/types.h>
 #include <linux/socket.h>
+#ifdef __KERNEL__
+#include <linux/types.h>
+#else
+#include <stdint.h>
+#endif
 
 enum {
 	IPPROTO_QUIC = 261,		/* A UDP-Based Multiplexed and Secure Transport	*/
