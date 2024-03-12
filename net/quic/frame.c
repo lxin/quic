@@ -1339,7 +1339,7 @@ static int quic_frame_datagram_process(struct sock *sk, struct sk_buff *skb, u8 
 }
 
 #define quic_frame_create_and_process(type) \
-	{quic_frame_##type##_create, quic_frame_##type##_process}
+	{ .frame_create = quic_frame_##type##_create, .frame_process = quic_frame_##type##_process }
 
 static struct quic_frame_ops quic_frame_ops[QUIC_FRAME_MAX + 1] = {
 	quic_frame_create_and_process(padding), /* 0x00 */
