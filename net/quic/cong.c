@@ -137,16 +137,16 @@ static void quic_reno_cwnd_update_after_ecn(struct quic_cong *cong)
 
 static struct quic_cong_ops quic_congs[] = {
 	{ /* QUIC_CONG_ALG_RENO */
-		.quic_cwnd_update_after_sack = quic_reno_cwnd_update_after_sack,
-		.quic_cwnd_update_after_timeout = quic_reno_cwnd_update_after_timeout,
-		.quic_cwnd_update_after_ecn = quic_reno_cwnd_update_after_ecn,
+		.cwnd_update_after_sack = quic_reno_cwnd_update_after_sack,
+		.cwnd_update_after_timeout = quic_reno_cwnd_update_after_timeout,
+		.cwnd_update_after_ecn = quic_reno_cwnd_update_after_ecn,
 	},
 };
 
 void quic_cong_cwnd_update_after_timeout(struct quic_cong *cong, s64 number, u32 transmit_ts,
 					 s64 last_number)
 {
-	cong->ops->quic_cwnd_update_after_timeout(cong, number, transmit_ts,
+	cong->ops->cwnd_update_after_timeout(cong, number, transmit_ts,
 						  last_number);
 }
 EXPORT_SYMBOL_GPL(quic_cong_cwnd_update_after_timeout);
@@ -154,14 +154,14 @@ EXPORT_SYMBOL_GPL(quic_cong_cwnd_update_after_timeout);
 void quic_cong_cwnd_update_after_sack(struct quic_cong *cong, s64 acked_number, u32 transmit_ts,
 				      u32 acked_bytes, u32 inflight)
 {
-	cong->ops->quic_cwnd_update_after_sack(cong, acked_number, transmit_ts,
+	cong->ops->cwnd_update_after_sack(cong, acked_number, transmit_ts,
 					       acked_bytes, inflight);
 }
 EXPORT_SYMBOL_GPL(quic_cong_cwnd_update_after_sack);
 
 void quic_cong_cwnd_update_after_ecn(struct quic_cong *cong)
 {
-	cong->ops->quic_cwnd_update_after_ecn(cong);
+	cong->ops->cwnd_update_after_ecn(cong);
 }
 EXPORT_SYMBOL_GPL(quic_cong_cwnd_update_after_ecn);
 
