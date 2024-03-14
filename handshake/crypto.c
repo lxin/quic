@@ -323,6 +323,26 @@ static int session_ticket_recv(gnutls_session_t session, unsigned int htype, uns
 	return 0;
 }
 
+static int session_set_alpns(gnutls_session_t session, char *data)
+{
+	char *alpn = strtok(data, ",");
+	gnutls_datum_t alpns[10];
+	int count = 0;
+
+	while(alpn) {
+		while (*alpn == ' ') alpn++;
+
+		alpns[count].data = (unsigned char *)alpn;
+		alpns[count].size = strlen(alpn);
+		if (++count >= 10)
+			return -EINVAL;
+		alpn = strtok(NULL, ",");
+	}
+
+	gnutls_alpn_set_protocols(session, alpns, count, GNUTLS_ALPN_MANDATORY);
+	return 0;
+}
+
 int quic_crypto_client_set_x509_session(struct quic_conn *conn)
 {
 	gnutls_certificate_credentials_t cred;
@@ -362,11 +382,9 @@ int quic_crypto_client_set_x509_session(struct quic_conn *conn)
 		gnutls_server_name_set(session, GNUTLS_NAME_DNS,
 				       conn->parms->peername, strlen(conn->parms->peername));
 	if (conn->alpn.datalen) {
-		gnutls_datum_t alpn = {
-			.data = conn->alpn.data,
-			.size = strlen((char *)conn->alpn.data),
-		};
-		gnutls_alpn_set_protocols(session, &alpn, 1, GNUTLS_ALPN_MANDATORY);
+		ret = session_set_alpns(session, (char *)conn->alpn.data);
+		if (ret)
+			goto err_session;
 	}
 	conn->session = session;
 	return 0;
@@ -416,11 +434,9 @@ int quic_crypto_client_set_psk_session(struct quic_conn *conn)
 		goto err_session;
 	gnutls_credentials_set(session, GNUTLS_CRD_PSK, cred);
 	if (conn->alpn.datalen) {
-		gnutls_datum_t alpn = {
-			.data = conn->alpn.data,
-			.size = strlen((char *)conn->alpn.data),
-		};
-		gnutls_alpn_set_protocols(session, &alpn, 1, GNUTLS_ALPN_MANDATORY);
+		ret = session_set_alpns(session, (char *)conn->alpn.data);
+		if (ret)
+			goto err_session;
 	}
 	conn->session = session;
 	return 0;
@@ -477,7 +493,7 @@ static int server_alpn_verify(gnutls_session_t session, unsigned int htype, unsi
 			      unsigned int incoming, const gnutls_datum_t *msg)
 {
 	struct quic_conn *conn = gnutls_session_get_ptr(session);
-	gnutls_datum_t alpn;
+	gnutls_datum_t alpn = {};
 	int ret;
 
 	if (!conn->alpn.datalen)
@@ -486,11 +502,10 @@ static int server_alpn_verify(gnutls_session_t session, unsigned int htype, unsi
 	ret = gnutls_alpn_get_selected_protocol(session, &alpn);
 	if (ret)
 		return ret;
-
-	if (strlen((char *)conn->alpn.data) != alpn.size ||
-	    memcmp(conn->alpn.data, alpn.data, alpn.size))
+	if (setsockopt(conn->sockfd, SOL_QUIC, QUIC_SOCKOPT_ALPN, alpn.data, alpn.size)) {
+		print_error("socket setsockopt alpn failed %d\n", alpn.size);
 		return -1;
-
+	}
 	return 0;
 }
 
@@ -552,11 +567,9 @@ int quic_crypto_server_set_x509_session(struct quic_conn *conn)
 	gnutls_credentials_set(session, GNUTLS_CRD_CERTIFICATE, cred);
 	gnutls_certificate_server_set_request(session, conn->cert_req);
 	if (conn->alpn.datalen) {
-		gnutls_datum_t alpn = {
-			.data = conn->alpn.data,
-			.size = strlen((char *)conn->alpn.data),
-		};
-		gnutls_alpn_set_protocols(session, &alpn, 1, GNUTLS_ALPN_MANDATORY);
+		ret = session_set_alpns(session, (char *)conn->alpn.data);
+		if (ret)
+			goto err_session;
 	}
 
 	conn->session = session;
@@ -620,11 +633,9 @@ int quic_crypto_server_set_psk_session(struct quic_conn *conn)
 					   GNUTLS_HOOK_POST, server_alpn_verify);
 	gnutls_credentials_set(session, GNUTLS_CRD_PSK, cred);
 	if (conn->alpn.datalen) {
-		gnutls_datum_t alpn = {
-			.data = conn->alpn.data,
-			.size = strlen((char *)conn->alpn.data),
-		};
-		gnutls_alpn_set_protocols(session, &alpn, 1, GNUTLS_ALPN_MANDATORY);
+		ret = session_set_alpns(session, (char *)conn->alpn.data);
+		if (ret)
+			goto err_session;
 	}
 	conn->session = session;
 	return 0;
