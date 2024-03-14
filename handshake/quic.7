@@ -452,7 +452,11 @@ for reading and writing, and the parameter type is:
 .TP
 .B QUIC_SOCKOPT_ALPN
 This option is used to configure the Application-Layer Protocol Negotiation before
-handshake, and on Sever and Client it should be set with the same value.
+handshake, multiple ALPNs are separated by ',' e.g. "smbd, h3, ksmbd".
+
+On server side, during handshake it gets ALPN via this socket option and matches
+the ALPN from the client side, and then sets the matched ALPN to the socket, so
+that users can get the selected ALPN via this socket option after handshake.
 
 for reading and writing, and the parameter type is:
 
