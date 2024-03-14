@@ -342,6 +342,7 @@ int quic_packet_process(struct sock *sk, struct sk_buff *skb, u8 resume)
 	struct quic_connection_id_set *id_set = quic_source(sk);
 	struct quic_rcv_cb *rcv_cb = QUIC_RCV_CB(skb);
 	struct quic_packet *packet = quic_packet(sk);
+	struct quic_outqueue *outq = quic_outq(sk);
 	struct quic_inqueue *inq = quic_inq(sk);
 	struct quichdr *hdr = quic_hdr(skb);
 	struct quic_packet_info pki = {};
@@ -431,10 +432,14 @@ skip:
 	/* connection migration check: an endpoint only changes the address to which
 	 * it sends packets in response to the highest-numbered non-probing packet.
 	 */
-	id_set = quic_dest(sk);
-	if (!quic_connection_id_disable_active_migration(id_set) && pki.non_probing &&
-	    pki.number == quic_pnmap_max_pn_seen(pnmap) && (rcv_cb->path_alt & QUIC_PATH_ALT_DST))
-		quic_sock_change_daddr(sk, &addr, quic_addr_len(sk));
+	if (pki.non_probing && pki.number == quic_pnmap_max_pn_seen(pnmap)) {
+		if (!quic_connection_id_disable_active_migration(quic_dest(sk)) &&
+		    (rcv_cb->path_alt & QUIC_PATH_ALT_DST))
+			quic_sock_change_daddr(sk, &addr, quic_addr_len(sk));
+		if (quic_outq_pref_addr(outq) &&
+		    (rcv_cb->path_alt & QUIC_PATH_ALT_SRC))
+			quic_sock_change_saddr(sk, NULL, 0);
+	}
 
 	if (pki.key_update) {
 		key_phase = pki.key_phase;
@@ -465,7 +470,7 @@ out:
 	 * timer.
 	 */
 	quic_timer_reset(sk, QUIC_TIMER_IDLE);
-	quic_outq_reset(quic_outq(sk));
+	quic_outq_reset(outq);
 	if (quic_is_established(sk))
 		quic_outq_flush(sk);
 	return 0;

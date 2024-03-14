@@ -1077,19 +1077,33 @@ int quic_sock_change_saddr(struct sock *sk, union quic_addr *addr, u32 len)
 {
 	struct quic_connection_id_set *id_set = quic_source(sk);
 	struct quic_path_addr *path = quic_src(sk);
+	struct quic_outqueue *outq = quic_outq(sk);
 	u8 cnt = quic_path_sent_cnt(path);
 	struct sk_buff *skb;
 	u64 number;
 	int err;
 
-	if (cnt || !quic_is_established(sk))
+	if (cnt)
 		return -EINVAL;
 
-	if (quic_connection_id_disable_active_migration(id_set))
-		return -EINVAL;
+	if (!addr) {
+		quic_outq_set_pref_addr(outq, 0);
+		goto out;
+	}
 
 	if (len != quic_addr_len(sk) ||
 	    quic_addr_family(sk) != addr->sa.sa_family)
+		return -EINVAL;
+
+	if (!quic_is_established(sk)) { /* set preferred address param */
+		if (!quic_is_serv(sk))
+			return -EINVAL;
+		quic_outq_set_pref_addr(outq, 1);
+		quic_path_addr_set(path, addr, 1);
+		return 0;
+	}
+
+	if (quic_connection_id_disable_active_migration(id_set))
 		return -EINVAL;
 
 	quic_path_addr_set(path, addr, 1);
@@ -1109,6 +1123,7 @@ int quic_sock_change_saddr(struct sock *sk, union quic_addr *addr, u32 len)
 	QUIC_SND_CB(skb)->path_alt = QUIC_PATH_ALT_SRC;
 	quic_outq_ctrl_tail(sk, skb, true);
 
+out:
 	quic_set_sk_ecn(sk, 0); /* clear ecn during path migration */
 	skb = quic_frame_create(sk, QUIC_FRAME_PATH_CHALLENGE, path);
 	if (skb) {
@@ -1174,6 +1189,7 @@ static int quic_sock_set_transport_params_ext(struct sock *sk, u8 *p, u32 len)
 static int quic_sock_set_crypto_secret(struct sock *sk, struct quic_crypto_secret *secret, u32 len)
 {
 	struct quic_connection_id_set *id_set = quic_source(sk);
+	struct quic_path_addr *path = quic_src(sk);
 	struct quic_outqueue *outq = quic_outq(sk);
 	struct quic_inqueue *inq = quic_inq(sk);
 	struct sk_buff_head tmpq, list;
@@ -1193,11 +1209,17 @@ static int quic_sock_set_crypto_secret(struct sock *sk, struct quic_crypto_secre
 	__skb_queue_head_init(&list);
 	if (!secret->send) { /* recv key is ready */
 		if (!secret->level && quic_is_serv(sk)) {
-			skb = quic_frame_create(sk, QUIC_FRAME_NEW_TOKEN, NULL);
-			if (!skb) {
-				__skb_queue_purge(&list);
-				return -ENOMEM;
+			if (quic_outq_pref_addr(outq)) {
+				err = quic_path_set_bind_port(sk, path, 1);
+				if (err)
+					return err;
+				err = quic_path_set_udp_sock(sk, path, 1);
+				if (err)
+					return err;
 			}
+			skb = quic_frame_create(sk, QUIC_FRAME_NEW_TOKEN, NULL);
+			if (!skb)
+				return -ENOMEM;
 			__skb_queue_tail(&list, skb);
 			skb = quic_frame_create(sk, QUIC_FRAME_HANDSHAKE_DONE, NULL);
 			if (!skb) {
@@ -1246,7 +1268,8 @@ static int quic_sock_set_crypto_secret(struct sock *sk, struct quic_crypto_secre
 
 	/* app send key is ready */
 	quic_outq_set_level(outq, QUIC_CRYPTO_APP);
-	for (seqno = 1; seqno <= quic_connection_id_max_count(id_set); seqno++) {
+	seqno = quic_connection_id_last_number(id_set) + 1;
+	for (; seqno <= quic_connection_id_max_count(id_set); seqno++) {
 		skb = quic_frame_create(sk, QUIC_FRAME_NEW_CONNECTION_ID, &prior);
 		if (!skb) {
 			while (seqno)

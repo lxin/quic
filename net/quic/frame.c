@@ -1752,23 +1752,38 @@ static u8 *quic_put_version_info(u8 *p, enum quic_transport_param_id id, u32 ver
 	return p;
 }
 
+static u8 *quic_put_preferred_address(u8 *p, enum quic_transport_param_id id,
+				      union quic_addr *addr, struct quic_connection_id *conn_id,
+				      u8 *token, struct sock *sk)
+{
+	p = quic_put_var(p, id);
+	p = quic_put_var(p, (4 + 2 + 16 + 2) + 1 + conn_id->len + 16);
+	quic_set_pref_addr(sk, p, addr);
+	p += (4 + 2 + 16 + 2);
+
+	p = quic_put_int(p, conn_id->len, 1);
+	p = quic_put_data(p, conn_id->data, conn_id->len);
+	p = quic_put_data(p, token, 16);
+	return p;
+}
+
 int quic_frame_get_transport_params_ext(struct sock *sk, struct quic_transport_param *params,
 					u8 *data, u32 *len)
 {
 	struct quic_connection_id_set *id_set = quic_source(sk);
 	struct quic_outqueue *outq = quic_outq(sk);
-	struct quic_connection_id *scid;
+	struct quic_connection_id *scid, conn_id;
 	struct quic_crypto *crypto;
 	u8 *p = data, token[16];
 
 	scid = quic_connection_id_active(id_set);
 	if (quic_is_serv(sk)) {
+		crypto = quic_crypto(sk, QUIC_CRYPTO_INITIAL);
 		p = quic_put_conn_id(p, QUIC_TRANSPORT_PARAM_ORIGINAL_DESTINATION_CONNECTION_ID,
 				     quic_outq_orig_dcid(outq));
 		if (params->stateless_reset) {
 			p = quic_put_var(p, QUIC_TRANSPORT_PARAM_STATELESS_RESET_TOKEN);
 			p = quic_put_var(p, 16);
-			crypto = quic_crypto(sk, QUIC_CRYPTO_INITIAL);
 			if (quic_crypto_generate_stateless_reset_token(crypto, scid->data,
 								       scid->len, token, 16))
 				return -1;
@@ -1777,6 +1792,17 @@ int quic_frame_get_transport_params_ext(struct sock *sk, struct quic_transport_p
 		if (quic_outq_retry(outq)) {
 			p = quic_put_conn_id(p, QUIC_TRANSPORT_PARAM_RETRY_SOURCE_CONNECTION_ID,
 					     quic_outq_retry_dcid(outq));
+		}
+		if (quic_outq_pref_addr(outq)) {
+			quic_connection_id_generate(&conn_id, 16);
+			if (quic_crypto_generate_stateless_reset_token(crypto, conn_id.data,
+								       conn_id.len, token, 16))
+				return -1;
+			if (quic_connection_id_add(id_set, &conn_id, 1, sk))
+				return -1;
+			p = quic_put_preferred_address(p, QUIC_TRANSPORT_PARAM_PREFERRED_ADDRESS,
+						       quic_path_addr(quic_src(sk), 1), &conn_id,
+						       token, sk);
 		}
 	}
 	p = quic_put_conn_id(p, QUIC_TRANSPORT_PARAM_INITIAL_SOURCE_CONNECTION_ID, scid);
