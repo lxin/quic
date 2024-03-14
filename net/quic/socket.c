@@ -1299,7 +1299,7 @@ static int quic_sock_retire_connection_id(struct sock *sk, struct quic_connectio
 
 static int quic_sock_set_alpn(struct sock *sk, char *data, u32 len)
 {
-	if (!len || len > 20)
+	if (!len || len > 128)
 		return -EINVAL;
 
 	return quic_data_dup(quic_alpn(sk), data, len);
