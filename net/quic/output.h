@@ -41,6 +41,7 @@ struct quic_outqueue {
 	u8 close_frame;
 	u8 rtx_count;
 	u8 data_blocked:1;
+	u8 pref_addr:1;
 	u8 serv:1;
 	u8 retry:1;
 };
@@ -172,6 +173,16 @@ static inline void quic_outq_set_serv(struct quic_outqueue *outq)
 static inline void quic_outq_set_level(struct quic_outqueue *outq, u8 level)
 {
 	outq->level = level;
+}
+
+static inline void quic_outq_set_pref_addr(struct quic_outqueue *outq, u8 pref_addr)
+{
+	outq->pref_addr = pref_addr;
+}
+
+static inline u8 quic_outq_pref_addr(struct quic_outqueue *outq)
+{
+	return outq->pref_addr;
 }
 
 void quic_outq_dgram_tail(struct sock *sk, struct sk_buff *skb, bool cork);

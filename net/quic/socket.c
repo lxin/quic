@@ -1054,11 +1054,16 @@ int quic_sock_change_daddr(struct sock *sk, union quic_addr *addr, u32 len)
 
 	if (cnt)
 		return -EINVAL;
-
-	quic_set_sk_ecn(sk, 0); /* clear ecn during path migration */
 	quic_path_swap_active(path);
-	quic_path_addr_set(path, addr, 0);
 
+	if (!addr) {
+		quic_outq_set_pref_addr(quic_outq(sk), 0);
+		goto out;
+	}
+	quic_path_addr_set(path, addr, 1);
+
+out:
+	quic_set_sk_ecn(sk, 0); /* clear ecn during path migration */
 	skb = quic_frame_create(sk, QUIC_FRAME_PATH_CHALLENGE, path);
 	if (skb)
 		quic_outq_ctrl_tail(sk, skb, false);

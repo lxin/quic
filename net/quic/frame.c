@@ -874,6 +874,9 @@ static int quic_frame_handshake_done_process(struct sock *sk, struct sk_buff *sk
 	/* some implementations don't send ACKs to handshake packets, so ACK them manually */
 	quic_outq_retransmit_check(sk, QUIC_CRYPTO_INITIAL, QUIC_PN_MAP_MAX_PN, 0, 0, 0);
 	quic_outq_retransmit_check(sk, QUIC_CRYPTO_HANDSHAKE, QUIC_PN_MAP_MAX_PN, 0, 0, 0);
+
+	if (quic_outq_pref_addr(quic_outq(sk)))
+		quic_sock_change_daddr(sk, NULL, 0);
 	return 0; /* no content */
 }
 
@@ -1515,13 +1518,45 @@ static int quic_get_version_info(u32 *versions, u8 *count, u8 **pp, u32 *plen)
 	return 0;
 }
 
+static int quic_get_preferred_address(union quic_addr *addr, struct quic_connection_id *conn_id,
+				      u8 *token, u8 **pp, u32 *plen, struct sock *sk)
+{
+	u64 valuelen;
+	u8 *p, len;
+
+	if (!quic_get_var(pp, plen, &valuelen))
+		return -1;
+
+	if (*plen < valuelen || valuelen < 25)
+		return -1;
+
+	quic_get_pref_addr(sk, addr, pp, plen);
+
+	p = *pp;
+	len = *p;
+	if (!len || len > 20 || valuelen != 25 + len + 16)
+		return -1;
+	conn_id->len = len;
+	p++;
+	memcpy(conn_id->data, p, len);
+	p += len;
+
+	memcpy(token, p, 16);
+	p += 16;
+
+	*pp = p;
+	*plen -= (17 + len);
+	return 0;
+}
+
 int quic_frame_set_transport_params_ext(struct sock *sk, struct quic_transport_param *params,
 					u8 *data, u32 len)
 {
 	struct quic_connection_id_set *id_set = quic_dest(sk);
 	struct quic_outqueue *outq = quic_outq(sk);
 	struct quic_connection_id *active, conn_id;
-	u8 *p = data, count = 0;
+	u8 *p = data, count = 0, token[16];
+	union quic_addr addr = {};
 	u64 type, valuelen;
 	u32 versions[16];
 
@@ -1656,6 +1691,17 @@ int quic_frame_set_transport_params_ext(struct sock *sk, struct quic_transport_p
 				return -1;
 			if (!count || quic_select_version(sk, versions, count))
 				return -1;
+			break;
+		case QUIC_TRANSPORT_PARAM_PREFERRED_ADDRESS:
+			if (quic_is_serv(sk))
+				return -1;
+			if (quic_get_preferred_address(&addr, &conn_id, token, &p, &len, sk))
+				return -1;
+			if (!addr.v4.sin_port)
+				break;
+			quic_outq_set_pref_addr(outq, 1);
+			quic_path_addr_set(quic_dst(sk), &addr, 1);
+			quic_connection_id_add(id_set, &conn_id, 1, token);
 			break;
 		default:
 			/* Ignore unknown parameter */
