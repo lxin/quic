@@ -256,6 +256,58 @@ static void quic_v6_set_sk_ecn(struct sock *sk, u8 ecn)
 	inet6_sk(sk)->tclass = ((inet6_sk(sk)->tclass & ~INET_ECN_MASK) | ecn);
 }
 
+static void quic_v4_get_pref_addr(union quic_addr *addr, u8 **pp, u32 *plen)
+{
+	u8 *p = *pp;
+
+	memcpy(&addr->v4.sin_addr, p, 4);
+	p += 4;
+	memcpy(&addr->v4.sin_port, p, 2);
+	p += 2;
+	p += 16;
+	p += 2;
+	*pp = p;
+	*plen -= 4 + 2 + 16 + 2;
+}
+
+static void quic_v6_get_pref_addr(union quic_addr *addr, u8 **pp, u32 *plen)
+{
+	u8 *p = *pp;
+
+	p += 4;
+	p += 2;
+	memcpy(&addr->v6.sin6_addr, p, 16);
+	p += 16;
+	memcpy(&addr->v6.sin6_port, p, 2);
+	p += 2;
+	*pp = p;
+	*plen -= 4 + 2 + 16 + 2;
+}
+
+static void quic_v4_set_pref_addr(u8 *p, union quic_addr *addr)
+{
+	memcpy(p, &addr->v4.sin_addr, 4);
+	p += 4;
+	memcpy(p, &addr->v4.sin_port, 2);
+	p += 2;
+	memset(p, 0, 16);
+	p += 16;
+	memset(p, 0, 2);
+	p += 2;
+}
+
+static void quic_v6_set_pref_addr(u8 *p, union quic_addr *addr)
+{
+	memset(p, 0, 4);
+	p += 4;
+	memset(p, 0, 2);
+	p += 2;
+	memcpy(p, &addr->v6.sin6_addr, 16);
+	p += 16;
+	memcpy(p, &addr->v6.sin6_port, 2);
+	p += 2;
+}
+
 static struct quic_addr_family_ops quic_af_inet = {
 	.sa_family		= AF_INET,
 	.addr_len		= sizeof(struct sockaddr_in),
@@ -263,6 +315,8 @@ static struct quic_addr_family_ops quic_af_inet = {
 	.udp_conf_init		= quic_v4_udp_conf_init,
 	.flow_route		= quic_v4_flow_route,
 	.lower_xmit		= quic_v4_lower_xmit,
+	.get_pref_addr		= quic_v4_get_pref_addr,
+	.set_pref_addr		= quic_v4_set_pref_addr,
 	.get_msg_addr		= quic_v4_get_msg_addr,
 	.set_sk_addr		= quic_v4_set_sk_addr,
 	.get_sk_addr		= quic_v4_get_sk_addr,
@@ -280,6 +334,8 @@ static struct quic_addr_family_ops quic_af_inet6 = {
 	.udp_conf_init		= quic_v6_udp_conf_init,
 	.flow_route		= quic_v6_flow_route,
 	.lower_xmit		= quic_v6_lower_xmit,
+	.get_pref_addr		= quic_v6_get_pref_addr,
+	.set_pref_addr		= quic_v6_set_pref_addr,
 	.get_msg_addr		= quic_v6_get_msg_addr,
 	.set_sk_addr		= quic_v6_set_sk_addr,
 	.get_sk_addr		= quic_v6_get_sk_addr,
@@ -403,6 +459,16 @@ void quic_get_sk_addr(struct socket *sock, struct sockaddr *a, bool peer)
 void quic_get_msg_addr(struct sock *sk, union quic_addr *addr, struct sk_buff *skb, bool src)
 {
 	quic_af_ops(sk)->get_msg_addr(addr, skb, src);
+}
+
+void quic_get_pref_addr(struct sock *sk, union quic_addr *addr, u8 **pp, u32 *plen)
+{
+	quic_af_ops(sk)->get_pref_addr(addr, pp, plen);
+}
+
+void quic_set_pref_addr(struct sock *sk, u8 *p, union quic_addr *addr)
+{
+	quic_af_ops(sk)->set_pref_addr(p, addr);
 }
 
 int quic_get_mtu_info(struct sock *sk, struct sk_buff *skb, u32 *info)
