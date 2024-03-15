@@ -898,7 +898,7 @@ static int do_client_connection_test(int sockfd)
 	optlen = sizeof(addr);
 	ret = getpeername(sockfd, (struct sockaddr *)&addr, &optlen);
 	if (ret == -1) {
-		printf("socket getsockname error %d\n", errno);
+		printf("socket getpeername error %d\n", errno);
 		return -1;
 	}
 	port = ntohs(addr.sin_port);
