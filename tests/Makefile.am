@@ -1,6 +1,6 @@
 EXTRA_DIST		= keys runtest.sh
 
-noinst_PROGRAMS		= func_test perf_test sample_test ticket_test
+noinst_PROGRAMS		= func_test perf_test sample_test ticket_test alpn_test
 
 AM_CPPFLAGS		= -I$(top_builddir)/handshake/
 AM_CFLAGS		= -Werror -Wall $(LIBGNUTLS_CFLAGS)
@@ -13,6 +13,7 @@ perf_test_LDADD		= $(LDADD) $(LIBGNUTLS_LIBS)
 
 sample_test_SOURCE	= sample_test.c
 ticket_test_SOURCE	= ticket_test.c
+alpn_test_SOURCE	= alpn_test.c
 
 msquic_test: msquic_test.c
 	$(CXX) $^ -o $@ -lmsquic -Wl,-rpath=/usr/local/lib -Wall
