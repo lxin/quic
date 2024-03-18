@@ -13,6 +13,7 @@
 #include "socket.h"
 #include "frame.h"
 #include <net/inet_common.h>
+#include <net/sock_reuseport.h>
 #include <linux/version.h>
 
 static DEFINE_PER_CPU(int, quic_memory_per_cpu_fw_alloc);
@@ -133,16 +134,17 @@ struct sock *quic_sock_lookup(struct sk_buff *skb, union quic_addr *sa, union qu
 		return sk;
 
 	/* Search for listen socket bind to a specific address with da to 0.0.0.0 or :: */
-	da = &z;
-	sk = quic_sock_find(net, sa, da);
+	sk = quic_sock_find(net, sa, &z);
 	if (sk)
-		return sk;
+		goto out;
 
 	/* Search for listen socket binding to the same port with 0.0.0.0 or :: address */
 	a.v4.sin_family = sa->v4.sin_family;
 	a.v4.sin_port = sa->v4.sin_port;
-	sa = &a;
-	sk = quic_sock_find(net, sa, da);
+	sk = quic_sock_find(net, &a, &z);
+out:
+	if (sk && sk->sk_reuseport)
+		sk = reuseport_select_sock(sk, quic_shash(net, da), skb, 1);
 	return sk;
 }
 
@@ -345,21 +347,31 @@ static int quic_hash(struct sock *sk)
 	struct quic_hash_head *head;
 	union quic_addr *sa, *da;
 	struct sock *nsk;
-	int err = 0;
+	int err = 0, any;
 
 	sa = quic_path_addr(quic_src(sk), 0);
 	da = quic_path_addr(quic_dst(sk), 0);
 	head = quic_sock_head(net, sa, da);
 	spin_lock(&head->lock);
 
+	any = quic_bind_any_addr(sk);
 	sk_for_each(nsk, &head->head) {
 		if (net != sock_net(nsk) ||
 		    quic_path_cmp(quic_src(nsk), 0, sa) ||
 		    quic_path_cmp(quic_dst(nsk), 0, da))
 			continue;
-
 		err = -EADDRINUSE;
+		if (quic_is_listen(sk) && sk->sk_reuseport && nsk->sk_reuseport) {
+			err = reuseport_add_sock(sk, nsk, any);
+			if (!err)
+				__sk_add_node(sk, &head->head);
+		}
 		goto out;
+	}
+	if (quic_is_listen(sk) && sk->sk_reuseport) {
+		err = reuseport_alloc(sk, any);
+		if (err)
+			goto out;
 	}
 	__sk_add_node(sk, &head->head);
 

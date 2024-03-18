@@ -417,9 +417,6 @@ static int quic_inet_listen(struct socket *sock, int backlog)
 	err = quic_connection_id_add(source, &conn_id, 0, sk);
 	if (err)
 		goto free;
-	err = sk->sk_prot->hash(sk);
-	if (err)
-		goto free;
 	active = quic_connection_id_active(dest);
 	flag = CRYPTO_ALG_ASYNC;
 	outq = quic_outq(sk);
@@ -430,6 +427,9 @@ static int quic_inet_listen(struct socket *sock, int backlog)
 	if (err)
 		goto free;
 	quic_set_state(sk, QUIC_SS_LISTENING);
+	err = sk->sk_prot->hash(sk);
+	if (err)
+		goto free;
 out:
 	release_sock(sk);
 	return err;
