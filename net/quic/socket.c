@@ -102,51 +102,48 @@ struct quic_request_sock *quic_request_sock_dequeue(struct sock *sk)
 	return req;
 }
 
-struct sock *quic_sock_lookup(struct sk_buff *skb, union quic_addr *sa, union quic_addr *da)
+static struct sock *quic_sock_find(struct net *net, union quic_addr *sa, union quic_addr *da)
 {
-	struct net *net = dev_net(skb->dev);
 	struct sock *sk, *nsk = NULL;
 	struct quic_hash_head *head;
-	union quic_addr a = {};
 
-	head = quic_listen_sock_head(net, sa);
+	head = quic_sock_head(net, sa, da);
 	spin_lock(&head->lock);
-	sk_for_each(sk,  &head->head) {
-		if (net != sock_net(sk))
-			continue;
-		if (quic_path_cmp(quic_src(sk), 0, sa))
-			continue;
-		if (quic_is_listen(sk)) {
-			nsk = sk;
-			continue;
-		}
-		if (!quic_path_cmp(quic_dst(sk), 0, da)) {
-			nsk = sk;
-			break;
-		}
-	}
-	spin_unlock(&head->lock);
-	if (nsk)
-		return nsk;
-
-	/* Search for socket binding to the same port with 0.0.0.0 or :: address */
-	a.v4.sin_family = sa->v4.sin_family;
-	a.v4.sin_port = sa->v4.sin_port;
-	sa = &a;
-	head = quic_listen_sock_head(net, sa);
-	spin_lock(&head->lock);
-	sk_for_each(sk,  &head->head) {
-		if (net != sock_net(sk))
-			continue;
-		if (quic_path_cmp(quic_src(sk), 0, sa))
-			continue;
-		if (quic_is_listen(sk)) {
+	sk_for_each(sk, &head->head) {
+		if (net == sock_net(sk) &&
+		    !quic_path_cmp(quic_src(sk), 0, sa) &&
+		    !quic_path_cmp(quic_dst(sk), 0, da)) {
 			nsk = sk;
 			break;
 		}
 	}
 	spin_unlock(&head->lock);
 	return nsk;
+}
+
+struct sock *quic_sock_lookup(struct sk_buff *skb, union quic_addr *sa, union quic_addr *da)
+{
+	struct net *net = dev_net(skb->dev);
+	union quic_addr z = {}, a = {};
+	struct sock *sk;
+
+	/* Search for regular socket first */
+	sk = quic_sock_find(net, sa, da);
+	if (sk)
+		return sk;
+
+	/* Search for listen socket bind to a specific address with da to 0.0.0.0 or :: */
+	da = &z;
+	sk = quic_sock_find(net, sa, da);
+	if (sk)
+		return sk;
+
+	/* Search for listen socket binding to the same port with 0.0.0.0 or :: address */
+	a.v4.sin_family = sa->v4.sin_family;
+	a.v4.sin_port = sa->v4.sin_port;
+	sa = &a;
+	sk = quic_sock_find(net, sa, da);
+	return sk;
 }
 
 static void quic_write_space(struct sock *sk)
@@ -344,26 +341,28 @@ free:
 
 static int quic_hash(struct sock *sk)
 {
-	union quic_addr *saddr, *daddr;
+	struct net *net = sock_net(sk);
 	struct quic_hash_head *head;
+	union quic_addr *sa, *da;
 	struct sock *nsk;
 	int err = 0;
 
-	saddr = quic_path_addr(quic_src(sk), 0);
-	daddr = quic_path_addr(quic_dst(sk), 0);
-	head = quic_listen_sock_head(sock_net(sk), saddr);
+	sa = quic_path_addr(quic_src(sk), 0);
+	da = quic_path_addr(quic_dst(sk), 0);
+	head = quic_sock_head(net, sa, da);
 	spin_lock(&head->lock);
 
-	sk_for_each(nsk,  &head->head) {
-		if (sock_net(sk) == sock_net(nsk) &&
-		    !quic_path_cmp(quic_src(nsk), 0, saddr) &&
-		    !quic_path_cmp(quic_dst(nsk), 0, daddr)) {
-			err = -EADDRINUSE;
-			goto out;
-		}
-	}
+	sk_for_each(nsk, &head->head) {
+		if (net != sock_net(nsk) ||
+		    quic_path_cmp(quic_src(nsk), 0, sa) ||
+		    quic_path_cmp(quic_dst(nsk), 0, da))
+			continue;
 
+		err = -EADDRINUSE;
+		goto out;
+	}
 	__sk_add_node(sk, &head->head);
+
 out:
 	spin_unlock(&head->lock);
 	return err;
@@ -372,13 +371,14 @@ out:
 static void quic_unhash(struct sock *sk)
 {
 	struct quic_hash_head *head;
-	union quic_addr *addr;
+	union quic_addr *sa, *da;
 
 	if (sk_unhashed(sk))
 		return;
 
-	addr = quic_path_addr(quic_src(sk), 0);
-	head = quic_listen_sock_head(sock_net(sk), addr);
+	sa = quic_path_addr(quic_src(sk), 0);
+	da = quic_path_addr(quic_dst(sk), 0);
+	head = quic_sock_head(sock_net(sk), sa, da);
 	spin_lock(&head->lock);
 	__sk_del_node_init(sk);
 	spin_unlock(&head->lock);

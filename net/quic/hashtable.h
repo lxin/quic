@@ -74,14 +74,14 @@ struct quic_hash_table {
 };
 
 enum  {
+	QUIC_HT_SOCK,
 	QUIC_HT_UDP_SOCK,
-	QUIC_HT_LISTEN_SOCK,
 	QUIC_HT_CONNECTION_ID,
 	QUIC_HT_BIND_PORT,
 	QUIC_HT_MAX_TABLES,
 };
 
-static inline __u32 quic_ahash(const struct net *net, const union quic_addr *a)
+static inline __u32 quic_shash(const struct net *net, const union quic_addr *a)
 {
 	__u32 addr = (a->sa.sa_family == AF_INET6) ? jhash(&a->v6.sin6_addr, 16, 0)
 						   : (__force __u32)a->v4.sin_addr.s_addr;
@@ -89,13 +89,26 @@ static inline __u32 quic_ahash(const struct net *net, const union quic_addr *a)
 	return  jhash_3words(addr, (__force __u32)a->v4.sin_port, net_hash_mix(net), 0);
 }
 
+static inline __u32 quic_ahash(const struct net *net, const union quic_addr *s,
+			       const union quic_addr *d)
+{
+	__u32 ports = ((__force __u32)s->v4.sin_port) << 16 | (__force __u32)d->v4.sin_port;
+	__u32 saddr = (s->sa.sa_family == AF_INET6) ? jhash(&s->v6.sin6_addr, 16, 0)
+						    : (__force __u32)s->v4.sin_addr.s_addr;
+	__u32 daddr = (d->sa.sa_family == AF_INET6) ? jhash(&d->v6.sin6_addr, 16, 0)
+						    : (__force __u32)d->v4.sin_addr.s_addr;
+
+	return  jhash_3words(saddr, ports, net_hash_mix(net), daddr);
+}
+
 extern struct quic_hash_table quic_hash_tables[QUIC_HT_MAX_TABLES];
 
-static inline struct quic_hash_head *quic_listen_sock_head(struct net *net, union quic_addr *a)
+static inline struct quic_hash_head *quic_sock_head(struct net *net, union quic_addr *s,
+						    union quic_addr *d)
 {
-	struct quic_hash_table *ht = &quic_hash_tables[QUIC_HT_LISTEN_SOCK];
+	struct quic_hash_table *ht = &quic_hash_tables[QUIC_HT_SOCK];
 
-	return &ht->hash[quic_ahash(net, a) & (ht->size - 1)];
+	return &ht->hash[quic_ahash(net, s, d) & (ht->size - 1)];
 }
 
 static inline struct quic_hash_head *quic_bind_port_head(struct net *net, u16 port)
@@ -116,7 +129,7 @@ static inline struct quic_hash_head *quic_udp_sock_head(struct net *net, union q
 {
 	struct quic_hash_table *ht = &quic_hash_tables[QUIC_HT_UDP_SOCK];
 
-	return &ht->hash[quic_ahash(net, addr) & (ht->size - 1)];
+	return &ht->hash[quic_shash(net, addr) & (ht->size - 1)];
 }
 
 static inline struct quic_hash_head *quic_stream_head(struct quic_hash_table *ht, u64 stream_id)
