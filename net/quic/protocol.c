@@ -308,6 +308,20 @@ static void quic_v6_set_pref_addr(u8 *p, union quic_addr *addr)
 	p += 2;
 }
 
+static bool quic_v4_bind_any_addr(struct sock *sk)
+{
+	union quic_addr *a = quic_path_addr(quic_src(sk), 0);
+
+	return htonl(INADDR_ANY) == a->v4.sin_addr.s_addr;
+}
+
+static bool quic_v6_bind_any_addr(struct sock *sk)
+{
+	union quic_addr *a = quic_path_addr(quic_src(sk), 0);
+
+	return ipv6_addr_any(&a->v6.sin6_addr);
+}
+
 static struct quic_addr_family_ops quic_af_inet = {
 	.sa_family		= AF_INET,
 	.addr_len		= sizeof(struct sockaddr_in),
@@ -317,6 +331,7 @@ static struct quic_addr_family_ops quic_af_inet = {
 	.lower_xmit		= quic_v4_lower_xmit,
 	.get_pref_addr		= quic_v4_get_pref_addr,
 	.set_pref_addr		= quic_v4_set_pref_addr,
+	.bind_any_addr		= quic_v4_bind_any_addr,
 	.get_msg_addr		= quic_v4_get_msg_addr,
 	.set_sk_addr		= quic_v4_set_sk_addr,
 	.get_sk_addr		= quic_v4_get_sk_addr,
@@ -336,6 +351,7 @@ static struct quic_addr_family_ops quic_af_inet6 = {
 	.lower_xmit		= quic_v6_lower_xmit,
 	.get_pref_addr		= quic_v6_get_pref_addr,
 	.set_pref_addr		= quic_v6_set_pref_addr,
+	.bind_any_addr		= quic_v6_bind_any_addr,
 	.get_msg_addr		= quic_v6_get_msg_addr,
 	.set_sk_addr		= quic_v6_set_sk_addr,
 	.get_sk_addr		= quic_v6_get_sk_addr,
@@ -469,6 +485,11 @@ void quic_get_pref_addr(struct sock *sk, union quic_addr *addr, u8 **pp, u32 *pl
 void quic_set_pref_addr(struct sock *sk, u8 *p, union quic_addr *addr)
 {
 	quic_af_ops(sk)->set_pref_addr(p, addr);
+}
+
+bool quic_bind_any_addr(struct sock *sk)
+{
+	return quic_af_ops(sk)->bind_any_addr(sk);
 }
 
 int quic_get_mtu_info(struct sock *sk, struct sk_buff *skb, u32 *info)
