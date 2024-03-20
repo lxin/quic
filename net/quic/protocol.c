@@ -16,6 +16,11 @@
 #include <linux/icmp.h>
 #include <net/tls.h>
 
+#include <linux/version.h>
+#if KERNEL_VERSION(6, 8, 0) <= LINUX_VERSION_CODE
+#include <net/rps.h>
+#endif
+
 struct quic_hash_table quic_hash_tables[QUIC_HT_MAX_TABLES] __read_mostly;
 struct percpu_counter quic_sockets_allocated;
 struct workqueue_struct *quic_wq;
@@ -447,6 +452,38 @@ static int quic_inet_getname(struct socket *sock, struct sockaddr *uaddr, int pe
 	return quic_af_ops(sock->sk)->get_sk_addr(sock, uaddr, peer);
 }
 
+static __poll_t quic_inet_poll(struct file *file, struct socket *sock, poll_table *wait)
+{
+	struct sock *sk = sock->sk;
+	__poll_t mask;
+
+	poll_wait(file, sk_sleep(sk), wait);
+
+	sock_rps_record_flow(sk);
+
+	if (quic_is_listen(sk))
+		return !list_empty(quic_reqs(sk)) ? (EPOLLIN | EPOLLRDNORM) : 0;
+
+	mask = 0;
+	if (sk->sk_err || !skb_queue_empty_lockless(&sk->sk_error_queue))
+		mask |= EPOLLERR | (sock_flag(sk, SOCK_SELECT_ERR_QUEUE) ? EPOLLPRI : 0);
+
+	if (!skb_queue_empty_lockless(&sk->sk_receive_queue))
+		mask |= EPOLLIN | EPOLLRDNORM;
+
+	if (quic_is_closed(sk))
+		return mask;
+
+	if (sk_stream_wspace(sk) > 0) {
+		mask |= EPOLLOUT | EPOLLWRNORM;
+	} else {
+		sk_set_bit(SOCKWQ_ASYNC_NOSPACE, sk);
+		if (sk_stream_wspace(sk) > 0)
+			mask |= EPOLLOUT | EPOLLWRNORM;
+	}
+	return mask;
+}
+
 int quic_encap_len(struct sock *sk)
 {
 	return sizeof(struct udphdr) + quic_af_ops(sk)->iph_len;
@@ -558,7 +595,7 @@ static const struct proto_ops quic_proto_ops = {
 	.socketpair	   = sock_no_socketpair,
 	.accept		   = inet_accept,
 	.getname	   = quic_inet_getname,
-	.poll		   = datagram_poll,
+	.poll		   = quic_inet_poll,
 	.ioctl		   = inet_ioctl,
 	.gettstamp	   = sock_gettstamp,
 	.listen		   = quic_inet_listen,
@@ -593,7 +630,7 @@ static const struct proto_ops quicv6_proto_ops = {
 	.socketpair	   = sock_no_socketpair,
 	.accept		   = inet_accept,
 	.getname	   = quic_inet_getname,
-	.poll		   = datagram_poll,
+	.poll		   = quic_inet_poll,
 	.ioctl		   = inet6_ioctl,
 	.gettstamp	   = sock_gettstamp,
 	.listen		   = quic_inet_listen,
