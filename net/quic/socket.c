@@ -168,10 +168,10 @@ static void quic_transport_param_init(struct sock *sk)
 	param->max_ack_delay = 25000;
 	param->active_connection_id_limit = 7;
 	param->max_idle_timeout = 30000000;
-	param->max_data = sk->sk_rcvbuf / 2;
-	param->max_stream_data_bidi_local = sk->sk_rcvbuf / 4;
-	param->max_stream_data_bidi_remote = sk->sk_rcvbuf / 4;
-	param->max_stream_data_uni = sk->sk_rcvbuf / 4;
+	param->max_data = QUIC_PATH_MAX_PMTU * 4;
+	param->max_stream_data_bidi_local = QUIC_PATH_MAX_PMTU * 2;
+	param->max_stream_data_bidi_remote = QUIC_PATH_MAX_PMTU * 2;
+	param->max_stream_data_uni = QUIC_PATH_MAX_PMTU * 2;
 	param->max_streams_bidi = 100;
 	param->max_streams_uni = 100;
 	param->initial_smoothed_rtt = 333000;
@@ -187,6 +187,10 @@ static int quic_init_sock(struct sock *sk)
 {
 	u8 len, i;
 
+	sk->sk_destruct = inet_sock_destruct;
+	sk->sk_write_space = quic_write_space;
+	sock_set_flag(sk, SOCK_USE_WRITE_QUEUE);
+
 	quic_set_af_ops(sk, quic_af_ops_get(sk->sk_family));
 	quic_connection_id_set_init(quic_source(sk), 1);
 	quic_connection_id_set_init(quic_dest(sk), 0);
@@ -201,10 +205,6 @@ static int quic_init_sock(struct sock *sk)
 	quic_inq_init(sk);
 	quic_packet_init(sk);
 	quic_timer_init(sk);
-
-	sk->sk_destruct = inet_sock_destruct;
-	sk->sk_write_space = quic_write_space;
-	sock_set_flag(sk, SOCK_USE_WRITE_QUEUE);
 
 	for (i = 0; i < QUIC_CRYPTO_MAX; i++) {
 		if (quic_pnmap_init(quic_pnmap(sk, i)))
@@ -1206,9 +1206,9 @@ static int quic_sock_set_crypto_secret(struct sock *sk, struct quic_crypto_secre
 	struct quic_inqueue *inq = quic_inq(sk);
 	struct sk_buff_head tmpq, list;
 	struct sk_buff *skb;
+	u32 window, mss;
 	int err, seqno;
 	u64 prior = 1;
-	u32 window;
 
 	if (len != sizeof(*secret) || !quic_is_establishing(sk))
 		return -EINVAL;
@@ -1296,7 +1296,9 @@ static int quic_sock_set_crypto_secret(struct sock *sk, struct quic_crypto_secre
 		quic_outq_ctrl_tail(sk, skb, true);
 		skb = __skb_dequeue(&list);
 	}
-	window = min_t(u32, quic_packet_mss(quic_packet(sk)) * 10, 14720);
+	mss = quic_packet_mss(quic_packet(sk));
+	window = max_t(u32, mss * 2, 14720);
+	window = min_t(u32, mss * 10, window);
 	quic_outq_set_window(quic_outq(sk), window);
 	quic_cong_set_window(quic_cong(sk), window);
 	return 0;

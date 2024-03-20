@@ -552,8 +552,7 @@ void quic_outq_set_param(struct sock *sk, struct quic_transport_param *p)
 	quic_timer_setup(sk, QUIC_TIMER_ACK, outq->max_ack_delay);
 
 	outq->max_bytes = p->max_data;
-	if (sk->sk_sndbuf > 2 * p->max_data)
-		sk->sk_sndbuf = 2 * p->max_data;
+	sk->sk_sndbuf = 2 * p->max_data;
 
 	/* If neither the local endpoint nor the remote endpoint specified a
 	 * max_idle_timeout, we don't set one. Effectively, this means that

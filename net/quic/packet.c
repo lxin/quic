@@ -765,7 +765,7 @@ int quic_packet_route(struct sock *sk)
 {
 	struct quic_packet *packet = quic_packet(sk);
 	struct quic_inqueue *inq = quic_inq(sk);
-	int err, mss;
+	int err, pmtu;
 
 	packet->sa = quic_path_addr(quic_src(sk), packet->path_alt & QUIC_PATH_ALT_SRC);
 	packet->da = quic_path_addr(quic_dst(sk), packet->path_alt & QUIC_PATH_ALT_DST);
@@ -773,8 +773,8 @@ int quic_packet_route(struct sock *sk)
 	if (err)
 		return err;
 
-	mss = dst_mtu(__sk_dst_get(sk)) - quic_encap_len(sk);
-	quic_packet_mss_update(sk, mss);
+	pmtu = min_t(u32, dst_mtu(__sk_dst_get(sk)), QUIC_PATH_MAX_PMTU);
+	quic_packet_mss_update(sk, pmtu - quic_encap_len(sk));
 
 	quic_path_pl_reset(quic_dst(sk));
 	quic_timer_setup(sk, QUIC_TIMER_PROBE, quic_inq_probe_timeout(inq));

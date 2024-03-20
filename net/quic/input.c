@@ -237,7 +237,7 @@ void quic_rcv_err_icmp(struct sock *sk)
 	u32 pathmtu, info;
 	bool reset_timer;
 
-	info = quic_path_mtu_info(path);
+	info = min_t(u32, quic_path_mtu_info(path), QUIC_PATH_MAX_PMTU);
 	if (!quic_inq(sk)->probe_timeout) {
 		quic_packet_mss_update(sk, info - quic_encap_len(sk));
 		return;
@@ -547,8 +547,7 @@ void quic_inq_set_param(struct sock *sk, struct quic_transport_param *p)
 	inq->window = p->max_data;
 
 	inq->max_bytes = p->max_data;
-	if (sk->sk_rcvbuf < p->max_data * 2)
-		sk->sk_rcvbuf = p->max_data * 2;
+	sk->sk_rcvbuf = p->max_data * 2;
 
 	inq->probe_timeout = p->plpmtud_probe_timeout;
 	inq->version = p->version;

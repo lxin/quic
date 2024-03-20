@@ -11,6 +11,8 @@
 #define QUIC_PATH_ALT_SRC	0x1
 #define QUIC_PATH_ALT_DST	0x2
 
+#define QUIC_PATH_MAX_PMTU	65536
+
 struct quic_bind_port {
 	unsigned short		port;
 	struct hlist_node	node;
