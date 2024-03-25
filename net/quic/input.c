@@ -192,7 +192,7 @@ int quic_rcv(struct sk_buff *skb)
 	u8 *dcid;
 
 	skb_pull(skb, skb_transport_offset(skb));
-	af_ops = quic_af_ops_get(ip_hdr(skb)->version == 4 ? AF_INET : AF_INET6);
+	af_ops = quic_af_ops_get_skb(skb);
 
 	if (skb->len < sizeof(struct quichdr))
 		goto err;
@@ -261,7 +261,7 @@ int quic_rcv_err(struct sk_buff *skb)
 	int ret = 0;
 	u32 info;
 
-	af_ops = quic_af_ops_get(ip_hdr(skb)->version == 4 ? AF_INET : AF_INET6);
+	af_ops = quic_af_ops_get_skb(skb);
 
 	af_ops->get_msg_addr(&saddr, skb, 0);
 	af_ops->get_msg_addr(&daddr, skb, 1);

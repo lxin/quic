@@ -396,6 +396,11 @@ struct quic_addr_family_ops *quic_af_ops_get(sa_family_t family)
 	}
 }
 
+struct quic_addr_family_ops *quic_af_ops_get_skb(struct sk_buff *skb)
+{
+	return quic_af_ops_get(ip_hdr(skb)->version == 4 ? AF_INET : AF_INET6);
+}
+
 static int quic_inet_connect(struct socket *sock, struct sockaddr *addr, int addr_len, int flags)
 {
 	struct sock *sk = sock->sk;

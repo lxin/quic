@@ -61,3 +61,4 @@ void quic_lower_xmit(struct sock *sk, struct sk_buff *skb, union quic_addr *da,
 		     union quic_addr *sa);
 int quic_flow_route(struct sock *sk, union quic_addr *da, union quic_addr *sa);
 struct quic_addr_family_ops *quic_af_ops_get(sa_family_t family);
+struct quic_addr_family_ops *quic_af_ops_get_skb(struct sk_buff *skb);
