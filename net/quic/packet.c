@@ -983,7 +983,6 @@ static struct sk_buff *quic_packet_retry_create(struct sock *sk, struct quic_req
 {
 	struct quic_crypto *crypto = quic_crypto(sk, QUIC_CRYPTO_INITIAL);
 	struct quic_outqueue *outq = quic_outq(sk);
-	struct quic_inqueue *inq = quic_inq(sk);
 	struct quic_connection_id dcid;
 	u8 *p, token[72], tag[16];
 	int len, hlen, tokenlen;
@@ -1013,7 +1012,7 @@ static struct sk_buff *quic_packet_retry_create(struct sock *sk, struct quic_req
 	skb_reset_transport_header(skb);
 
 	p = (u8 *)hdr + 1;
-	p = quic_put_int(p, quic_inq_version(inq), 4);
+	p = quic_put_int(p, req->version, 4);
 	p = quic_put_int(p, req->scid.len, 1);
 	p = quic_put_data(p, req->scid.data, req->scid.len);
 	p = quic_put_int(p, dcid.len, 1);
@@ -1170,6 +1169,7 @@ int quic_packet_refuse_close_transmit(struct sock *sk, struct quic_request_sock 
 	quic_connection_id_update(active, req->dcid.data, req->dcid.len);
 	quic_path_addr_set(quic_src(sk), &req->sa, 1);
 	quic_path_addr_set(quic_dst(sk), &req->da, 1);
+	quic_inq_set_version(quic_inq(sk), req->version);
 
 	quic_crypto_destroy(crypto);
 	err = quic_crypto_initial_keys_install(crypto, active, req->version, flag, 1);
