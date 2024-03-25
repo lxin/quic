@@ -803,7 +803,7 @@ void quic_packet_config(struct sock *sk, u8 level, u8 path_alt)
 		id_set = quic_source(sk);
 		hlen += 1 + quic_connection_id_active(id_set)->len;
 		if (level == QUIC_CRYPTO_INITIAL)
-			hlen += 1 + quic_token(sk)->len;
+			hlen += quic_var_len(quic_token(sk)->len) + quic_token(sk)->len;
 		hlen += 4; /* version */
 		hlen += 4; /* length number */
 		packet->ipfragok = !!quic_inq_probe_timeout(inq);

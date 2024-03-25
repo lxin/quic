@@ -59,6 +59,7 @@ static int quic_get_connid_and_token(struct sk_buff *skb, struct quic_connection
 {
 	u8 *p = (u8 *)quic_hshdr(skb) + 1;
 	int len = skb->len;
+	u64 tlen;
 
 	if (len-- < 1)
 		return -EINVAL;
@@ -77,13 +78,11 @@ static int quic_get_connid_and_token(struct sk_buff *skb, struct quic_connection
 	memcpy(scid->data, p, scid->len);
 	len -= scid->len;
 	p += scid->len;
-	if (len-- < 1)
+	if (!quic_get_var(&p, &len, &tlen) || tlen > len)
 		return -EINVAL;
-	token->len = quic_get_int(&p, 1);
-	if (token->len > len)
-		return -EINVAL;
-	if (token->len)
+	if (tlen)
 		token->data = p;
+	token->len = tlen;
 	return 0;
 }
 
