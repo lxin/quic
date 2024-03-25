@@ -129,20 +129,21 @@ static void quic_v6_lower_xmit(struct sock *sk, struct sk_buff *skb, union quic_
 			     sa->v6.sin6_port, da->v6.sin6_port, false);
 }
 
-static void quic_v4_udp_conf_init(struct udp_port_cfg *udp_conf, union quic_addr *a)
+static void quic_v4_udp_conf_init(struct sock *sk, struct udp_port_cfg *conf, union quic_addr *a)
 {
-	udp_conf->family = AF_INET;
-	udp_conf->local_ip.s_addr = a->v4.sin_addr.s_addr;
-	udp_conf->local_udp_port = a->v4.sin_port;
-	udp_conf->use_udp6_rx_checksums = true;
+	conf->family = AF_INET;
+	conf->local_ip.s_addr = a->v4.sin_addr.s_addr;
+	conf->local_udp_port = a->v4.sin_port;
+	conf->use_udp6_rx_checksums = true;
 }
 
-static void quic_v6_udp_conf_init(struct udp_port_cfg *udp_conf, union quic_addr *a)
+static void quic_v6_udp_conf_init(struct sock *sk, struct udp_port_cfg *conf, union quic_addr *a)
 {
-	udp_conf->family = AF_INET6;
-	udp_conf->local_ip6 = a->v6.sin6_addr;
-	udp_conf->local_udp_port = a->v6.sin6_port;
-	udp_conf->use_udp6_rx_checksums = true;
+	conf->family = AF_INET6;
+	conf->local_ip6 = a->v6.sin6_addr;
+	conf->local_udp_port = a->v6.sin6_port;
+	conf->use_udp6_rx_checksums = true;
+	conf->ipv6_v6only = ipv6_only_sock(sk);
 }
 
 static void quic_v4_get_msg_addr(union quic_addr *a, struct sk_buff *skb, bool src)
@@ -550,9 +551,9 @@ int quic_get_mtu_info(struct sock *sk, struct sk_buff *skb, u32 *info)
 	return quic_af_ops(sk)->get_mtu_info(skb, info);
 }
 
-void quic_udp_conf_init(struct sock *sk, struct udp_port_cfg *udp_conf, union quic_addr *a)
+void quic_udp_conf_init(struct sock *sk, struct udp_port_cfg *conf, union quic_addr *a)
 {
-	quic_af_ops(sk)->udp_conf_init(udp_conf, a);
+	quic_af_ops(sk)->udp_conf_init(sk, conf, a);
 }
 
 void quic_lower_xmit(struct sock *sk, struct sk_buff *skb, union quic_addr *da,
