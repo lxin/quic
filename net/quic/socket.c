@@ -103,6 +103,17 @@ struct quic_request_sock *quic_request_sock_dequeue(struct sock *sk)
 	return req;
 }
 
+static bool quic_has_bind_any(struct sock *sk)
+{
+	union quic_addr *sa, a = {};
+
+	sa = quic_path_addr(quic_src(sk), 0);
+	a.v4.sin_family = sa->v4.sin_family;
+	a.v4.sin_port = sa->v4.sin_port;
+
+	return quic_cmp_sk_addr(sk, sa, &a);
+}
+
 static struct sock *quic_sock_find(struct net *net, union quic_addr *sa, union quic_addr *da)
 {
 	struct sock *sk, *nsk = NULL;
@@ -354,7 +365,7 @@ static int quic_hash(struct sock *sk)
 	head = quic_sock_head(net, sa, da);
 	spin_lock(&head->lock);
 
-	any = quic_bind_any_addr(sk);
+	any = quic_has_bind_any(sk);
 	sk_for_each(nsk, &head->head) {
 		if (net != sock_net(nsk) ||
 		    quic_path_cmp(quic_src(nsk), 0, sa) ||
