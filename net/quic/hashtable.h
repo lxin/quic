@@ -132,11 +132,11 @@ static inline struct quic_hash_head *quic_source_connection_id_head(struct net *
 	return &ht->hash[jhash(scid, 4, 0) & (ht->size - 1)];
 }
 
-static inline struct quic_hash_head *quic_udp_sock_head(struct net *net, union quic_addr *addr)
+static inline struct quic_hash_head *quic_udp_sock_head(struct net *net, u16 port)
 {
 	struct quic_hash_table *ht = &quic_hash_tables[QUIC_HT_UDP_SOCK];
 
-	return &ht->hash[quic_shash(net, addr) & (ht->size - 1)];
+	return &ht->hash[port & (ht->size - 1)];
 }
 
 static inline struct quic_hash_head *quic_stream_head(struct quic_hash_table *ht, u64 stream_id)
