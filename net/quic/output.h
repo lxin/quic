@@ -73,6 +73,11 @@ static inline void quic_outq_set_window(struct quic_outqueue *outq, u32 window)
 	outq->window = window;
 }
 
+static inline u64 quic_outq_window(struct quic_outqueue *outq)
+{
+	return outq->window;
+}
+
 static inline u32 quic_outq_ack_delay_exponent(struct quic_outqueue *outq)
 {
 	return outq->ack_delay_exponent;

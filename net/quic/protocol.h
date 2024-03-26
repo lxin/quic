@@ -28,6 +28,7 @@ struct quic_addr_family_ops {
 
 	void	(*get_pref_addr)(union quic_addr *addr, u8 **pp, u32 *plen);
 	void	(*set_pref_addr)(u8 *p, union quic_addr *addr);
+	void	(*seq_dump_addr)(struct seq_file *seq, union quic_addr *addr);
 
 	void	(*get_msg_addr)(union quic_addr *addr, struct sk_buff *skb, bool src);
 	void	(*set_sk_addr)(struct sock *sk, union quic_addr *addr, bool src);
@@ -55,6 +56,7 @@ void quic_get_sk_addr(struct socket *sock, struct sockaddr *a, bool peer);
 void quic_get_msg_addr(struct sock *sk, union quic_addr *addr, struct sk_buff *skb, bool src);
 void quic_get_pref_addr(struct sock *sk, union quic_addr *addr, u8 **pp, u32 *plen);
 void quic_set_pref_addr(struct sock *sk, u8 *p, union quic_addr *addr);
+void quic_seq_dump_addr(struct sock *sk, struct seq_file *seq, union quic_addr *addr);
 bool quic_cmp_sk_addr(struct sock *sk, union quic_addr *a, union quic_addr *addr);
 void quic_udp_conf_init(struct sock *sk, struct udp_port_cfg *conf, union quic_addr *a);
 void quic_lower_xmit(struct sock *sk, struct sk_buff *skb, union quic_addr *da,

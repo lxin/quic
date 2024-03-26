@@ -68,6 +68,11 @@ static inline union quic_addr *quic_path_addr(struct quic_path_addr *a, bool alt
 	return &a->addr[a->active ^ alt];
 }
 
+static inline union quic_addr *quic_path_udp(struct quic_path_addr *a, bool alt)
+{
+	return &((struct quic_path_src *)a)->udp_sk[a->active ^ alt]->addr;
+}
+
 static inline struct quic_bind_port *quic_path_port(struct quic_path_addr *a, bool alt)
 {
 	return &((struct quic_path_src *)a)->port[a->active ^ alt];

@@ -13,6 +13,8 @@
 #include "socket.h"
 #include <net/inet_common.h>
 #include <net/protocol.h>
+#include <linux/seq_file.h>
+#include <linux/proc_fs.h>
 #include <linux/icmp.h>
 #include <net/tls.h>
 
@@ -120,8 +122,8 @@ static void quic_v6_lower_xmit(struct sock *sk, struct sk_buff *skb, union quic_
 		kfree_skb(skb);
 		return;
 	}
-	pr_debug("[QUIC] %s: skb: %p len: %d | path: %pI6:%d -> %pI6:%d\n", __func__, skb, skb->len,
-		 &sa->v6.sin6_addr, ntohs(sa->v6.sin6_port),
+	pr_debug("[QUIC] %s: skb: %p len: %d | path: %pI6c:%d -> %pI6c:%d\n", __func__,
+		 skb, skb->len, &sa->v6.sin6_addr, ntohs(sa->v6.sin6_port),
 		 &da->v6.sin6_addr, ntohs(da->v6.sin6_port));
 
 	udp_tunnel6_xmit_skb(dst, sk, skb, NULL, &sa->v6.sin6_addr, &da->v6.sin6_addr,
@@ -314,6 +316,16 @@ static void quic_v6_set_pref_addr(u8 *p, union quic_addr *addr)
 	p += 2;
 }
 
+static void quic_v4_seq_dump_addr(struct seq_file *seq, union quic_addr *addr)
+{
+	seq_printf(seq, "%pI4:%d\t", &addr->v4.sin_addr.s_addr, ntohs(addr->v4.sin_port));
+}
+
+static void quic_v6_seq_dump_addr(struct seq_file *seq, union quic_addr *addr)
+{
+	seq_printf(seq, "%pI6c:%d\t", &addr->v6.sin6_addr, ntohs(addr->v4.sin_port));
+}
+
 static bool quic_v4_cmp_sk_addr(struct sock *sk, union quic_addr *a, union quic_addr *addr)
 {
 	if (a->v4.sin_port != addr->v4.sin_port)
@@ -353,6 +365,7 @@ static struct quic_addr_family_ops quic_af_inet = {
 	.lower_xmit		= quic_v4_lower_xmit,
 	.get_pref_addr		= quic_v4_get_pref_addr,
 	.set_pref_addr		= quic_v4_set_pref_addr,
+	.seq_dump_addr		= quic_v4_seq_dump_addr,
 	.get_msg_addr		= quic_v4_get_msg_addr,
 	.cmp_sk_addr		= quic_v4_cmp_sk_addr,
 	.set_sk_addr		= quic_v4_set_sk_addr,
@@ -373,6 +386,7 @@ static struct quic_addr_family_ops quic_af_inet6 = {
 	.lower_xmit		= quic_v6_lower_xmit,
 	.get_pref_addr		= quic_v6_get_pref_addr,
 	.set_pref_addr		= quic_v6_set_pref_addr,
+	.seq_dump_addr		= quic_v6_seq_dump_addr,
 	.cmp_sk_addr		= quic_v6_cmp_sk_addr,
 	.get_msg_addr		= quic_v6_get_msg_addr,
 	.set_sk_addr		= quic_v6_set_sk_addr,
@@ -546,6 +560,11 @@ void quic_set_pref_addr(struct sock *sk, u8 *p, union quic_addr *addr)
 	quic_af_ops(sk)->set_pref_addr(p, addr);
 }
 
+void quic_seq_dump_addr(struct sock *sk, struct seq_file *seq, union quic_addr *addr)
+{
+	quic_af_ops(sk)->seq_dump_addr(seq, addr);
+}
+
 bool quic_cmp_sk_addr(struct sock *sk, union quic_addr *a, union quic_addr *addr)
 {
 	return quic_af_ops(sk)->cmp_sk_addr(sk, a, addr);
@@ -606,6 +625,68 @@ static struct ctl_table quic_table[] = {
 	},
 
 	{ /* sentinel */ }
+};
+
+static int quic_seq_show(struct seq_file *seq, void *v)
+{
+	struct net *net = seq_file_net(seq);
+	struct quic_hash_head *head;
+	int hash = *(loff_t *)v;
+	union quic_addr *addr;
+	struct sock *sk;
+
+	if (hash >= 64)
+		return -ENOMEM;
+
+	head = &quic_hash_tables[QUIC_HT_SOCK].hash[hash];
+	spin_lock(&head->lock);
+	sk_for_each(sk, &head->head) {
+		if (net != sock_net(sk))
+			continue;
+		quic_seq_dump_addr(sk, seq, quic_path_addr(quic_src(sk), 0));
+		quic_seq_dump_addr(sk, seq, quic_path_addr(quic_dst(sk), 0));
+		addr = quic_path_udp(quic_src(sk), 0);
+		quic_af_ops_get(addr->v4.sin_family)->seq_dump_addr(seq, addr);
+		seq_printf(seq, "%d\t%lld\t%d\t%d\t%d\n", sk->sk_state,
+			   quic_outq_window(quic_outq(sk)), quic_packet_mss(quic_packet(sk)),
+			   READ_ONCE(sk->sk_wmem_queued), sk_rmem_alloc_get(sk));
+	}
+	spin_unlock(&head->lock);
+	return 0;
+}
+
+static void *quic_seq_start(struct seq_file *seq, loff_t *pos)
+{
+	if (*pos >= 64)
+		return NULL;
+
+	if (*pos < 0)
+		*pos = 0;
+
+	if (*pos == 0)
+		seq_printf(seq, "LOCAL_ADDRESS\tREMOTE_ADDRESS\tUDP_ADDRESS\t"
+				"STATE\tWINDOW\tMSS\tTX_QUEUE\tRX_QUEUE\n");
+
+	return (void *)pos;
+}
+
+static void *quic_seq_next(struct seq_file *seq, void *v, loff_t *pos)
+{
+	if (++*pos >= 64)
+		return NULL;
+
+	return pos;
+}
+
+static void quic_seq_stop(struct seq_file *seq, void *v)
+{
+}
+
+static const struct seq_operations quic_seq_ops = {
+	.show		= quic_seq_show,
+	.start		= quic_seq_start,
+	.next		= quic_seq_next,
+	.stop		= quic_seq_stop,
 };
 
 static const struct proto_ops quic_proto_ops = {
@@ -713,12 +794,15 @@ static void quic_protosw_exit(void)
 
 static int __net_init quic_net_init(struct net *net)
 {
+	if (!proc_create_net("quic", 0444, net->proc_net,
+			     &quic_seq_ops, sizeof(struct seq_net_private)))
+		return -ENOMEM;
 	return 0;
 }
 
 static void __net_exit quic_net_exit(struct net *net)
 {
-	;
+	remove_proc_entry("quic", net->proc_net);
 }
 
 static struct pernet_operations quic_net_ops = {

@@ -1193,4 +1193,6 @@ void quic_packet_init(struct sock *sk)
 	skb_queue_head_init(&packet->frame_list);
 	packet->taglen[0] = QUIC_TAG_LEN;
 	packet->taglen[1] = QUIC_TAG_LEN;
+	packet->mss[0] = QUIC_TAG_LEN;
+	packet->mss[1] = QUIC_TAG_LEN;
 }
