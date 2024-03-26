@@ -55,7 +55,7 @@ daemon_run ./perf_test -l --pkey ./keys/server-key.pem --cert ./keys/server-cert
 daemon_stop "perf_test"
 
 print_start "Performance Tests (IPv6)"
-daemon_run ./perf_test -l --pkey ./keys/server-key.pem --cert ./keys/server-cert.pem --addr ::
+daemon_run ./perf_test -l --pkey ./keys/server-key.pem --cert ./keys/server-cert.pem
 ./perf_test --addr ::1 || exit 1
 daemon_stop "perf_test"
 
@@ -66,7 +66,7 @@ daemon_run ./perf_test -l --pkey ./keys/server-key.pem --cert ./keys/server-cert
 daemon_stop "perf_test"
 
 print_start "Performance Tests (IPv6, TC netem loss)"
-daemon_run ./perf_test -l --pkey ./keys/server-key.pem --cert ./keys/server-cert.pem --addr ::
+daemon_run ./perf_test -l --pkey ./keys/server-key.pem --cert ./keys/server-cert.pem
 ./perf_test --addr ::1 --tot_len 1048576 || exit 1
 daemon_stop "perf_test"
 tc qdisc del dev lo root netem loss 15%

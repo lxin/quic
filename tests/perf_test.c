@@ -198,11 +198,6 @@ static int do_server(struct options *opts)
 			printf("socket bind failed\n");
 			return -1;
 		}
-		param.max_udp_payload_size = 1400;
-		param.payload_cipher_type = TLS_CIPHER_CHACHA20_POLY1305;
-		if (setsockopt(listenfd, SOL_QUIC, QUIC_SOCKOPT_TRANSPORT_PARAM,
-			       &param, sizeof(param)))
-			return -1;
 		goto listen;
 	}
 
@@ -219,6 +214,7 @@ static int do_server(struct options *opts)
 		return -1;
 	}
 
+listen:
 	param.validate_peer_address = 1; /* trigger retry packet sending */
 	param.grease_quic_bit = 1;
 	param.certificate_request = 1;
@@ -227,7 +223,6 @@ static int do_server(struct options *opts)
 	if (setsockopt(listenfd, SOL_QUIC, QUIC_SOCKOPT_TRANSPORT_PARAM, &param, sizeof(param)))
 		return -1;
 
-listen:
 	if (listen(listenfd, 1)) {
 		printf("socket listen failed\n");
 		return -1;
@@ -431,7 +426,7 @@ int main(int argc, char *argv[])
 
 	opts.msg_len = SND_MSG_LEN;
 	opts.tot_len = TOT_LEN;
-	opts.addr = "0.0.0.0";
+	opts.addr = "::";
 	opts.port = "1234";
 
 	ret = parse_options(argc, argv, &opts);
