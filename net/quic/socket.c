@@ -929,7 +929,6 @@ static int quic_copy_sock(struct sock *nsk, struct sock *sk, struct quic_request
 
 	nsk->sk_type = sk->sk_type;
 	nsk->sk_flags = sk->sk_flags;
-	nsk->sk_family = sk->sk_family;
 	nsk->sk_protocol = IPPROTO_QUIC;
 	nsk->sk_backlog_rcv = sk->sk_prot->backlog_rcv;
 
@@ -941,17 +940,17 @@ static int quic_copy_sock(struct sock *nsk, struct sock *sk, struct quic_request
 	inet_sk(nsk)->pmtudisc = inet_sk(sk)->pmtudisc;
 
 	skb_queue_walk_safe(quic_inq_backlog_list(inq), skb, tmp) {
-		quic_get_msg_addr(sk, &da, skb, 0);
-		quic_get_msg_addr(sk, &sa, skb, 1);
+		quic_get_msg_addr(nsk, &da, skb, 0);
+		quic_get_msg_addr(nsk, &sa, skb, 1);
 
-		if (!memcmp(&req->sa, &da, quic_addr_len(sk)) &&
-		    !memcmp(&req->da, &sa, quic_addr_len(sk))) {
+		if (!memcmp(&req->sa, &da, quic_addr_len(nsk)) &&
+		    !memcmp(&req->da, &sa, quic_addr_len(nsk))) {
 			__skb_unlink(skb, quic_inq_backlog_list(inq));
 			quic_inq_backlog_tail(nsk, skb);
 		}
 	}
 
-	if (nsk->sk_family == AF_INET6)
+	if (sk->sk_family == AF_INET6) /* nsk uses quicv6 ops in this case */
 		inet_sk(nsk)->pinet6 = &((struct quic6_sock *)nsk)->inet6;
 
 	quic_sock_set_transport_param(nsk, param, sizeof(*param));
@@ -1035,7 +1034,7 @@ static struct sock *quic_accept(struct sock *sk, int flags, int *errp, bool kern
 		goto out;
 	req = quic_request_sock_dequeue(sk);
 
-	nsk = sk_alloc(sock_net(sk), quic_addr_family(sk), GFP_KERNEL, sk->sk_prot, kern);
+	nsk = sk_alloc(sock_net(sk), req->sa.v4.sin_family, GFP_KERNEL, sk->sk_prot, kern);
 	if (!nsk) {
 		err = -ENOMEM;
 		goto out;

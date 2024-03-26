@@ -92,79 +92,93 @@ static int quic_do_listen_rcv(struct sock *sk, struct sk_buff *skb)
 	u8 *p = (u8 *)quic_hshdr(skb) + 1, type;
 	struct quic_request_sock req = {};
 	struct quic_crypto *crypto;
-	int err = -EINVAL, errcode;
 	struct quic_data token;
+	int err = 0, errcode;
 
+	/* set af_ops for now in case sk_family != addr.v4.sin_family */
+	quic_set_af_ops(sk, quic_af_ops_get_skb(skb));
 	quic_get_msg_addr(sk, &req.sa, skb, 0);
 	quic_get_msg_addr(sk, &req.da, skb, 1);
 	if (quic_request_sock_exists(sk, &req.sa, &req.da))
-		goto out;
+		goto enqueue;
 
 	if (QUIC_RCV_CB(skb)->backlog &&
-	    quic_new_sock_do_rcv(sk, skb, &req.sa, &req.da))
-		return 0;
+	    quic_new_sock_do_rcv(sk, skb, &req.sa, &req.da)) /* move skb to another sk backlog */
+		goto out;
 
 	if (!quic_hshdr(skb)->form) { /* stateless reset always by listen sock */
-		if (skb->len < 17)
-			goto err;
+		if (skb->len < 17) {
+			err = -EINVAL;
+			kfree_skb(skb);
+			goto out;
+		}
 
 		req.dcid.len = 16;
 		memcpy(req.dcid.data, (u8 *)quic_hdr(skb) + 1, 16);
+		err = quic_packet_stateless_reset_transmit(sk, &req);
 		consume_skb(skb);
-		return quic_packet_stateless_reset_transmit(sk, &req);
+		goto out;
 	}
 
-	if (quic_get_connid_and_token(skb, &req.dcid, &req.scid, &token))
-		goto err;
+	if (quic_get_connid_and_token(skb, &req.dcid, &req.scid, &token)) {
+		err = -EINVAL;
+		kfree_skb(skb);
+		goto out;
+	}
 
 	req.version = quic_get_int(&p, 4);
 	if (!quic_compatible_versions(req.version)) {
-		consume_skb(skb);
 		/* version negotication */
-		return quic_packet_version_transmit(sk, &req);
+		err = quic_packet_version_transmit(sk, &req);
+		consume_skb(skb);
+		goto out;
 	}
 
 	type = quic_version_get_type(req.version, quic_hshdr(skb)->type);
 	if (type != QUIC_PACKET_INITIAL) { /* stateless reset for handshake */
+		err = quic_packet_stateless_reset_transmit(sk, &req);
 		consume_skb(skb);
-		return quic_packet_stateless_reset_transmit(sk, &req);
+		goto out;
 	}
 
 	quic_connection_id_update(&req.orig_dcid, req.dcid.data, req.dcid.len);
 	if (quic_inq_validate_peer_address(inq)) {
 		if (!token.len) {
+			err = quic_packet_retry_transmit(sk, &req);
 			consume_skb(skb);
-			return quic_packet_retry_transmit(sk, &req);
+			goto out;
 		}
 		crypto = quic_crypto(sk, QUIC_CRYPTO_INITIAL);
 		err = quic_crypto_verify_token(crypto, &req.da, quic_addr_len(sk),
 					       &req.orig_dcid, token.data, token.len);
 		if (err) {
-			consume_skb(skb);
 			errcode = QUIC_TRANSPORT_ERROR_INVALID_TOKEN;
-			return quic_packet_refuse_close_transmit(sk, &req, errcode);
+			err = quic_packet_refuse_close_transmit(sk, &req, errcode);
+			consume_skb(skb);
+			goto out;
 		}
 		req.retry = *(u8 *)token.data;
 	}
 
 	err = quic_request_sock_enqueue(sk, &req);
 	if (err) {
-		consume_skb(skb);
 		errcode = QUIC_TRANSPORT_ERROR_CONNECTION_REFUSED;
-		return quic_packet_refuse_close_transmit(sk, &req, errcode);
+		err = quic_packet_refuse_close_transmit(sk, &req, errcode);
+		consume_skb(skb);
+		goto out;
 	}
-out:
+enqueue:
 	if (atomic_read(&sk->sk_rmem_alloc) + skb->len > sk->sk_rcvbuf) {
 		err = -ENOBUFS;
-		goto err;
+		kfree_skb(skb);
+		goto out;
 	}
 
 	quic_inq_set_owner_r(skb, sk); /* handle it later when accepting the sock */
 	__skb_queue_tail(&quic_inq(sk)->backlog_list, skb);
 	sk->sk_data_ready(sk);
-	return 0;
-err:
-	kfree_skb(skb);
+out:
+	quic_set_af_ops(sk, quic_af_ops_get(sk->sk_family));
 	return err;
 }
 
