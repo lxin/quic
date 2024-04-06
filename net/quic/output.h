@@ -17,6 +17,7 @@ struct quic_outqueue {
 	struct sk_buff_head control_list;
 	struct sk_buff *retransmit_skb;
 	struct work_struct work;
+	u64 last_max_bytes;
 	u64 max_bytes;
 	u64 inflight;
 	u64 window;

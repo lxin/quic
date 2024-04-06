@@ -80,19 +80,22 @@ static int quic_outq_flow_control(struct sock *sk, struct sk_buff *skb)
 	/* send flow control */
 	stream = QUIC_SND_CB(skb)->stream;
 	if (stream->send.bytes + len > stream->send.max_bytes) {
-		if (!stream->send.data_blocked) {
+		if (!stream->send.data_blocked &&
+		    stream->send.last_max_bytes < stream->send.max_bytes) {
 			nskb = quic_frame_create(sk, QUIC_FRAME_STREAM_DATA_BLOCKED, stream);
 			if (nskb)
 				quic_outq_ctrl_tail(sk, nskb, true);
+			stream->send.last_max_bytes = stream->send.max_bytes;
 			stream->send.data_blocked = 1;
 		}
 		requeue = 1;
 	}
 	if (outq->bytes + len > outq->max_bytes) {
-		if (!outq->data_blocked) {
+		if (!outq->data_blocked && outq->last_max_bytes < outq->max_bytes) {
 			nskb = quic_frame_create(sk, QUIC_FRAME_DATA_BLOCKED, outq);
 			if (nskb)
 				quic_outq_ctrl_tail(sk, nskb, true);
+			outq->last_max_bytes = outq->max_bytes;
 			outq->data_blocked = 1;
 		}
 		requeue = 1;

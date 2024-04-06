@@ -19,6 +19,7 @@ struct quic_stream {
 	struct hlist_node node;
 	u64 id;
 	struct {
+		u64 last_max_bytes;
 		u64 max_bytes;
 		u64 window; /* congestion control in stream level? not now */
 		u64 bytes;
