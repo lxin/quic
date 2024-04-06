@@ -219,7 +219,6 @@ listen:
 	param.grease_quic_bit = 1;
 	param.certificate_request = 1;
 	param.stateless_reset = 1;
-	param.plpmtud_probe_timeout = 1000000;
 	if (setsockopt(listenfd, SOL_QUIC, QUIC_SOCKOPT_TRANSPORT_PARAM, &param, sizeof(param)))
 		return -1;
 
