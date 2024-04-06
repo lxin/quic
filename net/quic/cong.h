@@ -9,7 +9,7 @@
  */
 
 #define QUIC_RTT_INIT		333000
-#define QUIC_RTO_MIN		100000
+#define QUIC_RTO_MIN		300000
 #define QUIC_RTO_MAX		6000000
 
 enum quic_cong_state {
