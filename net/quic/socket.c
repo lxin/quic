@@ -173,13 +173,13 @@ static void quic_transport_param_init(struct sock *sk)
 	param->max_ack_delay = 25000;
 	param->active_connection_id_limit = 7;
 	param->max_idle_timeout = 30000000;
-	param->max_data = QUIC_PATH_MAX_PMTU * 4;
-	param->max_stream_data_bidi_local = QUIC_PATH_MAX_PMTU * 2;
-	param->max_stream_data_bidi_remote = QUIC_PATH_MAX_PMTU * 2;
-	param->max_stream_data_uni = QUIC_PATH_MAX_PMTU * 2;
+	param->max_data = QUIC_PATH_MAX_PMTU * 32;
+	param->max_stream_data_bidi_local = QUIC_PATH_MAX_PMTU * 4;
+	param->max_stream_data_bidi_remote = QUIC_PATH_MAX_PMTU * 4;
+	param->max_stream_data_uni = QUIC_PATH_MAX_PMTU * 4;
 	param->max_streams_bidi = 100;
 	param->max_streams_uni = 100;
-	param->initial_smoothed_rtt = 333000;
+	param->initial_smoothed_rtt = QUIC_RTT_INIT;
 	param->version = QUIC_VERSION_V1;
 
 	quic_inq_set_param(sk, param);
