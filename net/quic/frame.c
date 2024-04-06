@@ -316,8 +316,8 @@ static struct sk_buff *quic_frame_new_connection_id_create(struct sock *sk, void
 	p = quic_put_var(frame, type);
 	p = quic_put_var(p, seqno);
 	p = quic_put_var(p, *prior);
-	p = quic_put_var(p, 16);
-	quic_connection_id_generate(&scid, 16);
+	quic_connection_id_generate(&scid);
+	p = quic_put_var(p, scid.len);
 	p = quic_put_data(p, scid.data, scid.len);
 	if (quic_crypto_generate_stateless_reset_token(crypto, scid.data, scid.len, token, 16))
 		return NULL;
@@ -769,7 +769,7 @@ static int quic_frame_new_connection_id_process(struct sock *sk, struct sk_buff 
 	if (!quic_get_var(&p, &len, &seqno) ||
 	    !quic_get_var(&p, &len, &prior) ||
 	    !quic_get_var(&p, &len, &length) ||
-	    !length || length > 20 || length + 16 > len)
+	    !length || length > QUIC_CONNECTION_ID_MAX_LEN || length + 16 > len)
 		return -EINVAL;
 
 	memcpy(dcid.data, p, length);
@@ -1473,7 +1473,7 @@ static int quic_get_conn_id(struct quic_connection_id *conn_id, u8 **pp, u32 *pl
 	if (!quic_get_var(pp, plen, &valuelen))
 		return -1;
 
-	if (*plen < valuelen || valuelen > 20)
+	if (*plen < valuelen || valuelen > QUIC_CONNECTION_ID_MAX_LEN)
 		return -1;
 
 	memcpy(conn_id->data, *pp, valuelen);
@@ -1534,7 +1534,7 @@ static int quic_get_preferred_address(union quic_addr *addr, struct quic_connect
 
 	p = *pp;
 	len = *p;
-	if (!len || len > 20 || valuelen != 25 + len + 16)
+	if (!len || len > QUIC_CONNECTION_ID_MAX_LEN || valuelen != 25 + len + 16)
 		return -1;
 	conn_id->len = len;
 	p++;
@@ -1794,7 +1794,7 @@ int quic_frame_get_transport_params_ext(struct sock *sk, struct quic_transport_p
 					     quic_outq_retry_dcid(outq));
 		}
 		if (quic_outq_pref_addr(outq)) {
-			quic_connection_id_generate(&conn_id, 16);
+			quic_connection_id_generate(&conn_id);
 			if (quic_crypto_generate_stateless_reset_token(crypto, conn_id.data,
 								       conn_id.len, token, 16))
 				return -1;

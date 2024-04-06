@@ -96,7 +96,7 @@ int quic_connection_id_add(struct quic_connection_id_set *id_set,
 	struct quic_hash_head *head;
 	struct list_head *list;
 
-	if (conn_id->len > 20)
+	if (conn_id->len > QUIC_CONNECTION_ID_MAX_LEN)
 		return -EINVAL;
 	common = kzalloc(id_set->entry_size, GFP_ATOMIC);
 	if (!common)

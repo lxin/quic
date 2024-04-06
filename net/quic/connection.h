@@ -8,9 +8,12 @@
  *    Xin Long <lucien.xin@gmail.com>
  */
 
+#define QUIC_CONNECTION_ID_MAX_LEN	20
+#define QUIC_CONNECTION_ID_DEF_LEN	8
+
 struct quic_connection_id {
 	u8 len;
-	u8 data[20];
+	u8 data[QUIC_CONNECTION_ID_MAX_LEN];
 };
 
 struct quic_common_connection_id {
@@ -58,10 +61,10 @@ static inline u32 quic_connection_id_first_number(struct quic_connection_id_set 
 	return common->number;
 }
 
-static inline void quic_connection_id_generate(struct quic_connection_id *conn_id, int conn_id_len)
+static inline void quic_connection_id_generate(struct quic_connection_id *conn_id)
 {
-	get_random_bytes(conn_id->data, conn_id_len);
-	conn_id->len = conn_id_len;
+	get_random_bytes(conn_id->data, QUIC_CONNECTION_ID_DEF_LEN);
+	conn_id->len = QUIC_CONNECTION_ID_DEF_LEN;
 }
 
 static inline void quic_connection_id_update(struct quic_connection_id *conn_id, u8 *data, u32 len)

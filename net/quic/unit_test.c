@@ -405,7 +405,7 @@ static void quic_crypto_test1(struct kunit *test)
 	ret = quic_crypto_key_update(&crypto);
 	KUNIT_EXPECT_EQ(test, ret, 0);
 
-	quic_connection_id_generate(&conn_id, 18);
+	quic_connection_id_generate(&conn_id);
 	quic_crypto_destroy(&crypto);
 	ret = quic_crypto_initial_keys_install(&crypto, &conn_id, QUIC_VERSION_V1, 0, 0);
 	KUNIT_EXPECT_EQ(test, ret, 0);

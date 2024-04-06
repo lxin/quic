@@ -450,11 +450,11 @@ static int quic_inet_listen(struct socket *sock, int backlog)
 
 	if (!hlist_unhashed(&quic_sk(sk)->inet.sk.sk_node))
 		goto out;
-	quic_connection_id_generate(&conn_id, 18);
+	quic_connection_id_generate(&conn_id);
 	err = quic_connection_id_add(dest, &conn_id, 0, NULL);
 	if (err)
 		goto free;
-	quic_connection_id_generate(&conn_id, 16);
+	quic_connection_id_generate(&conn_id);
 	err = quic_connection_id_add(source, &conn_id, 0, sk);
 	if (err)
 		goto free;

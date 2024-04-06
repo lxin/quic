@@ -56,7 +56,7 @@ static int quic_packet_handshake_retry_process(struct sock *sk, struct sk_buff *
 	if (len-- < 1)
 		goto err;
 	dlen = quic_get_int(&p, 1);
-	if (len < dlen || dlen > 20)
+	if (len < dlen || dlen > QUIC_CONNECTION_ID_MAX_LEN)
 		goto err;
 	dcid.len = dlen;
 	memcpy(dcid.data, p, dlen);
@@ -66,7 +66,7 @@ static int quic_packet_handshake_retry_process(struct sock *sk, struct sk_buff *
 	if (len-- < 1)
 		goto err;
 	slen = quic_get_int(&p, 1);
-	if (len < slen || slen > 20)
+	if (len < slen || slen > QUIC_CONNECTION_ID_MAX_LEN)
 		goto err;
 	scid.len = slen;
 	memcpy(scid.data, p, slen);
@@ -114,7 +114,7 @@ static int quic_packet_handshake_version_process(struct sock *sk, struct sk_buff
 	if (len-- < 1)
 		goto err;
 	dlen = quic_get_int(&p, 1);
-	if (len < dlen || dlen > 20)
+	if (len < dlen || dlen > QUIC_CONNECTION_ID_MAX_LEN)
 		goto err;
 	dcid.len = dlen;
 	memcpy(dcid.data, p, dlen);
@@ -124,7 +124,7 @@ static int quic_packet_handshake_version_process(struct sock *sk, struct sk_buff
 	if (len-- < 1)
 		goto err;
 	slen = quic_get_int(&p, 1);
-	if (len < slen || slen > 20)
+	if (len < slen || slen > QUIC_CONNECTION_ID_MAX_LEN)
 		goto err;
 	scid.len = slen;
 	memcpy(scid.data, p, slen);
@@ -235,7 +235,7 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb, u
 		if (len-- < 1)
 			goto err;
 		dlen = quic_get_int(&p, 1);
-		if (len < dlen || dlen > 20)
+		if (len < dlen || dlen > QUIC_CONNECTION_ID_MAX_LEN)
 			goto err;
 		len -= dlen;
 		p += dlen;
@@ -243,7 +243,7 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb, u
 		if (len-- < 1)
 			goto err;
 		slen = quic_get_int(&p, 1);
-		if (len < slen || slen > 20)
+		if (len < slen || slen > QUIC_CONNECTION_ID_MAX_LEN)
 			goto err;
 		len -= slen;
 		scid = p;
@@ -995,7 +995,7 @@ static struct sk_buff *quic_packet_retry_create(struct sock *sk, struct quic_req
 				       &req->dcid, token, &tokenlen))
 		return NULL;
 
-	quic_connection_id_generate(&dcid, 18); /* new dcid for retry */
+	quic_connection_id_generate(&dcid); /* new dcid for retry */
 	len = 1 + 4 + 1 + req->scid.len + 1 + dcid.len + tokenlen + 16;
 	hlen = quic_encap_len(sk) + MAX_HEADER;
 	skb = alloc_skb(hlen + len, GFP_ATOMIC);

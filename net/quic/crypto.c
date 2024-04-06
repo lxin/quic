@@ -931,7 +931,7 @@ int quic_crypto_verify_token(struct quic_crypto *crypto, void *addr, u32 addrlen
 	if (t + timeout < ts)
 		goto out;
 	len -= QUIC_TAG_LEN;
-	if (len > 20)
+	if (len > QUIC_CONNECTION_ID_MAX_LEN)
 		goto out;
 
 	if (retry)

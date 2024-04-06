@@ -318,12 +318,12 @@ static int quic_connect(struct sock *sk, struct sockaddr *addr, int addr_len)
 		quic_set_sk_addr(sk, sa, true);
 	}
 
-	quic_connection_id_generate(&conn_id, 18);
+	quic_connection_id_generate(&conn_id);
 	err = quic_connection_id_add(dest, &conn_id, 0, NULL);
 	if (err)
 		goto out;
 	quic_outq_set_orig_dcid(outq, &conn_id);
-	quic_connection_id_generate(&conn_id, 16);
+	quic_connection_id_generate(&conn_id);
 	err = quic_connection_id_add(source, &conn_id, 0, sk);
 	if (err)
 		goto free;
@@ -982,7 +982,7 @@ static int quic_accept_sock_init(struct sock *sk, struct quic_request_sock *req)
 		goto out;
 	quic_set_sk_addr(sk, quic_addr(&req->da.sa), false);
 
-	quic_connection_id_generate(&conn_id, 16);
+	quic_connection_id_generate(&conn_id);
 	err = quic_connection_id_add(quic_source(sk), &conn_id, 0, sk);
 	if (err)
 		goto out;
