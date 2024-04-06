@@ -17,7 +17,6 @@
 
 #define QUIC_PN_MAP_INITIAL BITS_PER_LONG
 #define QUIC_PN_MAP_INCREMENT QUIC_PN_MAP_INITIAL
-#define QUIC_PN_MAP_SIZE 1024
 
 static int quic_pnmap_grow(struct quic_pnmap *map, u16 size);
 static void quic_pnmap_update(struct quic_pnmap *map, s64 pn);

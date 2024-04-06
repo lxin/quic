@@ -14,7 +14,7 @@
 
 #define QUIC_PN_MAP_INITIAL BITS_PER_LONG
 #define QUIC_PN_MAP_INCREMENT QUIC_PN_MAP_INITIAL
-#define QUIC_PN_MAP_SIZE 1024
+#define QUIC_PN_MAP_SIZE 4096
 
 /* pn_map:
  * cum_ack_point --v
