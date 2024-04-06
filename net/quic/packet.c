@@ -544,7 +544,7 @@ static struct sk_buff *quic_packet_handshake_create(struct sock *sk)
 	hlen = quic_encap_len(sk) + MAX_HEADER;
 	skb = alloc_skb(hlen + len + packet->taglen[1], GFP_ATOMIC);
 	if (!skb) {
-		__skb_queue_purge(&packet->frame_list);
+		quic_outq_requeue(sk, &packet->frame_list);
 		return NULL;
 	}
 	skb->ignore_df = packet->ipfragok;
@@ -607,11 +607,12 @@ static struct sk_buff *quic_packet_handshake_create(struct sock *sk)
 			 __func__, number, snd_cb->frame_type, skb->len, fskb->len,
 			 packet->level);
 		if (!quic_frame_retransmittable(snd_cb->frame_type)) {
-			consume_skb(fskb);
+			quic_outq_unlink_and_free(fskb);
 			fskb =  __skb_dequeue(head);
 			continue;
 		}
 		quic_outq_rtx_tail(sk, fskb);
+		quic_outq_sorted_tail(sk, fskb);
 		snd_cb->packet_number = number;
 		snd_cb->transmit_ts = jiffies_to_usecs(jiffies);
 		fskb =  __skb_dequeue(head);
@@ -632,7 +633,7 @@ static int quic_packet_number_check(struct sock *sk)
 	if (quic_pnmap_next_number(pnmap) + 1 <= QUIC_PN_MAP_MAX_PN)
 		return 0;
 
-	__skb_queue_purge(&packet->frame_list);
+	quic_outq_requeue(sk, &packet->frame_list);
 	if (!quic_is_closed(sk)) {
 		struct quic_connection_close *close;
 		u8 frame[10] = {};
@@ -689,7 +690,7 @@ static struct sk_buff *quic_packet_create(struct sock *sk)
 	hlen = quic_encap_len(sk) + MAX_HEADER;
 	skb = alloc_skb(hlen + len + packet->taglen[0], GFP_ATOMIC);
 	if (!skb) {
-		__skb_queue_purge(&packet->frame_list);
+		quic_outq_requeue(sk, &packet->frame_list);
 		return NULL;
 	}
 	skb->ignore_df = packet->ipfragok;
@@ -723,7 +724,7 @@ static struct sk_buff *quic_packet_create(struct sock *sk)
 		pr_debug("[QUIC] %s number: %llu type: %u packet_len: %u frame_len: %u\n", __func__,
 			 number, snd_cb->frame_type, skb->len, fskb->len);
 		if (!quic_frame_retransmittable(snd_cb->frame_type)) {
-			consume_skb(fskb);
+			quic_outq_unlink_and_free(fskb);
 			fskb =  __skb_dequeue(head);
 			continue;
 		}
@@ -732,6 +733,7 @@ static struct sk_buff *quic_packet_create(struct sock *sk)
 			ecn = INET_ECN_ECT_0;
 		}
 		quic_outq_rtx_tail(sk, fskb);
+		quic_outq_sorted_tail(sk, fskb);
 		snd_cb->packet_number = number;
 		snd_cb->transmit_ts = jiffies_to_usecs(jiffies);
 		snd_cb->ecn = ecn;
