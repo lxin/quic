@@ -148,9 +148,9 @@ static void quic_pnmap_update(struct quic_pnmap *map, s64 pn)
 	u32 current_ts = jiffies_to_usecs(jiffies);
 	u16 zero_bit, offset;
 
-	if (current_ts - map->last_max_pn_ts < map->max_record_ts &&
-	    map->max_pn_seen <= map->last_max_pn_seen + QUIC_PN_MAP_SIZE / 2 &&
-	    map->max_pn_seen <= map->base_pn + QUIC_PN_MAP_SIZE * 3 / 4)
+	if (current_ts < map->max_record_ts + map->last_max_pn_ts &&
+	    map->max_pn_seen <= map->base_pn + QUIC_PN_MAP_LIMIT &&
+	    map->max_pn_seen <= map->last_max_pn_seen + QUIC_PN_MAP_LIMIT)
 		return;
 
 	if (map->last_max_pn_seen + 1 <= map->base_pn)
