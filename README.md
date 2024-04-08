@@ -210,14 +210,14 @@ in [ktls-utils](https://github.com/lxin/ktls-utils) will handle the handshake re
       UNIT        size:1024        size:4096        size:16384        size:65536
       Gbits/sec   QUIC | kTLS      QUIC | kTLS      QUIC | kTLS       QUIC | kTLS
       ---------------------------------------------------------------------------
-      mtu:1500    1.63 | 2.08      2.83 | 4.85      3.17 | 7.84       3.47 | 8.46
+      mtu:1500    1.63 | 2.16      2.83 | 5.04      3.17 | 7.84       3.47 | 7.95
       ---------------------------------------------------------------------------
-      mtu:4096    2.62 | 2.36      2.92 | 5.72      3.30 | 8.12       3.87 | 8.12
+      mtu:4500    2.11 | 2.36      4.12 | 5.97      3.76 | 8.11       4.71 | 8.11
       ---------------------------------------------------------------------------
-      mtu:8192    2.11 | 2.36      4.10 | 6.12      4.78 | 8.40       6.29 | 8.61
+      mtu:9000    2.11 | 2.41      5.24 | 6.19      5.03 | 8.66       6.79 | 8.90
 
     Note kTLS testing is using iperf from https://github.com/Mellanox/iperf_ssl.
-    The difference might be caused by:
+    The performance gap between QUIC and kTLS might be caused by:
 
       - QUIC does not support GSO.
       - QUIC has an extra copy on TX path.
