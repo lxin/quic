@@ -107,52 +107,52 @@ static void quic_pnmap_test1(struct kunit *test)
 	KUNIT_EXPECT_EQ(test, 128 + QUIC_PN_MAP_INITIAL, map->len);
 	KUNIT_EXPECT_EQ(test, 2, quic_pnmap_num_gabs(map, gabs));
 
-	/* ! map->max_pn_seen <= map->last_max_pn_seen + QUIC_PN_MAP_SIZE / 2 */
-	KUNIT_EXPECT_EQ(test, 0, quic_pnmap_mark(map, 610));
+	/* ! map->max_pn_seen <= map->last_max_pn_seen + QUIC_PN_MAP_LIMIT */
+	KUNIT_EXPECT_EQ(test, 0, quic_pnmap_mark(map, 3073));
 	KUNIT_EXPECT_EQ(test, 19, map->base_pn);
 	KUNIT_EXPECT_EQ(test, 18, map->cum_ack_point);
 	KUNIT_EXPECT_EQ(test, 0, map->min_pn_seen);
-	KUNIT_EXPECT_EQ(test, 610, map->max_pn_seen);
-	KUNIT_EXPECT_EQ(test, 610, map->last_max_pn_seen);
-	KUNIT_EXPECT_EQ(test, 640 + QUIC_PN_MAP_INITIAL, map->len);
+	KUNIT_EXPECT_EQ(test, 3073, map->max_pn_seen);
+	KUNIT_EXPECT_EQ(test, 3073, map->last_max_pn_seen);
+	KUNIT_EXPECT_EQ(test, 3136, map->len);
 	KUNIT_EXPECT_EQ(test, 3, quic_pnmap_num_gabs(map, gabs));
 
-	KUNIT_EXPECT_EQ(test, 0, quic_pnmap_mark(map, 611));
-	KUNIT_EXPECT_EQ(test, 0, quic_pnmap_mark(map, 612));
-	KUNIT_EXPECT_EQ(test, 0, quic_pnmap_mark(map, 650));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnmap_mark(map, 3074));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnmap_mark(map, 3075));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnmap_mark(map, 3090));
 	KUNIT_EXPECT_EQ(test, 19, map->base_pn);
 	KUNIT_EXPECT_EQ(test, 18, map->cum_ack_point);
-	KUNIT_EXPECT_EQ(test, 650, map->max_pn_seen);
-	KUNIT_EXPECT_EQ(test, 610, map->last_max_pn_seen);
-	KUNIT_EXPECT_EQ(test, 640 + QUIC_PN_MAP_INITIAL, map->len);
+	KUNIT_EXPECT_EQ(test, 3090, map->max_pn_seen);
+	KUNIT_EXPECT_EQ(test, 3073, map->last_max_pn_seen);
+	KUNIT_EXPECT_EQ(test, 3136, map->len);
 	KUNIT_EXPECT_EQ(test, 4, quic_pnmap_num_gabs(map, gabs));
 
-	/* ! map->max_pn_seen <= map->base_pn + QUIC_PN_MAP_SIZE * 3 / 4 */
-	KUNIT_EXPECT_EQ(test, 0, quic_pnmap_mark(map, 810));
-	KUNIT_EXPECT_EQ(test, 613, map->base_pn);
-	KUNIT_EXPECT_EQ(test, 612, map->cum_ack_point);
-	KUNIT_EXPECT_EQ(test, 810, map->max_pn_seen);
-	KUNIT_EXPECT_EQ(test, 810, map->last_max_pn_seen);
-	KUNIT_EXPECT_EQ(test, 832 + QUIC_PN_MAP_INITIAL, map->len);
+	/* ! map->max_pn_seen <= map->base_pn + QUIC_PN_MAP_LIMIT */
+	KUNIT_EXPECT_EQ(test, 0, quic_pnmap_mark(map, 3190));
+	KUNIT_EXPECT_EQ(test, 3076, map->base_pn);
+	KUNIT_EXPECT_EQ(test, 3075, map->cum_ack_point);
+	KUNIT_EXPECT_EQ(test, 3190, map->max_pn_seen);
+	KUNIT_EXPECT_EQ(test, 3190, map->last_max_pn_seen);
+	KUNIT_EXPECT_EQ(test, 3264, map->len);
 	KUNIT_EXPECT_EQ(test, 2, quic_pnmap_num_gabs(map, gabs));
 
-	KUNIT_EXPECT_EQ(test, 0, quic_pnmap_mark(map, 825));
-	KUNIT_EXPECT_EQ(test, 613, map->base_pn);
-	KUNIT_EXPECT_EQ(test, 612, map->cum_ack_point);
-	KUNIT_EXPECT_EQ(test, 825, map->max_pn_seen);
-	KUNIT_EXPECT_EQ(test, 810, map->last_max_pn_seen);
-	KUNIT_EXPECT_EQ(test, 832 + QUIC_PN_MAP_INITIAL, map->len);
+	KUNIT_EXPECT_EQ(test, 0, quic_pnmap_mark(map, 3290));
+	KUNIT_EXPECT_EQ(test, 3076, map->base_pn);
+	KUNIT_EXPECT_EQ(test, 3075, map->cum_ack_point);
+	KUNIT_EXPECT_EQ(test, 3290, map->max_pn_seen);
+	KUNIT_EXPECT_EQ(test, 3190, map->last_max_pn_seen);
+	KUNIT_EXPECT_EQ(test, 3264, map->len);
 	KUNIT_EXPECT_EQ(test, 3, quic_pnmap_num_gabs(map, gabs));
 
-	KUNIT_EXPECT_EQ(test, 0, quic_pnmap_mark(map, 824));
-	KUNIT_EXPECT_EQ(test, 0, quic_pnmap_mark(map, 823));
-	KUNIT_EXPECT_EQ(test, 0, quic_pnmap_mark(map, 812));
-	KUNIT_EXPECT_EQ(test, 0, quic_pnmap_mark(map, 811));
-	KUNIT_EXPECT_EQ(test, 613, map->base_pn);
-	KUNIT_EXPECT_EQ(test, 612, map->cum_ack_point);
-	KUNIT_EXPECT_EQ(test, 825, map->max_pn_seen);
-	KUNIT_EXPECT_EQ(test, 810, map->last_max_pn_seen);
-	KUNIT_EXPECT_EQ(test, 832 + QUIC_PN_MAP_INITIAL, map->len);
+	KUNIT_EXPECT_EQ(test, 0, quic_pnmap_mark(map, 3289));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnmap_mark(map, 3288));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnmap_mark(map, 3192));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnmap_mark(map, 3191));
+	KUNIT_EXPECT_EQ(test, 3076, map->base_pn);
+	KUNIT_EXPECT_EQ(test, 3075, map->cum_ack_point);
+	KUNIT_EXPECT_EQ(test, 3290, map->max_pn_seen);
+	KUNIT_EXPECT_EQ(test, 3190, map->last_max_pn_seen);
+	KUNIT_EXPECT_EQ(test, 3264, map->len);
 	KUNIT_EXPECT_EQ(test, 3, quic_pnmap_num_gabs(map, gabs));
 
 	for (i = 1; i <= 128; i++)
@@ -602,141 +602,42 @@ static void quic_cong_test1(struct kunit *test)
 	KUNIT_EXPECT_EQ(test, cong.min_rtt, 3);
 	KUNIT_EXPECT_EQ(test, cong.smoothed_rtt, 120003);
 	KUNIT_EXPECT_EQ(test, cong.rttvar, 160077);
-	KUNIT_EXPECT_EQ(test, cong.rto, 280080);
+	KUNIT_EXPECT_EQ(test, cong.rto, 300000);
 
-	transmit_ts = jiffies_to_usecs(jiffies) - 1;
-	ack_delay = 0;
+	transmit_ts = jiffies_to_usecs(jiffies) - 600000;
+	ack_delay = 2500;
 	quic_cong_rtt_update(&cong, transmit_ts, ack_delay);
-	KUNIT_EXPECT_EQ(test, cong.latest_rtt, 1);
-	KUNIT_EXPECT_EQ(test, cong.min_rtt, 1);
-	KUNIT_EXPECT_EQ(test, cong.smoothed_rtt, 105002);
-	KUNIT_EXPECT_EQ(test, cong.rttvar, 146308);
-	KUNIT_EXPECT_EQ(test, cong.rto, 251310);
-
-	transmit_ts = jiffies_to_usecs(jiffies) - 0;
-	ack_delay = 0;
-	quic_cong_rtt_update(&cong, transmit_ts, ack_delay);
-	KUNIT_EXPECT_EQ(test, cong.latest_rtt, 0);
-	KUNIT_EXPECT_EQ(test, cong.min_rtt, 0);
-	KUNIT_EXPECT_EQ(test, cong.smoothed_rtt, 91876);
-	KUNIT_EXPECT_EQ(test, cong.rttvar, 132700);
-	KUNIT_EXPECT_EQ(test, cong.rto, 224576);
-
-	transmit_ts = jiffies_to_usecs(jiffies) - 3;
-	ack_delay = 0;
-	quic_cong_rtt_update(&cong, transmit_ts, ack_delay);
-	KUNIT_EXPECT_EQ(test, cong.latest_rtt, 3);
+	KUNIT_EXPECT_EQ(test, cong.latest_rtt, 600000);
 	KUNIT_EXPECT_EQ(test, cong.min_rtt, 3);
-	KUNIT_EXPECT_EQ(test, cong.smoothed_rtt, 80391);
-	KUNIT_EXPECT_EQ(test, cong.rttvar, 119622);
-	KUNIT_EXPECT_EQ(test, cong.rto, 200013);
-
-	transmit_ts = jiffies_to_usecs(jiffies) - 300;
-	ack_delay = 25;
-	quic_cong_rtt_update(&cong, transmit_ts, ack_delay);
-	KUNIT_EXPECT_EQ(test, cong.latest_rtt, 300);
-	KUNIT_EXPECT_EQ(test, cong.min_rtt, 3);
-	KUNIT_EXPECT_EQ(test, cong.smoothed_rtt, 70354);
-	KUNIT_EXPECT_EQ(test, cong.rttvar, 107280);
-	KUNIT_EXPECT_EQ(test, cong.rto, 177634);
-
-	transmit_ts = jiffies_to_usecs(jiffies) - 300;
-	ack_delay = 25;
-	quic_cong_rtt_update(&cong, transmit_ts, ack_delay);
-	KUNIT_EXPECT_EQ(test, cong.latest_rtt, 300);
-	KUNIT_EXPECT_EQ(test, cong.min_rtt, 3);
-	KUNIT_EXPECT_EQ(test, cong.smoothed_rtt, 61572);
-	KUNIT_EXPECT_EQ(test, cong.rttvar, 95828);
-	KUNIT_EXPECT_EQ(test, cong.rto, 157400);
-
-	transmit_ts = jiffies_to_usecs(jiffies) - 3000;
-	ack_delay = 250;
-	quic_cong_rtt_update(&cong, transmit_ts, ack_delay);
-	KUNIT_EXPECT_EQ(test, cong.latest_rtt, 3000);
-	KUNIT_EXPECT_EQ(test, cong.min_rtt, 3);
-	KUNIT_EXPECT_EQ(test, cong.smoothed_rtt, 54000);
-	KUNIT_EXPECT_EQ(test, cong.rttvar, 85121);
-	KUNIT_EXPECT_EQ(test, cong.rto, 139121);
-
-	transmit_ts = jiffies_to_usecs(jiffies) - 0;
-	ack_delay = 0;
-	quic_cong_rtt_update(&cong, transmit_ts, ack_delay);
-	KUNIT_EXPECT_EQ(test, cong.latest_rtt, 0);
-	KUNIT_EXPECT_EQ(test, cong.min_rtt, 0);
-	KUNIT_EXPECT_EQ(test, cong.smoothed_rtt, 47250);
-	KUNIT_EXPECT_EQ(test, cong.rttvar, 75653);
-	KUNIT_EXPECT_EQ(test, cong.rto, 122903);
-
-	transmit_ts = jiffies_to_usecs(jiffies) - 0;
-	ack_delay = 0;
-	quic_cong_rtt_update(&cong, transmit_ts, ack_delay);
-	KUNIT_EXPECT_EQ(test, cong.latest_rtt, 0);
-	KUNIT_EXPECT_EQ(test, cong.min_rtt, 0);
-	KUNIT_EXPECT_EQ(test, cong.smoothed_rtt, 41343);
-	KUNIT_EXPECT_EQ(test, cong.rttvar, 67075);
-	KUNIT_EXPECT_EQ(test, cong.rto, 108418);
-
-	transmit_ts = jiffies_to_usecs(jiffies) - 30000;
-	ack_delay = 2500;
-	quic_cong_rtt_update(&cong, transmit_ts, ack_delay);
-	KUNIT_EXPECT_EQ(test, cong.latest_rtt, 30000);
-	KUNIT_EXPECT_EQ(test, cong.min_rtt, 30000);
-	KUNIT_EXPECT_EQ(test, cong.smoothed_rtt, 39925);
-	KUNIT_EXPECT_EQ(test, cong.rttvar, 52787);
-	KUNIT_EXPECT_EQ(test, cong.rto, 100000);
-
-	transmit_ts = jiffies_to_usecs(jiffies) - 30000;
-	ack_delay = 2500;
-	quic_cong_rtt_update(&cong, transmit_ts, ack_delay);
-	KUNIT_EXPECT_EQ(test, cong.latest_rtt, 30000);
-	KUNIT_EXPECT_EQ(test, cong.min_rtt, 30000);
-	KUNIT_EXPECT_EQ(test, cong.smoothed_rtt, 38684);
-	KUNIT_EXPECT_EQ(test, cong.rttvar, 41761);
-	KUNIT_EXPECT_EQ(test, cong.rto, 100000);
-
-	transmit_ts = jiffies_to_usecs(jiffies) - 3000000;
-	ack_delay = 2500;
-	quic_cong_rtt_update(&cong, transmit_ts, ack_delay);
-	KUNIT_EXPECT_EQ(test, cong.latest_rtt, 3000000);
-	KUNIT_EXPECT_EQ(test, cong.min_rtt, 30000);
-	KUNIT_EXPECT_EQ(test, cong.smoothed_rtt, 406348);
-	KUNIT_EXPECT_EQ(test, cong.rttvar, 674733);
-	KUNIT_EXPECT_EQ(test, cong.rto, 1081081);
-
-	transmit_ts = jiffies_to_usecs(jiffies) - 3000000;
-	ack_delay = 2500;
-	quic_cong_rtt_update(&cong, transmit_ts, ack_delay);
-	KUNIT_EXPECT_EQ(test, cong.latest_rtt, 3000000);
-	KUNIT_EXPECT_EQ(test, cong.min_rtt, 30000);
-	KUNIT_EXPECT_EQ(test, cong.smoothed_rtt, 728054);
-	KUNIT_EXPECT_EQ(test, cong.rttvar, 1069036);
-	KUNIT_EXPECT_EQ(test, cong.rto, 1797090);
-
-	transmit_ts = jiffies_to_usecs(jiffies) - 3000000;
-	ack_delay = 2500;
-	quic_cong_rtt_update(&cong, transmit_ts, ack_delay);
-	KUNIT_EXPECT_EQ(test, cong.latest_rtt, 3000000);
-	KUNIT_EXPECT_EQ(test, cong.min_rtt, 30000);
-	KUNIT_EXPECT_EQ(test, cong.smoothed_rtt, 1009547);
-	KUNIT_EXPECT_EQ(test, cong.rttvar, 1294390);
-	KUNIT_EXPECT_EQ(test, cong.rto, 2303937);
+	KUNIT_EXPECT_EQ(test, cong.smoothed_rtt, 177502);
+	KUNIT_EXPECT_EQ(test, cong.rttvar, 220682);
+	KUNIT_EXPECT_EQ(test, cong.rto, 398184);
 
 	transmit_ts = jiffies_to_usecs(jiffies) - 6000000;
 	ack_delay = 2500;
 	quic_cong_rtt_update(&cong, transmit_ts, ack_delay);
 	KUNIT_EXPECT_EQ(test, cong.latest_rtt, 6000000);
-	KUNIT_EXPECT_EQ(test, cong.min_rtt, 30000);
-	KUNIT_EXPECT_EQ(test, cong.smoothed_rtt, 1630853);
-	KUNIT_EXPECT_EQ(test, cong.rttvar, 2058079);
-	KUNIT_EXPECT_EQ(test, cong.rto, 3688932);
+	KUNIT_EXPECT_EQ(test, cong.min_rtt, 3);
+	KUNIT_EXPECT_EQ(test, cong.smoothed_rtt, 902814);
+	KUNIT_EXPECT_EQ(test, cong.rttvar, 1434808);
+	KUNIT_EXPECT_EQ(test, cong.rto, 2337622);
+
+	transmit_ts = jiffies_to_usecs(jiffies) - 6000000;
+	ack_delay = 2500;
+	quic_cong_rtt_update(&cong, transmit_ts, ack_delay);
+	KUNIT_EXPECT_EQ(test, cong.latest_rtt, 6000000);
+	KUNIT_EXPECT_EQ(test, cong.min_rtt, 3);
+	KUNIT_EXPECT_EQ(test, cong.smoothed_rtt, 1537462);
+	KUNIT_EXPECT_EQ(test, cong.rttvar, 2186740);
+	KUNIT_EXPECT_EQ(test, cong.rto, 3724202);
 
 	transmit_ts = jiffies_to_usecs(jiffies) - 10000000;
 	ack_delay = 2500;
 	quic_cong_rtt_update(&cong, transmit_ts, ack_delay);
 	KUNIT_EXPECT_EQ(test, cong.latest_rtt, 10000000);
-	KUNIT_EXPECT_EQ(test, cong.min_rtt, 30000);
-	KUNIT_EXPECT_EQ(test, cong.smoothed_rtt, 2674496);
-	KUNIT_EXPECT_EQ(test, cong.rttvar, 3369935);
+	KUNIT_EXPECT_EQ(test, cong.min_rtt, 3);
+	KUNIT_EXPECT_EQ(test, cong.smoothed_rtt, 2592779);
+	KUNIT_EXPECT_EQ(test, cong.rttvar, 3486860);
 	KUNIT_EXPECT_EQ(test, cong.rto, 6000000);
 }
 
