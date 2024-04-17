@@ -81,7 +81,7 @@ static inline u64 quic_crypto_recv_offset(struct quic_crypto *crypto)
 	return crypto->recv_offset;
 }
 
-static inline void quic_crypto_increase_recv_offset(struct quic_crypto *crypto, u64 offset)
+static inline void quic_crypto_inc_recv_offset(struct quic_crypto *crypto, u64 offset)
 {
 	crypto->recv_offset += offset;
 }
@@ -91,7 +91,7 @@ static inline u64 quic_crypto_send_offset(struct quic_crypto *crypto)
 	return crypto->send_offset;
 }
 
-static inline void quic_crypto_increase_send_offset(struct quic_crypto *crypto, u64 offset)
+static inline void quic_crypto_inc_send_offset(struct quic_crypto *crypto, u64 offset)
 {
 	crypto->send_offset += offset;
 }

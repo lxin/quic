@@ -329,14 +329,14 @@ static void quic_inq_recv_tail(struct sock *sk, struct quic_stream *stream, stru
 	sk->sk_data_ready(sk);
 }
 
-int quic_inq_flow_control(struct sock *sk, struct quic_stream *stream, int len)
+void quic_inq_flow_control(struct sock *sk, struct quic_stream *stream, int len)
 {
 	struct quic_inqueue *inq = quic_inq(sk);
 	struct sk_buff *nskb = NULL;
 	u32 window;
 
 	if (!len)
-		return 0;
+		return;
 
 	stream->recv.bytes += len;
 	inq->bytes += len;
@@ -362,11 +362,8 @@ int quic_inq_flow_control(struct sock *sk, struct quic_stream *stream, int len)
 			quic_outq_ctrl_tail(sk, nskb, true);
 	}
 
-	if (!nskb)
-		return 0;
-
-	quic_outq_flush(sk);
-	return 1;
+	if (nskb)
+		quic_outq_flush(sk);
 }
 
 int quic_inq_reasm_tail(struct sock *sk, struct sk_buff *skb)
@@ -497,8 +494,8 @@ int quic_inq_handshake_tail(struct sock *sk, struct sk_buff *skb)
 
 	crypto = quic_crypto(sk, level);
 	crypto_offset = quic_crypto_recv_offset(crypto);
-	pr_debug("[QUIC] %s recv_offset: %llu offset: %llu level: %u\n", __func__,
-		 crypto_offset, offset, level);
+	pr_debug("[QUIC] %s recv_offset: %llu offset: %llu level: %u len: %u\n",
+		 __func__, crypto_offset, offset, level, skb->len);
 	if (offset < crypto_offset) { /* dup */
 		kfree_skb(skb);
 		return 0;
@@ -529,7 +526,7 @@ int quic_inq_handshake_tail(struct sock *sk, struct sk_buff *skb)
 
 	__skb_queue_tail(&sk->sk_receive_queue, skb);
 	sk->sk_data_ready(sk);
-	quic_crypto_increase_recv_offset(crypto, skb->len);
+	quic_crypto_inc_recv_offset(crypto, skb->len);
 
 	skb_queue_walk_safe(head, skb, tmp) {
 		rcv_cb = QUIC_RCV_CB(skb);
@@ -537,12 +534,12 @@ int quic_inq_handshake_tail(struct sock *sk, struct sk_buff *skb)
 			continue;
 		if (rcv_cb->level > level)
 			break;
-		if (rcv_cb->offset > crypto_offset)
+		if (rcv_cb->offset > quic_crypto_recv_offset(crypto))
 			break;
 		__skb_unlink(skb, head);
 		__skb_queue_tail(&sk->sk_receive_queue, skb);
 		sk->sk_data_ready(sk);
-		quic_crypto_increase_recv_offset(crypto, skb->len);
+		quic_crypto_inc_recv_offset(crypto, skb->len);
 	}
 	return 0;
 }

@@ -277,7 +277,7 @@ static struct sk_buff *quic_frame_crypto_create(struct sock *sk, void *data, u8 
 		return NULL;
 	}
 	skb_put(skb, msg_len + hlen);
-	quic_crypto_increase_send_offset(crypto, msg_len);
+	quic_crypto_inc_send_offset(crypto, msg_len);
 	QUIC_SND_CB(skb)->level = info->level;
 	return skb;
 }
