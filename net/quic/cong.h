@@ -22,6 +22,7 @@ struct quic_cong {
 	u32 rto;
 	u32 rttvar;
 	u32 min_rtt;
+	u32 duration;
 	u32 latest_rtt;
 	u32 smoothed_rtt;
 
@@ -68,6 +69,11 @@ static inline u32 quic_cong_window(struct quic_cong *cong)
 static inline u32 quic_cong_rto(struct quic_cong *cong)
 {
 	return cong->rto;
+}
+
+static inline u32 quic_cong_duration(struct quic_cong *cong)
+{
+	return cong->duration;
 }
 
 static inline u32 quic_cong_latest_rtt(struct quic_cong *cong)

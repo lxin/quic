@@ -167,7 +167,7 @@ EXPORT_SYMBOL_GPL(quic_cong_cwnd_update_after_ecn);
 
 static void quic_cong_rto_update(struct quic_cong *cong)
 {
-	u32 rto;
+	u32 rto, duration;
 
 	rto = cong->smoothed_rtt + cong->rttvar;
 
@@ -175,9 +175,15 @@ static void quic_cong_rto_update(struct quic_cong *cong)
 		rto = QUIC_RTO_MIN;
 	else if (rto > QUIC_RTO_MAX)
 		rto = QUIC_RTO_MAX;
-
-	pr_debug("[QUIC] update rto %u\n", rto);
 	cong->rto = rto;
+
+	duration = cong->rttvar * 4;
+	if (duration < QUIC_RTO_MIN)
+		duration = QUIC_RTO_MIN;
+	duration += cong->smoothed_rtt;
+	cong->duration = duration;
+
+	pr_debug("[QUIC] update rto %u duration %u\n", rto, duration);
 }
 
 void quic_cong_set_param(struct quic_cong *cong, struct quic_transport_param *p)
