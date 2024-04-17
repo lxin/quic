@@ -8,7 +8,7 @@
  *    Xin Long <lucien.xin@gmail.com>
  */
 
-#define QUIC_PN_MAX_GABS	128
+#define QUIC_PN_MAX_GABS	256
 #define QUIC_PN_MAP_BASE_PN	0
 #define QUIC_PN_MAP_MAX_PN	((1ULL << 62) - 1)
 
@@ -16,6 +16,11 @@
 #define QUIC_PN_MAP_INCREMENT	QUIC_PN_MAP_INITIAL
 #define QUIC_PN_MAP_SIZE	4096
 #define QUIC_PN_MAP_LIMIT	(QUIC_PN_MAP_SIZE * 3 / 4)
+
+struct quic_gap_ack_block {
+	u16 start;
+	u16 end;
+};
 
 /* pn_map:
  * cum_ack_point --v
@@ -35,6 +40,7 @@
  *    from cum_ack_point/min_pn_seen to max_pn_seen
  */
 struct quic_pnmap {
+	struct quic_gap_ack_block gabs[QUIC_PN_MAX_GABS];
 	unsigned long *pn_map;
 	s64 next_number; /* next packet number to send */
 	u64 ecn_count[2][3]; /* ECT_1, ECT_0, CE count of local and peer */
@@ -53,10 +59,10 @@ struct quic_pnmap {
 	s64 last_max_pn_seen;
 };
 
-struct quic_gap_ack_block {
-	u16 start;
-	u16 end;
-};
+static inline struct quic_gap_ack_block *quic_pnmap_gabs(struct quic_pnmap *map)
+{
+	return map->gabs;
+}
 
 static inline void quic_pnmap_set_max_record_ts(struct quic_pnmap *map, u32 max_record_ts)
 {
@@ -98,7 +104,7 @@ static inline bool quic_pnmap_has_gap(const struct quic_pnmap *map)
 	return map->cum_ack_point != map->max_pn_seen;
 }
 
-static inline void quic_pnmap_increase_ecn_count(struct quic_pnmap *map, u8 ecn)
+static inline void quic_pnmap_inc_ecn_count(struct quic_pnmap *map, u8 ecn)
 {
 	if (!ecn)
 		return;
@@ -132,4 +138,4 @@ int quic_pnmap_init(struct quic_pnmap *map);
 int quic_pnmap_check(const struct quic_pnmap *map, s64 pn);
 int quic_pnmap_mark(struct quic_pnmap *map, s64 pn);
 void quic_pnmap_free(struct quic_pnmap *map);
-u16 quic_pnmap_num_gabs(struct quic_pnmap *map, struct quic_gap_ack_block *gabs);
+u16 quic_pnmap_num_gabs(struct quic_pnmap *map);

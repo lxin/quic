@@ -427,7 +427,7 @@ skip:
 	if (err)
 		goto err;
 	skb_pull(skb, packet->taglen[0]);
-	quic_pnmap_increase_ecn_count(pnmap, quic_get_msg_ecn(sk, skb));
+	quic_pnmap_inc_ecn_count(pnmap, quic_get_msg_ecn(sk, skb));
 
 	/* connection migration check: an endpoint only changes the address to which
 	 * it sends packets in response to the highest-numbered non-probing packet.

@@ -28,9 +28,9 @@
 
 static struct sk_buff *quic_frame_ack_create(struct sock *sk, void *data, u8 type)
 {
-	struct quic_gap_ack_block gabs[QUIC_PN_MAX_GABS];
 	struct quic_outqueue *outq = quic_outq(sk);
 	u64 largest, smallest, range, *ecn_count;
+	struct quic_gap_ack_block *gabs;
 	u32 frame_len, num_gabs, pn_ts;
 	u8 *p, level = *((u8 *)data);
 	struct quic_pnmap *map;
@@ -38,8 +38,9 @@ static struct sk_buff *quic_frame_ack_create(struct sock *sk, void *data, u8 typ
 	int i;
 
 	map = quic_pnmap(sk, level);
+	gabs = quic_pnmap_gabs(map);
 	type += quic_pnmap_has_ecn_count(map);
-	num_gabs = quic_pnmap_num_gabs(map, gabs);
+	num_gabs = quic_pnmap_num_gabs(map);
 	frame_len = sizeof(type) + sizeof(u32) * 7;
 	frame_len += sizeof(struct quic_gap_ack_block) * num_gabs;
 

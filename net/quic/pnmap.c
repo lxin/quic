@@ -192,8 +192,9 @@ static int quic_pnmap_grow(struct quic_pnmap *map, u16 size)
 	return 1;
 }
 
-u16 quic_pnmap_num_gabs(struct quic_pnmap *map, struct quic_gap_ack_block *gabs)
+u16 quic_pnmap_num_gabs(struct quic_pnmap *map)
 {
+	struct quic_gap_ack_block *gabs = map->gabs;
 	struct quic_pnmap_iter iter;
 	u16 start, end, ngaps = 0;
 
