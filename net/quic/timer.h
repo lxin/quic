@@ -12,22 +12,13 @@
 #define QUIC_TIMER_IN_LOSS	1
 #define QUIC_TIMER_HS_LOSS	2
 #define QUIC_TIMER_SACK		3
-#define QUIC_TIMER_IDLE		4
-#define QUIC_TIMER_PROBE	5
-#define QUIC_TIMER_PATH		6
+#define QUIC_TIMER_PATH		4
 
-#define QUIC_TIMER_MAX		7
-
-struct quic_timer {
-	struct timer_list timer;
-	unsigned long timeout;
-};
+#define QUIC_TIMER_MAX		5
 
 void quic_timer_reduce(struct sock *sk, u8 type, u32 timeout);
-void quic_timer_setup(struct sock *sk, u8 type, u32 timeout);
 void quic_timer_reset(struct sock *sk, u8 type, u32 timeout);
-void quic_timer_start(struct sock *sk, u8 type);
+void quic_timer_start(struct sock *sk, u8 type, u32 timeout);
 void quic_timer_stop(struct sock *sk, u8 type);
 void quic_timer_init(struct sock *sk);
 void quic_timer_free(struct sock *sk);
-void quic_timer_loss_update(struct sock *sk);

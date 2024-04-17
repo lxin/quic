@@ -82,7 +82,7 @@ struct quic_sock {
 	struct quic_outqueue		outq;
 	struct quic_inqueue		inq;
 	struct quic_packet		packet;
-	struct quic_timer		timers[QUIC_TIMER_MAX];
+	struct timer_list		timers[QUIC_TIMER_MAX];
 };
 
 struct quic6_sock {
@@ -150,7 +150,7 @@ static inline struct quic_stream_table *quic_streams(const struct sock *sk)
 	return &quic_sk(sk)->streams;
 }
 
-static inline struct quic_timer *quic_timer(const struct sock *sk, u8 type)
+static inline struct timer_list *quic_timer(const struct sock *sk, u8 type)
 {
 	return &quic_sk(sk)->timers[type];
 }

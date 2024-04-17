@@ -270,7 +270,7 @@ void quic_outq_transmit_probe(struct sock *sk)
 			quic_packet_mss_update(sk, pathmtu + taglen);
 	}
 
-	quic_timer_reset(sk, QUIC_TIMER_PROBE, quic_inq_probe_timeout(inq));
+	quic_timer_reset(sk, QUIC_TIMER_PATH, quic_inq_probe_timeout(inq));
 }
 
 void quic_outq_transmit_close(struct sock *sk, u8 frame, u32 errcode, u8 level)
@@ -351,7 +351,7 @@ void quic_outq_transmitted_sack(struct sock *sk, u8 level, s64 largest, s64 smal
 		if (!complete)
 			quic_outq_transmit_probe(sk);
 		if (raise_timer) /* reuse probe timer as raise timer */
-			quic_timer_reset(sk, QUIC_TIMER_PROBE, quic_inq_probe_timeout(inq) * 30);
+			quic_timer_reset(sk, QUIC_TIMER_PATH, quic_inq_probe_timeout(inq) * 30);
 	}
 
 	head = &outq->transmitted_list;
@@ -370,7 +370,6 @@ void quic_outq_transmitted_sack(struct sock *sk, u8 level, s64 largest, s64 smal
 			crypto = quic_crypto(sk, level);
 			quic_pnmap_set_max_record_ts(pnmap, rto * 2);
 			quic_crypto_set_key_update_ts(crypto, rto * 2);
-			quic_timer_setup(sk, QUIC_TIMER_PATH, rto * 3);
 		}
 		if (!acked_number) {
 			acked_number = snd_cb->number;
@@ -570,6 +569,7 @@ void quic_outq_validate_path(struct sock *sk, struct sk_buff *skb, struct quic_p
 {
 	u8 local = quic_path_udp_bind(path), path_alt = QUIC_PATH_ALT_DST;
 	struct quic_outqueue *outq = quic_outq(sk);
+	struct quic_inqueue *inq = quic_inq(sk);
 	struct sk_buff_head *head;
 	struct sk_buff *fskb;
 
@@ -584,6 +584,7 @@ void quic_outq_validate_path(struct sock *sk, struct sk_buff *skb, struct quic_p
 	quic_set_sk_addr(sk, quic_path_addr(path, 0), local);
 	quic_path_set_sent_cnt(path, 0);
 	quic_timer_stop(sk, QUIC_TIMER_PATH);
+	quic_timer_reset(sk, QUIC_TIMER_PATH, quic_inq_probe_timeout(inq));
 
 	head = &outq->control_list;
 	skb_queue_walk(head, fskb)
@@ -671,8 +672,7 @@ void quic_outq_set_param(struct sock *sk, struct quic_transport_param *p)
 {
 	struct quic_outqueue *outq = quic_outq(sk);
 	struct quic_inqueue *inq = quic_inq(sk);
-	u32 remote_ito, min_ito = 0, local_ito;
-	u8 local_crypto;
+	u32 remote_idle, local_idle;
 
 	outq->max_datagram_frame_size = p->max_datagram_frame_size;
 	outq->max_udp_payload_size = p->max_udp_payload_size;
@@ -681,29 +681,17 @@ void quic_outq_set_param(struct sock *sk, struct quic_transport_param *p)
 	outq->max_ack_delay = p->max_ack_delay;
 	outq->grease_quic_bit = p->grease_quic_bit;
 	outq->disable_1rtt_encryption = p->disable_1rtt_encryption;
-	quic_timer_setup(sk, QUIC_TIMER_SACK, outq->max_ack_delay);
 
 	outq->max_bytes = p->max_data;
 	sk->sk_sndbuf = 2 * p->max_data;
 
-	/* If neither the local endpoint nor the remote endpoint specified a
-	 * max_idle_timeout, we don't set one. Effectively, this means that
-	 * there is no idle timer.
-	 */
-	local_ito = quic_inq_max_idle_timeout(inq);
-	remote_ito = outq->max_idle_timeout;
-	if (local_ito && !remote_ito)
-		min_ito = local_ito;
-	else if (!local_ito && remote_ito)
-		min_ito = remote_ito;
-	else if (local_ito && remote_ito)
-		min_ito = min(local_ito, remote_ito);
+	remote_idle = outq->max_idle_timeout;
+	local_idle = quic_inq_max_idle_timeout(inq);
+	if (remote_idle && (!local_idle || remote_idle < local_idle))
+		quic_inq_set_max_idle_timeout(inq, remote_idle);
 
-	local_crypto = quic_inq_disable_1rtt_encryption(inq);
-	if (local_crypto && outq->disable_1rtt_encryption)
+	if (quic_inq_disable_1rtt_encryption(inq) && outq->disable_1rtt_encryption)
 		quic_packet_set_taglen(quic_packet(sk), 0);
-
-	quic_timer_setup(sk, QUIC_TIMER_IDLE, min_ito);
 }
 
 void quic_outq_init(struct sock *sk)

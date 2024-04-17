@@ -449,23 +449,22 @@ skip:
 		goto out;
 
 	if (!pki.ack_immediate && !quic_pnmap_has_gap(pnmap)) {
-		quic_timer_start(sk, QUIC_TIMER_SACK);
+		if (!quic_inq_need_sack(inq)) {
+			quic_timer_reset(sk, QUIC_TIMER_SACK, quic_inq_max_ack_delay(inq));
+			quic_inq_set_need_sack(inq, 1);
+		}
 		goto out;
 	}
 	fskb = quic_frame_create(sk, QUIC_FRAME_ACK, &level);
 	if (fskb) {
 		QUIC_SND_CB(fskb)->path_alt = rcv_cb->path_alt;
 		quic_outq_ctrl_tail(sk, fskb, true);
-		quic_timer_stop(sk, QUIC_TIMER_SACK);
 	}
 
 out:
 	consume_skb(skb);
-
-	/* Since a packet was successfully processed, we can reset the idle
-	 * timer.
-	 */
-	quic_timer_reset(sk, QUIC_TIMER_IDLE, 0);
+	if (!quic_inq_need_sack(inq)) /* delay sack timer is reused as idle timer */
+		quic_timer_reset(sk, QUIC_TIMER_SACK, quic_inq_max_idle_timeout(inq));
 	if (quic_is_established(sk))
 		quic_outq_transmit(sk);
 	return 0;
@@ -793,10 +792,12 @@ int quic_packet_route(struct sock *sk)
 {
 	struct quic_packet *packet = quic_packet(sk);
 	struct quic_inqueue *inq = quic_inq(sk);
+	struct quic_path_addr *s = quic_src(sk);
+	struct quic_path_addr *d = quic_dst(sk);
 	int err, pmtu;
 
-	packet->sa = quic_path_addr(quic_src(sk), packet->path_alt & QUIC_PATH_ALT_SRC);
-	packet->da = quic_path_addr(quic_dst(sk), packet->path_alt & QUIC_PATH_ALT_DST);
+	packet->sa = quic_path_addr(s, packet->path_alt & QUIC_PATH_ALT_SRC);
+	packet->da = quic_path_addr(d, packet->path_alt & QUIC_PATH_ALT_DST);
 	err = quic_flow_route(sk, packet->da, packet->sa);
 	if (err)
 		return err;
@@ -804,8 +805,10 @@ int quic_packet_route(struct sock *sk)
 	pmtu = min_t(u32, dst_mtu(__sk_dst_get(sk)), QUIC_PATH_MAX_PMTU);
 	quic_packet_mss_update(sk, pmtu - quic_encap_len(sk));
 
-	quic_path_pl_reset(quic_dst(sk));
-	quic_timer_reset(sk, QUIC_TIMER_PROBE, quic_inq_probe_timeout(inq));
+	if (!quic_path_sent_cnt(s) && !quic_path_sent_cnt(d)) {
+		quic_path_pl_reset(d);
+		quic_timer_reset(sk, QUIC_TIMER_PATH, quic_inq_probe_timeout(inq));
+	}
 	return 0;
 }
 

@@ -1108,8 +1108,9 @@ out:
 	if (skb)
 		quic_outq_ctrl_tail(sk, skb, false);
 
+	quic_path_pl_reset(path);
 	quic_path_set_sent_cnt(path, cnt + 1);
-	quic_timer_reset(sk, QUIC_TIMER_PATH, 0);
+	quic_timer_reset(sk, QUIC_TIMER_PATH, quic_cong_rto(quic_cong(sk)) * 3);
 	return 0;
 }
 
@@ -1171,8 +1172,9 @@ out:
 		quic_outq_ctrl_tail(sk, skb, false);
 	}
 
+	quic_path_pl_reset(quic_dst(sk));
 	quic_path_set_sent_cnt(path, cnt + 1);
-	quic_timer_reset(sk, QUIC_TIMER_PATH, 0);
+	quic_timer_reset(sk, QUIC_TIMER_PATH, quic_cong_rto(quic_cong(sk)) * 3);
 	return 0;
 err:
 	quic_path_addr_free(sk, path, 1);
@@ -1294,7 +1296,8 @@ static int quic_sock_set_crypto_secret(struct sock *sk, struct quic_crypto_secre
 			quic_outq_transmit(sk);
 		}
 		quic_set_state(sk, QUIC_SS_ESTABLISHED);
-		quic_timer_reset(sk, QUIC_TIMER_PROBE, 0);
+		/* PATH CHALLENGE timer is reused as PLPMTUD probe timer */
+		quic_timer_reset(sk, QUIC_TIMER_PATH, quic_inq_probe_timeout(inq));
 		return 0;
 	}
 

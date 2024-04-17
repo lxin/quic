@@ -246,19 +246,21 @@ err:
 void quic_rcv_err_icmp(struct sock *sk)
 {
 	u8 taglen = quic_packet_taglen(quic_packet(sk));
-	struct quic_path_addr *path = quic_dst(sk);
+	struct quic_inqueue *inq = quic_inq(sk);
+	struct quic_path_addr *s = quic_src(sk);
+	struct quic_path_addr *d = quic_dst(sk);
 	u32 pathmtu, info;
 	bool reset_timer;
 
-	info = min_t(u32, quic_path_mtu_info(path), QUIC_PATH_MAX_PMTU);
-	if (!quic_inq(sk)->probe_timeout) {
+	info = min_t(u32, quic_path_mtu_info(d), QUIC_PATH_MAX_PMTU);
+	if (!inq->probe_timeout || quic_path_sent_cnt(s) || quic_path_sent_cnt(d)) {
 		quic_packet_mss_update(sk, info - quic_encap_len(sk));
 		return;
 	}
 	info = info - quic_encap_len(sk) - taglen;
-	pathmtu = quic_path_pl_toobig(path, info, &reset_timer);
+	pathmtu = quic_path_pl_toobig(d, info, &reset_timer);
 	if (reset_timer)
-		quic_timer_reset(sk, QUIC_TIMER_PROBE, quic_inq(sk)->probe_timeout);
+		quic_timer_reset(sk, QUIC_TIMER_PATH, inq->probe_timeout);
 	if (pathmtu)
 		quic_packet_mss_update(sk, pathmtu + taglen);
 }
@@ -562,7 +564,6 @@ void quic_inq_set_param(struct sock *sk, struct quic_transport_param *p)
 	inq->validate_peer_address = p->validate_peer_address;
 	inq->receive_session_ticket = p->receive_session_ticket;
 	inq->disable_1rtt_encryption = p->disable_1rtt_encryption;
-	quic_timer_setup(sk, QUIC_TIMER_PROBE, inq->probe_timeout);
 }
 
 int quic_inq_event_recv(struct sock *sk, u8 event, void *args)

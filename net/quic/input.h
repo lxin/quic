@@ -28,6 +28,7 @@ struct quic_inqueue {
 	u32 events;
 	u32 probe_timeout;
 	u32 version;
+	u8 need_sack:1;
 	u8 grease_quic_bit:1;
 	u8 validate_peer_address:1;
 	u8 receive_session_ticket:1;
@@ -54,6 +55,11 @@ struct quic_rcv_cb {
 static inline u32 quic_inq_max_idle_timeout(struct quic_inqueue *inq)
 {
 	return inq->max_idle_timeout;
+}
+
+static inline void quic_inq_set_max_idle_timeout(struct quic_inqueue *inq, u32 timeout)
+{
+	inq->max_idle_timeout = timeout;
 }
 
 static inline u32 quic_inq_max_ack_delay(struct quic_inqueue *inq)
@@ -149,6 +155,16 @@ static inline struct sk_buff_head *quic_inq_backlog_list(struct quic_inqueue *in
 static inline u8 quic_inq_disable_1rtt_encryption(struct quic_inqueue *inq)
 {
 	return inq->disable_1rtt_encryption;
+}
+
+static inline u8 quic_inq_need_sack(struct quic_inqueue *inq)
+{
+	return inq->need_sack;
+}
+
+static inline void quic_inq_set_need_sack(struct quic_inqueue *inq, u8 need_sack)
+{
+	inq->need_sack = need_sack;
 }
 
 int quic_do_rcv(struct sock *sk, struct sk_buff *skb);

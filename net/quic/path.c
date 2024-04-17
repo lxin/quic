@@ -407,6 +407,7 @@ void quic_path_pl_reset(struct quic_path_addr *a)
 {
 	struct quic_path_dst *d = (struct quic_path_dst *)a;
 
+	d->pl.number = 0;
 	d->pl.state = QUIC_PL_BASE;
 	d->pl.pmtu = QUIC_BASE_PLPMTU;
 	d->pl.probe_size = QUIC_BASE_PLPMTU;
