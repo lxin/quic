@@ -631,6 +631,7 @@ static int quic_seq_show(struct seq_file *seq, void *v)
 {
 	struct net *net = seq_file_net(seq);
 	struct quic_hash_head *head;
+	struct quic_outqueue *outq;
 	int hash = *(loff_t *)v;
 	union quic_addr *addr;
 	struct sock *sk;
@@ -643,13 +644,17 @@ static int quic_seq_show(struct seq_file *seq, void *v)
 	sk_for_each(sk, &head->head) {
 		if (net != sock_net(sk))
 			continue;
+
 		quic_seq_dump_addr(sk, seq, quic_path_addr(quic_src(sk), 0));
 		quic_seq_dump_addr(sk, seq, quic_path_addr(quic_dst(sk), 0));
 		addr = quic_path_udp(quic_src(sk), 0);
 		quic_af_ops_get(addr->v4.sin_family)->seq_dump_addr(seq, addr);
-		seq_printf(seq, "%d\t%lld\t%d\t%d\t%d\n", sk->sk_state,
-			   quic_outq_window(quic_outq(sk)), quic_packet_mss(quic_packet(sk)),
-			   READ_ONCE(sk->sk_wmem_queued), sk_rmem_alloc_get(sk));
+
+		outq = quic_outq(sk);
+		seq_printf(seq, "%d\t%lld\t%d\t%d\t%d\t%d\n", sk->sk_state,
+			   quic_outq_window(outq), quic_packet_mss(quic_packet(sk)),
+			   quic_outq_inflight(outq), READ_ONCE(sk->sk_wmem_queued),
+			   sk_rmem_alloc_get(sk));
 	}
 	spin_unlock(&head->lock);
 	return 0;
@@ -665,7 +670,7 @@ static void *quic_seq_start(struct seq_file *seq, loff_t *pos)
 
 	if (*pos == 0)
 		seq_printf(seq, "LOCAL_ADDRESS\tREMOTE_ADDRESS\tUDP_ADDRESS\t"
-				"STATE\tWINDOW\tMSS\tTX_QUEUE\tRX_QUEUE\n");
+				"STATE\tWINDOW\tMSS\tIN_FLIGHT\tTX_QUEUE\tRX_QUEUE\n");
 
 	return (void *)pos;
 }

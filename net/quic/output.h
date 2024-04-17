@@ -191,6 +191,11 @@ static inline u8 quic_outq_pref_addr(struct quic_outqueue *outq)
 	return outq->pref_addr;
 }
 
+static inline u32 quic_outq_inflight(struct quic_outqueue *outq)
+{
+	return outq->inflight;
+}
+
 void quic_outq_dgram_tail(struct sock *sk, struct sk_buff *skb, bool cork);
 void quic_outq_data_tail(struct sock *sk, struct sk_buff *skb, bool cork);
 void quic_outq_ctrl_tail(struct sock *sk, struct sk_buff *skb, bool cork);
