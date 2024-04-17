@@ -257,10 +257,8 @@ void quic_rcv_err_icmp(struct sock *sk)
 	}
 	info = info - quic_encap_len(sk) - taglen;
 	pathmtu = quic_path_pl_toobig(path, info, &reset_timer);
-	if (reset_timer) {
-		quic_timer_setup(sk, QUIC_TIMER_PROBE, quic_inq(sk)->probe_timeout);
-		quic_timer_reset(sk, QUIC_TIMER_PROBE);
-	}
+	if (reset_timer)
+		quic_timer_reset(sk, QUIC_TIMER_PROBE, quic_inq(sk)->probe_timeout);
 	if (pathmtu)
 		quic_packet_mss_update(sk, pathmtu + taglen);
 }
@@ -363,7 +361,7 @@ void quic_inq_flow_control(struct sock *sk, struct quic_stream *stream, int len)
 	}
 
 	if (nskb)
-		quic_outq_flush(sk);
+		quic_outq_transmit(sk);
 }
 
 int quic_inq_reasm_tail(struct sock *sk, struct sk_buff *skb)

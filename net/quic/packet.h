@@ -17,14 +17,16 @@ struct quic_packet {
 	u32 len;
 
 	u32 mss[2];
+	u16 max_count;
+	u16 count;
+	u8  level;
 
 	u8  ecn_probes;
 	u8  ipfragok:1;
 	u8  path_alt:2;
 	u8  padding:1;
+	u8  filter:1;
 	u8  taglen[2];
-	u8  count;
-	u8  level;
 };
 
 #define QUIC_PACKET_INITIAL_V1		0
@@ -69,11 +71,6 @@ static inline u32 quic_packet_max_payload_dgram(struct quic_packet *packet)
 	return packet->mss[1] - packet->overhead - packet->taglen[!!packet->level];
 }
 
-static inline bool quic_packet_empty(struct quic_packet *packet)
-{
-	return skb_queue_empty(&packet->frame_list);
-}
-
 static inline void quic_packet_set_taglen(struct quic_packet *packet, u8 taglen)
 {
 	packet->taglen[0] = taglen;
@@ -84,12 +81,13 @@ static inline void quic_packet_set_ecn_probes(struct quic_packet *packet, u8 pro
 	packet->ecn_probes = probes;
 }
 
-void quic_packet_config(struct sock *sk, u8 level, u8 path_alt);
+void quic_packet_set_filter(struct sock *sk, u8 level, u16 count);
 void quic_packet_build(struct sock *sk);
+int quic_packet_config(struct sock *sk, u8 level, u8 path_alt);
 int quic_packet_route(struct sock *sk);
 int quic_packet_process(struct sock *sk, struct sk_buff *skb, u8 resume);
-int quic_packet_tail(struct sock *sk, struct sk_buff *skb, u8 dgram);
-void quic_packet_flush(struct sock *sk);
+int quic_packet_tail(struct sock *sk, struct sk_buff *skb, struct sk_buff_head *from, u8 dgram);
+int quic_packet_flush(struct sock *sk);
 int quic_packet_retry_transmit(struct sock *sk, struct quic_request_sock *req);
 int quic_packet_version_transmit(struct sock *sk, struct quic_request_sock *req);
 int quic_packet_stateless_reset_transmit(struct sock *sk, struct quic_request_sock *req);

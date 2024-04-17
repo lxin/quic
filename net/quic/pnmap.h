@@ -57,6 +57,11 @@ struct quic_pnmap {
 
 	u32 last_max_pn_ts;
 	s64 last_max_pn_seen;
+
+	u32 loss_ts;
+	u32 inflight;
+	u32 last_sent_ts;
+	s64 max_pn_acked;
 };
 
 static inline struct quic_gap_ack_block *quic_pnmap_gabs(struct quic_pnmap *map)
@@ -79,14 +84,61 @@ static inline s64 quic_pnmap_max_pn_seen(const struct quic_pnmap *map)
 	return map->max_pn_seen;
 }
 
+static inline void quic_pnmap_set_max_pn_acked(struct quic_pnmap *map, s64 max_pn_acked)
+{
+	if (map->max_pn_acked >= max_pn_acked)
+		return;
+	map->max_pn_acked = max_pn_acked;
+}
+
+static inline s64 quic_pnmap_max_pn_acked(const struct quic_pnmap *map)
+{
+	return map->max_pn_acked;
+}
+
+static inline void quic_pnmap_set_loss_ts(struct quic_pnmap *map, u32 loss_ts)
+{
+	map->loss_ts = loss_ts;
+}
+
+static inline u32 quic_pnmap_loss_ts(const struct quic_pnmap *map)
+{
+	return map->loss_ts;
+}
+
+static inline void quic_pnmap_set_last_sent_ts(struct quic_pnmap *map, u32 last_sent_ts)
+{
+	map->last_sent_ts = last_sent_ts;
+}
+
+static inline u32 quic_pnmap_last_sent_ts(const struct quic_pnmap *map)
+{
+	return map->last_sent_ts;
+}
+
 static inline s64 quic_pnmap_next_number(const struct quic_pnmap *map)
 {
 	return map->next_number;
 }
 
-static inline s64 quic_pnmap_increase_next_number(struct quic_pnmap *map)
+static inline s64 quic_pnmap_inc_next_number(struct quic_pnmap *map)
 {
 	return map->next_number++;
+}
+
+static inline u32 quic_pnmap_inflight(struct quic_pnmap *map)
+{
+	return map->inflight;
+}
+
+static inline void quic_pnmap_inc_inflight(struct quic_pnmap *map, u16 bytes)
+{
+	map->inflight += bytes;
+}
+
+static inline void quic_pnmap_dec_inflight(struct quic_pnmap *map, u16 bytes)
+{
+	map->inflight -= bytes;
 }
 
 static inline s64 quic_pnmap_base_pn(const struct quic_pnmap *map)

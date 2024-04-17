@@ -661,12 +661,12 @@ static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 		skb = quic_frame_create(sk, QUIC_FRAME_STREAM, &msginfo);
 		if (!skb)
 			goto out;
-		quic_outq_data_tail(sk, skb, true);
+		quic_outq_stream_tail(sk, skb, true);
 	}
 out:
 	err = msg_len - iov_iter_count(&msg->msg_iter);
 	if (!(msg->msg_flags & MSG_MORE) && err)
-		quic_outq_flush(sk);
+		quic_outq_transmit(sk);
 err:
 	release_sock(sk);
 	return err;
@@ -1109,7 +1109,7 @@ out:
 		quic_outq_ctrl_tail(sk, skb, false);
 
 	quic_path_set_sent_cnt(path, cnt + 1);
-	quic_timer_reset(sk, QUIC_TIMER_PATH);
+	quic_timer_reset(sk, QUIC_TIMER_PATH, 0);
 	return 0;
 }
 
@@ -1172,7 +1172,7 @@ out:
 	}
 
 	quic_path_set_sent_cnt(path, cnt + 1);
-	quic_timer_reset(sk, QUIC_TIMER_PATH);
+	quic_timer_reset(sk, QUIC_TIMER_PATH, 0);
 	return 0;
 err:
 	quic_path_addr_free(sk, path, 1);
@@ -1282,19 +1282,19 @@ static int quic_sock_set_crypto_secret(struct sock *sk, struct quic_crypto_secre
 			/* some implementations don't send ACKs to handshake packets
 			 * so ACK them manually.
 			 */
-			quic_outq_retransmit_check(sk, QUIC_CRYPTO_INITIAL,
+			quic_outq_transmitted_sack(sk, QUIC_CRYPTO_INITIAL,
 						   QUIC_PN_MAP_MAX_PN, 0, 0, 0);
-			quic_outq_retransmit_check(sk, QUIC_CRYPTO_HANDSHAKE,
+			quic_outq_transmitted_sack(sk, QUIC_CRYPTO_HANDSHAKE,
 						   QUIC_PN_MAP_MAX_PN, 0, 0, 0);
 			skb = __skb_dequeue(&list);
 			while (skb) {
 				quic_outq_ctrl_tail(sk, skb, true);
 				skb = __skb_dequeue(&list);
 			}
-			quic_outq_flush(sk);
+			quic_outq_transmit(sk);
 		}
 		quic_set_state(sk, QUIC_SS_ESTABLISHED);
-		quic_timer_reset(sk, QUIC_TIMER_PROBE);
+		quic_timer_reset(sk, QUIC_TIMER_PROBE, 0);
 		return 0;
 	}
 
@@ -1302,12 +1302,12 @@ static int quic_sock_set_crypto_secret(struct sock *sk, struct quic_crypto_secre
 	if (secret->level) {
 		/* 0rtt send key is ready */
 		if (secret->level == QUIC_CRYPTO_EARLY)
-			quic_outq_set_level(outq, QUIC_CRYPTO_EARLY);
+			quic_outq_set_data_level(outq, QUIC_CRYPTO_EARLY);
 		return 0;
 	}
 
 	/* app send key is ready */
-	quic_outq_set_level(outq, QUIC_CRYPTO_APP);
+	quic_outq_set_data_level(outq, QUIC_CRYPTO_APP);
 	seqno = quic_connection_id_last_number(id_set) + 1;
 	for (; seqno <= quic_connection_id_max_count(id_set); seqno++) {
 		skb = quic_frame_create(sk, QUIC_FRAME_NEW_CONNECTION_ID, &prior);

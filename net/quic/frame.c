@@ -732,7 +732,7 @@ static int quic_frame_ack_process(struct sock *sk, struct sk_buff *skb, u8 type)
 	}
 
 	smallest = largest - range;
-	quic_outq_retransmit_check(sk, level, largest, smallest, largest, delay);
+	quic_outq_transmitted_sack(sk, level, largest, smallest, largest, delay);
 
 	for (i = 0; i < count; i++) {
 		if (!quic_get_var(&p, &len, &gap) ||
@@ -740,7 +740,7 @@ static int quic_frame_ack_process(struct sock *sk, struct sk_buff *skb, u8 type)
 			return -EINVAL;
 		largest = smallest - gap - 2;
 		smallest = largest - range;
-		quic_outq_retransmit_check(sk, level, largest, smallest, 0, 0);
+		quic_outq_transmitted_sack(sk, level, largest, smallest, 0, 0);
 	}
 
 	if (type == QUIC_FRAME_ACK_ECN) {
@@ -753,6 +753,8 @@ static int quic_frame_ack_process(struct sock *sk, struct sk_buff *skb, u8 type)
 			quic_outq_set_window(quic_outq(sk), quic_cong_window(cong));
 		}
 	}
+
+	quic_outq_retransmit_mark(sk, level, 0);
 
 	return skb->len - len;
 }
@@ -873,8 +875,8 @@ static int quic_frame_handshake_done_process(struct sock *sk, struct sk_buff *sk
 		return -EINVAL;
 	}
 	/* some implementations don't send ACKs to handshake packets, so ACK them manually */
-	quic_outq_retransmit_check(sk, QUIC_CRYPTO_INITIAL, QUIC_PN_MAP_MAX_PN, 0, 0, 0);
-	quic_outq_retransmit_check(sk, QUIC_CRYPTO_HANDSHAKE, QUIC_PN_MAP_MAX_PN, 0, 0, 0);
+	quic_outq_transmitted_sack(sk, QUIC_CRYPTO_INITIAL, QUIC_PN_MAP_MAX_PN, 0, 0, 0);
+	quic_outq_transmitted_sack(sk, QUIC_CRYPTO_HANDSHAKE, QUIC_PN_MAP_MAX_PN, 0, 0, 0);
 
 	if (quic_outq_pref_addr(quic_outq(sk)))
 		quic_sock_change_daddr(sk, NULL, 0);
