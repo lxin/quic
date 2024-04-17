@@ -15,7 +15,7 @@ struct quic_outqueue {
 	struct sk_buff_head encrypted_list;
 	struct sk_buff_head datagram_list;
 	struct sk_buff_head control_list;
-	struct list_head tsorted_list;
+	struct sk_buff *retransmit_skb;
 	struct work_struct work;
 	u64 last_max_bytes;
 	u64 max_bytes;
@@ -194,10 +194,7 @@ static inline u8 quic_outq_pref_addr(struct quic_outqueue *outq)
 void quic_outq_dgram_tail(struct sock *sk, struct sk_buff *skb, bool cork);
 void quic_outq_data_tail(struct sock *sk, struct sk_buff *skb, bool cork);
 void quic_outq_ctrl_tail(struct sock *sk, struct sk_buff *skb, bool cork);
-void quic_outq_sorted_tail(struct sock *sk, struct sk_buff *skb);
 void quic_outq_rtx_tail(struct sock *sk, struct sk_buff *skb);
-void quic_outq_requeue(struct sock *sk, struct sk_buff_head *head);
-void quic_outq_unlink_and_free(struct sk_buff *skb);
 void quic_outq_flush(struct sock *sk);
 void quic_outq_retransmit(struct sock *sk);
 void quic_outq_retransmit_check(struct sock *sk, u8 level, s64 largest,

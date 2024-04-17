@@ -1459,7 +1459,6 @@ struct sk_buff *quic_frame_create(struct sock *sk, u8 type, void *data)
 		pr_err("[QUIC] frame create failed %x\n", type);
 		return NULL;
 	}
-	INIT_LIST_HEAD(&skb->tcp_tsorted_anchor);
 	pr_debug("[QUIC] %s type: %u len: %u\n", __func__, type, skb->len);
 	snd_cb = QUIC_SND_CB(skb);
 	if (!snd_cb->frame_type)

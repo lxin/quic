@@ -15,17 +15,6 @@
 
 #define QUIC_RTX_MAX	15
 
-static void quic_outq_list_purge(struct sk_buff_head *list)
-{
-	struct sk_buff *skb;
-
-	skb = __skb_dequeue(list);
-	while (skb) {
-		quic_outq_unlink_and_free(skb);
-		skb = __skb_dequeue(list);
-	}
-}
-
 static void quic_outq_transmit_ctrl(struct sock *sk)
 {
 	struct sk_buff_head *head = &quic_outq(sk)->control_list;
@@ -172,9 +161,6 @@ static void quic_outq_wfree(struct sk_buff *skb)
 	int len = QUIC_SND_CB(skb)->data_bytes;
 	struct sock *sk = skb->sk;
 
-	if (!len)
-		return;
-
 	WARN_ON(refcount_sub_and_test(len, &sk->sk_wmem_alloc));
 	sk_wmem_queued_add(sk, -len);
 	sk_mem_uncharge(sk, len);
@@ -192,15 +178,7 @@ static void quic_outq_set_owner_w(struct sk_buff *skb, struct sock *sk)
 	sk_mem_charge(sk, len);
 
 	skb->sk = sk;
-}
-
-void quic_outq_unlink_and_free(struct sk_buff *skb)
-{
-	list_del_init(&skb->tcp_tsorted_anchor);
-	quic_outq_wfree(skb);
-	skb->destructor = NULL;
-	skb->_skb_refdst = 0UL;
-	kfree_skb(skb);
+	skb->destructor = quic_outq_wfree;
 }
 
 void quic_outq_data_tail(struct sock *sk, struct sk_buff *skb, bool cork)
@@ -265,25 +243,6 @@ void quic_outq_rtx_tail(struct sock *sk, struct sk_buff *skb)
 		}
 	}
 	__skb_queue_tail(head, skb);
-}
-
-void quic_outq_sorted_tail(struct sock *sk, struct sk_buff *skb)
-{
-	struct quic_outqueue *outq = quic_outq(sk);
-	struct sk_buff *pos;
-
-	if (!list_empty(&skb->tcp_tsorted_anchor))
-		return;
-
-	if (QUIC_SND_CB(skb)->level) {
-		list_for_each_entry(pos, &outq->tsorted_list, tcp_tsorted_anchor) {
-			if (!QUIC_SND_CB(pos)->level) {
-				list_add_tail(&skb->tcp_tsorted_anchor, &pos->tcp_tsorted_anchor);
-				return;
-			}
-		}
-	}
-	list_add_tail(&skb->tcp_tsorted_anchor, &outq->tsorted_list);
 }
 
 void quic_outq_transmit_probe(struct sock *sk)
@@ -371,12 +330,12 @@ void quic_outq_retransmit_check(struct sock *sk, u8 level, s64 largest, s64 smal
 	struct quic_outqueue *outq = quic_outq(sk);
 	struct quic_inqueue *inq = quic_inq(sk);
 	struct quic_cong *cong = quic_cong(sk);
+	struct sk_buff *skb, *tmp, *first;
 	struct quic_stream_update update;
 	struct quic_stream *stream;
 	struct quic_snd_cb *snd_cb;
 	bool raise_timer, complete;
 	struct sk_buff_head *head;
-	struct sk_buff *skb, *tmp;
 	s64 acked_number = 0;
 
 	pr_debug("[QUIC] %s largest: %llu, smallest: %llu\n", __func__, largest, smallest);
@@ -395,6 +354,7 @@ void quic_outq_retransmit_check(struct sock *sk, u8 level, s64 largest, s64 smal
 	}
 
 	head = &outq->retransmit_list;
+	first = skb_peek(head);
 	skb_queue_reverse_walk_safe(head, skb, tmp) {
 		snd_cb = QUIC_SND_CB(skb);
 		if (level != snd_cb->level)
@@ -450,12 +410,16 @@ void quic_outq_retransmit_check(struct sock *sk, u8 level, s64 largest, s64 smal
 			outq->data_blocked = 0;
 		}
 unlink:
+		if (outq->retransmit_skb == skb)
+			outq->retransmit_skb = NULL;
 		__skb_unlink(skb, head);
-		quic_outq_unlink_and_free(skb);
+		kfree_skb(skb);
 	}
 
 	if (skb_queue_empty(head))
 		quic_timer_stop(sk, QUIC_TIMER_RTX);
+	else if (first && first != skb_peek(head))
+		quic_timer_reset(sk, QUIC_TIMER_RTX);
 
 	if (!acked_bytes)
 		return;
@@ -466,65 +430,56 @@ unlink:
 
 void quic_outq_retransmit(struct sock *sk)
 {
-	struct quic_packet *packet = quic_packet(sk);
 	struct quic_outqueue *outq = quic_outq(sk);
 	struct quic_cong *cong = quic_cong(sk);
-	struct sk_buff *skb, *tmp, *nskb;
 	struct quic_snd_cb *snd_cb;
-	u32 transmit_ts, now;
+	struct sk_buff_head *head;
+	struct sk_buff *skb;
 	s64 number, last;
+	u32 transmit_ts;
 
+	head = &outq->retransmit_list;
 	if (outq->rtx_count >= QUIC_RTX_MAX) {
 		pr_warn("[QUIC] %s timeout!\n", __func__);
 		sk->sk_err = -ETIMEDOUT;
-		return quic_set_state(sk, QUIC_SS_CLOSED);
+		quic_set_state(sk, QUIC_SS_CLOSED);
+		return;
 	}
-	if (list_empty(&outq->tsorted_list))
-		return quic_outq_flush(sk);
-
 	last = quic_pnmap_next_number(quic_pnmap(sk, QUIC_CRYPTO_APP)) - 1;
-	now = jiffies_to_usecs(jiffies);
 
-	list_for_each_entry_safe(skb, tmp, &outq->tsorted_list, tcp_tsorted_anchor) {
-		snd_cb = QUIC_SND_CB(skb);
-		transmit_ts = snd_cb->transmit_ts;
-		if (quic_is_established(sk) && transmit_ts + quic_cong_rto(cong) > now) {
-			quic_timer_start(sk, QUIC_TIMER_RTX);
-			break;
-		}
+next:
+	skb = outq->retransmit_skb ?: skb_peek(head);
+	if (!skb)
+		return quic_outq_flush(sk);
+	__skb_unlink(skb, head);
 
-		nskb = skb->next;
-		number = snd_cb->packet_number;
-		__skb_unlink(skb, &outq->retransmit_list);
-		if (quic_frame_is_dgram(snd_cb->frame_type)) { /* no need to retransmit dgram */
-			outq->inflight -= snd_cb->data_bytes;
-			quic_outq_unlink_and_free(skb);
-			quic_cong_cwnd_update_after_timeout(cong, number, transmit_ts, last);
-			quic_outq_set_window(outq, quic_cong_window(cong));
-			continue;
-		}
-
-		if (quic_packet_empty(packet))
-			quic_packet_config(sk, snd_cb->level ?: outq->level, snd_cb->path_alt);
-
-		if (!quic_packet_tail(sk, skb, 0)) { /* retransmit only one packet a time */
-			__skb_queue_before(&outq->retransmit_list, nskb, skb);
-			break;
-		}
-
-		if (snd_cb->rtx_count++ > QUIC_RTX_MAX)
-			pr_warn("[QUIC] %s packet %llu timeout\n", __func__, number);
-		if (snd_cb->data_bytes) {
-			quic_cong_cwnd_update_after_timeout(cong, number, transmit_ts, last);
-			quic_outq_set_window(outq, quic_cong_window(cong));
-		}
+	snd_cb = QUIC_SND_CB(skb);
+	transmit_ts = snd_cb->transmit_ts;
+	number = snd_cb->packet_number;
+	if (quic_frame_is_dgram(snd_cb->frame_type)) { /* no need to retransmit dgram frame */
+		outq->inflight -= snd_cb->data_bytes;
+		kfree_skb(skb);
+		quic_cong_cwnd_update_after_timeout(cong, number, transmit_ts, last);
+		quic_outq_set_window(outq, quic_cong_window(cong));
+		goto next;
 	}
 
-	if (!quic_packet_empty(packet)) {
-		outq->rtx_count++;
-		quic_packet_build(sk);
-	}
+	quic_packet_config(sk, (snd_cb->level ?: outq->level), snd_cb->path_alt);
+	quic_packet_tail(sk, skb, 0);
+	quic_packet_build(sk);
 	quic_packet_flush(sk);
+
+	outq->retransmit_skb = skb;
+	outq->rtx_count++;
+
+	snd_cb->rtx_count++;
+	if (snd_cb->rtx_count >= QUIC_RTX_MAX)
+		pr_warn("[QUIC] %s packet %llu timeout\n", __func__, number);
+	quic_timer_start(sk, QUIC_TIMER_RTX);
+	if (snd_cb->data_bytes) {
+		quic_cong_cwnd_update_after_timeout(cong, number, transmit_ts, last);
+		quic_outq_set_window(outq, quic_cong_window(cong));
+	}
 }
 
 void quic_outq_stream_purge(struct sock *sk, struct quic_stream *stream)
@@ -537,8 +492,10 @@ void quic_outq_stream_purge(struct sock *sk, struct quic_stream *stream)
 	skb_queue_walk_safe(head, skb, tmp) {
 		if (QUIC_SND_CB(skb)->stream != stream)
 			continue;
+		if (outq->retransmit_skb == skb)
+			outq->retransmit_skb = NULL;
 		__skb_unlink(skb, head);
-		quic_outq_unlink_and_free(skb);
+		kfree_skb(skb);
 	}
 
 	head = &sk->sk_write_queue;
@@ -546,7 +503,7 @@ void quic_outq_stream_purge(struct sock *sk, struct quic_stream *stream)
 		if (QUIC_SND_CB(skb)->stream != stream)
 			continue;
 		__skb_unlink(skb, head);
-		quic_outq_unlink_and_free(skb);
+		kfree_skb(skb);
 	}
 }
 
@@ -653,7 +610,6 @@ void quic_outq_init(struct sock *sk)
 {
 	struct quic_outqueue *outq = quic_outq(sk);
 
-	INIT_LIST_HEAD(&outq->tsorted_list);
 	skb_queue_head_init(&outq->control_list);
 	skb_queue_head_init(&outq->datagram_list);
 	skb_queue_head_init(&outq->encrypted_list);
@@ -665,10 +621,10 @@ void quic_outq_free(struct sock *sk)
 {
 	struct quic_outqueue *outq = quic_outq(sk);
 
-	quic_outq_list_purge(&sk->sk_write_queue);
-	quic_outq_list_purge(&outq->retransmit_list);
-	quic_outq_list_purge(&outq->datagram_list);
-	quic_outq_list_purge(&outq->control_list);
+	__skb_queue_purge(&sk->sk_write_queue);
+	__skb_queue_purge(&outq->retransmit_list);
+	__skb_queue_purge(&outq->datagram_list);
+	__skb_queue_purge(&outq->control_list);
 	kfree(outq->close_phrase);
 }
 
@@ -681,28 +637,4 @@ void quic_outq_encrypted_tail(struct sock *sk, struct sk_buff *skb)
 
 	if (!schedule_work(&outq->work))
 		sock_put(sk);
-}
-
-void quic_outq_requeue(struct sock *sk, struct sk_buff_head *list)
-{
-	struct quic_outqueue *outq = quic_outq(sk);
-	struct quic_snd_cb *snd_cb;
-	struct sk_buff_head *head;
-	struct sk_buff *skb;
-
-	skb = __skb_dequeue_tail(list);
-	while (skb) {
-		snd_cb = QUIC_SND_CB(skb);
-		if (!list_empty(&skb->tcp_tsorted_anchor))
-			head = &outq->retransmit_list;
-		else if (quic_frame_is_dgram(snd_cb->frame_type))
-			head = &outq->datagram_list;
-		else if (snd_cb->data_bytes)
-			head = &sk->sk_write_queue;
-		else
-			head = &outq->control_list;
-
-		__skb_queue_head(head, skb);
-		skb = __skb_dequeue_tail(list);
-	}
 }
