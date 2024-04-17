@@ -71,14 +71,14 @@ const QUIC_BUFFER Alpn = { sizeof("sample") - 1, (uint8_t*)"sample" };
 const uint16_t UdpPort = 1234;
 
 //
-// The default idle timeout period (1 second) used for the protocol.
+// The default idle timeout period (3 second) used for the protocol.
 //
-const uint64_t IdleTimeoutMs = 1000;
+const uint64_t IdleTimeoutMs = 3000;
 
 //
-// sysctl net.core.rmem_default / 2 used for the protocol.
+// 2 MB flow control window used for the protocol.
 //
-const uint64_t ConnFlowControlWindow = 212992 / 2;
+const uint64_t ConnFlowControlWindow = 2097152;
 
 //
 // The length of buffer sent over the streams in the protocol.
