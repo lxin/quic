@@ -91,12 +91,13 @@ static int quic_v4_flow_route(struct sock *sk, union quic_addr *da, union quic_a
 static void quic_v4_lower_xmit(struct sock *sk, struct sk_buff *skb, union quic_addr *da,
 			       union quic_addr *sa)
 {
-	u8 tos = (inet_sk(sk)->tos | QUIC_SND_CB(skb)->ecn);
+	struct quic_snd_cb *snd_cb = QUIC_SND_CB(skb);
+	u8 tos = (inet_sk(sk)->tos | snd_cb->ecn);
 	struct dst_entry *dst;
 	__be16 df = 0;
 
-	pr_debug("[QUIC] %s: skb: %p len: %d | path: %pI4:%d -> %pI4:%d\n", __func__, skb, skb->len,
-		 &sa->v4.sin_addr.s_addr, ntohs(sa->v4.sin_port),
+	pr_debug("[QUIC] %s: skb: %p len: %d num: %llu | path: %pI4:%d -> %pI4:%d\n", __func__,
+		 skb, skb->len, snd_cb->number, &sa->v4.sin_addr.s_addr, ntohs(sa->v4.sin_port),
 		 &da->v4.sin_addr.s_addr, ntohs(da->v4.sin_port));
 
 	dst = sk_dst_get(sk);
@@ -115,20 +116,20 @@ static void quic_v4_lower_xmit(struct sock *sk, struct sk_buff *skb, union quic_
 static void quic_v6_lower_xmit(struct sock *sk, struct sk_buff *skb, union quic_addr *da,
 			       union quic_addr *sa)
 {
-	u8 tclass = (inet6_sk(sk)->tclass | QUIC_SND_CB(skb)->ecn);
+	struct quic_snd_cb *snd_cb = QUIC_SND_CB(skb);
+	u8 tc = (inet6_sk(sk)->tclass | snd_cb->ecn);
 	struct dst_entry *dst = sk_dst_get(sk);
 
 	if (!dst) {
 		kfree_skb(skb);
 		return;
 	}
-	pr_debug("[QUIC] %s: skb: %p len: %d | path: %pI6c:%d -> %pI6c:%d\n", __func__,
-		 skb, skb->len, &sa->v6.sin6_addr, ntohs(sa->v6.sin6_port),
+	pr_debug("[QUIC] %s: skb: %p len: %d num: %llu | path: %pI6c:%d -> %pI6c:%d\n", __func__,
+		 skb, skb->len, snd_cb->number, &sa->v6.sin6_addr, ntohs(sa->v6.sin6_port),
 		 &da->v6.sin6_addr, ntohs(da->v6.sin6_port));
 
-	udp_tunnel6_xmit_skb(dst, sk, skb, NULL, &sa->v6.sin6_addr, &da->v6.sin6_addr,
-			     tclass, ip6_dst_hoplimit(dst), 0,
-			     sa->v6.sin6_port, da->v6.sin6_port, false);
+	udp_tunnel6_xmit_skb(dst, sk, skb, NULL, &sa->v6.sin6_addr, &da->v6.sin6_addr, tc,
+			     ip6_dst_hoplimit(dst), 0, sa->v6.sin6_port, da->v6.sin6_port, false);
 }
 
 static void quic_v4_udp_conf_init(struct sock *sk, struct udp_port_cfg *conf, union quic_addr *a)
