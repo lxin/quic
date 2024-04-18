@@ -71,7 +71,7 @@ struct quic_sock {
 	struct quic_stream_table	streams;
 	struct quic_cong		cong;
 	struct quic_crypto		crypto[QUIC_CRYPTO_MAX];
-	struct quic_pnmap		pn_map[QUIC_CRYPTO_MAX];
+	struct quic_pnmap		pn_map[QUIC_PNMAP_MAX];
 
 	struct quic_transport_param	local;
 	struct quic_transport_param	remote;

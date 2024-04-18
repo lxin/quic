@@ -17,6 +17,8 @@
 #define QUIC_PN_MAP_SIZE	4096
 #define QUIC_PN_MAP_LIMIT	(QUIC_PN_MAP_SIZE * 3 / 4)
 
+#define QUIC_PNMAP_MAX		(QUIC_CRYPTO_MAX - 1)
+
 struct quic_gap_ack_block {
 	u16 start;
 	u16 end;

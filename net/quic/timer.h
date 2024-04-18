@@ -8,13 +8,14 @@
  *    Xin Long <lucien.xin@gmail.com>
  */
 
-#define QUIC_TIMER_AP_LOSS	0
-#define QUIC_TIMER_IN_LOSS	1
-#define QUIC_TIMER_HS_LOSS	2
-#define QUIC_TIMER_SACK		3
-#define QUIC_TIMER_PATH		4
-
-#define QUIC_TIMER_MAX		5
+enum {
+	QUIC_TIMER_AP_LOSS = QUIC_CRYPTO_APP,
+	QUIC_TIMER_IN_LOSS = QUIC_CRYPTO_INITIAL,
+	QUIC_TIMER_HS_LOSS = QUIC_CRYPTO_HANDSHAKE,
+	QUIC_TIMER_SACK,
+	QUIC_TIMER_PATH,
+	QUIC_TIMER_MAX,
+};
 
 void quic_timer_reduce(struct sock *sk, u8 type, u32 timeout);
 void quic_timer_reset(struct sock *sk, u8 type, u32 timeout);

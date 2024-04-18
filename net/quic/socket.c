@@ -211,7 +211,7 @@ static int quic_init_sock(struct sock *sk)
 	quic_packet_init(sk);
 	quic_timer_init(sk);
 
-	for (i = 0; i < QUIC_CRYPTO_MAX; i++) {
+	for (i = 0; i < QUIC_PNMAP_MAX; i++) {
 		if (quic_pnmap_init(quic_pnmap(sk, i)))
 			return -ENOMEM;
 	}
@@ -231,10 +231,10 @@ static void quic_destroy_sock(struct sock *sk)
 {
 	u8 i;
 
-	for (i = 0; i < QUIC_CRYPTO_MAX; i++) {
+	for (i = 0; i < QUIC_PNMAP_MAX; i++)
 		quic_pnmap_free(quic_pnmap(sk, i));
+	for (i = 0; i < QUIC_CRYPTO_MAX; i++)
 		quic_crypto_destroy(quic_crypto(sk, i));
-	}
 
 	quic_timer_free(sk);
 	quic_stream_free(quic_streams(sk));
