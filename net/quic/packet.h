@@ -92,6 +92,7 @@ int quic_packet_retry_transmit(struct sock *sk, struct quic_request_sock *req);
 int quic_packet_version_transmit(struct sock *sk, struct quic_request_sock *req);
 int quic_packet_stateless_reset_transmit(struct sock *sk, struct quic_request_sock *req);
 int quic_packet_refuse_close_transmit(struct sock *sk, struct quic_request_sock *req, u32 errcode);
+int quic_packet_parse_alpn(struct sk_buff *skb, struct quic_data *alpn);
 void quic_packet_mss_update(struct sock *sk, int mss);
 int quic_packet_xmit(struct sock *sk, struct sk_buff *skb, u8 resume);
 void quic_packet_init(struct sock *sk);

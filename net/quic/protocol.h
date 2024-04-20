@@ -10,6 +10,7 @@
 
 extern struct percpu_counter quic_sockets_allocated;
 extern struct workqueue_struct *quic_wq;
+extern bool quic_alpn_match;
 extern u8 random_data[32];
 
 extern long sysctl_quic_mem[3];

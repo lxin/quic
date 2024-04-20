@@ -11,6 +11,7 @@
  */
 
 #include "socket.h"
+#include "number.h"
 #include "frame.h"
 #include <net/inet_common.h>
 #include <net/sock_reuseport.h>
@@ -117,8 +118,10 @@ static bool quic_has_bind_any(struct sock *sk)
 struct sock *quic_sock_lookup(struct sk_buff *skb, union quic_addr *sa, union quic_addr *da)
 {
 	struct net *net = dev_net(skb->dev);
+	struct quic_data alpns = {}, alpn;
 	struct sock *sk = NULL, *tmp;
 	struct quic_hash_head *head;
+	u64 length;
 
 	/* Search for regular socket first */
 	head = quic_sock_head(net, sa, da);
@@ -135,17 +138,45 @@ struct sock *quic_sock_lookup(struct sk_buff *skb, union quic_addr *sa, union qu
 	if (sk)
 		return sk;
 
+	if (quic_alpn_match && quic_packet_parse_alpn(skb, &alpns) < 0)
+		return NULL;
+
 	/* Search for listen socket */
 	head = quic_listen_sock_head(net, ntohs(sa->v4.sin_port));
 	spin_lock(&head->lock);
-	sk_for_each(tmp, &head->head) {
-		if (net == sock_net(tmp) && quic_is_listen(tmp) &&
-		    quic_cmp_sk_addr(tmp, quic_path_addr(quic_src(tmp), 0), sa)) {
-			sk = tmp;
-			if (!quic_has_bind_any(sk))
-				break;
+
+	if (!alpns.len) {
+		sk_for_each(tmp, &head->head) {
+			if (net == sock_net(tmp) && quic_is_listen(tmp) &&
+			    quic_cmp_sk_addr(tmp, quic_path_addr(quic_src(tmp), 0), sa)) {
+				sk = tmp;
+				if (!quic_has_bind_any(sk))
+					break;
+			}
 		}
+		goto unlock;
 	}
+
+	while (alpns.len) {
+		quic_get_int(&alpns.data, &alpns.len, &length, 1);
+		alpn.data = alpns.data;
+		alpn.len = length;
+
+		sk_for_each(tmp, &head->head) {
+			if (net == sock_net(tmp) && quic_is_listen(tmp) &&
+			    quic_cmp_sk_addr(tmp, quic_path_addr(quic_src(tmp), 0), sa) &&
+			    !quic_data_cmp(&alpn, quic_alpn(tmp))) {
+				sk = tmp;
+				if (!quic_has_bind_any(sk))
+					break;
+			}
+		}
+		if (sk)
+			break;
+		alpns.len -= length;
+		alpns.data += length;
+	}
+unlock:
 	spin_unlock(&head->lock);
 
 	if (sk && sk->sk_reuseport)
@@ -348,6 +379,7 @@ free:
 
 static int quic_hash(struct sock *sk)
 {
+	struct quic_data *alpn = quic_alpn(sk);
 	struct net *net = sock_net(sk);
 	struct quic_hash_head *head;
 	union quic_addr *sa, *da;
@@ -380,7 +412,8 @@ static int quic_hash(struct sock *sk)
 	any = quic_has_bind_any(sk);
 	sk_for_each(nsk, &head->head) {
 		if (net == sock_net(nsk) && quic_is_listen(nsk) &&
-		    !quic_path_cmp(quic_src(nsk), 0, sa)) {
+		    !quic_path_cmp(quic_src(nsk), 0, sa) &&
+		    (!quic_alpn_match || !quic_data_cmp(alpn, quic_alpn(nsk)))) {
 			err = -EADDRINUSE;
 			if (sk->sk_reuseport && nsk->sk_reuseport) {
 				err = reuseport_add_sock(sk, nsk, any);
@@ -1007,7 +1040,7 @@ static int quic_accept_sock_init(struct sock *sk, struct quic_request_sock *req)
 	skb_queue_splice_init(quic_inq_backlog_list(inq), &tmpq);
 	skb = __skb_dequeue(&tmpq);
 	while (skb) {
-		quic_packet_process(sk, skb, 0);
+		quic_packet_process(sk, skb, skb->decrypted);
 		skb = __skb_dequeue(&tmpq);
 	}
 
@@ -1370,9 +1403,11 @@ static int quic_sock_retire_connection_id(struct sock *sk, struct quic_connectio
 	return 0;
 }
 
+#define QUIC_ALPN_MAX_LEN	128
+
 static int quic_sock_set_alpn(struct sock *sk, char *data, u32 len)
 {
-	if (!len || len > 128)
+	if (!len || len > QUIC_ALPN_MAX_LEN || quic_is_listen(sk))
 		return -EINVAL;
 
 	return quic_data_dup(quic_alpn(sk), data, len);

@@ -454,6 +454,153 @@ err:
 	return err;
 }
 
+#define TLS_MT_CLIENT_HELLO	1
+#define TLS_EXT_alpn		16
+
+static int quic_packet_get_alpn(u8 *p, u32 len, struct quic_data *alpn)
+{
+	int err = -EINVAL, found = 0;
+	u64 length, type;
+
+	if (!quic_get_int(&p, &len, &type, 1) || type != TLS_MT_CLIENT_HELLO)
+		return err;
+	if (!quic_get_int(&p, &len, &length, 3) || length < 35 || length > len)
+		return err;
+	len = length - 35;
+	p += 35; /* legacy_version + random + legacy_session_id. */
+
+	if (!quic_get_int(&p, &len, &length, 2) || length > len) /* cipher_suites */
+		return err;
+	len -= length;
+	p += length;
+
+	if (!quic_get_int(&p, &len, &length, 1) || length > len) /* legacy_compression_methods */
+		return err;
+	len -= length;
+	p += length;
+
+	/* TLS Extensions */
+	if (!quic_get_int(&p, &len, &length, 2) || length > len)
+		return err;
+	len = length;
+	while (len > 4) {
+		if (!quic_get_int(&p, &len, &type, 2))
+			break;
+		if (!quic_get_int(&p, &len, &length, 2) || length > len)
+			break;
+		if (type == TLS_EXT_alpn) {
+			len = length;
+			found = 1;
+			break;
+		}
+		p += length;
+		len -= length;
+	}
+	if (!found)
+		return 0;
+
+	/* ALPNs */
+	if (!quic_get_int(&p, &len, &length, 2) || length > len)
+		return err;
+	alpn->len = length;
+	alpn->data = p;
+	len = length;
+	while (len) {
+		if (!quic_get_int(&p, &len, &length, 1) || length > len) {
+			alpn->len = 0;
+			alpn->data = NULL;
+			return err;
+		}
+		len -= length;
+		p += length;
+	}
+	pr_debug("[QUIC] %s alpn len %d\n", __func__, alpn->len);
+	return alpn->len;
+}
+
+int quic_packet_parse_alpn(struct sk_buff *skb, struct quic_data *alpn)
+{
+	u8 *p = skb->data, *data, flag = CRYPTO_ALG_ASYNC, type;
+	struct quichshdr *hdr = quic_hshdr(skb);
+	struct quic_connection_id dcid = {};
+	u64 offset, length, dlen, version;
+	int len = skb->len, err = -EINVAL;
+	struct quic_packet_info pki = {};
+	struct quic_crypto *crypto;
+
+	if (len < 5)
+		return err;
+	if (!hdr->form) /* send stateless reset later */
+		return 0;
+	p++;
+	len--;
+	/* VERSION */
+	quic_get_int(&p, &len, &version, 4);
+	if (!quic_compatible_versions(version)) /* send version negotication later */
+		return 0;
+	type = quic_version_get_type(version, hdr->type);
+	if (type != QUIC_PACKET_INITIAL) /* send stateless reset later */
+		return 0;
+	/* DCID */
+	if (!quic_get_int(&p, &len, &dlen, 1) || len < dlen || dlen > QUIC_CONNECTION_ID_MAX_LEN)
+		return err;
+	quic_connection_id_update(&dcid, p, dlen);
+	len -= dlen;
+	p += dlen;
+	/* SCID */
+	if (!quic_get_int(&p, &len, &dlen, 1) || len < dlen || dlen > QUIC_CONNECTION_ID_MAX_LEN)
+		return err;
+	len -= dlen;
+	p += dlen;
+	/* TOKEN */
+	if (!quic_get_var(&p, &len, &dlen) || len < dlen)
+		return err;
+	p += dlen;
+	len -= dlen;
+	/* LENGTH */
+	if (!quic_get_var(&p, &len, &pki.length) || pki.length > len)
+		return err;
+	crypto = kzalloc(sizeof(*crypto), GFP_ATOMIC);
+	if (!crypto)
+		return -ENOMEM;
+	data = kmemdup(skb->data, skb->len, GFP_ATOMIC);
+	if (!data) {
+		kfree(crypto);
+		return -ENOMEM;
+	}
+	err = quic_crypto_initial_keys_install(crypto, &dcid, version, flag, 1);
+	if (err)
+		goto out;
+	pki.number_offset = p - skb->data;
+	pki.crypto_done = quic_packet_decrypt_done;
+	err = quic_crypto_decrypt(crypto, skb, &pki);
+	if (err) {
+		memcpy(skb->data, data, skb->len);
+		goto out;
+	}
+	skb->decrypted = 1;
+
+	/* QUIC CRYPTO frame */
+	err = -EINVAL;
+	p += pki.number_len;
+	len = pki.length - pki.number_len - QUIC_TAG_LEN;
+	if (!len-- || *p++ != QUIC_FRAME_CRYPTO)
+		goto out;
+	if (!quic_get_var(&p, &len, &offset) || offset)
+		goto out;
+	if (!quic_get_var(&p, &len, &length) || length > len)
+		goto out;
+
+	/* TLS CLIENT_HELLO message */
+	err = quic_packet_get_alpn(p, length, alpn);
+
+out:
+	quic_crypto_destroy(crypto);
+	kfree(crypto);
+	kfree(data);
+	return err;
+}
+
 /* Initial Packet {
  *   Header Form (1) = 1,
  *   Fixed Bit (1) = 1,

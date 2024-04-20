@@ -10,7 +10,7 @@
 
 struct quic_data {
 	u32 len;
-	void *data;
+	u8 *data;
 };
 
 struct quichdr {

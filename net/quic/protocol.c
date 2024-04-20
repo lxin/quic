@@ -26,6 +26,7 @@
 struct quic_hash_table quic_hash_tables[QUIC_HT_MAX_TABLES] __read_mostly;
 struct percpu_counter quic_sockets_allocated;
 struct workqueue_struct *quic_wq;
+bool quic_alpn_match;
 u8 random_data[32];
 
 long sysctl_quic_mem[3];
@@ -939,6 +940,9 @@ static __exit void quic_exit(void)
 
 module_init(quic_init);
 module_exit(quic_exit);
+
+module_param_named(alpn_match, quic_alpn_match, bool, 0644);
+MODULE_PARM_DESC(alpn_match, "match alpn when look up the listen sock");
 
 MODULE_ALIAS("net-pf-" __stringify(PF_INET) "-proto-261");
 MODULE_ALIAS("net-pf-" __stringify(PF_INET6) "-proto-261");
