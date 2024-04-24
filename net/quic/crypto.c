@@ -443,7 +443,7 @@ static int quic_crypto_header_decrypt(struct crypto_skcipher *tfm, struct sk_buf
 	for (i = 0; i < pki->number_len; ++i)
 		*(p + i) = *((u8 *)hdr + pki->number_offset + i) ^ mask[i + 1];
 
-	pki->number = quic_get_int(&p, pki->number_len);
+	quic_get_int(&p, NULL, &pki->number, pki->number_len);
 	pki->number = quic_get_num(pki->number_max, pki->number, pki->number_len);
 	pki->key_phase = hdr->key;
 
@@ -883,13 +883,13 @@ int quic_crypto_verify_token(struct quic_crypto *crypto, void *addr, u32 addrlen
 			     struct quic_connection_id *conn_id, u8 *token, u32 len)
 {
 	u8 key[16], iv[12], *retry_token, *rx_iv, *p, retry = *token;
+	u32 ts = jiffies_to_usecs(jiffies), timeout = 3000000;
 	struct crypto_aead *tfm = crypto->tag_tfm;
-	u32 ts = jiffies_to_usecs(jiffies), t;
 	struct tls_vec srt = {NULL, 0}, k, i;
 	struct aead_request *req;
 	struct scatterlist *sg;
-	u32 timeout = 3000000;
 	int err;
+	u64 t;
 
 	tls_vec(&srt, random_data, 32);
 	tls_vec(&k, key, 16);
@@ -926,9 +926,7 @@ int quic_crypto_verify_token(struct quic_crypto *crypto, void *addr, u32 addrlen
 	len -= addrlen;
 	if (!retry)
 		timeout = 36000000;
-	t = quic_get_int(&p, sizeof(t));
-	len -= sizeof(t);
-	if (t + timeout < ts)
+	if (!quic_get_int(&p, &len, &t, 4) || t + timeout < ts)
 		goto out;
 	len -= QUIC_TAG_LEN;
 	if (len > QUIC_CONNECTION_ID_MAX_LEN)

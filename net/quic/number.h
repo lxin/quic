@@ -70,12 +70,17 @@ static inline u8 quic_get_var(u8 **pp, u32 *plen, u64 *val)
 	return len;
 }
 
-static inline u32 quic_get_int(u8 **pp, u32 len)
+static inline u8 quic_get_int(u8 **pp, u32 *plen, u64 *val, u32 len)
 {
 	union quic_num n;
 	u8 *p = *pp;
-	u32 v = 0;
+	u64 v = 0;
 
+	if (plen) {
+		if (*plen < len)
+			return 0;
+		*plen -= len;
+	}
 	n.be32 = 0;
 	switch (len) {
 	case 1:
@@ -93,9 +98,14 @@ static inline u32 quic_get_int(u8 **pp, u32 len)
 		memcpy(&n.be32, p, 4);
 		v = ntohl(n.be32);
 		break;
+	case 8:
+		memcpy(&n.be64, p, 8);
+		v = be64_to_cpu(n.be64);
+		break;
 	}
 	*pp = p + len;
-	return v;
+	*val = v;
+	return len;
 }
 
 static inline u8 *quic_put_var(u8 *p, u64 num)

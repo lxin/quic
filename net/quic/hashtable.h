@@ -8,6 +8,11 @@
  *    Xin Long <lucien.xin@gmail.com>
  */
 
+struct quic_data {
+	u32 len;
+	void *data;
+};
+
 struct quichdr {
 #if defined(__LITTLE_ENDIAN_BITFIELD)
 	__u8 pnl:2,

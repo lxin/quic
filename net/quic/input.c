@@ -59,30 +59,24 @@ static int quic_get_connid_and_token(struct sk_buff *skb, struct quic_connection
 {
 	u8 *p = (u8 *)quic_hshdr(skb) + 1;
 	int len = skb->len;
-	u64 tlen;
+	u64 dlen;
 
-	if (len-- < 1)
-		return -EINVAL;
 	p += 4;
-	dcid->len = quic_get_int(&p, 1);
-	if (dcid->len > len)
+	if (!quic_get_int(&p, &len, &dlen, 1) || dlen > len || dlen > QUIC_CONNECTION_ID_MAX_LEN)
 		return -EINVAL;
-	memcpy(dcid->data, p, dcid->len);
-	len -= dcid->len;
-	if (len-- < 1)
+	quic_connection_id_update(dcid, p, dlen);
+	len -= dlen;
+	p += dlen;
+	if (!quic_get_int(&p, &len, &dlen, 1) || dlen > len || dlen > QUIC_CONNECTION_ID_MAX_LEN)
 		return -EINVAL;
-	p += dcid->len;
-	scid->len = quic_get_int(&p, 1);
-	if (scid->len > len)
+	quic_connection_id_update(scid, p, dlen);
+	len -= dlen;
+	p += dlen;
+	if (!quic_get_var(&p, &len, &dlen) || dlen > len)
 		return -EINVAL;
-	memcpy(scid->data, p, scid->len);
-	len -= scid->len;
-	p += scid->len;
-	if (!quic_get_var(&p, &len, &tlen) || tlen > len)
-		return -EINVAL;
-	if (tlen)
+	if (dlen)
 		token->data = p;
-	token->len = tlen;
+	token->len = dlen;
 	return 0;
 }
 
@@ -94,6 +88,7 @@ static int quic_do_listen_rcv(struct sock *sk, struct sk_buff *skb)
 	struct quic_crypto *crypto;
 	struct quic_data token;
 	int err = 0, errcode;
+	u64 v;
 
 	/* set af_ops for now in case sk_family != addr.v4.sin_family */
 	quic_set_af_ops(sk, quic_af_ops_get_skb(skb));
@@ -126,7 +121,8 @@ static int quic_do_listen_rcv(struct sock *sk, struct sk_buff *skb)
 		goto out;
 	}
 
-	req.version = quic_get_int(&p, 4);
+	quic_get_int(&p, NULL, &v, 4);
+	req.version = v;
 	if (!quic_compatible_versions(req.version)) {
 		/* version negotication */
 		err = quic_packet_version_transmit(sk, &req);
@@ -175,7 +171,7 @@ enqueue:
 	}
 
 	quic_inq_set_owner_r(skb, sk); /* handle it later when accepting the sock */
-	__skb_queue_tail(&quic_inq(sk)->backlog_list, skb);
+	quic_inq_backlog_tail(sk, skb);
 	sk->sk_data_ready(sk);
 out:
 	quic_set_af_ops(sk, quic_af_ops_get(sk->sk_family));

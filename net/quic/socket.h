@@ -39,11 +39,6 @@ enum quic_state {
 	QUIC_SS_ESTABLISHED	= TCP_ESTABLISHED,
 };
 
-struct quic_data {
-	u32 len;
-	void *data;
-};
-
 struct quic_request_sock {
 	struct list_head		list;
 	union quic_addr			da;

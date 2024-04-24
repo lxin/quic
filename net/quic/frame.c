@@ -1504,7 +1504,7 @@ static int quic_get_param(u64 *pdest, u8 **pp, u32 *plen)
 
 static int quic_get_version_info(u32 *versions, u8 *count, u8 **pp, u32 *plen)
 {
-	u64 valuelen;
+	u64 valuelen, v;
 	u8 i;
 
 	if (!quic_get_var(pp, plen, &valuelen))
@@ -1514,10 +1514,10 @@ static int quic_get_version_info(u32 *versions, u8 *count, u8 **pp, u32 *plen)
 		return -1;
 
 	*count = valuelen / 4;
-	for (i = 0; i < *count; i++)
-		versions[i] = quic_get_int(pp, 4);
-
-	*plen -= valuelen;
+	for (i = 0; i < *count; i++) {
+		quic_get_int(pp, plen, &v, 4);
+		versions[i] = v;
+	}
 	return 0;
 }
 
