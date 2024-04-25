@@ -81,6 +81,8 @@ static inline void quic_packet_set_ecn_probes(struct quic_packet *packet, u8 pro
 	packet->ecn_probes = probes;
 }
 
+int quic_packet_connid_and_token(u8 **pp, u32 *plen, struct quic_connection_id *dcid,
+				 struct quic_connection_id *scid, struct quic_data *token);
 void quic_packet_set_filter(struct sock *sk, u8 level, u16 count);
 void quic_packet_build(struct sock *sk);
 int quic_packet_config(struct sock *sk, u8 level, u8 path_alt);

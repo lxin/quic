@@ -76,11 +76,10 @@ static inline u8 quic_get_int(u8 **pp, u32 *plen, u64 *val, u32 len)
 	u8 *p = *pp;
 	u64 v = 0;
 
-	if (plen) {
-		if (*plen < len)
-			return 0;
-		*plen -= len;
-	}
+	if (*plen < len)
+		return 0;
+	*plen -= len;
+
 	n.be32 = 0;
 	switch (len) {
 	case 1:

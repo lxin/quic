@@ -410,16 +410,16 @@ static int quic_crypto_header_decrypt(struct crypto_skcipher *tfm, struct sk_buf
 				      struct quic_packet_info *pki, bool chacha)
 {
 	struct quichdr *hdr = quic_hdr(skb);
+	int err, i, len = pki->length;
 	struct skcipher_request *req;
 	struct scatterlist sg;
 	u8 *mask, *iv, *p;
-	int err, i;
 
 	mask = quic_crypto_skcipher_mem_alloc(tfm, 16, &iv, &req);
 	if (!mask)
 		return -ENOMEM;
 
-	if (pki->length + pki->number_offset < pki->number_offset + 4 + 16) {
+	if (len < 4 + 16) {
 		err = -EINVAL;
 		goto err;
 	}
@@ -435,15 +435,11 @@ static int quic_crypto_header_decrypt(struct crypto_skcipher *tfm, struct sk_buf
 	p = (u8 *)hdr;
 	*p = (u8)(*p ^ (mask[0] & (((*p & 0x80) == 0x80) ? 0x0f : 0x1f)));
 	pki->number_len = (*p & 0x03) + 1;
-	if (pki->length + pki->number_offset < pki->number_offset + pki->number_len) {
-		err = -EINVAL;
-		goto err;
-	}
 	p += pki->number_offset;
 	for (i = 0; i < pki->number_len; ++i)
 		*(p + i) = *((u8 *)hdr + pki->number_offset + i) ^ mask[i + 1];
 
-	quic_get_int(&p, NULL, &pki->number, pki->number_len);
+	quic_get_int(&p, &len, &pki->number, pki->number_len);
 	pki->number = quic_get_num(pki->number_max, pki->number, pki->number_len);
 	pki->key_phase = hdr->key;
 

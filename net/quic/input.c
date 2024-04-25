@@ -54,40 +54,14 @@ out:
 	return ret;
 }
 
-static int quic_get_connid_and_token(struct sk_buff *skb, struct quic_connection_id *dcid,
-				     struct quic_connection_id *scid, struct quic_data *token)
-{
-	u8 *p = (u8 *)quic_hshdr(skb) + 1;
-	int len = skb->len;
-	u64 dlen;
-
-	p += 4;
-	if (!quic_get_int(&p, &len, &dlen, 1) || dlen > len || dlen > QUIC_CONNECTION_ID_MAX_LEN)
-		return -EINVAL;
-	quic_connection_id_update(dcid, p, dlen);
-	len -= dlen;
-	p += dlen;
-	if (!quic_get_int(&p, &len, &dlen, 1) || dlen > len || dlen > QUIC_CONNECTION_ID_MAX_LEN)
-		return -EINVAL;
-	quic_connection_id_update(scid, p, dlen);
-	len -= dlen;
-	p += dlen;
-	if (!quic_get_var(&p, &len, &dlen) || dlen > len)
-		return -EINVAL;
-	if (dlen)
-		token->data = p;
-	token->len = dlen;
-	return 0;
-}
-
 static int quic_do_listen_rcv(struct sock *sk, struct sk_buff *skb)
 {
 	struct quic_inqueue *inq = quic_inq(sk);
-	u8 *p = (u8 *)quic_hshdr(skb) + 1, type;
+	int err = 0, errcode, len = skb->len;
 	struct quic_request_sock req = {};
 	struct quic_crypto *crypto;
+	u8 *p = skb->data, type;
 	struct quic_data token;
-	int err = 0, errcode;
 	u64 v;
 
 	/* set af_ops for now in case sk_family != addr.v4.sin_family */
@@ -102,7 +76,7 @@ static int quic_do_listen_rcv(struct sock *sk, struct sk_buff *skb)
 		goto out;
 
 	if (!quic_hshdr(skb)->form) { /* stateless reset always by listen sock */
-		if (skb->len < 17) {
+		if (len < 17) {
 			err = -EINVAL;
 			kfree_skb(skb);
 			goto out;
@@ -115,14 +89,16 @@ static int quic_do_listen_rcv(struct sock *sk, struct sk_buff *skb)
 		goto out;
 	}
 
-	if (quic_get_connid_and_token(skb, &req.dcid, &req.scid, &token)) {
+	p++;
+	len--;
+	quic_get_int(&p, &len, &v, 4);
+	req.version = v;
+	if (quic_packet_connid_and_token(&p, &len, &req.dcid, &req.scid, &token)) {
 		err = -EINVAL;
 		kfree_skb(skb);
 		goto out;
 	}
 
-	quic_get_int(&p, NULL, &v, 4);
-	req.version = v;
 	if (!quic_compatible_versions(req.version)) {
 		/* version negotication */
 		err = quic_packet_version_transmit(sk, &req);
