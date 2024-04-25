@@ -222,6 +222,9 @@ listen:
 	if (setsockopt(listenfd, SOL_QUIC, QUIC_SOCKOPT_TRANSPORT_PARAM, &param, sizeof(param)))
 		return -1;
 
+	if (setsockopt(listenfd, SOL_QUIC, QUIC_SOCKOPT_ALPN, alpn, strlen(alpn)))
+		return -1;
+
 	if (listen(listenfd, 1)) {
 		printf("socket listen failed\n");
 		return -1;
@@ -237,9 +240,6 @@ loop:
 	}
 
 	printf("accept %d\n", sockfd);
-	if (setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_ALPN, alpn, strlen(alpn) + 1))
-		return -1;
-
 	/* start doing handshake with tlshd API */
 	parms.cert = &gcert;
 	if (read_pkey_file(opts->pkey, &parms.privkey) ||
@@ -352,7 +352,7 @@ static int do_client(struct options *opts)
 	}
 
 handshake:
-	if (setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_ALPN, alpn, strlen(alpn) + 1))
+	if (setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_ALPN, alpn, strlen(alpn)))
 		return -1;
 
 	/* start doing handshake with tlshd API */
