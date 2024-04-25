@@ -1,23 +1,34 @@
 # QUIC in Linux Kernel
 
-## Overview
+## Introduction
 
 As mentioned in https://github.com/lxin/tls_hs#the-backgrounds: "some people may argue that TLS
 handshake should stay in user space and use up-call to user space in kernel to complete the
 handshake". This repo is to implement the idea. Note that the main part of the QUIC protocol
 is still in Kernel space.
 
+There are several compelling reasons for implementing in-kernel QUIC:
+- Meeting the needs of kernel consumers like SMB and NFS.
+- Standardizing socket APIs, including essential operations such as listen, accept,
+  connect, sendmsg, recvmsg, close, get/setsockopt and getsock/peername().
+- Incorporating ALPN matching within the kernel, efficiently directing incoming
+  requests to relevant applications across different processes based on ALPN.
+- Minimizing data duplication by utilizing zero-copy techniques like sendfile().
+- Facilitating the crypto offloading in NICs to further enhance performance.
+- Addressing interoperability issues from the variety of userland QUIC implementations.
+
 ## Implementation
 
 ### General Idea
 
-- **What's in Userspace**: Only TLS Handshake Messages processing and creating via gnutls,
-these messages are sent and received via sendmsg/recvmsg() with crypto level in cmsg. See:
+- **What's in Userspace**: Only raw TLS Handshake Messages processing and creating via gnutls.
+These messages are sent and received via sendmsg/recvmsg() with crypto level in cmsg. See:
 [handshake/](https://github.com/lxin/quic/tree/main/handshake).
 
 - **What's in Kernel**: All QUIC protocol except TLS Handshake Messages processing and creating.
-Instead of a ULP layer, it creates IPPROTO_QUIC type socket (similar to IPPROTO_MPTCP) running
-over UDP TUNNEL. See: [net/quic/](https://github.com/lxin/quic/tree/main/net/quic).
+Instead of a ULP layer, it creates IPPROTO_QUIC type socket (similar to IPPROTO_MPTCP and no
+protocol number needed from IANA) running over UDP TUNNELs. See:
+[net/quic/](https://github.com/lxin/quic/tree/main/net/quic).
 
 - **How Kernel Consumers Use It**: Kernel users can send Handshake request from kernel via
 [handshake netlink](https://docs.kernel.org/networking/tls-handshake.html) to Userspace. tlshd
@@ -82,18 +93,20 @@ in [ktls-utils](https://github.com/lxin/ktls-utils) will handle the handshake re
             +--------------------------------------------------+     +--------------|
 
 ### Features
-#### most features from these RFCs are supported
-- RFC9000 - *QUIC: A UDP-Based Multiplexed and Secure Transport*
-- RFC9001 - *Using TLS to Secure QUIC*
-- RFC9002 - *QUIC Loss Detection and Congestion Control*
-- RFC9221 - *An Unreliable Datagram Extension to QUIC*
-- RFC9287 - *Greasing the QUIC Bit*
-- RFC9368 - *Compatible Version Negotiation for QUIC*
-- RFC9369 - *QUIC Version 2*
-- Handshake APIs for tlshd Use - *NFS/SMB over QUIC*
+- Fundamental support for the following RFCs
+  - RFC9000 - *QUIC: A UDP-Based Multiplexed and Secure Transport*
+  - RFC9001 - *Using TLS to Secure QUIC*
+  - RFC9002 - *QUIC Loss Detection and Congestion Control*
+  - RFC9221 - *An Unreliable Datagram Extension to QUIC*
+  - RFC9287 - *Greasing the QUIC Bit*
+  - RFC9368 - *Compatible Version Negotiation for QUIC*
+  - RFC9369 - *QUIC Version 2*
+  - Handshake APIs for tlshd Use - *NFS/SMB over QUIC*
 
-#### some are still ongoing:
-- Performance Optimization
+- Next step
+  - Submit QUIC module to upstream kernel and libquic to ktls-utils.
+  - Create an Internet Draft For QUIC Sockets API Extensions.
+  - Implement HW crypto offloading infrastructure.
 
 ## INSTALL
 
