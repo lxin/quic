@@ -117,10 +117,12 @@ daemon_run ./sample_test server 0.0.0.0 1234 ./keys/server-key.pem ./keys/server
 ./sample_test client 127.0.0.1 1234 || exit 1
 daemon_stop
 
-print_start "ALPN and Preferred Address Tests"
-daemon_run ./alpn_test server 0.0.0.0 1234 ./keys/server-key.pem ./keys/server-cert.pem
-./alpn_test client 127.0.0.1 1234 || exit 1
-daemon_stop
+if grep "N" -q /sys/module/quic/parameters/alpn_match; then
+	print_start "ALPN and Preferred Address Tests"
+	daemon_run ./alpn_test server 0.0.0.0 1234 ./keys/server-key.pem ./keys/server-cert.pem
+	./alpn_test client 127.0.0.1 1234 || exit 1
+	daemon_stop
+fi
 
 echo ""
 echo "ALL TESTS DONE!"
