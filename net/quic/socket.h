@@ -261,26 +261,6 @@ static inline u8 quic_version_put_type(u32 version, u8 type)
 	return -1;
 }
 
-static inline int quic_data_dup(struct quic_data *to, u8 *data, u32 len)
-{
-	if (!len)
-		return 0;
-
-	data = kmemdup(data, len, GFP_ATOMIC);
-	if (!data)
-		return -ENOMEM;
-
-	kfree(to->data);
-	to->data = data;
-	to->len = len;
-	return 0;
-}
-
-static inline int quic_data_cmp(struct quic_data *d1, struct quic_data *d2)
-{
-	return d1->len != d2->len || memcmp(d1->data, d2->data, d1->len);
-}
-
 int quic_sock_change_saddr(struct sock *sk, union quic_addr *addr, u32 len);
 int quic_sock_change_daddr(struct sock *sk, union quic_addr *addr, u32 len);
 bool quic_request_sock_exists(struct sock *sk, union quic_addr *sa, union quic_addr *da);

@@ -159,8 +159,7 @@ struct sock *quic_sock_lookup(struct sk_buff *skb, union quic_addr *sa, union qu
 
 	while (alpns.len) {
 		quic_get_int(&alpns.data, &alpns.len, &length, 1);
-		alpn.data = alpns.data;
-		alpn.len = length;
+		quic_data(&alpn, alpns.data, length);
 
 		sk_for_each(tmp, &head->head) {
 			if (net == sock_net(tmp) && quic_is_listen(tmp) &&

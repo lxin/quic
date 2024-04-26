@@ -40,8 +40,7 @@ int quic_packet_connid_and_token(u8 **pp, u32 *plen, struct quic_connection_id *
 
 	if (!quic_get_var(pp, plen, &len) || len > *plen)
 		return -EINVAL;
-	token->data = *pp;
-	token->len = len;
+	quic_data(token, *pp, len);
 	*plen -= len;
 	*pp += len;
 	return 0;
@@ -501,13 +500,11 @@ static int quic_packet_get_alpn(u8 *p, u32 len, struct quic_data *alpn)
 	/* ALPNs */
 	if (!quic_get_int(&p, &len, &length, 2) || length > len)
 		return err;
-	alpn->len = length;
-	alpn->data = p;
+	quic_data(alpn, p, length);
 	len = length;
 	while (len) {
 		if (!quic_get_int(&p, &len, &length, 1) || length > len) {
-			alpn->len = 0;
-			alpn->data = NULL;
+			quic_data(alpn, NULL, 0);
 			return err;
 		}
 		len -= length;
