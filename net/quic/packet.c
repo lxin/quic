@@ -203,6 +203,12 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb, u
 		switch (type) {
 		case QUIC_PACKET_INITIAL:
 			level = QUIC_CRYPTO_INITIAL;
+			if (quic_packet_connid_and_token(&p, &len, &dcid, &scid, &token))
+				goto err;
+			if (!quic_is_serv(sk) && token.len) {
+				pki.errcode = QUIC_TRANSPORT_ERROR_PROTOCOL_VIOLATION;
+				goto err;
+			}
 			break;
 		case QUIC_PACKET_HANDSHAKE:
 			level = QUIC_CRYPTO_HANDSHAKE;
@@ -211,6 +217,8 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb, u
 				quic_inq_backlog_tail(sk, skb);
 				return 0;
 			}
+			if (quic_packet_connid_and_token(&p, &len, &dcid, &scid, NULL))
+				goto err;
 			break;
 		case QUIC_PACKET_0RTT:
 			level = QUIC_CRYPTO_EARLY;
@@ -219,22 +227,13 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb, u
 				quic_inq_backlog_tail(sk, skb);
 				return 0;
 			}
+			if (quic_packet_connid_and_token(&p, &len, &dcid, &scid, NULL))
+				goto err;
 			break;
 		case QUIC_PACKET_RETRY:
 			return quic_packet_handshake_retry_process(sk, skb);
 		default:
 			goto err;
-		}
-		if (level == QUIC_CRYPTO_INITIAL) {
-			if (quic_packet_connid_and_token(&p, &len, &dcid, &scid, &token))
-				goto err;
-			if (!quic_is_serv(sk) && token.len) {
-				pki.errcode = QUIC_TRANSPORT_ERROR_PROTOCOL_VIOLATION;
-				goto err;
-			}
-		} else {
-			if (quic_packet_connid_and_token(&p, &len, &dcid, &scid, NULL))
-				goto err;
 		}
 		/* LENGTH */
 		if (!quic_get_var(&p, &len, &pki.length) || pki.length > len)
