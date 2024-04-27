@@ -91,7 +91,7 @@ static int quic_do_listen_rcv(struct sock *sk, struct sk_buff *skb)
 
 	p++;
 	len--;
-	quic_get_int(&p, &len, &v, 4);
+	quic_get_int(&p, &len, &v, QUIC_VERSION_LEN);
 	req.version = v;
 	if (quic_packet_connid_and_token(&p, &len, &req.dcid, &req.scid, &token)) {
 		err = -EINVAL;

@@ -221,6 +221,8 @@ static inline void quic_set_state(struct sock *sk, int state)
 	sk->sk_state_change(sk);
 }
 
+#define QUIC_VERSION_LEN	4
+
 static inline u8 quic_version_get_type(u32 version, u8 type)
 {
 	if (version == QUIC_VERSION_V1)
