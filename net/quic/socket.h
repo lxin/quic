@@ -15,6 +15,7 @@
 #include <net/udp_tunnel.h>
 #include "connection.h"
 #include "hashtable.h"
+#include "number.h"
 #include "protocol.h"
 #include "crypto.h"
 #include "stream.h"

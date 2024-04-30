@@ -11,7 +11,6 @@
  */
 
 #include "socket.h"
-#include "number.h"
 #include "frame.h"
 #include <net/inet_common.h>
 #include <net/sock_reuseport.h>
@@ -156,6 +155,8 @@ struct sock *quic_sock_lookup(struct sk_buff *skb, union quic_addr *sa, union qu
 	struct sock *sk = NULL, *tmp;
 	struct quic_hash_head *head;
 	u64 length;
+	u32 len;
+	u8 *p;
 
 	/* Search for regular socket first */
 	head = quic_sock_head(net, sa, da);
@@ -172,7 +173,7 @@ struct sock *quic_sock_lookup(struct sk_buff *skb, union quic_addr *sa, union qu
 	if (sk)
 		return sk;
 
-	if (quic_alpn_match && quic_packet_parse_alpn(skb, &alpns) < 0)
+	if (quic_packet_parse_alpn(skb, &alpns) < 0)
 		return NULL;
 
 	/* Search for listen socket */
@@ -181,8 +182,12 @@ struct sock *quic_sock_lookup(struct sk_buff *skb, union quic_addr *sa, union qu
 
 	if (!alpns.len) {
 		sk_for_each(tmp, &head->head) {
+			/* alpns.data != NULL means TLS parse succeed but no ALPN was found,
+			 * in such case it only matches the sock with no ALPN set.
+			 */
 			if (net == sock_net(tmp) && quic_is_listen(tmp) &&
-			    quic_cmp_sk_addr(tmp, quic_path_addr(quic_src(tmp), 0), sa)) {
+			    quic_cmp_sk_addr(tmp, quic_path_addr(quic_src(tmp), 0), sa) &&
+			    (!alpns.data || !quic_alpn(tmp)->len)) {
 				sk = tmp;
 				if (!quic_has_bind_any(sk))
 					break;
@@ -191,14 +196,13 @@ struct sock *quic_sock_lookup(struct sk_buff *skb, union quic_addr *sa, union qu
 		goto unlock;
 	}
 
-	while (alpns.len) {
-		quic_get_int(&alpns.data, &alpns.len, &length, 1);
-		quic_data(&alpn, alpns.data, length);
-
+	for (p = alpns.data, len = alpns.len; len; len -= length, p += length) {
+		quic_get_int(&p, &len, &length, 1);
+		quic_data(&alpn, p, length);
 		sk_for_each(tmp, &head->head) {
 			if (net == sock_net(tmp) && quic_is_listen(tmp) &&
 			    quic_cmp_sk_addr(tmp, quic_path_addr(quic_src(tmp), 0), sa) &&
-			    !quic_data_cmp(&alpn, quic_alpn(tmp))) {
+			    quic_data_has(quic_alpn(tmp), &alpn)) {
 				sk = tmp;
 				if (!quic_has_bind_any(sk))
 					break;
@@ -206,8 +210,6 @@ struct sock *quic_sock_lookup(struct sk_buff *skb, union quic_addr *sa, union qu
 		}
 		if (sk)
 			break;
-		alpns.len -= length;
-		alpns.data += length;
 	}
 unlock:
 	spin_unlock(&head->lock);
@@ -412,7 +414,7 @@ free:
 
 static int quic_hash(struct sock *sk)
 {
-	struct quic_data *alpn = quic_alpn(sk);
+	struct quic_data *alpns = quic_alpn(sk);
 	struct net *net = sock_net(sk);
 	struct quic_hash_head *head;
 	union quic_addr *sa, *da;
@@ -445,15 +447,20 @@ static int quic_hash(struct sock *sk)
 	any = quic_has_bind_any(sk);
 	sk_for_each(nsk, &head->head) {
 		if (net == sock_net(nsk) && quic_is_listen(nsk) &&
-		    !quic_path_cmp(quic_src(nsk), 0, sa) &&
-		    (!quic_alpn_match || !quic_data_cmp(alpn, quic_alpn(nsk)))) {
-			err = -EADDRINUSE;
-			if (sk->sk_reuseport && nsk->sk_reuseport) {
-				err = reuseport_add_sock(sk, nsk, any);
-				if (!err)
-					__sk_add_node(sk, &head->head);
+		    !quic_path_cmp(quic_src(nsk), 0, sa)) {
+			if (!quic_data_cmp(alpns, quic_alpn(nsk))) {
+				err = -EADDRINUSE;
+				if (sk->sk_reuseport && nsk->sk_reuseport) {
+					err = reuseport_add_sock(sk, nsk, any);
+					if (!err)
+						__sk_add_node(sk, &head->head);
+				}
+				goto out;
 			}
-			goto out;
+			if (quic_data_match(alpns, quic_alpn(nsk))) {
+				err = -EADDRINUSE;
+				goto out;
+			}
 		}
 	}
 
@@ -1438,12 +1445,24 @@ static int quic_sock_retire_connection_id(struct sock *sk, struct quic_connectio
 
 #define QUIC_ALPN_MAX_LEN	128
 
-static int quic_sock_set_alpn(struct sock *sk, char *data, u32 len)
+static int quic_sock_set_alpn(struct sock *sk, u8 *data, u32 len)
 {
+	struct quic_data *alpns = quic_alpn(sk);
+	u8 *p;
+
 	if (!len || len > QUIC_ALPN_MAX_LEN || quic_is_listen(sk))
 		return -EINVAL;
 
-	return quic_data_dup(quic_alpn(sk), data, len);
+	p = kzalloc(len + 1, GFP_KERNEL);
+	if (!p)
+		return -ENOMEM;
+
+	kfree(alpns->data);
+	alpns->data = p;
+	alpns->len  = len + 1;
+
+	quic_data_from_string(alpns, data, len);
+	return 0;
 }
 
 static int quic_sock_stream_reset(struct sock *sk, struct quic_errinfo *info, u32 len)
@@ -1734,13 +1753,22 @@ static int quic_sock_get_active_connection_id(struct sock *sk, int len,
 
 static int quic_sock_get_alpn(struct sock *sk, int len, char __user *optval, int __user *optlen)
 {
-	struct quic_data *alpn = quic_alpn(sk);
+	struct quic_data *alpns = quic_alpn(sk);
+	u8 data[128];
 
-	if (len < alpn->len)
+	if (!alpns->len) {
+		len = 0;
+		goto out;
+	}
+	if (len < alpns->len)
 		return -EINVAL;
-	if (put_user(alpn->len, optlen))
+
+	quic_data_to_string(data, &len, alpns);
+
+out:
+	if (put_user(len, optlen))
 		return -EFAULT;
-	if (copy_to_user(optval, alpn->data, alpn->len))
+	if (copy_to_user(optval, data, len))
 		return -EFAULT;
 	return 0;
 }

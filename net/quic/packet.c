@@ -12,7 +12,6 @@
 
 #include <net/gro.h>
 #include "socket.h"
-#include "number.h"
 #include "frame.h"
 #include <linux/version.h>
 
@@ -842,8 +841,10 @@ static int quic_packet_get_alpn(struct quic_data *alpn, u8 *p, u32 len)
 		p += length;
 		len -= length;
 	}
-	if (!found)
+	if (!found) {
+		quic_data(alpn, p, 0);
 		return 0;
+	}
 
 	/* ALPNs */
 	if (!quic_get_int(&p, &len, &length, 2) || length > len)

@@ -8,38 +8,6 @@
  *    Xin Long <lucien.xin@gmail.com>
  */
 
-struct quic_data {
-	u8 *data;
-	u32 len;
-};
-
-static inline struct quic_data *quic_data(struct quic_data *d, u8 *data, u32 len)
-{
-	d->data = data;
-	d->len  = len;
-	return d;
-}
-
-static inline int quic_data_cmp(struct quic_data *d1, struct quic_data *d2)
-{
-	return d1->len != d2->len || memcmp(d1->data, d2->data, d1->len);
-}
-
-static inline int quic_data_dup(struct quic_data *to, u8 *data, u32 len)
-{
-	if (!len)
-		return 0;
-
-	data = kmemdup(data, len, GFP_ATOMIC);
-	if (!data)
-		return -ENOMEM;
-
-	kfree(to->data);
-	to->data = data;
-	to->len = len;
-	return 0;
-}
-
 struct quichdr {
 #if defined(__LITTLE_ENDIAN_BITFIELD)
 	__u8 pnl:2,

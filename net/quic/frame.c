@@ -11,7 +11,6 @@
  */
 
 #include "socket.h"
-#include "number.h"
 #include "frame.h"
 #include <linux/nospec.h>
 

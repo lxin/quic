@@ -181,3 +181,112 @@ static inline s64 quic_get_num(s64 max_pkt_num, s64 pkt_num, u32 n)
 		return cand - win;
 	return cand;
 }
+
+struct quic_data {
+	u8 *data;
+	u32 len;
+};
+
+static inline struct quic_data *quic_data(struct quic_data *d, u8 *data, u32 len)
+{
+	d->data = data;
+	d->len  = len;
+	return d;
+}
+
+static inline int quic_data_dup(struct quic_data *to, u8 *data, u32 len)
+{
+	if (!len)
+		return 0;
+
+	data = kmemdup(data, len, GFP_ATOMIC);
+	if (!data)
+		return -ENOMEM;
+
+	kfree(to->data);
+	to->data = data;
+	to->len = len;
+	return 0;
+}
+
+static inline int quic_data_cmp(struct quic_data *d1, struct quic_data *d2)
+{
+	return d1->len != d2->len || memcmp(d1->data, d2->data, d1->len);
+}
+
+static inline int quic_data_has(struct quic_data *d1, struct quic_data *d2)
+{
+	struct quic_data d;
+	u64 length;
+	u32 len;
+	u8 *p;
+
+	for (p = d1->data, len = d1->len; len; len -= length, p += length) {
+		quic_get_int(&p, &len, &length, 1);
+		quic_data(&d, p, length);
+		if (!quic_data_cmp(&d, d2))
+			return 1;
+	}
+	return 0;
+}
+
+static inline int quic_data_match(struct quic_data *d1, struct quic_data *d2)
+{
+	struct quic_data d;
+	u64 length;
+	u32 len;
+	u8 *p;
+
+	for (p = d1->data, len = d1->len; len; len -= length, p += length) {
+		quic_get_int(&p, &len, &length, 1);
+		quic_data(&d, p, length);
+		if (quic_data_has(d2, &d))
+			return 1;
+	}
+	return 0;
+}
+
+static inline void quic_data_to_string(u8 *to, u32 *plen, struct quic_data *from)
+{
+	struct quic_data d;
+	u8 *data = to, *p;
+	u64 length;
+	u32 len;
+
+	for (p = from->data, len = from->len; len; len -= length, p += length) {
+		quic_get_int(&p, &len, &length, 1);
+		quic_data(&d, p, length);
+		data = quic_put_data(data, d.data, d.len);
+		if (len - length)
+			data = quic_put_int(data, ',', 1);
+	}
+	*plen = data - to;
+}
+
+static inline void quic_data_from_string(struct quic_data *to, u8 *from, u32 len)
+{
+	struct quic_data d;
+	u8 *p = to->data;
+
+	to->len = 0;
+	while (len) {
+		d.data = p++;
+		d.len  = 1;
+		while (len && *from == ' ') {
+			from++;
+			len--;
+		}
+		while (len) {
+			if (*from == ',') {
+				from++;
+				len--;
+				break;
+			}
+			*p++ = *from++;
+			len--;
+			d.len++;
+		}
+		*d.data = d.len - 1;
+		to->len += d.len;
+	}
+}

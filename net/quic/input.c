@@ -11,7 +11,6 @@
  */
 
 #include "socket.h"
-#include "number.h"
 #include "frame.h"
 
 static void quic_inq_rfree(struct sk_buff *skb)
