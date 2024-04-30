@@ -340,16 +340,16 @@ static void quic_encrypt_done(struct crypto_async_request *base, int err)
 {
 	struct sk_buff *skb = base->data;
 #endif
-	struct quic_packet_info pki = {};
+	struct quic_crypto_info ci = {};
 
 	WARN_ON(!skb_set_owner_sk_safe(skb, skb->sk));
 
-	pki.number_len = 4;
-	pki.number = 0;
-	pki.number_offset = 17;
-	pki.crypto_done = quic_encrypt_done;
-	pki.resume = 1;
-	quic_crypto_encrypt(&crypto, skb, &pki);
+	ci.number_len = 4;
+	ci.number = 0;
+	ci.number_offset = 17;
+	ci.crypto_done = quic_encrypt_done;
+	ci.resume = 1;
+	quic_crypto_encrypt(&crypto, skb, &ci);
 }
 
 #if KERNEL_VERSION(6, 2, 0) <= LINUX_VERSION_CODE
@@ -361,16 +361,16 @@ static void quic_decrypt_done(struct crypto_async_request *base, int err)
 {
 	struct sk_buff *skb = base->data;
 #endif
-	struct quic_packet_info pki = {};
+	struct quic_crypto_info ci = {};
 
 	WARN_ON(!skb_set_owner_sk_safe(skb, skb->sk));
 
-	pki.number_len = 4;
-	pki.number = 0;
-	pki.number_offset = 17;
-	pki.crypto_done = quic_decrypt_done;
-	pki.resume = 1;
-	quic_crypto_decrypt(&crypto, skb, &pki);
+	ci.number_len = 4;
+	ci.number = 0;
+	ci.number_offset = 17;
+	ci.crypto_done = quic_decrypt_done;
+	ci.resume = 1;
+	quic_crypto_decrypt(&crypto, skb, &ci);
 }
 
 static void quic_crypto_test1(struct kunit *test)
@@ -449,7 +449,7 @@ out:
 static void quic_crypto_test2(struct kunit *test)
 {
 	struct quic_crypto_secret srt = {};
-	struct quic_packet_info pki = {};
+	struct quic_crypto_info ci = {};
 	struct socket *sock;
 	struct sk_buff *skb;
 	int err;
@@ -472,12 +472,12 @@ static void quic_crypto_test2(struct kunit *test)
 	skb_reset_transport_header(skb);
 
 	skb_put_data(skb, data, 280);
-	pki.number_len = 4;
-	pki.number = 0;
-	pki.number_offset = 17;
-	pki.crypto_done = quic_encrypt_done;
-	pki.resume = 0;
-	err = quic_crypto_encrypt(&crypto, skb, &pki);
+	ci.number_len = 4;
+	ci.number = 0;
+	ci.number_offset = 17;
+	ci.crypto_done = quic_encrypt_done;
+	ci.resume = 0;
+	err = quic_crypto_encrypt(&crypto, skb, &ci);
 	if (err) {
 		if (err != -EINPROGRESS)
 			goto out;
@@ -495,13 +495,13 @@ static void quic_crypto_test2(struct kunit *test)
 		goto out;
 
 	WARN_ON(!skb_set_owner_sk_safe(skb, sock->sk));
-	pki.number_len = 4; /* unknown yet */
-	pki.number = 0; /* unknown yet */
-	pki.number_offset = 17;
-	pki.crypto_done = quic_decrypt_done;
-	pki.resume = 0;
-	pki.length = skb->len - pki.number_offset;
-	err = quic_crypto_decrypt(&crypto, skb, &pki);
+	ci.number_len = 4; /* unknown yet */
+	ci.number = 0; /* unknown yet */
+	ci.number_offset = 17;
+	ci.crypto_done = quic_decrypt_done;
+	ci.resume = 0;
+	ci.length = skb->len - ci.number_offset;
+	err = quic_crypto_decrypt(&crypto, skb, &ci);
 	if (err) {
 		if (err != -EINPROGRESS)
 			goto out;

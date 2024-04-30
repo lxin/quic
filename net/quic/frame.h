@@ -151,12 +151,12 @@ static inline int quic_frame_level_check(u8 level, u8 type)
 }
 
 struct sk_buff *quic_frame_create(struct sock *sk, u8 type, void *data);
-int quic_frame_process(struct sock *sk, struct sk_buff *skb, struct quic_packet_info *pki);
+int quic_frame_process(struct sock *sk, struct sk_buff *skb);
 int quic_frame_new_connection_id_ack(struct sock *sk, struct sk_buff *skb);
 int quic_frame_set_transport_params_ext(struct sock *sk, struct quic_transport_param *params,
 					u8 *data, u32 len);
 int quic_frame_get_transport_params_ext(struct sock *sk, struct quic_transport_param *params,
 					u8 *data, u32 *len);
 int quic_frame_handshake_process(struct sock *sk, struct sk_buff *skb,
-				 struct quic_packet_info *pki);
+				 struct quic_crypto_info *ci);
 struct sk_buff *quic_frame_handshake_create(struct sock *sk, u8 type, void *data);

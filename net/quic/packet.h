@@ -9,18 +9,15 @@
  */
 
 struct quic_packet {
+	/* send */
 	struct sk_buff_head frame_list;
 	struct sk_buff *head;
 	union quic_addr *da;
 	union quic_addr *sa;
 	u32 overhead;
-	u32 len;
-
 	u32 mss[2];
-	u16 max_count;
 	u16 count;
-	u8  level;
-
+	u16 max_count;
 	u8  ecn_probes;
 	u8  ipfragok:1;
 	u8  path_alt:2;
@@ -28,7 +25,17 @@ struct quic_packet {
 	u8  filter:1;
 	u8  taglen[2];
 
+	/* send or recv */
+	u32 len;
+	u8  level;
+
+	/* recv */
 	u32 version;
+	u32 errcode;
+	u8  frame;
+	u8  ack_eliciting:1;
+	u8  ack_immediate:1;
+	u8  non_probing:1;
 	union quic_addr daddr;
 	union quic_addr saddr;
 	struct quic_connection_id dcid;
@@ -80,6 +87,17 @@ static inline void quic_packet_set_taglen(struct quic_packet *packet, u8 taglen)
 static inline void quic_packet_set_ecn_probes(struct quic_packet *packet, u8 probes)
 {
 	packet->ecn_probes = probes;
+}
+
+static inline void quic_packet_reset(struct quic_packet *packet)
+{
+	packet->len = 0;
+	packet->level = 0;
+	packet->frame = 0;
+	packet->errcode = 0;
+	packet->non_probing = 0;
+	packet->ack_eliciting = 0;
+	packet->ack_immediate = 0;
 }
 
 void quic_packet_set_filter(struct sock *sk, u8 level, u16 count);

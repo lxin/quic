@@ -1400,14 +1400,15 @@ static struct quic_frame_ops quic_frame_ops[QUIC_FRAME_MAX + 1] = {
 	quic_frame_create_and_process(datagram),
 };
 
-int quic_frame_process(struct sock *sk, struct sk_buff *skb, struct quic_packet_info *pki)
+int quic_frame_process(struct sock *sk, struct sk_buff *skb)
 {
 	struct quic_rcv_cb *rcv_cb = QUIC_RCV_CB(skb);
+	struct quic_packet *packet = quic_packet(sk);
 	u8 type, level = rcv_cb->level;
-	int ret, len = pki->length;
+	int ret, len = packet->len;
 
 	if (!len) {
-		pki->errcode = QUIC_TRANSPORT_ERROR_PROTOCOL_VIOLATION;
+		packet->errcode = QUIC_TRANSPORT_ERROR_PROTOCOL_VIOLATION;
 		return -EINVAL;
 	}
 
@@ -1418,10 +1419,10 @@ int quic_frame_process(struct sock *sk, struct sk_buff *skb, struct quic_packet_
 
 		if (type > QUIC_FRAME_MAX) {
 			pr_err_once("[QUIC] %s unsupported frame %x\n", __func__, type);
-			pki->errcode = QUIC_TRANSPORT_ERROR_FRAME_ENCODING;
+			packet->errcode = QUIC_TRANSPORT_ERROR_FRAME_ENCODING;
 			return -EPROTONOSUPPORT;
 		} else if (quic_frame_level_check(level, type)) {
-			pki->errcode = QUIC_TRANSPORT_ERROR_PROTOCOL_VIOLATION;
+			packet->errcode = QUIC_TRANSPORT_ERROR_PROTOCOL_VIOLATION;
 			return -EINVAL;
 		} else if (!type) { /* skip padding */
 			skb_pull(skb, len);
@@ -1432,17 +1433,17 @@ int quic_frame_process(struct sock *sk, struct sk_buff *skb, struct quic_packet_
 		if (ret < 0) {
 			pr_warn("[QUIC] %s type: %x level: %d err: %d\n", __func__,
 				type, level, ret);
-			pki->errcode = rcv_cb->errcode;
-			pki->frame = type;
+			packet->errcode = rcv_cb->errcode;
+			packet->frame = type;
 			return ret;
 		}
 		if (quic_frame_ack_eliciting(type)) {
-			pki->ack_eliciting = 1;
+			packet->ack_eliciting = 1;
 			if (quic_frame_ack_immediate(type))
-				pki->ack_immediate = 1;
+				packet->ack_immediate = 1;
 		}
 		if (quic_frame_non_probing(type))
-			pki->non_probing = 1;
+			packet->non_probing = 1;
 
 		skb_pull(skb, ret);
 		len -= ret;

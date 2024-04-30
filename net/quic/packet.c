@@ -21,7 +21,6 @@ static int quic_packet_get_version_and_connid(struct quic_packet *packet, u8 **p
 	u8 *p = *pp;
 	u64 len, v;
 
-	packet->level = 0;
 	if (!quic_get_int(pp, plen, &v, 1))
 		return -EINVAL;
 
@@ -501,7 +500,7 @@ static void quic_packet_decrypt_done(struct crypto_async_request *base, int err)
 }
 
 static int quic_packet_handshake_header_process(struct sock *sk, struct sk_buff *skb,
-						struct quic_packet_info *pki)
+						struct quic_crypto_info *ci)
 {
 	struct quic_packet *packet = quic_packet(sk);
 	struct quic_inqueue *inq = quic_inq(sk);
@@ -509,6 +508,7 @@ static int quic_packet_handshake_header_process(struct sock *sk, struct sk_buff 
 	struct quic_data token;
 	int len = skb->len;
 
+	quic_packet_reset(packet);
 	if (quic_packet_get_version_and_connid(packet, &p, &len))
 		return -EINVAL;
 	if (!packet->version) {
@@ -526,7 +526,7 @@ static int quic_packet_handshake_header_process(struct sock *sk, struct sk_buff 
 			return -EINVAL;
 		packet->level = QUIC_CRYPTO_INITIAL;
 		if (!quic_is_serv(sk) && token.len) {
-			pki->errcode = QUIC_TRANSPORT_ERROR_PROTOCOL_VIOLATION;
+			packet->errcode = QUIC_TRANSPORT_ERROR_PROTOCOL_VIOLATION;
 			return -EINVAL;
 		}
 		break;
@@ -552,9 +552,9 @@ static int quic_packet_handshake_header_process(struct sock *sk, struct sk_buff 
 		return -EINVAL;
 	}
 
-	if (!quic_get_var(&p, &len, &pki->length) || pki->length > len)
+	if (!quic_get_var(&p, &len, &ci->length) || ci->length > len)
 		return -EINVAL;
-	pki->number_offset = p - skb->data;
+	ci->number_offset = p - skb->data;
 	return 0;
 }
 
@@ -562,7 +562,7 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb, u
 {
 	struct quic_packet *packet = quic_packet(sk);
 	struct quic_connection_id *active;
-	struct quic_packet_info pki = {};
+	struct quic_crypto_info ci = {};
 	struct quic_crypto *crypto;
 	struct quic_pnmap *pnmap;
 	struct quichshdr *hshdr;
@@ -575,7 +575,7 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb, u
 		hshdr = quic_hshdr(skb);
 		if (!hshdr->form) /* handle it later when setting 1RTT key */
 			return quic_packet_process(sk, skb);
-		if (quic_packet_handshake_header_process(sk, skb, &pki))
+		if (quic_packet_handshake_header_process(sk, skb, &ci))
 			goto err;
 		if (!packet->level)
 			return 0;
@@ -585,41 +585,41 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb, u
 		packet->level %= QUIC_CRYPTO_EARLY;
 		pnmap = quic_pnmap(sk, packet->level);
 
-		pki.number_max = quic_pnmap_max_pn_seen(pnmap);
-		pki.crypto_done = quic_packet_decrypt_done;
-		pki.resume = resume;
-		err = quic_crypto_decrypt(crypto, skb, &pki);
+		ci.number_max = quic_pnmap_max_pn_seen(pnmap);
+		ci.crypto_done = quic_packet_decrypt_done;
+		ci.resume = resume;
+		err = quic_crypto_decrypt(crypto, skb, &ci);
 		if (err) {
 			if (err == -EINPROGRESS)
 				return err;
+			packet->errcode = ci.errcode;
 			goto err;
 		}
 		if (hshdr->reserved) {
-			pki.errcode = QUIC_TRANSPORT_ERROR_PROTOCOL_VIOLATION;
+			packet->errcode = QUIC_TRANSPORT_ERROR_PROTOCOL_VIOLATION;
 			goto err;
 		}
 
 		pr_debug("[QUIC] %s serv: %d number: %llu level: %d len: %d\n", __func__,
-			 quic_is_serv(sk), pki.number, packet->level, skb->len);
+			 quic_is_serv(sk), ci.number, packet->level, skb->len);
 
-		err = quic_pnmap_check(pnmap, pki.number);
+		err = quic_pnmap_check(pnmap, ci.number);
 		if (err) {
 			err = -EINVAL;
 			goto err;
 		}
 
-		skb_pull(skb, pki.number_offset + pki.number_len);
-		pki.length -= pki.number_len;
-		pki.length -= packet->taglen[1];
+		skb_pull(skb, ci.number_offset + ci.number_len);
+		packet->len = ci.length - ci.number_len - packet->taglen[1];
 		QUIC_RCV_CB(skb)->level = packet->level;
-		err = quic_frame_process(sk, skb, &pki);
+		err = quic_frame_process(sk, skb);
 		if (err)
 			goto err;
-		err = quic_pnmap_mark(pnmap, pki.number);
+		err = quic_pnmap_mark(pnmap, ci.number);
 		if (err)
 			goto err;
 		skb_pull(skb, packet->taglen[1]);
-		if (pki.ack_eliciting) {
+		if (packet->ack_eliciting) {
 			if (!quic_is_serv(sk) && packet->level == QUIC_CRYPTO_INITIAL) {
 				active = quic_connection_id_active(quic_dest(sk));
 				quic_connection_id_update(active, packet->scid.data,
@@ -637,14 +637,14 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb, u
 	return 0;
 err:
 	pr_warn("[QUIC] %s serv: %d number: %llu level: %d err: %d\n", __func__,
-		quic_is_serv(sk), pki.number, packet->level, err);
-	quic_outq_transmit_close(sk, pki.frame, pki.errcode, packet->level);
+		quic_is_serv(sk), ci.number, packet->level, err);
+	quic_outq_transmit_close(sk, packet->frame, packet->errcode, packet->level);
 	kfree_skb(skb);
 	return err;
 }
 
 static int quic_packet_app_process_done(struct sock *sk, struct sk_buff *skb,
-					struct quic_packet_info *pki)
+					struct quic_crypto_info *ci)
 {
 	struct quic_crypto *crypto = quic_crypto(sk, QUIC_CRYPTO_APP);
 	struct quic_pnmap *pnmap = quic_pnmap(sk, QUIC_CRYPTO_APP);
@@ -659,7 +659,7 @@ static int quic_packet_app_process_done(struct sock *sk, struct sk_buff *skb,
 	/* connection migration check: an endpoint only changes the address to which
 	 * it sends packets in response to the highest-numbered non-probing packet.
 	 */
-	if (pki->non_probing && pki->number == quic_pnmap_max_pn_seen(pnmap)) {
+	if (packet->non_probing && ci->number == quic_pnmap_max_pn_seen(pnmap)) {
 		if (!quic_connection_id_disable_active_migration(quic_dest(sk)) &&
 		    (rcv_cb->path_alt & QUIC_PATH_ALT_DST))
 			quic_sock_change_daddr(sk, packet->da, quic_addr_len(sk));
@@ -668,18 +668,18 @@ static int quic_packet_app_process_done(struct sock *sk, struct sk_buff *skb,
 			quic_sock_change_saddr(sk, NULL, 0);
 	}
 
-	if (pki->key_update) {
-		key_phase = pki->key_phase;
+	if (ci->key_update) {
+		key_phase = ci->key_phase;
 		if (!quic_inq_event_recv(sk, QUIC_EVENT_KEY_UPDATE, &key_phase)) {
 			quic_crypto_set_key_pending(crypto, 0);
 			quic_crypto_set_key_update_send_ts(crypto, 0);
 		}
 	}
 
-	if (!pki->ack_eliciting)
+	if (!packet->ack_eliciting)
 		goto out;
 
-	if (!pki->ack_immediate && !quic_pnmap_has_gap(pnmap)) {
+	if (!packet->ack_immediate && !quic_pnmap_has_gap(pnmap)) {
 		if (!quic_inq_need_sack(inq)) {
 			quic_timer_reset(sk, QUIC_TIMER_SACK, quic_inq_max_ack_delay(inq));
 			quic_inq_set_need_sack(inq, 1);
@@ -708,11 +708,12 @@ static int quic_packet_app_process(struct sock *sk, struct sk_buff *skb, u8 resu
 	struct quic_rcv_cb *rcv_cb = QUIC_RCV_CB(skb);
 	struct quic_packet *packet = quic_packet(sk);
 	struct quichdr *hdr = quic_hdr(skb);
-	struct quic_packet_info pki = {};
+	struct quic_crypto_info ci = {};
 	int err = -EINVAL, taglen;
 
 	WARN_ON(!skb_set_owner_sk_safe(skb, sk));
 
+	quic_packet_reset(packet);
 	if (!hdr->fixed && !quic_inq_grease_quic_bit(quic_inq(sk)))
 		goto err;
 
@@ -722,33 +723,34 @@ static int quic_packet_app_process(struct sock *sk, struct sk_buff *skb, u8 resu
 	}
 
 	/* Do decryption */
-	pki.number_offset = quic_connection_id_active(quic_source(sk))->len + sizeof(*hdr);
+	ci.number_offset = quic_connection_id_active(quic_source(sk))->len + sizeof(*hdr);
 	if (rcv_cb->number_offset)
-		pki.number_offset = rcv_cb->number_offset;
-	pki.length = skb->len - pki.number_offset;
-	pki.number_max = quic_pnmap_max_pn_seen(pnmap);
+		ci.number_offset = rcv_cb->number_offset;
+	ci.length = skb->len - ci.number_offset;
+	ci.number_max = quic_pnmap_max_pn_seen(pnmap);
 
 	taglen = quic_packet_taglen(packet);
-	pki.crypto_done = quic_packet_decrypt_done;
-	pki.resume = (!taglen || resume); /* !taglen means disable_1rtt_encryption */
-	err = quic_crypto_decrypt(crypto, skb, &pki);
+	ci.crypto_done = quic_packet_decrypt_done;
+	ci.resume = (!taglen || resume); /* !taglen means disable_1rtt_encryption */
+	err = quic_crypto_decrypt(crypto, skb, &ci);
 	if (err) {
 		if (err == -EINPROGRESS)
 			return err;
 		if (!quic_packet_stateless_reset_process(sk, skb))
 			return 0;
+		packet->errcode = ci.errcode;
 		goto err;
 	}
 	if (hdr->reserved) {
-		pki.errcode = QUIC_TRANSPORT_ERROR_PROTOCOL_VIOLATION;
+		packet->errcode = QUIC_TRANSPORT_ERROR_PROTOCOL_VIOLATION;
 		goto err;
 	}
 
-	pr_debug("[QUIC] %s number: %llu len: %d\n", __func__, pki.number, skb->len);
+	pr_debug("[QUIC] %s number: %llu len: %d\n", __func__, ci.number, skb->len);
 
-	err = quic_pnmap_check(pnmap, pki.number);
+	err = quic_pnmap_check(pnmap, ci.number);
 	if (err) {
-		pki.errcode = QUIC_TRANSPORT_ERROR_INTERNAL;
+		packet->errcode = QUIC_TRANSPORT_ERROR_INTERNAL;
 		err = -EINVAL;
 		goto err;
 	}
@@ -763,22 +765,21 @@ static int quic_packet_app_process(struct sock *sk, struct sk_buff *skb, u8 resu
 		rcv_cb->path_alt |= QUIC_PATH_ALT_DST;
 	}
 
-	skb_pull(skb, pki.number_offset + pki.number_len);
-	pki.length -= pki.number_len;
-	pki.length -= taglen;
+	skb_pull(skb, ci.number_offset + ci.number_len);
+	packet->len = ci.length - ci.number_len - taglen;
 	rcv_cb->level = 0;
-	err = quic_frame_process(sk, skb, &pki);
+	err = quic_frame_process(sk, skb);
 	if (err)
 		goto err;
-	err = quic_pnmap_mark(pnmap, pki.number);
+	err = quic_pnmap_mark(pnmap, ci.number);
 	if (err)
 		goto err;
 
-	return quic_packet_app_process_done(sk, skb, &pki);
+	return quic_packet_app_process_done(sk, skb, &ci);
 
 err:
-	pr_warn("[QUIC] %s number: %llu len: %d err: %d\n", __func__, pki.number, skb->len, err);
-	quic_outq_transmit_close(sk, pki.frame, pki.errcode, 0);
+	pr_warn("[QUIC] %s number: %llu len: %d err: %d\n", __func__, ci.number, skb->len, err);
+	quic_outq_transmit_close(sk, packet->frame, packet->errcode, 0);
 	kfree_skb(skb);
 	return err;
 }
@@ -866,7 +867,7 @@ int quic_packet_parse_alpn(struct sk_buff *skb, struct quic_data *alpn)
 	u8 *p = skb->data, *data, flag = CRYPTO_ALG_ASYNC, type;
 	struct quichshdr *hdr = quic_hshdr(skb);
 	int len = skb->len, err = -EINVAL;
-	struct quic_packet_info pki = {};
+	struct quic_crypto_info ci = {};
 	struct quic_crypto *crypto;
 	struct quic_packet packet;
 	struct quic_data token;
@@ -883,7 +884,7 @@ int quic_packet_parse_alpn(struct sk_buff *skb, struct quic_data *alpn)
 		return 0;
 	if (quic_packet_get_token(&token, &p, &len))
 		return -EINVAL;
-	if (!quic_get_var(&p, &len, &pki.length) || pki.length > len)
+	if (!quic_get_var(&p, &len, &ci.length) || ci.length > len)
 		return err;
 	crypto = kzalloc(sizeof(*crypto), GFP_ATOMIC);
 	if (!crypto)
@@ -896,9 +897,9 @@ int quic_packet_parse_alpn(struct sk_buff *skb, struct quic_data *alpn)
 	err = quic_crypto_initial_keys_install(crypto, &packet.dcid, packet.version, flag, 1);
 	if (err)
 		goto out;
-	pki.number_offset = p - skb->data;
-	pki.crypto_done = quic_packet_decrypt_done;
-	err = quic_crypto_decrypt(crypto, skb, &pki);
+	ci.number_offset = p - skb->data;
+	ci.crypto_done = quic_packet_decrypt_done;
+	err = quic_crypto_decrypt(crypto, skb, &ci);
 	if (err) {
 		memcpy(skb->data, data, skb->len);
 		goto out;
@@ -907,8 +908,8 @@ int quic_packet_parse_alpn(struct sk_buff *skb, struct quic_data *alpn)
 
 	/* QUIC CRYPTO frame */
 	err = -EINVAL;
-	p += pki.number_len;
-	len = pki.length - pki.number_len - QUIC_TAG_LEN;
+	p += ci.number_len;
+	len = ci.length - ci.number_len - QUIC_TAG_LEN;
 	if (!len-- || *p++ != QUIC_FRAME_CRYPTO)
 		goto out;
 	if (!quic_get_var(&p, &len, &offset) || offset)
@@ -1328,7 +1329,7 @@ int quic_packet_xmit(struct sock *sk, struct sk_buff *skb, u8 resume)
 {
 	struct quic_snd_cb *snd_cb = QUIC_SND_CB(skb);
 	struct quic_packet *packet = quic_packet(sk);
-	struct quic_packet_info pki = {};
+	struct quic_crypto_info ci = {};
 	int err;
 
 	WARN_ON(!skb_set_owner_sk_safe(skb, sk));
@@ -1336,13 +1337,13 @@ int quic_packet_xmit(struct sock *sk, struct sk_buff *skb, u8 resume)
 	if (!packet->taglen[quic_hdr(skb)->form]) /* !taglen means disable_1rtt_encryption */
 		goto xmit;
 
-	pki.number_len = QUIC_PACKET_NUMBER_LEN;
-	pki.number_offset = snd_cb->number_offset;
-	pki.number = snd_cb->number;
-	pki.crypto_done = quic_packet_encrypt_done;
-	pki.resume = resume;
+	ci.number_len = QUIC_PACKET_NUMBER_LEN;
+	ci.number_offset = snd_cb->number_offset;
+	ci.number = snd_cb->number;
+	ci.crypto_done = quic_packet_encrypt_done;
+	ci.resume = resume;
 
-	err = quic_crypto_encrypt(quic_crypto(sk, packet->level), skb, &pki);
+	err = quic_crypto_encrypt(quic_crypto(sk, packet->level), skb, &ci);
 	if (err) {
 		if (err != -EINPROGRESS)
 			kfree_skb(skb);

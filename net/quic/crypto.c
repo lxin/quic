@@ -226,7 +226,7 @@ static void *quic_crypto_skcipher_mem_alloc(struct crypto_skcipher *tfm, u32 mas
 }
 
 static int quic_crypto_header_encrypt(struct crypto_skcipher *tfm, struct sk_buff *skb,
-				      struct quic_packet_info *pki, bool chacha)
+				      struct quic_crypto_info *ci, bool chacha)
 {
 	struct skcipher_request *req;
 	struct scatterlist sg;
@@ -237,7 +237,7 @@ static int quic_crypto_header_encrypt(struct crypto_skcipher *tfm, struct sk_buf
 	if (!mask)
 		return -ENOMEM;
 
-	memcpy((chacha ? iv : mask), skb->data + pki->number_offset + 4, 16);
+	memcpy((chacha ? iv : mask), skb->data + ci->number_offset + 4, 16);
 	sg_init_one(&sg, mask, 16);
 	skcipher_request_set_tfm(req, tfm);
 	skcipher_request_set_crypt(req, &sg, &sg, 16, iv);
@@ -247,8 +247,8 @@ static int quic_crypto_header_encrypt(struct crypto_skcipher *tfm, struct sk_buf
 
 	p = skb->data;
 	*p = (u8)(*p ^ (mask[0] & (((*p & 0x80) == 0x80) ? 0x0f : 0x1f)));
-	p = skb->data + pki->number_offset;
-	for (i = 1; i <= pki->number_len; i++)
+	p = skb->data + ci->number_offset;
+	for (i = 1; i <= ci->number_len; i++)
 		*p++ ^= mask[i];
 err:
 	kfree(mask);
@@ -294,7 +294,7 @@ static void quic_crypto_destruct_skb(struct sk_buff *skb)
 }
 
 static int quic_crypto_payload_encrypt(struct crypto_aead *tfm, struct sk_buff *skb,
-				       struct quic_packet_info *pki, u8 *tx_iv, bool ccm)
+				       struct quic_crypto_info *ci, u8 *tx_iv, bool ccm)
 {
 	struct quichdr *hdr = quic_hdr(skb);
 	u8 *iv, i, nonce[QUIC_IV_LEN];
@@ -310,7 +310,7 @@ static int quic_crypto_payload_encrypt(struct crypto_aead *tfm, struct sk_buff *
 	if (nsg < 0)
 		return nsg;
 	pskb_put(skb, trailer, QUIC_TAG_LEN);
-	hdr->key = pki->key_phase;
+	hdr->key = ci->key_phase;
 
 	ctx = quic_crypto_aead_mem_alloc(tfm, 0, &iv, &req, &sg, nsg);
 	if (!ctx)
@@ -321,9 +321,9 @@ static int quic_crypto_payload_encrypt(struct crypto_aead *tfm, struct sk_buff *
 	if (err < 0)
 		goto err;
 
-	hlen = pki->number_offset + pki->number_len;
+	hlen = ci->number_offset + ci->number_len;
 	memcpy(nonce, tx_iv, QUIC_IV_LEN);
-	n = cpu_to_be64(pki->number);
+	n = cpu_to_be64(ci->number);
 	for (i = 0; i < 8; i++)
 		nonce[QUIC_IV_LEN - 8 + i] ^= ((u8 *)&n)[i];
 
@@ -332,7 +332,7 @@ static int quic_crypto_payload_encrypt(struct crypto_aead *tfm, struct sk_buff *
 	aead_request_set_tfm(req, tfm);
 	aead_request_set_ad(req, hlen);
 	aead_request_set_crypt(req, sg, sg, len - hlen, iv);
-	aead_request_set_callback(req, CRYPTO_TFM_REQ_MAY_BACKLOG, pki->crypto_done, skb);
+	aead_request_set_callback(req, CRYPTO_TFM_REQ_MAY_BACKLOG, ci->crypto_done, skb);
 
 	err = crypto_aead_encrypt(req);
 	if (err == -EINPROGRESS) {
@@ -347,7 +347,7 @@ err:
 }
 
 static int quic_crypto_payload_decrypt(struct crypto_aead *tfm, struct sk_buff *skb,
-				       struct quic_packet_info *pki, u8 *rx_iv, bool ccm)
+				       struct quic_crypto_info *ci, u8 *rx_iv, bool ccm)
 {
 	u8 *iv, i, nonce[QUIC_IV_LEN];
 	struct aead_request *req;
@@ -357,8 +357,8 @@ static int quic_crypto_payload_decrypt(struct crypto_aead *tfm, struct sk_buff *
 	void *ctx;
 	__be64 n;
 
-	len = pki->length + pki->number_offset;
-	hlen = pki->number_offset + pki->number_len;
+	len = ci->length + ci->number_offset;
+	hlen = ci->number_offset + ci->number_len;
 	if (len - hlen < QUIC_TAG_LEN)
 		return -EINVAL;
 	nsg = skb_cow_data(skb, 0, &trailer);
@@ -374,7 +374,7 @@ static int quic_crypto_payload_decrypt(struct crypto_aead *tfm, struct sk_buff *
 		goto err;
 
 	memcpy(nonce, rx_iv, QUIC_IV_LEN);
-	n = cpu_to_be64(pki->number);
+	n = cpu_to_be64(ci->number);
 	for (i = 0; i < 8; i++)
 		nonce[QUIC_IV_LEN - 8 + i] ^= ((u8 *)&n)[i];
 
@@ -383,7 +383,7 @@ static int quic_crypto_payload_decrypt(struct crypto_aead *tfm, struct sk_buff *
 	aead_request_set_tfm(req, tfm);
 	aead_request_set_ad(req, hlen);
 	aead_request_set_crypt(req, sg, sg, len - hlen, iv);
-	aead_request_set_callback(req, CRYPTO_TFM_REQ_MAY_BACKLOG, pki->crypto_done, skb);
+	aead_request_set_callback(req, CRYPTO_TFM_REQ_MAY_BACKLOG, ci->crypto_done, skb);
 
 	err = crypto_aead_decrypt(req);
 	if (err == -EINPROGRESS) {
@@ -396,19 +396,19 @@ err:
 	return err;
 }
 
-static void quic_crypto_get_num(u8 *p, struct quic_packet_info *pki)
+static void quic_crypto_get_num(u8 *p, struct quic_crypto_info *ci)
 {
-	u32 len = pki->number_len;
+	u32 len = ci->number_len;
 
-	quic_get_int(&p, &len, &pki->number, pki->number_len);
-	pki->number = quic_get_num(pki->number_max, pki->number, pki->number_len);
+	quic_get_int(&p, &len, &ci->number, ci->number_len);
+	ci->number = quic_get_num(ci->number_max, ci->number, ci->number_len);
 }
 
 static int quic_crypto_header_decrypt(struct crypto_skcipher *tfm, struct sk_buff *skb,
-				      struct quic_packet_info *pki, bool chacha)
+				      struct quic_crypto_info *ci, bool chacha)
 {
 	struct quichdr *hdr = quic_hdr(skb);
-	int err, i, len = pki->length;
+	int err, i, len = ci->length;
 	struct skcipher_request *req;
 	struct scatterlist sg;
 	u8 *mask, *iv, *p;
@@ -421,7 +421,7 @@ static int quic_crypto_header_decrypt(struct crypto_skcipher *tfm, struct sk_buf
 		err = -EINVAL;
 		goto err;
 	}
-	p = (u8 *)hdr + pki->number_offset;
+	p = (u8 *)hdr + ci->number_offset;
 	memcpy((chacha ? iv : mask), p + 4, 16);
 	sg_init_one(&sg, mask, 16);
 	skcipher_request_set_tfm(req, tfm);
@@ -432,12 +432,12 @@ static int quic_crypto_header_decrypt(struct crypto_skcipher *tfm, struct sk_buf
 
 	p = (u8 *)hdr;
 	*p = (u8)(*p ^ (mask[0] & (((*p & 0x80) == 0x80) ? 0x0f : 0x1f)));
-	pki->number_len = (*p & 0x03) + 1;
-	p += pki->number_offset;
-	for (i = 0; i < pki->number_len; ++i)
-		*(p + i) = *((u8 *)hdr + pki->number_offset + i) ^ mask[i + 1];
-	pki->key_phase = hdr->key;
-	quic_crypto_get_num(p, pki);
+	ci->number_len = (*p & 0x03) + 1;
+	p += ci->number_offset;
+	for (i = 0; i < ci->number_len; ++i)
+		*(p + i) = *((u8 *)hdr + ci->number_offset + i) ^ mask[i + 1];
+	ci->key_phase = hdr->key;
+	quic_crypto_get_num(p, ci);
 
 err:
 	kfree(mask);
@@ -479,62 +479,62 @@ static bool quic_crypto_is_cipher_chacha(struct quic_crypto *crypto)
 }
 
 int quic_crypto_encrypt(struct quic_crypto *crypto, struct sk_buff *skb,
-			struct quic_packet_info *pki)
+			struct quic_crypto_info *ci)
 {
 	int err, phase = crypto->key_phase;
 	u8 *iv, cha, ccm;
 
-	pki->key_phase = phase;
+	ci->key_phase = phase;
 	iv = crypto->tx_iv[phase];
-	if (pki->resume)
+	if (ci->resume)
 		goto out;
 
 	if (crypto->key_pending && !crypto->key_update_send_ts)
 		crypto->key_update_send_ts = jiffies_to_usecs(jiffies);
 
 	ccm = quic_crypto_is_cipher_ccm(crypto);
-	err = quic_crypto_payload_encrypt(crypto->tx_tfm[phase], skb, pki, iv, ccm);
+	err = quic_crypto_payload_encrypt(crypto->tx_tfm[phase], skb, ci, iv, ccm);
 	if (err)
 		return err;
 out:
 	cha = quic_crypto_is_cipher_chacha(crypto);
-	return quic_crypto_header_encrypt(crypto->tx_hp_tfm, skb, pki, cha);
+	return quic_crypto_header_encrypt(crypto->tx_hp_tfm, skb, ci, cha);
 }
 EXPORT_SYMBOL_GPL(quic_crypto_encrypt);
 
 int quic_crypto_decrypt(struct quic_crypto *crypto, struct sk_buff *skb,
-			struct quic_packet_info *pki)
+			struct quic_crypto_info *ci)
 {
 	struct quichdr *hdr = quic_hdr(skb);
 	int err = 0, phase;
 	u8 *iv, cha, ccm;
 
-	if (pki->resume) {
-		pki->key_phase = hdr->key;
-		pki->number_len = hdr->pnl + 1;
-		quic_crypto_get_num((u8 *)hdr + pki->number_offset, pki);
+	if (ci->resume) {
+		ci->key_phase = hdr->key;
+		ci->number_len = hdr->pnl + 1;
+		quic_crypto_get_num((u8 *)hdr + ci->number_offset, ci);
 		goto out;
 	}
 
 	cha = quic_crypto_is_cipher_chacha(crypto);
-	err = quic_crypto_header_decrypt(crypto->rx_hp_tfm, skb, pki, cha);
+	err = quic_crypto_header_decrypt(crypto->rx_hp_tfm, skb, ci, cha);
 	if (err) {
 		pr_warn("[QUIC] hd decrypt err %d\n", err);
 		return err;
 	}
 
-	if (pki->key_phase != crypto->key_phase && !crypto->key_pending) {
+	if (ci->key_phase != crypto->key_phase && !crypto->key_pending) {
 		err = quic_crypto_key_update(crypto);
 		if (err) {
-			pki->errcode = QUIC_TRANSPORT_ERROR_KEY_UPDATE;
+			ci->errcode = QUIC_TRANSPORT_ERROR_KEY_UPDATE;
 			return err;
 		}
 	}
 
-	phase = pki->key_phase;
+	phase = ci->key_phase;
 	iv = crypto->rx_iv[phase];
 	ccm = quic_crypto_is_cipher_ccm(crypto);
-	err = quic_crypto_payload_decrypt(crypto->rx_tfm[phase], skb, pki, iv, ccm);
+	err = quic_crypto_payload_decrypt(crypto->rx_tfm[phase], skb, ci, iv, ccm);
 	if (err)
 		return err;
 
@@ -543,10 +543,10 @@ out:
 	 * packet sent using the new keys. An endpoint SHOULD retain old keys for
 	 * some time after unprotecting a packet sent using the new keys.
 	 */
-	if (pki->key_phase == crypto->key_phase &&
+	if (ci->key_phase == crypto->key_phase &&
 	    crypto->key_pending && crypto->key_update_send_ts &&
 	    jiffies_to_usecs(jiffies) - crypto->key_update_send_ts >= crypto->key_update_ts)
-		pki->key_update = 1;
+		ci->key_update = 1;
 	return err;
 }
 EXPORT_SYMBOL_GPL(quic_crypto_decrypt);
