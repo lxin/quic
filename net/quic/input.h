@@ -8,6 +8,12 @@
  *    Xin Long <lucien.xin@gmail.com>
  */
 
+#define QUIC_MAX_ACK_DELAY_EXPONENT	20
+#define QUIC_DEF_ACK_DELAY_EXPONENT	3
+
+#define QUIC_MAX_ACK_DELAY		(16384 * 1000)
+#define QUIC_DEF_ACK_DELAY		25000
+
 struct quic_inqueue {
 	struct sk_buff_head reassemble_list;
 	struct sk_buff_head handshake_list;

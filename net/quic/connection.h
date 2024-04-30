@@ -11,6 +11,8 @@
 #define QUIC_CONNECTION_ID_MAX_LEN	20
 #define QUIC_CONNECTION_ID_DEF_LEN	8
 
+#define QUIC_CONNECTION_ID_LIMIT	7
+
 struct quic_connection_id {
 	u8 len;
 	u8 data[QUIC_CONNECTION_ID_MAX_LEN];

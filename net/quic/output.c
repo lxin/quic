@@ -542,7 +542,7 @@ void quic_outq_retransmit_list(struct sock *sk, struct sk_buff_head *head)
 void quic_outq_transmit_one(struct sock *sk, u8 level)
 {
 	struct quic_outqueue *outq = quic_outq(sk);
-	u32 probe_size = 1200;
+	u32 probe_size = QUIC_MIN_UDP_PAYLOAD;
 	struct sk_buff *skb;
 
 	quic_packet_set_filter(sk, level, 1);

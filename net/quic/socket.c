@@ -15,6 +15,7 @@
 #include <net/inet_common.h>
 #include <net/sock_reuseport.h>
 #include <linux/version.h>
+#include <net/tls.h>
 
 static DEFINE_PER_CPU(int, quic_memory_per_cpu_fw_alloc);
 static unsigned long quic_memory_pressure;
@@ -234,17 +235,17 @@ static void quic_transport_param_init(struct sock *sk)
 {
 	struct quic_transport_param *param = quic_local(sk);
 
-	param->max_udp_payload_size = 65527;
-	param->ack_delay_exponent = 3;
-	param->max_ack_delay = 25000;
-	param->active_connection_id_limit = 7;
-	param->max_idle_timeout = 30000000;
+	param->max_udp_payload_size = QUIC_MAX_UDP_PAYLOAD;
+	param->ack_delay_exponent = QUIC_DEF_ACK_DELAY_EXPONENT;
+	param->max_ack_delay = QUIC_DEF_ACK_DELAY;
+	param->active_connection_id_limit = QUIC_CONNECTION_ID_LIMIT;
+	param->max_idle_timeout = QUIC_DEF_IDLE_TIMEOUT;
 	param->max_data = QUIC_PATH_MAX_PMTU * 32;
 	param->max_stream_data_bidi_local = QUIC_PATH_MAX_PMTU * 4;
 	param->max_stream_data_bidi_remote = QUIC_PATH_MAX_PMTU * 4;
 	param->max_stream_data_uni = QUIC_PATH_MAX_PMTU * 4;
-	param->max_streams_bidi = 100;
-	param->max_streams_uni = 100;
+	param->max_streams_bidi = QUIC_DEF_STREAMS;
+	param->max_streams_uni = QUIC_DEF_STREAMS;
 	param->initial_smoothed_rtt = QUIC_RTT_INIT;
 	param->version = QUIC_VERSION_V1;
 
@@ -933,11 +934,111 @@ static int quic_wait_for_accept(struct sock *sk, long timeo)
 	return err;
 }
 
-#define quic_set_param_if_not_zero(param_name) \
-	do { \
-		if (p->param_name) \
-			param->param_name = p->param_name; \
-	} while (0)
+static int quic_param_check_and_copy(struct quic_transport_param *p,
+				     struct quic_transport_param *param)
+{
+	if (p->max_udp_payload_size) {
+		if (p->max_udp_payload_size < QUIC_MIN_UDP_PAYLOAD ||
+		    p->max_udp_payload_size > QUIC_MAX_UDP_PAYLOAD)
+			return -EINVAL;
+		param->max_udp_payload_size = p->max_udp_payload_size;
+	}
+	if (p->ack_delay_exponent) {
+		if (p->ack_delay_exponent > QUIC_MAX_ACK_DELAY_EXPONENT)
+			return -EINVAL;
+		param->ack_delay_exponent = p->ack_delay_exponent;
+	}
+	if (p->max_ack_delay) {
+		if (p->max_ack_delay >= QUIC_MAX_ACK_DELAY)
+			return -EINVAL;
+		param->max_ack_delay = p->max_ack_delay;
+	}
+	if (p->active_connection_id_limit) {
+		if (p->active_connection_id_limit > QUIC_CONNECTION_ID_LIMIT)
+			return -EINVAL;
+		param->active_connection_id_limit = p->active_connection_id_limit;
+	}
+	if (p->max_idle_timeout) {
+		if (p->max_idle_timeout < QUIC_MIN_IDLE_TIMEOUT)
+			return -EINVAL;
+		param->max_idle_timeout = p->max_idle_timeout;
+	}
+	if (p->max_datagram_frame_size) {
+		if (p->max_datagram_frame_size < QUIC_MIN_UDP_PAYLOAD ||
+		    p->max_datagram_frame_size > QUIC_MAX_UDP_PAYLOAD)
+			return -EINVAL;
+		param->max_datagram_frame_size = p->max_datagram_frame_size;
+	}
+	if (p->max_data) {
+		if (p->max_data < QUIC_PATH_MAX_PMTU * 2)
+			return -EINVAL;
+		param->max_data = p->max_data;
+	}
+	if (p->max_stream_data_bidi_local) {
+		if (p->max_stream_data_bidi_local > param->max_data)
+			return -EINVAL;
+		param->max_stream_data_bidi_local = p->max_stream_data_bidi_local;
+	}
+	if (p->max_stream_data_bidi_remote) {
+		if (p->max_stream_data_bidi_remote > param->max_data)
+			return -EINVAL;
+		param->max_stream_data_bidi_remote = p->max_stream_data_bidi_remote;
+	}
+	if (p->max_stream_data_uni) {
+		if (p->max_stream_data_uni > param->max_data)
+			return -EINVAL;
+		param->max_stream_data_uni = p->max_stream_data_uni;
+	}
+	if (p->max_streams_bidi) {
+		if (p->max_streams_bidi > QUIC_MAX_STREAMS)
+			return -EINVAL;
+		param->max_streams_bidi = p->max_streams_bidi;
+	}
+	if (p->max_streams_uni) {
+		if (p->max_streams_uni > QUIC_MAX_STREAMS)
+			return -EINVAL;
+		param->max_streams_uni = p->max_streams_uni;
+	}
+	if (p->initial_smoothed_rtt) {
+		if (p->initial_smoothed_rtt < QUIC_RTO_MIN ||
+		    p->initial_smoothed_rtt > QUIC_RTO_MAX)
+			return -EINVAL;
+		param->initial_smoothed_rtt = p->initial_smoothed_rtt;
+	}
+	if (p->plpmtud_probe_timeout) {
+		if (p->plpmtud_probe_timeout < QUIC_MIN_PROBE_TIMEOUT)
+			return -EINVAL;
+		param->plpmtud_probe_timeout = p->plpmtud_probe_timeout;
+	}
+	if (p->disable_active_migration)
+		param->disable_active_migration = p->disable_active_migration;
+	if (p->disable_1rtt_encryption)
+		param->disable_1rtt_encryption = p->disable_1rtt_encryption;
+	if (p->validate_peer_address)
+		param->validate_peer_address = p->validate_peer_address;
+	if (p->grease_quic_bit)
+		param->grease_quic_bit = p->grease_quic_bit;
+	if (p->stateless_reset)
+		param->stateless_reset = p->stateless_reset;
+	if (p->receive_session_ticket)
+		param->receive_session_ticket = p->receive_session_ticket;
+	if (p->certificate_request) {
+		if (p->certificate_request > 3)
+			return -EINVAL;
+		param->certificate_request = p->certificate_request;
+	}
+	if (p->payload_cipher_type) {
+		if (p->payload_cipher_type != TLS_CIPHER_AES_GCM_128 &&
+		    p->payload_cipher_type != TLS_CIPHER_AES_GCM_256 &&
+		    p->payload_cipher_type != TLS_CIPHER_AES_CCM_128 &&
+		    p->payload_cipher_type != TLS_CIPHER_CHACHA20_POLY1305)
+			return -EINVAL;
+		param->payload_cipher_type = p->payload_cipher_type;
+	}
+	if (p->version)
+		param->version = p->version;
+	return 0;
+}
 
 static int quic_sock_set_transport_param(struct sock *sk, struct quic_transport_param *p, u32 len)
 {
@@ -949,29 +1050,8 @@ static int quic_sock_set_transport_param(struct sock *sk, struct quic_transport_
 	if (p->remote)
 		param = quic_remote(sk);
 
-	quic_set_param_if_not_zero(max_udp_payload_size);
-	quic_set_param_if_not_zero(ack_delay_exponent);
-	quic_set_param_if_not_zero(max_ack_delay);
-	quic_set_param_if_not_zero(active_connection_id_limit);
-	quic_set_param_if_not_zero(max_idle_timeout);
-	quic_set_param_if_not_zero(max_datagram_frame_size);
-	quic_set_param_if_not_zero(max_data);
-	quic_set_param_if_not_zero(max_stream_data_bidi_local);
-	quic_set_param_if_not_zero(max_stream_data_bidi_remote);
-	quic_set_param_if_not_zero(max_stream_data_uni);
-	quic_set_param_if_not_zero(max_streams_bidi);
-	quic_set_param_if_not_zero(max_streams_uni);
-	quic_set_param_if_not_zero(initial_smoothed_rtt);
-	quic_set_param_if_not_zero(disable_active_migration);
-	quic_set_param_if_not_zero(disable_1rtt_encryption);
-	quic_set_param_if_not_zero(plpmtud_probe_timeout);
-	quic_set_param_if_not_zero(validate_peer_address);
-	quic_set_param_if_not_zero(grease_quic_bit);
-	quic_set_param_if_not_zero(stateless_reset);
-	quic_set_param_if_not_zero(receive_session_ticket);
-	quic_set_param_if_not_zero(certificate_request);
-	quic_set_param_if_not_zero(payload_cipher_type);
-	quic_set_param_if_not_zero(version);
+	if (quic_param_check_and_copy(p, param))
+		return -EINVAL;
 
 	if (p->remote) {
 		param->remote = 1;

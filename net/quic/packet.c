@@ -1048,8 +1048,8 @@ static struct sk_buff *quic_packet_handshake_create(struct sock *sk)
 
 	len = packet->len;
 	if (level == QUIC_CRYPTO_INITIAL && !quic_is_serv(sk) &&
-	    len - packet->overhead > 128 && len < 1184) {
-		len = 1184;
+	    packet->ack_eliciting && len < (QUIC_MIN_UDP_PAYLOAD - QUIC_TAG_LEN)) {
+		len = QUIC_MIN_UDP_PAYLOAD - QUIC_TAG_LEN;
 		plen = len - packet->len;
 	}
 
@@ -1252,6 +1252,7 @@ int quic_packet_config(struct sock *sk, u8 level, u8 path_alt)
 	if (!skb_queue_empty(&packet->frame_list))
 		return 0;
 
+	packet->ack_eliciting = 0;
 	packet->ipfragok = 0;
 	packet->padding = 0;
 	hlen += QUIC_PACKET_NUMBER_LEN; /* packet number */
@@ -1423,6 +1424,9 @@ int quic_packet_tail(struct sock *sk, struct sk_buff *skb, struct sk_buff_head *
 	}
 	if (snd_cb->padding)
 		packet->padding = snd_cb->padding;
+
+	if (quic_frame_ack_eliciting(snd_cb->frame_type))
+		packet->ack_eliciting = 1;
 
 	__skb_unlink(skb, from);
 	__skb_queue_tail(&packet->frame_list, skb);

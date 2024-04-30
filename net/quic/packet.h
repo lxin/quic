@@ -28,14 +28,14 @@ struct quic_packet {
 	/* send or recv */
 	u32 len;
 	u8  level;
+	u8  ack_eliciting:1;
 
 	/* recv */
 	u32 version;
 	u32 errcode;
 	u8  frame;
-	u8  ack_eliciting:1;
-	u8  ack_immediate:1;
 	u8  non_probing:1;
+	u8  ack_immediate:1;
 	union quic_addr daddr;
 	union quic_addr saddr;
 	struct quic_connection_id dcid;

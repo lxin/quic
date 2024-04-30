@@ -365,7 +365,7 @@ static struct sk_buff *quic_frame_path_challenge_create(struct sock *sk, void *d
 	u8 *p;
 
 	quic_packet_config(sk, 0, 0);
-	frame_len = 1184 - packet->overhead;
+	frame_len = QUIC_MIN_UDP_PAYLOAD - QUIC_TAG_LEN - packet->overhead;
 	get_random_bytes(quic_path_entropy(path), 8);
 
 	skb = alloc_skb(frame_len, GFP_ATOMIC);
@@ -1563,10 +1563,10 @@ int quic_frame_set_transport_params_ext(struct sock *sk, struct quic_transport_p
 	u64 type, valuelen;
 	u32 versions[16];
 
-	params->max_udp_payload_size = 65527;
-	params->ack_delay_exponent = 3;
-	params->max_ack_delay = 25000;
-	params->active_connection_id_limit = 2;
+	params->max_udp_payload_size = QUIC_MAX_UDP_PAYLOAD;
+	params->ack_delay_exponent = QUIC_DEF_ACK_DELAY_EXPONENT;
+	params->max_ack_delay = QUIC_DEF_ACK_DELAY;
+	params->active_connection_id_limit = QUIC_CONNECTION_ID_LIMIT;
 	active = quic_connection_id_active(id_set);
 
 	while (len > 0) {
@@ -1636,7 +1636,7 @@ int quic_frame_set_transport_params_ext(struct sock *sk, struct quic_transport_p
 		case QUIC_TRANSPORT_PARAM_ACK_DELAY_EXPONENT:
 			if (quic_get_param(&params->ack_delay_exponent, &p, &len))
 				return -1;
-			if (params->ack_delay_exponent > 20)
+			if (params->ack_delay_exponent > QUIC_MAX_ACK_DELAY_EXPONENT)
 				return -1;
 			break;
 		case QUIC_TRANSPORT_PARAM_DISABLE_ACTIVE_MIGRATION:
@@ -1665,9 +1665,9 @@ int quic_frame_set_transport_params_ext(struct sock *sk, struct quic_transport_p
 		case QUIC_TRANSPORT_PARAM_MAX_ACK_DELAY:
 			if (quic_get_param(&params->max_ack_delay, &p, &len))
 				return -1;
-			if (params->max_ack_delay >= 16384)
-				return -1;
 			params->max_ack_delay *= 1000;
+			if (params->max_ack_delay >= QUIC_MAX_ACK_DELAY)
+				return -1;
 			break;
 		case QUIC_TRANSPORT_PARAM_ACTIVE_CONNECTION_ID_LIMIT:
 			if (quic_get_param(&params->active_connection_id_limit, &p, &len) ||
@@ -1833,7 +1833,7 @@ int quic_frame_get_transport_params_ext(struct sock *sk, struct quic_transport_p
 		p = quic_put_param(p, QUIC_TRANSPORT_PARAM_INITIAL_MAX_STREAMS_UNI,
 				   params->max_streams_uni);
 	}
-	if (params->max_udp_payload_size != 65527) {
+	if (params->max_udp_payload_size != QUIC_MAX_UDP_PAYLOAD) {
 		p = quic_put_param(p, QUIC_TRANSPORT_PARAM_MAX_UDP_PAYLOAD_SIZE,
 				   params->max_udp_payload_size);
 	}
@@ -1857,7 +1857,7 @@ int quic_frame_get_transport_params_ext(struct sock *sk, struct quic_transport_p
 		p = quic_put_var(p, QUIC_TRANSPORT_PARAM_GREASE_QUIC_BIT);
 		p = quic_put_var(p, 0);
 	}
-	if (params->max_ack_delay != 25000) {
+	if (params->max_ack_delay != QUIC_DEF_ACK_DELAY) {
 		p = quic_put_param(p, QUIC_TRANSPORT_PARAM_MAX_ACK_DELAY,
 				   params->max_ack_delay / 1000);
 	}

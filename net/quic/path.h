@@ -13,6 +13,9 @@
 
 #define QUIC_PATH_MAX_PMTU	65536
 
+#define QUIC_MIN_UDP_PAYLOAD	1200
+#define QUIC_MAX_UDP_PAYLOAD	65527
+
 struct quic_bind_port {
 	unsigned short		port;
 	struct hlist_node	node;

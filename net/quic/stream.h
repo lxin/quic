@@ -13,6 +13,7 @@
 #define QUIC_STREAM_BIT_OFF	0x04
 #define QUIC_STREAM_BIT_MASK	0x08
 
+#define QUIC_DEF_STREAMS	100
 #define QUIC_MAX_STREAMS	BIT_ULL(60)
 
 struct quic_stream {

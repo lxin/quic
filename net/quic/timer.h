@@ -17,6 +17,11 @@ enum {
 	QUIC_TIMER_MAX,
 };
 
+#define QUIC_MIN_PROBE_TIMEOUT	5000000
+
+#define QUIC_MIN_IDLE_TIMEOUT	1000000
+#define QUIC_DEF_IDLE_TIMEOUT	30000000
+
 void quic_timer_reduce(struct sock *sk, u8 type, u32 timeout);
 void quic_timer_reset(struct sock *sk, u8 type, u32 timeout);
 void quic_timer_start(struct sock *sk, u8 type, u32 timeout);
