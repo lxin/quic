@@ -19,9 +19,6 @@
 #include <net/tls.h>
 
 #include <linux/version.h>
-#if KERNEL_VERSION(6, 8, 0) <= LINUX_VERSION_CODE
-#include <net/rps.h>
-#endif
 
 struct quic_hash_table quic_hash_tables[QUIC_HT_MAX_TABLES] __read_mostly;
 struct percpu_counter quic_sockets_allocated;
@@ -496,7 +493,8 @@ static __poll_t quic_inet_poll(struct file *file, struct socket *sock, poll_tabl
 
 	poll_wait(file, sk_sleep(sk), wait);
 
-	sock_rps_record_flow(sk);
+	/* comment it out for compiling on the old kernel version for now */
+	/* sock_rps_record_flow(sk); */
 
 	if (quic_is_listen(sk))
 		return !list_empty(quic_reqs(sk)) ? (EPOLLIN | EPOLLRDNORM) : 0;
