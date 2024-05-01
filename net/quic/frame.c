@@ -95,7 +95,7 @@ static struct sk_buff *quic_frame_ping_create(struct sock *sk, void *data, u8 ty
 	u32 frame_len = 1;
 
 	quic_packet_config(sk, 0, 0);
-	frame_len = *probe_size - quic_packet_overhead(packet);
+	frame_len = *probe_size - packet->overhead;
 
 	skb = alloc_skb(frame_len, GFP_ATOMIC);
 	if (!skb)
@@ -366,7 +366,7 @@ static struct sk_buff *quic_frame_path_challenge_create(struct sock *sk, void *d
 	u8 *p;
 
 	quic_packet_config(sk, 0, 0);
-	frame_len = 1184 - quic_packet_overhead(packet);
+	frame_len = 1184 - packet->overhead;
 	get_random_bytes(quic_path_entropy(path), 8);
 
 	skb = alloc_skb(frame_len, GFP_ATOMIC);

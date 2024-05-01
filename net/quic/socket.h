@@ -265,11 +265,12 @@ static inline u8 quic_version_put_type(u32 version, u8 type)
 
 int quic_sock_change_saddr(struct sock *sk, union quic_addr *addr, u32 len);
 int quic_sock_change_daddr(struct sock *sk, union quic_addr *addr, u32 len);
-bool quic_request_sock_exists(struct sock *sk, union quic_addr *sa, union quic_addr *da);
 struct sock *quic_sock_lookup(struct sk_buff *skb, union quic_addr *sa, union quic_addr *da);
 struct quic_request_sock *quic_request_sock_dequeue(struct sock *sk);
-int quic_request_sock_enqueue(struct sock *sk, struct quic_request_sock *req);
-int quic_select_version(struct sock *sk, u32 *versions, u8 count);
+int quic_request_sock_enqueue(struct sock *sk, struct quic_connection_id *odcid, u8 retry);
+int quic_accept_sock_exists(struct sock *sk, struct sk_buff *skb);
+bool quic_request_sock_exists(struct sock *sk);
 u32 *quic_compatible_versions(u32 version);
+int quic_select_version(struct sock *sk, u32 *versions, u8 count);
 
 #endif /* __net_quic_h__ */

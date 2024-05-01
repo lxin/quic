@@ -34,7 +34,7 @@ static void quic_outq_transmit_ctrl(struct sock *sk)
 		}
 		if (quic_packet_tail(sk, skb, head, 0))
 			continue; /* packed and conintue with the next frame */
-		quic_packet_build(sk); /* build and xmit the packed frames */
+		quic_packet_create(sk); /* build and xmit the packed frames */
 		tmp = skb; /* go back but still pack the current frame */
 	}
 }
@@ -66,7 +66,7 @@ static void quic_outq_transmit_dgram(struct sock *sk)
 			outq->data_inflight += snd_cb->data_bytes;
 			continue;
 		}
-		quic_packet_build(sk);
+		quic_packet_create(sk);
 		tmp = skb;
 	}
 }
@@ -141,7 +141,7 @@ static void quic_outq_transmit_stream(struct sock *sk)
 			outq->data_inflight += snd_cb->data_bytes;
 			continue;
 		}
-		quic_packet_build(sk);
+		quic_packet_create(sk);
 		tmp = skb;
 	}
 }

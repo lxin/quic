@@ -29,143 +29,6 @@ void quic_inq_set_owner_r(struct sk_buff *skb, struct sock *sk)
 	skb->destructor = quic_inq_rfree;
 }
 
-static int quic_new_sock_do_rcv(struct sock *sk, struct sk_buff *skb,
-				union quic_addr *da, union quic_addr *sa)
-{
-	struct sock *nsk;
-	int ret = 0;
-
-	local_bh_disable();
-	nsk = quic_sock_lookup(skb, da, sa);
-	if (nsk == sk)
-		goto out;
-	/* the request sock was just accepted */
-	bh_lock_sock(nsk);
-	if (sock_owned_by_user(nsk)) {
-		if (sk_add_backlog(nsk, skb, READ_ONCE(nsk->sk_rcvbuf)))
-			kfree_skb(skb);
-	} else {
-		sk->sk_backlog_rcv(nsk, skb);
-	}
-	bh_unlock_sock(nsk);
-	ret = 1;
-out:
-	local_bh_enable();
-	return ret;
-}
-
-static int quic_do_listen_rcv(struct sock *sk, struct sk_buff *skb)
-{
-	struct quic_inqueue *inq = quic_inq(sk);
-	int err = 0, errcode, len = skb->len;
-	struct quic_request_sock req = {};
-	struct quic_crypto *crypto;
-	u8 *p = skb->data, type;
-	struct quic_data token;
-	u64 v;
-
-	/* set af_ops for now in case sk_family != addr.v4.sin_family */
-	quic_set_af_ops(sk, quic_af_ops_get_skb(skb));
-	quic_get_msg_addr(sk, &req.sa, skb, 0);
-	quic_get_msg_addr(sk, &req.da, skb, 1);
-	if (quic_request_sock_exists(sk, &req.sa, &req.da))
-		goto enqueue;
-
-	if (QUIC_RCV_CB(skb)->backlog &&
-	    quic_new_sock_do_rcv(sk, skb, &req.sa, &req.da)) /* move skb to another sk backlog */
-		goto out;
-
-	if (!quic_hshdr(skb)->form) { /* stateless reset always by listen sock */
-		if (len < 17) {
-			err = -EINVAL;
-			kfree_skb(skb);
-			goto out;
-		}
-
-		req.dcid.len = 16;
-		memcpy(req.dcid.data, (u8 *)quic_hdr(skb) + 1, 16);
-		err = quic_packet_stateless_reset_transmit(sk, &req);
-		consume_skb(skb);
-		goto out;
-	}
-
-	p++;
-	len--;
-	quic_get_int(&p, &len, &v, QUIC_VERSION_LEN);
-	req.version = v;
-	if (quic_packet_connid_and_token(&p, &len, &req.dcid, &req.scid, &token)) {
-		err = -EINVAL;
-		kfree_skb(skb);
-		goto out;
-	}
-
-	if (!quic_compatible_versions(req.version)) {
-		/* version negotication */
-		err = quic_packet_version_transmit(sk, &req);
-		consume_skb(skb);
-		goto out;
-	}
-
-	type = quic_version_get_type(req.version, quic_hshdr(skb)->type);
-	if (type != QUIC_PACKET_INITIAL) { /* stateless reset for handshake */
-		err = quic_packet_stateless_reset_transmit(sk, &req);
-		consume_skb(skb);
-		goto out;
-	}
-
-	quic_connection_id_update(&req.orig_dcid, req.dcid.data, req.dcid.len);
-	if (quic_inq_validate_peer_address(inq)) {
-		if (!token.len) {
-			err = quic_packet_retry_transmit(sk, &req);
-			consume_skb(skb);
-			goto out;
-		}
-		crypto = quic_crypto(sk, QUIC_CRYPTO_INITIAL);
-		err = quic_crypto_verify_token(crypto, &req.da, quic_addr_len(sk),
-					       &req.orig_dcid, token.data, token.len);
-		if (err) {
-			errcode = QUIC_TRANSPORT_ERROR_INVALID_TOKEN;
-			err = quic_packet_refuse_close_transmit(sk, &req, errcode);
-			consume_skb(skb);
-			goto out;
-		}
-		req.retry = *(u8 *)token.data;
-	}
-
-	err = quic_request_sock_enqueue(sk, &req);
-	if (err) {
-		errcode = QUIC_TRANSPORT_ERROR_CONNECTION_REFUSED;
-		err = quic_packet_refuse_close_transmit(sk, &req, errcode);
-		consume_skb(skb);
-		goto out;
-	}
-enqueue:
-	if (atomic_read(&sk->sk_rmem_alloc) + skb->len > sk->sk_rcvbuf) {
-		err = -ENOBUFS;
-		kfree_skb(skb);
-		goto out;
-	}
-
-	quic_inq_set_owner_r(skb, sk); /* handle it later when accepting the sock */
-	quic_inq_backlog_tail(sk, skb);
-	sk->sk_data_ready(sk);
-out:
-	quic_set_af_ops(sk, quic_af_ops_get(sk->sk_family));
-	return err;
-}
-
-int quic_do_rcv(struct sock *sk, struct sk_buff *skb)
-{
-	if (quic_is_listen(sk))
-		return quic_do_listen_rcv(sk, skb);
-
-	if (quic_is_closed(sk)) {
-		kfree_skb(skb);
-		return 0;
-	}
-	return quic_packet_process(sk, skb, 0);
-}
-
 int quic_rcv(struct sk_buff *skb)
 {
 	struct quic_rcv_cb *rcv_cb = QUIC_RCV_CB(skb);
@@ -205,7 +68,7 @@ int quic_rcv(struct sk_buff *skb)
 			goto err;
 		}
 	} else {
-		sk->sk_backlog_rcv(sk, skb); /* quic_do_rcv */
+		sk->sk_backlog_rcv(sk, skb); /* quic_packet_process */
 	}
 	bh_unlock_sock(sk);
 	return 0;
@@ -627,7 +490,8 @@ static void quic_inq_decrypted_work(struct work_struct *work)
 
 	skb = skb_dequeue(head);
 	while (skb) {
-		quic_packet_process(sk, skb, 1);
+		skb->decrypted = 1;
+		quic_packet_process(sk, skb);
 		skb = skb_dequeue(head);
 	}
 out:

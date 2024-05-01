@@ -396,6 +396,14 @@ err:
 	return err;
 }
 
+static void quic_crypto_get_num(u8 *p, struct quic_packet_info *pki)
+{
+	u32 len = pki->number_len;
+
+	quic_get_int(&p, &len, &pki->number, pki->number_len);
+	pki->number = quic_get_num(pki->number_max, pki->number, pki->number_len);
+}
+
 static int quic_crypto_header_decrypt(struct crypto_skcipher *tfm, struct sk_buff *skb,
 				      struct quic_packet_info *pki, bool chacha)
 {
@@ -428,10 +436,8 @@ static int quic_crypto_header_decrypt(struct crypto_skcipher *tfm, struct sk_buf
 	p += pki->number_offset;
 	for (i = 0; i < pki->number_len; ++i)
 		*(p + i) = *((u8 *)hdr + pki->number_offset + i) ^ mask[i + 1];
-
-	quic_get_int(&p, &len, &pki->number, pki->number_len);
-	pki->number = quic_get_num(pki->number_max, pki->number, pki->number_len);
 	pki->key_phase = hdr->key;
+	quic_crypto_get_num(p, pki);
 
 err:
 	kfree(mask);
@@ -499,11 +505,16 @@ EXPORT_SYMBOL_GPL(quic_crypto_encrypt);
 int quic_crypto_decrypt(struct quic_crypto *crypto, struct sk_buff *skb,
 			struct quic_packet_info *pki)
 {
+	struct quichdr *hdr = quic_hdr(skb);
 	int err = 0, phase;
 	u8 *iv, cha, ccm;
 
-	if (pki->resume)
+	if (pki->resume) {
+		pki->key_phase = hdr->key;
+		pki->number_len = hdr->pnl + 1;
+		quic_crypto_get_num((u8 *)hdr + pki->number_offset, pki);
 		goto out;
+	}
 
 	cha = quic_crypto_is_cipher_chacha(crypto);
 	err = quic_crypto_header_decrypt(crypto->rx_hp_tfm, skb, pki, cha);

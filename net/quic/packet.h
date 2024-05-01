@@ -27,6 +27,12 @@ struct quic_packet {
 	u8  padding:1;
 	u8  filter:1;
 	u8  taglen[2];
+
+	u32 version;
+	union quic_addr daddr;
+	union quic_addr saddr;
+	struct quic_connection_id dcid;
+	struct quic_connection_id scid;
 };
 
 #define QUIC_PACKET_INITIAL_V1		0
@@ -56,11 +62,6 @@ static inline u32 quic_packet_mss(struct quic_packet *packet)
 	return packet->mss[0] - packet->taglen[!!packet->level];
 }
 
-static inline u32 quic_packet_overhead(struct quic_packet *packet)
-{
-	return packet->overhead;
-}
-
 static inline u32 quic_packet_max_payload(struct quic_packet *packet)
 {
 	return packet->mss[0] - packet->overhead - packet->taglen[!!packet->level];
@@ -81,20 +82,14 @@ static inline void quic_packet_set_ecn_probes(struct quic_packet *packet, u8 pro
 	packet->ecn_probes = probes;
 }
 
-int quic_packet_connid_and_token(u8 **pp, u32 *plen, struct quic_connection_id *dcid,
-				 struct quic_connection_id *scid, struct quic_data *token);
 void quic_packet_set_filter(struct sock *sk, u8 level, u16 count);
-void quic_packet_build(struct sock *sk);
+void quic_packet_create(struct sock *sk);
 int quic_packet_config(struct sock *sk, u8 level, u8 path_alt);
 int quic_packet_route(struct sock *sk);
-int quic_packet_process(struct sock *sk, struct sk_buff *skb, u8 resume);
+int quic_packet_process(struct sock *sk, struct sk_buff *skb);
 int quic_packet_tail(struct sock *sk, struct sk_buff *skb, struct sk_buff_head *from, u8 dgram);
 int quic_packet_flush(struct sock *sk);
-int quic_packet_retry_transmit(struct sock *sk, struct quic_request_sock *req);
-int quic_packet_version_transmit(struct sock *sk, struct quic_request_sock *req);
-int quic_packet_stateless_reset_transmit(struct sock *sk, struct quic_request_sock *req);
-int quic_packet_refuse_close_transmit(struct sock *sk, struct quic_request_sock *req, u32 errcode);
 int quic_packet_parse_alpn(struct sk_buff *skb, struct quic_data *alpn);
-void quic_packet_mss_update(struct sock *sk, int mss);
 int quic_packet_xmit(struct sock *sk, struct sk_buff *skb, u8 resume);
+void quic_packet_mss_update(struct sock *sk, int mss);
 void quic_packet_init(struct sock *sk);

@@ -64,20 +64,22 @@ int quic_select_version(struct sock *sk, u32 *versions, u8 count)
 	return 0;
 }
 
-bool quic_request_sock_exists(struct sock *sk, union quic_addr *sa, union quic_addr *da)
+bool quic_request_sock_exists(struct sock *sk)
 {
+	struct quic_packet *packet = quic_packet(sk);
 	struct quic_request_sock *req;
 
 	list_for_each_entry(req, quic_reqs(sk), list) {
-		if (!memcmp(&req->sa, sa, quic_addr_len(sk)) &&
-		    !memcmp(&req->da, da, quic_addr_len(sk)))
+		if (!memcmp(&req->sa, packet->sa, quic_addr_len(sk)) &&
+		    !memcmp(&req->da, packet->da, quic_addr_len(sk)))
 			return true;
 	}
 	return false;
 }
 
-int quic_request_sock_enqueue(struct sock *sk, struct quic_request_sock *nreq)
+int quic_request_sock_enqueue(struct sock *sk, struct quic_connection_id *odcid, u8 retry)
 {
+	struct quic_packet *packet = quic_packet(sk);
 	struct quic_request_sock *req;
 
 	if (sk_acceptq_is_full(sk))
@@ -87,7 +89,14 @@ int quic_request_sock_enqueue(struct sock *sk, struct quic_request_sock *nreq)
 	if (!req)
 		return -ENOMEM;
 
-	*req = *nreq;
+	req->version = packet->version;
+	req->scid = packet->scid;
+	req->dcid = packet->dcid;
+	req->orig_dcid = *odcid;
+	req->da = packet->daddr;
+	req->sa = packet->saddr;
+	req->retry = retry;
+
 	list_add_tail(&req->list, quic_reqs(sk));
 	sk_acceptq_added(sk);
 	return 0;
@@ -102,6 +111,31 @@ struct quic_request_sock *quic_request_sock_dequeue(struct sock *sk)
 	list_del_init(&req->list);
 	sk_acceptq_removed(sk);
 	return req;
+}
+
+int quic_accept_sock_exists(struct sock *sk, struct sk_buff *skb)
+{
+	struct quic_packet *packet = quic_packet(sk);
+	struct sock *nsk;
+	int ret = 0;
+
+	local_bh_disable();
+	nsk = quic_sock_lookup(skb, packet->sa, packet->da);
+	if (nsk == sk)
+		goto out;
+	/* the request sock was just accepted */
+	bh_lock_sock(nsk);
+	if (sock_owned_by_user(nsk)) {
+		if (sk_add_backlog(nsk, skb, READ_ONCE(nsk->sk_rcvbuf)))
+			kfree_skb(skb);
+	} else {
+		sk->sk_backlog_rcv(nsk, skb);
+	}
+	bh_unlock_sock(nsk);
+	ret = 1;
+out:
+	local_bh_enable();
+	return ret;
 }
 
 static bool quic_has_bind_any(struct sock *sk)
@@ -1039,7 +1073,7 @@ static int quic_accept_sock_init(struct sock *sk, struct quic_request_sock *req)
 	skb_queue_splice_init(quic_inq_backlog_list(inq), &tmpq);
 	skb = __skb_dequeue(&tmpq);
 	while (skb) {
-		quic_packet_process(sk, skb, skb->decrypted);
+		quic_packet_process(sk, skb);
 		skb = __skb_dequeue(&tmpq);
 	}
 
@@ -1306,7 +1340,7 @@ static int quic_sock_set_crypto_secret(struct sock *sk, struct quic_crypto_secre
 		skb_queue_splice_init(quic_inq_backlog_list(inq), &tmpq);
 		skb = __skb_dequeue(&tmpq);
 		while (skb) {
-			quic_packet_process(sk, skb, 0);
+			quic_packet_process(sk, skb);
 			skb = __skb_dequeue(&tmpq);
 		}
 		if (secret->level)
@@ -1889,7 +1923,7 @@ struct proto quic_prot = {
 	.accept		=  quic_accept,
 	.hash		=  quic_hash,
 	.unhash		=  quic_unhash,
-	.backlog_rcv	=  quic_do_rcv,
+	.backlog_rcv	=  quic_packet_process,
 	.release_cb	=  quic_release_cb,
 	.no_autobind	=  true,
 	.obj_size	=  sizeof(struct quic_sock),
@@ -1920,7 +1954,7 @@ struct proto quicv6_prot = {
 	.accept		=  quic_accept,
 	.hash		=  quic_hash,
 	.unhash		=  quic_unhash,
-	.backlog_rcv	=  quic_do_rcv,
+	.backlog_rcv	=  quic_packet_process,
 	.release_cb	=  quic_release_cb,
 	.no_autobind	=  true,
 	.obj_size	= sizeof(struct quic6_sock),
