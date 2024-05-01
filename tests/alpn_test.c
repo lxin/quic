@@ -31,7 +31,7 @@ static int do_client_alpn(char *ip, int port, char *alpn, int preferred_port)
 	}
 
 	len = strlen(alpn);
-	if (setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_ALPN, alpn, len + 1)) {
+	if (setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_ALPN, alpn, len)) {
 		printf("socket setsockopt alpn failed %d\n", len);
 		return -1;
 	}
@@ -116,7 +116,7 @@ static int do_server(int argc, char *argv[])
 		return -1;
 	}
 	len = strlen(alpn);
-	if (setsockopt(listenfd, SOL_QUIC, QUIC_SOCKOPT_ALPN, alpn, len + 1)) {
+	if (setsockopt(listenfd, SOL_QUIC, QUIC_SOCKOPT_ALPN, alpn, len)) {
 		printf("socket setsockopt alpn failed %d\n", len);
 		return -1;
 	}

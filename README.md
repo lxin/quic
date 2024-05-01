@@ -208,6 +208,7 @@ in [ktls-utils](https://github.com/lxin/ktls-utils) will handle the handshake re
 ### Build and Install iperf (For performance tests):
     # git clone https://github.com/lxin/iperf.git
     # cd iperf/
+    # ./bootstrap.sh
     # ./configure --prefix=/usr
     # make
     # sudo make install
@@ -216,9 +217,9 @@ in [ktls-utils](https://github.com/lxin/ktls-utils) will handle the handshake re
     # iperf3 -s --pkey /root/quic/tests/keys/server-key.pem  --cert /root/quic/tests/keys/server-cert.pem
 
     On client:
-    # iperf3 -c $SERVER_IP --quic
+    # iperf3 -c $SERVER_IP --quic -l $PACKET_LEN
 
-    QUIC vs kTLS iperf testing over 10G physical NIC with different packet size and MTU:
+    QUIC vs kTLS iperf testing over 100G physical NIC with different packet size and MTU:
 
       UNIT        size:1024        size:4096        size:16384        size:65536
       Gbits/sec   QUIC | kTLS      QUIC | kTLS      QUIC | kTLS       QUIC | kTLS
