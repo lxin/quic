@@ -166,6 +166,28 @@ static inline u8 *quic_put_data(u8 *p, u8 *data, u32 len)
 	return p + len;
 }
 
+static inline u8 *quic_put_param(u8 *p, u16 id, u64 value)
+{
+	p = quic_put_var(p, id);
+	p = quic_put_var(p, quic_var_len(value));
+	return quic_put_var(p, value);
+}
+
+static inline int quic_get_param(u64 *pdest, u8 **pp, u32 *plen)
+{
+	u64 valuelen;
+
+	if (!quic_get_var(pp, plen, &valuelen))
+		return -1;
+
+	if (*plen < valuelen)
+		return -1;
+
+	if (!quic_get_var(pp, plen, pdest))
+		return -1;
+	return 0;
+}
+
 static inline s64 quic_get_num(s64 max_pkt_num, s64 pkt_num, u32 n)
 {
 	s64 expected = max_pkt_num + 1;

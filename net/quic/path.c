@@ -97,6 +97,19 @@ static struct quic_udp_sock *quic_udp_sock_create(struct sock *sk, union quic_ad
 	return us;
 }
 
+static struct quic_udp_sock *quic_udp_sock_get(struct quic_udp_sock *us)
+{
+	if (us)
+		refcount_inc(&us->refcnt);
+	return us;
+}
+
+static void quic_udp_sock_put(struct quic_udp_sock *us)
+{
+	if (us && refcount_dec_and_test(&us->refcnt))
+		queue_work(quic_wq, &us->work);
+}
+
 static struct quic_udp_sock *quic_udp_sock_lookup(struct sock *sk, union quic_addr *a)
 {
 	struct quic_udp_sock *tmp, *us = NULL;
@@ -122,19 +135,6 @@ static struct quic_udp_sock *quic_udp_sock_lookup(struct sock *sk, union quic_ad
 	return us;
 }
 
-struct quic_udp_sock *quic_udp_sock_get(struct quic_udp_sock *us)
-{
-	if (us)
-		refcount_inc(&us->refcnt);
-	return us;
-}
-
-void quic_udp_sock_put(struct quic_udp_sock *us)
-{
-	if (us && refcount_dec_and_test(&us->refcnt))
-		queue_work(quic_wq, &us->work);
-}
-
 int quic_path_set_udp_sock(struct sock *sk, struct quic_path_addr *path, bool alt)
 {
 	struct quic_path_src *src = (struct quic_path_src *)path;
@@ -149,7 +149,7 @@ int quic_path_set_udp_sock(struct sock *sk, struct quic_path_addr *path, bool al
 	return 0;
 }
 
-void quic_bind_port_put(struct sock *sk, struct quic_bind_port *pp)
+static void quic_path_put_bind_port(struct sock *sk, struct quic_bind_port *pp)
 {
 	struct net *net = sock_net(sk);
 	struct quic_hash_head *head;
@@ -173,7 +173,7 @@ int quic_path_set_bind_port(struct sock *sk, struct quic_path_addr *path, bool a
 	int low, high, remaining;
 	unsigned int rover;
 
-	quic_bind_port_put(sk, port);
+	quic_path_put_bind_port(sk, port);
 
 	rover = ntohs(addr->v4.sin_port);
 	if (rover) {
@@ -224,7 +224,7 @@ void quic_path_addr_free(struct sock *sk, struct quic_path_addr *path, bool alt)
 	src = (struct quic_path_src *)path;
 	quic_udp_sock_put(src->udp_sk[path->active ^ alt]);
 	src->udp_sk[path->active ^ alt] = NULL;
-	quic_bind_port_put(sk, &src->port[path->active ^ alt]);
+	quic_path_put_bind_port(sk, &src->port[path->active ^ alt]);
 out:
 	memset(&path->addr[path->active ^ alt], 0, path->addr_len);
 }

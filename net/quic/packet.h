@@ -57,6 +57,8 @@ struct quic_packet {
 #define QUIC_PACKET_HANDSHAKE		QUIC_PACKET_HANDSHAKE_V1
 #define QUIC_PACKET_RETRY		QUIC_PACKET_RETRY_V1
 
+#define QUIC_VERSION_LEN		4
+
 struct quic_request_sock;
 
 static inline u32 quic_packet_taglen(struct quic_packet *packet)
@@ -111,3 +113,5 @@ int quic_packet_parse_alpn(struct sk_buff *skb, struct quic_data *alpn);
 int quic_packet_xmit(struct sock *sk, struct sk_buff *skb, u8 resume);
 void quic_packet_mss_update(struct sock *sk, int mss);
 void quic_packet_init(struct sock *sk);
+int quic_packet_select_version(struct sock *sk, u32 *versions, u8 count);
+u32 *quic_packet_compatible_versions(u32 version);

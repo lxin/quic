@@ -26,44 +26,6 @@ static void quic_enter_memory_pressure(struct sock *sk)
 	WRITE_ONCE(quic_memory_pressure, 1);
 }
 
-#define QUIC_VERSION_NUM	2
-
-static u32 quic_versions[QUIC_VERSION_NUM][2] = {
-	/* version,	compatible versions */
-	{ QUIC_VERSION_V1,	0 },
-	{ QUIC_VERSION_V2,	0 },
-};
-
-u32 *quic_compatible_versions(u32 version)
-{
-	u8 i;
-
-	for (i = 0; i < QUIC_VERSION_NUM; i++)
-		if (version == quic_versions[i][0])
-			return quic_versions[i];
-	return NULL;
-}
-
-int quic_select_version(struct sock *sk, u32 *versions, u8 count)
-{
-	u32 best = 0;
-	u8 i, j;
-
-	for (i = 0; i < count; i++) {
-		for (j = 0; j < QUIC_VERSION_NUM; j++) {
-			if (versions[i] == quic_versions[j][0] && best < versions[i]) {
-				best = versions[i];
-				break;
-			}
-		}
-	}
-	if (!best)
-		return -1;
-
-	quic_inq_set_version(quic_inq(sk), best);
-	return 0;
-}
-
 bool quic_request_sock_exists(struct sock *sk)
 {
 	struct quic_packet *packet = quic_packet(sk);

@@ -127,10 +127,7 @@ static inline u8 quic_path_udp_bind(struct quic_path_addr *a)
 	return a->udp_bind;
 }
 
-void quic_udp_sock_put(struct quic_udp_sock *us);
-struct quic_udp_sock *quic_udp_sock_get(struct quic_udp_sock *us);
 int quic_path_set_udp_sock(struct sock *sk, struct quic_path_addr *a, bool alt);
-void quic_bind_port_put(struct sock *sk, struct quic_bind_port *pp);
 int quic_path_set_bind_port(struct sock *sk, struct quic_path_addr *a, bool alt);
 void quic_path_free(struct sock *sk, struct quic_path_addr *a);
 void quic_path_addr_free(struct sock *sk, struct quic_path_addr *path, bool alt);

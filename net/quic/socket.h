@@ -222,48 +222,6 @@ static inline void quic_set_state(struct sock *sk, int state)
 	sk->sk_state_change(sk);
 }
 
-#define QUIC_VERSION_LEN	4
-
-static inline u8 quic_version_get_type(u32 version, u8 type)
-{
-	if (version == QUIC_VERSION_V1)
-		return type;
-
-	switch (type) {
-	case QUIC_PACKET_INITIAL_V2:
-		return QUIC_PACKET_INITIAL;
-	case QUIC_PACKET_0RTT_V2:
-		return QUIC_PACKET_0RTT;
-	case QUIC_PACKET_HANDSHAKE_V2:
-		return QUIC_PACKET_HANDSHAKE;
-	case QUIC_PACKET_RETRY_V2:
-		return QUIC_PACKET_RETRY;
-	default:
-		return -1;
-	}
-	return -1;
-}
-
-static inline u8 quic_version_put_type(u32 version, u8 type)
-{
-	if (version == QUIC_VERSION_V1)
-		return type;
-
-	switch (type) {
-	case QUIC_PACKET_INITIAL:
-		return QUIC_PACKET_INITIAL_V2;
-	case QUIC_PACKET_0RTT:
-		return QUIC_PACKET_0RTT_V2;
-	case QUIC_PACKET_HANDSHAKE:
-		return QUIC_PACKET_HANDSHAKE_V2;
-	case QUIC_PACKET_RETRY:
-		return QUIC_PACKET_RETRY_V2;
-	default:
-		return -1;
-	}
-	return -1;
-}
-
 int quic_sock_change_saddr(struct sock *sk, union quic_addr *addr, u32 len);
 int quic_sock_change_daddr(struct sock *sk, union quic_addr *addr, u32 len);
 struct sock *quic_sock_lookup(struct sk_buff *skb, union quic_addr *sa, union quic_addr *da);
@@ -271,7 +229,5 @@ struct quic_request_sock *quic_request_sock_dequeue(struct sock *sk);
 int quic_request_sock_enqueue(struct sock *sk, struct quic_connection_id *odcid, u8 retry);
 int quic_accept_sock_exists(struct sock *sk, struct sk_buff *skb);
 bool quic_request_sock_exists(struct sock *sk);
-u32 *quic_compatible_versions(u32 version);
-int quic_select_version(struct sock *sk, u32 *versions, u8 count);
 
 #endif /* __net_quic_h__ */

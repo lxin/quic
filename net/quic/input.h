@@ -173,7 +173,6 @@ static inline void quic_inq_set_need_sack(struct quic_inqueue *inq, u8 need_sack
 	inq->need_sack = need_sack;
 }
 
-int quic_do_rcv(struct sock *sk, struct sk_buff *skb);
 int quic_rcv(struct sk_buff *skb);
 int quic_rcv_err(struct sk_buff *skb);
 void quic_rcv_err_icmp(struct sock *sk);

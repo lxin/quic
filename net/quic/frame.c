@@ -1469,7 +1469,7 @@ struct sk_buff *quic_frame_create(struct sock *sk, u8 type, void *data)
 	return skb;
 }
 
-static int quic_get_conn_id(struct quic_connection_id *conn_id, u8 **pp, u32 *plen)
+static int quic_frame_get_conn_id(struct quic_connection_id *conn_id, u8 **pp, u32 *plen)
 {
 	u64 valuelen;
 
@@ -1487,22 +1487,7 @@ static int quic_get_conn_id(struct quic_connection_id *conn_id, u8 **pp, u32 *pl
 	return 0;
 }
 
-static int quic_get_param(u64 *pdest, u8 **pp, u32 *plen)
-{
-	u64 valuelen;
-
-	if (!quic_get_var(pp, plen, &valuelen))
-		return -1;
-
-	if (*plen < valuelen)
-		return -1;
-
-	if (!quic_get_var(pp, plen, pdest))
-		return -1;
-	return 0;
-}
-
-static int quic_get_version_info(u32 *versions, u8 *count, u8 **pp, u32 *plen)
+static int quic_frame_get_version_info(u32 *versions, u8 *count, u8 **pp, u32 *plen)
 {
 	u64 valuelen, v;
 	u8 i;
@@ -1521,8 +1506,8 @@ static int quic_get_version_info(u32 *versions, u8 *count, u8 **pp, u32 *plen)
 	return 0;
 }
 
-static int quic_get_preferred_address(union quic_addr *addr, struct quic_connection_id *conn_id,
-				      u8 *token, u8 **pp, u32 *plen, struct sock *sk)
+static int quic_frame_get_address(union quic_addr *addr, struct quic_connection_id *conn_id,
+				  u8 *token, u8 **pp, u32 *plen, struct sock *sk)
 {
 	u64 valuelen;
 	u8 *p, len;
@@ -1577,7 +1562,7 @@ int quic_frame_set_transport_params_ext(struct sock *sk, struct quic_transport_p
 		case QUIC_TRANSPORT_PARAM_ORIGINAL_DESTINATION_CONNECTION_ID:
 			if (quic_is_serv(sk))
 				return -1;
-			if (quic_get_conn_id(&conn_id, &p, &len))
+			if (quic_frame_get_conn_id(&conn_id, &p, &len))
 				return -1;
 			if (quic_connection_id_cmp(quic_outq_orig_dcid(outq), &conn_id))
 				return -1;
@@ -1585,13 +1570,13 @@ int quic_frame_set_transport_params_ext(struct sock *sk, struct quic_transport_p
 		case QUIC_TRANSPORT_PARAM_RETRY_SOURCE_CONNECTION_ID:
 			if (quic_is_serv(sk))
 				return -1;
-			if (quic_get_conn_id(&conn_id, &p, &len))
+			if (quic_frame_get_conn_id(&conn_id, &p, &len))
 				return -1;
 			if (quic_connection_id_cmp(quic_outq_retry_dcid(outq), &conn_id))
 				return -1;
 			break;
 		case QUIC_TRANSPORT_PARAM_INITIAL_SOURCE_CONNECTION_ID:
-			if (quic_get_conn_id(&conn_id, &p, &len))
+			if (quic_frame_get_conn_id(&conn_id, &p, &len))
 				return -1;
 			if (quic_connection_id_cmp(active, &conn_id))
 				return -1;
@@ -1690,15 +1675,15 @@ int quic_frame_set_transport_params_ext(struct sock *sk, struct quic_transport_p
 			p += valuelen;
 			break;
 		case QUIC_TRANSPORT_PARAM_VERSION_INFORMATION:
-			if (quic_get_version_info(versions, &count, &p, &len))
+			if (quic_frame_get_version_info(versions, &count, &p, &len))
 				return -1;
-			if (!count || quic_select_version(sk, versions, count))
+			if (!count || quic_packet_select_version(sk, versions, count))
 				return -1;
 			break;
 		case QUIC_TRANSPORT_PARAM_PREFERRED_ADDRESS:
 			if (quic_is_serv(sk))
 				return -1;
-			if (quic_get_preferred_address(&addr, &conn_id, token, &p, &len, sk))
+			if (quic_frame_get_address(&addr, &conn_id, token, &p, &len, sk))
 				return -1;
 			if (!addr.v4.sin_port)
 				break;
@@ -1720,8 +1705,7 @@ int quic_frame_set_transport_params_ext(struct sock *sk, struct quic_transport_p
 	return 0;
 }
 
-static u8 *quic_put_conn_id(u8 *p, enum quic_transport_param_id id,
-			    struct quic_connection_id *conn_id)
+static u8 *quic_frame_put_conn_id(u8 *p, u16 id, struct quic_connection_id *conn_id)
 {
 	p = quic_put_var(p, id);
 	p = quic_put_var(p, conn_id->len);
@@ -1729,18 +1713,11 @@ static u8 *quic_put_conn_id(u8 *p, enum quic_transport_param_id id,
 	return p;
 }
 
-static u8 *quic_put_param(u8 *p, enum quic_transport_param_id id, u64 value)
-{
-	p = quic_put_var(p, id);
-	p = quic_put_var(p, quic_var_len(value));
-	return quic_put_var(p, value);
-}
-
-static u8 *quic_put_version_info(u8 *p, enum quic_transport_param_id id, u32 version)
+static u8 *quic_frame_put_version_info(u8 *p, u16 id, u32 version)
 {
 	u32 *versions, i, len = 0;
 
-	versions = quic_compatible_versions(version);
+	versions = quic_packet_compatible_versions(version);
 	if (!versions)
 		return p;
 
@@ -1755,9 +1732,9 @@ static u8 *quic_put_version_info(u8 *p, enum quic_transport_param_id id, u32 ver
 	return p;
 }
 
-static u8 *quic_put_preferred_address(u8 *p, enum quic_transport_param_id id,
-				      union quic_addr *addr, struct quic_connection_id *conn_id,
-				      u8 *token, struct sock *sk)
+static u8 *quic_frame_put_address(u8 *p, u16 id, union quic_addr *addr,
+				  struct quic_connection_id *conn_id,
+				  u8 *token, struct sock *sk)
 {
 	p = quic_put_var(p, id);
 	p = quic_put_var(p, (4 + 2 + 16 + 2) + 1 + conn_id->len + 16);
@@ -1778,12 +1755,13 @@ int quic_frame_get_transport_params_ext(struct sock *sk, struct quic_transport_p
 	struct quic_connection_id *scid, conn_id;
 	struct quic_crypto *crypto;
 	u8 *p = data, token[16];
+	u16 param_id;
 
 	scid = quic_connection_id_active(id_set);
 	if (quic_is_serv(sk)) {
 		crypto = quic_crypto(sk, QUIC_CRYPTO_INITIAL);
-		p = quic_put_conn_id(p, QUIC_TRANSPORT_PARAM_ORIGINAL_DESTINATION_CONNECTION_ID,
-				     quic_outq_orig_dcid(outq));
+		param_id = QUIC_TRANSPORT_PARAM_ORIGINAL_DESTINATION_CONNECTION_ID;
+		p = quic_frame_put_conn_id(p, param_id, quic_outq_orig_dcid(outq));
 		if (params->stateless_reset) {
 			p = quic_put_var(p, QUIC_TRANSPORT_PARAM_STATELESS_RESET_TOKEN);
 			p = quic_put_var(p, 16);
@@ -1793,8 +1771,8 @@ int quic_frame_get_transport_params_ext(struct sock *sk, struct quic_transport_p
 			p = quic_put_data(p, token, 16);
 		}
 		if (quic_outq_retry(outq)) {
-			p = quic_put_conn_id(p, QUIC_TRANSPORT_PARAM_RETRY_SOURCE_CONNECTION_ID,
-					     quic_outq_retry_dcid(outq));
+			param_id = QUIC_TRANSPORT_PARAM_RETRY_SOURCE_CONNECTION_ID;
+			p = quic_frame_put_conn_id(p, param_id, quic_outq_retry_dcid(outq));
 		}
 		if (quic_outq_pref_addr(outq)) {
 			quic_connection_id_generate(&conn_id);
@@ -1803,12 +1781,12 @@ int quic_frame_get_transport_params_ext(struct sock *sk, struct quic_transport_p
 				return -1;
 			if (quic_connection_id_add(id_set, &conn_id, 1, sk))
 				return -1;
-			p = quic_put_preferred_address(p, QUIC_TRANSPORT_PARAM_PREFERRED_ADDRESS,
-						       quic_path_addr(quic_src(sk), 1), &conn_id,
-						       token, sk);
+			param_id = QUIC_TRANSPORT_PARAM_PREFERRED_ADDRESS;
+			p = quic_frame_put_address(p, param_id, quic_path_addr(quic_src(sk), 1),
+						   &conn_id, token, sk);
 		}
 	}
-	p = quic_put_conn_id(p, QUIC_TRANSPORT_PARAM_INITIAL_SOURCE_CONNECTION_ID, scid);
+	p = quic_frame_put_conn_id(p, QUIC_TRANSPORT_PARAM_INITIAL_SOURCE_CONNECTION_ID, scid);
 	if (params->max_stream_data_bidi_local) {
 		p = quic_put_param(p, QUIC_TRANSPORT_PARAM_INITIAL_MAX_STREAM_DATA_BIDI_LOCAL,
 				   params->max_stream_data_bidi_local);
@@ -1850,8 +1828,8 @@ int quic_frame_get_transport_params_ext(struct sock *sk, struct quic_transport_p
 		p = quic_put_var(p, 0);
 	}
 	if (!params->disable_compatible_version) {
-		p = quic_put_version_info(p, QUIC_TRANSPORT_PARAM_VERSION_INFORMATION,
-					  quic_inq_version(quic_inq(sk)));
+		p = quic_frame_put_version_info(p, QUIC_TRANSPORT_PARAM_VERSION_INFORMATION,
+						quic_inq_version(quic_inq(sk)));
 	}
 	if (params->grease_quic_bit) {
 		p = quic_put_var(p, QUIC_TRANSPORT_PARAM_GREASE_QUIC_BIT);

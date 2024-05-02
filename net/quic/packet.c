@@ -15,6 +15,84 @@
 #include "frame.h"
 #include <linux/version.h>
 
+#define QUIC_VERSION_NUM	2
+
+static u32 quic_versions[QUIC_VERSION_NUM][2] = {
+	/* version,	compatible versions */
+	{ QUIC_VERSION_V1,	0 },
+	{ QUIC_VERSION_V2,	0 },
+};
+
+u32 *quic_packet_compatible_versions(u32 version)
+{
+	u8 i;
+
+	for (i = 0; i < QUIC_VERSION_NUM; i++)
+		if (version == quic_versions[i][0])
+			return quic_versions[i];
+	return NULL;
+}
+
+int quic_packet_select_version(struct sock *sk, u32 *versions, u8 count)
+{
+	u32 best = 0;
+	u8 i, j;
+
+	for (i = 0; i < count; i++) {
+		for (j = 0; j < QUIC_VERSION_NUM; j++) {
+			if (versions[i] == quic_versions[j][0] && best < versions[i]) {
+				best = versions[i];
+				break;
+			}
+		}
+	}
+	if (!best)
+		return -1;
+
+	quic_inq_set_version(quic_inq(sk), best);
+	return 0;
+}
+
+static u8 quic_packet_version_get_type(u32 version, u8 type)
+{
+	if (version == QUIC_VERSION_V1)
+		return type;
+
+	switch (type) {
+	case QUIC_PACKET_INITIAL_V2:
+		return QUIC_PACKET_INITIAL;
+	case QUIC_PACKET_0RTT_V2:
+		return QUIC_PACKET_0RTT;
+	case QUIC_PACKET_HANDSHAKE_V2:
+		return QUIC_PACKET_HANDSHAKE;
+	case QUIC_PACKET_RETRY_V2:
+		return QUIC_PACKET_RETRY;
+	default:
+		return -1;
+	}
+	return -1;
+}
+
+static u8 quic_packet_version_put_type(u32 version, u8 type)
+{
+	if (version == QUIC_VERSION_V1)
+		return type;
+
+	switch (type) {
+	case QUIC_PACKET_INITIAL:
+		return QUIC_PACKET_INITIAL_V2;
+	case QUIC_PACKET_0RTT:
+		return QUIC_PACKET_0RTT_V2;
+	case QUIC_PACKET_HANDSHAKE:
+		return QUIC_PACKET_HANDSHAKE_V2;
+	case QUIC_PACKET_RETRY:
+		return QUIC_PACKET_RETRY_V2;
+	default:
+		return -1;
+	}
+	return -1;
+}
+
 static int quic_packet_get_version_and_connid(struct quic_packet *packet, u8 **pp, u32 *plen)
 {
 	u8 *p = *pp;
@@ -109,7 +187,7 @@ static struct sk_buff *quic_packet_retry_create(struct sock *sk)
 	hdr = skb_push(skb, len);
 	hdr->form = 1;
 	hdr->fixed = !quic_outq_grease_quic_bit(quic_outq(sk));
-	hdr->type = quic_version_put_type(packet->version, QUIC_PACKET_RETRY);
+	hdr->type = quic_packet_version_put_type(packet->version, QUIC_PACKET_RETRY);
 	hdr->reserved = 0;
 	hdr->pnl = 0;
 	skb_reset_transport_header(skb);
@@ -330,13 +408,13 @@ static int quic_packet_listen_process(struct sock *sk, struct sk_buff *skb)
 		goto out;
 	}
 
-	if (!quic_compatible_versions(packet->version)) { /* version negotication */
+	if (!quic_packet_compatible_versions(packet->version)) { /* version negotication */
 		err = quic_packet_version_transmit(sk);
 		consume_skb(skb);
 		goto out;
 	}
 
-	type = quic_version_get_type(packet->version, quic_hshdr(skb)->type);
+	type = quic_packet_version_get_type(packet->version, quic_hshdr(skb)->type);
 	if (type != QUIC_PACKET_INITIAL) { /* stateless reset for handshake */
 		err = quic_packet_stateless_reset_transmit(sk);
 		consume_skb(skb);
@@ -460,7 +538,7 @@ static int quic_packet_handshake_version_process(struct sock *sk, struct sk_buff
 
 	while (len >= 4) {
 		quic_get_int(&p, &len, &version, QUIC_VERSION_LEN);
-		if (quic_compatible_versions(version) && best < version)
+		if (quic_packet_compatible_versions(version) && best < version)
 			best = version;
 	}
 	if (best) {
@@ -518,7 +596,7 @@ static int quic_packet_handshake_header_process(struct sock *sk, struct sk_buff 
 	if (packet->version != quic_inq_version(inq))
 		return -EINVAL;
 
-	type = quic_version_get_type(packet->version, quic_hshdr(skb)->type);
+	type = quic_packet_version_get_type(packet->version, quic_hshdr(skb)->type);
 	switch (type) {
 	case QUIC_PACKET_INITIAL:
 		if (quic_packet_get_token(&token, &p, &len))
@@ -878,9 +956,9 @@ int quic_packet_parse_alpn(struct sk_buff *skb, struct quic_data *alpn)
 		return 0;
 	if (quic_packet_get_version_and_connid(&packet, &p, &len))
 		return -EINVAL;
-	if (!quic_compatible_versions(packet.version)) /* send version negotication later */
+	if (!quic_packet_compatible_versions(packet.version)) /* send version negotication later */
 		return 0;
-	type = quic_version_get_type(packet.version, hdr->type);
+	type = quic_packet_version_get_type(packet.version, hdr->type);
 	if (type != QUIC_PACKET_INITIAL) /* send stateless reset later */
 		return 0;
 	if (quic_packet_get_token(&token, &p, &len))
@@ -1066,7 +1144,7 @@ static struct sk_buff *quic_packet_handshake_create(struct sock *sk)
 	hdr = skb_push(skb, len);
 	hdr->form = 1;
 	hdr->fixed = !quic_outq_grease_quic_bit(quic_outq(sk));
-	hdr->type = quic_version_put_type(version, type);
+	hdr->type = quic_packet_version_put_type(version, type);
 	hdr->reserved = 0;
 	hdr->pnl = QUIC_PACKET_NUMBER_LEN - 1;
 	skb_reset_transport_header(skb);
