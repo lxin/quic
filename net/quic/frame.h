@@ -97,8 +97,28 @@ struct quic_msginfo {
 };
 
 struct quic_frame_ops {
-	struct sk_buff *(*frame_create)(struct sock *sk, void *data, u8 type);
+	struct quic_frame *(*frame_create)(struct sock *sk, void *data, u8 type);
 	int (*frame_process)(struct sock *sk, struct sk_buff *skb, u8 type);
+};
+
+struct quic_frame {
+	struct quic_stream *stream;
+	struct list_head list;
+	s64 number;
+	u64 offset; /* stream/crypto offset or first number */
+	u8 *data;
+	u32 transmit_ts;
+	u16 data_bytes; /* user data bytes or read offset */
+	u16 len; /* data length */
+
+	u8 event;
+	u8 level;
+	u8 type;
+	u8 stream_fin:1;
+	u8 path_alt:2; /* bit 1: src, bit 2: dst */
+	u8 padding:1;
+	u8 dgram:1;
+	u8 ecn:2;
 };
 
 static inline bool quic_frame_ack_eliciting(u8 type)
@@ -150,7 +170,7 @@ static inline int quic_frame_level_check(u8 level, u8 type)
 	return 0;
 }
 
-struct sk_buff *quic_frame_create(struct sock *sk, u8 type, void *data);
+struct quic_frame *quic_frame_create(struct sock *sk, u8 type, void *data);
 int quic_frame_process(struct sock *sk, struct sk_buff *skb);
 int quic_frame_new_connection_id_ack(struct sock *sk, struct sk_buff *skb);
 int quic_frame_set_transport_params_ext(struct sock *sk, struct quic_transport_param *params,
@@ -160,3 +180,5 @@ int quic_frame_get_transport_params_ext(struct sock *sk, struct quic_transport_p
 int quic_frame_handshake_process(struct sock *sk, struct sk_buff *skb,
 				 struct quic_crypto_info *ci);
 struct sk_buff *quic_frame_handshake_create(struct sock *sk, u8 type, void *data);
+void quic_frame_purge(struct sock *sk, struct list_head *head);
+struct quic_frame *quic_frame_alloc(unsigned int size, gfp_t priority);

@@ -884,8 +884,15 @@ static void quic_sysctl_unregister(void)
 
 static __init int quic_init(void)
 {
+	struct quic_frame *frame;
+	struct sk_buff *skb;
 	int err = -ENOMEM;
 
+	skb = alloc_skb(1, GFP_ATOMIC);
+	if (skb) {
+		printk("%ld %d %ld\n", sizeof(*skb), skb->truesize, sizeof(*frame));
+		kfree_skb(skb);
+	}
 	if (quic_hash_tables_init())
 		goto err;
 

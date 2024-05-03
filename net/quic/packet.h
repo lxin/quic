@@ -10,7 +10,7 @@
 
 struct quic_packet {
 	/* send */
-	struct sk_buff_head frame_list;
+	struct list_head frame_list;
 	struct sk_buff *head;
 	union quic_addr *da;
 	union quic_addr *sa;
@@ -107,7 +107,7 @@ void quic_packet_create(struct sock *sk);
 int quic_packet_config(struct sock *sk, u8 level, u8 path_alt);
 int quic_packet_route(struct sock *sk);
 int quic_packet_process(struct sock *sk, struct sk_buff *skb);
-int quic_packet_tail(struct sock *sk, struct sk_buff *skb, struct sk_buff_head *from, u8 dgram);
+int quic_packet_tail(struct sock *sk, struct quic_frame *frame, u8 dgram);
 int quic_packet_flush(struct sock *sk);
 int quic_packet_parse_alpn(struct sk_buff *skb, struct quic_data *alpn);
 int quic_packet_xmit(struct sock *sk, struct sk_buff *skb, u8 resume);

@@ -11,10 +11,10 @@
 struct quic_outqueue {
 	struct quic_connection_id retry_dcid;
 	struct quic_connection_id orig_dcid;
-	struct sk_buff_head transmitted_list;
-	struct sk_buff_head encrypted_list;
-	struct sk_buff_head datagram_list;
-	struct sk_buff_head control_list;
+	struct list_head transmitted_list;
+	struct list_head datagram_list;
+	struct list_head control_list;
+	struct list_head stream_list;
 	struct work_struct work;
 	u64 last_max_bytes;
 	u64 data_inflight;
@@ -48,20 +48,11 @@ struct quic_outqueue {
 };
 
 struct quic_snd_cb {
-	union {
-		struct quic_stream *stream;
-		struct sk_buff *last;
-	};
+	struct sk_buff *last;
 	s64 number;
-	s64 first_number;
-	u32 transmit_ts;
-	u16 data_bytes; /* user data bytes */
 	u8 number_offset;
 	u8 level;
-	u8 frame_type;
-	u8 sent_count;
-	u8 path_alt:2; /* bit 1: src, bit 2: dst */
-	u8 padding:1;
+	u8 path_alt:2;
 	u8 ecn:2;
 };
 
@@ -206,13 +197,13 @@ static inline u32 quic_outq_inflight(struct quic_outqueue *outq)
 
 int quic_outq_transmit(struct sock *sk);
 void quic_outq_transmit_one(struct sock *sk, u8 level);
-void quic_outq_stream_tail(struct sock *sk, struct sk_buff *skb, bool cork);
-void quic_outq_dgram_tail(struct sock *sk, struct sk_buff *skb, bool cork);
-void quic_outq_ctrl_tail(struct sock *sk, struct sk_buff *skb, bool cork);
-void quic_outq_transmitted_tail(struct sock *sk, struct sk_buff *skb);
+void quic_outq_stream_tail(struct sock *sk, struct quic_frame *frame, bool cork);
+void quic_outq_dgram_tail(struct sock *sk, struct quic_frame *frame, bool cork);
+void quic_outq_ctrl_tail(struct sock *sk, struct quic_frame *frame, bool cork);
+void quic_outq_transmitted_tail(struct sock *sk, struct quic_frame *frame);
 void quic_outq_transmitted_sack(struct sock *sk, u8 level, s64 largest,
 				s64 smallest, s64 ack_largest, u32 ack_delay);
-void quic_outq_retransmit_list(struct sock *sk, struct sk_buff_head *head);
+void quic_outq_retransmit_list(struct sock *sk, struct list_head *head);
 int quic_outq_retransmit_mark(struct sock *sk, u8 level, u8 immediate);
 void quic_outq_validate_path(struct sock *sk, struct sk_buff *skb,
 			     struct quic_path_addr *path);
@@ -225,3 +216,4 @@ void quic_outq_transmit_probe(struct sock *sk);
 void quic_outq_init(struct sock *sk);
 void quic_outq_free(struct sock *sk);
 void quic_outq_encrypted_tail(struct sock *sk, struct sk_buff *skb);
+void quic_outq_wfree(struct quic_frame *frame, struct sock *sk);

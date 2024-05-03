@@ -11,7 +11,6 @@
  */
 
 #include "socket.h"
-#include "frame.h"
 
 static void quic_inq_rfree(struct sk_buff *skb)
 {
@@ -166,7 +165,7 @@ static void quic_inq_recv_tail(struct sock *sk, struct quic_stream *stream, stru
 void quic_inq_flow_control(struct sock *sk, struct quic_stream *stream, int len)
 {
 	struct quic_inqueue *inq = quic_inq(sk);
-	struct sk_buff *nskb = NULL;
+	struct quic_frame *frame = NULL;
 	u32 window;
 
 	if (!len)
@@ -181,9 +180,9 @@ void quic_inq_flow_control(struct sock *sk, struct quic_stream *stream, int len)
 		if (sk_under_memory_pressure(sk))
 			window >>= 1;
 		inq->max_bytes = inq->bytes + window;
-		nskb = quic_frame_create(sk, QUIC_FRAME_MAX_DATA, inq);
-		if (nskb)
-			quic_outq_ctrl_tail(sk, nskb, true);
+		frame = quic_frame_create(sk, QUIC_FRAME_MAX_DATA, inq);
+		if (frame)
+			quic_outq_ctrl_tail(sk, frame, true);
 	}
 
 	if (stream->recv.max_bytes - stream->recv.bytes < stream->recv.window / 2) {
@@ -191,12 +190,12 @@ void quic_inq_flow_control(struct sock *sk, struct quic_stream *stream, int len)
 		if (sk_under_memory_pressure(sk))
 			window >>= 1;
 		stream->recv.max_bytes = stream->recv.bytes + window;
-		nskb = quic_frame_create(sk, QUIC_FRAME_MAX_STREAM_DATA, stream);
-		if (nskb)
-			quic_outq_ctrl_tail(sk, nskb, true);
+		frame = quic_frame_create(sk, QUIC_FRAME_MAX_STREAM_DATA, stream);
+		if (frame)
+			quic_outq_ctrl_tail(sk, frame, true);
 	}
 
-	if (nskb)
+	if (frame)
 		quic_outq_transmit(sk);
 }
 

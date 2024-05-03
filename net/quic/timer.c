@@ -9,16 +9,15 @@
  */
 
 #include "socket.h"
-#include "frame.h"
 
 static void quic_timer_delay_ack_timeout(struct timer_list *t)
 {
 	struct quic_sock *qs = from_timer(qs, t, timers[QUIC_TIMER_SACK]);
-	u8 level = QUIC_CRYPTO_APP, frame[100] = {};
+	u8 level = QUIC_CRYPTO_APP, buf[100] = {};
 	struct quic_connection_close *close;
 	struct sock *sk = &qs->inet.sk;
 	struct quic_inqueue *inq;
-	struct sk_buff *skb;
+	struct quic_frame *frame;
 	u32 timeout;
 
 	bh_lock_sock(sk);
@@ -33,14 +32,14 @@ static void quic_timer_delay_ack_timeout(struct timer_list *t)
 
 	inq = quic_inq(sk);
 	if (quic_inq_need_sack(inq)) {
-		skb = quic_frame_create(sk, QUIC_FRAME_ACK, &level);
-		if (skb)
-			quic_outq_ctrl_tail(sk, skb, false);
+		frame = quic_frame_create(sk, QUIC_FRAME_ACK, &level);
+		if (frame)
+			quic_outq_ctrl_tail(sk, frame, false);
 		quic_inq_set_need_sack(inq, 0);
 		goto out;
 	}
 
-	close = (void *)frame;
+	close = (void *)buf;
 	if (quic_inq_event_recv(sk, QUIC_EVENT_CONNECTION_CLOSE, close)) {
 		timeout = quic_inq_max_idle_timeout(inq);
 		quic_timer_start(sk, QUIC_TIMER_SACK, timeout);
@@ -108,7 +107,7 @@ static void quic_timer_path_timeout(struct timer_list *t)
 	struct sock *sk = &qs->inet.sk;
 	struct quic_path_addr *path;
 	struct quic_packet *packet;
-	struct sk_buff *skb;
+	struct quic_frame *frame;
 	u8 cnt, probe = 1;
 	u32 timeout;
 
@@ -133,9 +132,9 @@ static void quic_timer_path_timeout(struct timer_list *t)
 			quic_packet_set_ecn_probes(packet, 0);
 			goto out;
 		}
-		skb = quic_frame_create(sk, QUIC_FRAME_PATH_CHALLENGE, path);
-		if (skb)
-			quic_outq_ctrl_tail(sk, skb, false);
+		frame = quic_frame_create(sk, QUIC_FRAME_PATH_CHALLENGE, path);
+		if (frame)
+			quic_outq_ctrl_tail(sk, frame, false);
 		quic_path_set_sent_cnt(path, cnt + 1);
 		quic_timer_start(sk, QUIC_TIMER_PATH, timeout);
 	}
@@ -150,9 +149,9 @@ static void quic_timer_path_timeout(struct timer_list *t)
 			quic_packet_set_ecn_probes(packet, 0);
 			goto out;
 		}
-		skb = quic_frame_create(sk, QUIC_FRAME_PATH_CHALLENGE, path);
-		if (skb)
-			quic_outq_ctrl_tail(sk, skb, false);
+		frame = quic_frame_create(sk, QUIC_FRAME_PATH_CHALLENGE, path);
+		if (frame)
+			quic_outq_ctrl_tail(sk, frame, false);
 		quic_path_set_sent_cnt(path, cnt + 1);
 		quic_timer_start(sk, QUIC_TIMER_PATH, timeout);
 	}

@@ -20,6 +20,7 @@
 #include "crypto.h"
 #include "stream.h"
 #include "pnmap.h"
+#include "frame.h"
 #include "packet.h"
 #include "path.h"
 #include "output.h"
