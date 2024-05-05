@@ -503,7 +503,7 @@ static __poll_t quic_inet_poll(struct file *file, struct socket *sock, poll_tabl
 	if (sk->sk_err || !skb_queue_empty_lockless(&sk->sk_error_queue))
 		mask |= EPOLLERR | (sock_flag(sk, SOCK_SELECT_ERR_QUEUE) ? EPOLLPRI : 0);
 
-	if (!skb_queue_empty_lockless(&sk->sk_receive_queue))
+	if (!list_empty(&quic_inq(sk)->stream_list))
 		mask |= EPOLLIN | EPOLLRDNORM;
 
 	if (quic_is_closed(sk))

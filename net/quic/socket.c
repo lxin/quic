@@ -709,13 +709,15 @@ err:
 
 static int quic_wait_for_packet(struct sock *sk, long timeo)
 {
+	struct list_head *head = &quic_inq(sk)->stream_list;
+
 	for (;;) {
 		int err = 0, exit = 1;
 		DEFINE_WAIT(wait);
 
 		prepare_to_wait_exclusive(sk_sleep(sk), &wait, TASK_INTERRUPTIBLE);
 
-		if (!skb_queue_empty(&sk->sk_receive_queue))
+		if (!list_empty(head))
 			goto out;
 
 		err = sk->sk_err;
@@ -757,14 +759,14 @@ static int quic_recvmsg(struct sock *sk, struct msghdr *msg, size_t len, int fla
 {
 	int nonblock = flags & MSG_DONTWAIT;
 #endif
+	struct quic_inqueue *inq = quic_inq(sk);
 	struct quic_handshake_info hinfo = {};
 	int err, copy, copied = 0, freed = 0;
 	struct quic_stream_info sinfo = {};
 	int fin, off, event, dgram, level;
-	struct quic_rcv_cb *rcv_cb;
+	struct quic_frame *frame, *next;
 	struct quic_stream *stream;
-	struct quic_inqueue *inq;
-	struct sk_buff *skb;
+	struct list_head *head;
 	long timeo;
 
 	lock_sock(sk);
@@ -774,23 +776,24 @@ static int quic_recvmsg(struct sock *sk, struct msghdr *msg, size_t len, int fla
 	if (err)
 		goto out;
 
-	skb = skb_peek(&sk->sk_receive_queue);
-	rcv_cb = QUIC_RCV_CB(skb);
-	stream = rcv_cb->stream;
-	do {
-		off = rcv_cb->read_offset;
-		copy = min_t(int, skb->len - off, len - copied);
-		err = skb_copy_datagram_msg(skb, off, msg, copy);
-		if (err) {
-			if (!copied)
+	head = &quic_inq(sk)->stream_list;
+	list_for_each_entry_safe(frame, next, head, list) {
+		off = frame->offset;
+		copy = min_t(int, frame->len - off, len - copied);
+		copy = copy_to_iter(frame->data + off, copy, &msg->msg_iter);
+		if (!copy) {
+			if (!copied) {
+				err = -EFAULT;
 				goto out;
+			}
 			break;
 		}
 		copied += copy;
-		fin = rcv_cb->stream_fin;
-		event = rcv_cb->event;
-		dgram = rcv_cb->dgram;
-		level = rcv_cb->level;
+		fin = frame->stream_fin;
+		event = frame->event;
+		dgram = frame->dgram;
+		level = frame->level;
+		stream = frame->stream;
 		if (event) {
 			msg->msg_flags |= MSG_NOTIFICATION;
 			sinfo.stream_flag |= QUIC_STREAM_FLAG_NOTIFICATION;
@@ -803,32 +806,35 @@ static int quic_recvmsg(struct sock *sk, struct msghdr *msg, size_t len, int fla
 		}
 		if (flags & MSG_PEEK)
 			break;
-		if (copy != skb->len - off) {
-			rcv_cb->read_offset += copy;
+		if (copy != frame->len - off) {
+			frame->offset += copy;
 			break;
 		}
 		if (event) {
-			inq = quic_inq(sk);
-			if (skb == quic_inq_last_event(inq))
+			if (frame == quic_inq_last_event(inq))
 				quic_inq_set_last_event(inq, NULL); /* no more event on list */
 			if (event == QUIC_EVENT_STREAM_UPDATE &&
 			    stream->recv.state == QUIC_STREAM_RECV_STATE_RESET_RECVD)
 				stream->recv.state = QUIC_STREAM_RECV_STATE_RESET_READ;
 			msg->msg_flags |= MSG_EOR;
 			sinfo.stream_flag |= QUIC_STREAM_FLAG_FIN;
-			kfree_skb(__skb_dequeue(&sk->sk_receive_queue));
+			list_del(&frame->list);
+			quic_inq_rfree(frame, sk);
 			break;
 		} else if (dgram) {
 			msg->msg_flags |= MSG_EOR;
 			sinfo.stream_flag |= QUIC_STREAM_FLAG_FIN;
-			kfree_skb(__skb_dequeue(&sk->sk_receive_queue));
+			list_del(&frame->list);
+			quic_inq_rfree(frame, sk);
 			break;
 		} else if (!stream) {
-			kfree_skb(__skb_dequeue(&sk->sk_receive_queue));
+			list_del(&frame->list);
+			quic_inq_rfree(frame, sk);
 			break;
 		}
-		freed += skb->len;
-		kfree_skb(__skb_dequeue(&sk->sk_receive_queue));
+		freed += frame->len;
+		list_del(&frame->list);
+		quic_inq_rfree(frame, sk);
 		if (fin) {
 			stream->recv.state = QUIC_STREAM_RECV_STATE_READ;
 			msg->msg_flags |= MSG_EOR;
@@ -836,14 +842,11 @@ static int quic_recvmsg(struct sock *sk, struct msghdr *msg, size_t len, int fla
 			break;
 		}
 
-		skb = skb_peek(&sk->sk_receive_queue);
-		if (!skb)
+		if (list_entry_is_head(next, head, list) || copied >= len)
 			break;
-		rcv_cb = QUIC_RCV_CB(skb);
-		if (rcv_cb->event || rcv_cb->dgram ||
-		    !rcv_cb->stream || rcv_cb->stream->id != stream->id)
+		if (next->event || next->dgram || !next->stream || next->stream != stream)
 			break;
-	} while (copied < len);
+	};
 
 	if (!event && stream) {
 		sinfo.stream_id = stream->id;
@@ -1381,7 +1384,7 @@ static int quic_sock_set_crypto_secret(struct sock *sk, struct quic_crypto_secre
 			list_add_tail(&frame->list, &list);
 			frame = quic_frame_create(sk, QUIC_FRAME_HANDSHAKE_DONE, NULL);
 			if (!frame) {
-				quic_frame_purge(sk, &list);
+				quic_outq_list_purge(sk, &list);
 				return -ENOMEM;
 			}
 			list_add_tail(&frame->list, &list);
@@ -1432,7 +1435,7 @@ static int quic_sock_set_crypto_secret(struct sock *sk, struct quic_crypto_secre
 		if (!frame) {
 			while (seqno)
 				quic_connection_id_remove(quic_source(sk), seqno--);
-			quic_frame_purge(sk, &list);
+			quic_outq_list_purge(sk, &list);
 			return -ENOMEM;
 		}
 		list_add_tail(&frame->list, &list);

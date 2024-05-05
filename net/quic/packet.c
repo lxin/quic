@@ -458,7 +458,7 @@ enqueue:
 		goto out;
 	}
 
-	quic_inq_set_owner_r(skb, sk); /* handle it later when accepting the sock */
+	skb_set_owner_r(skb, sk); /* handle it later when accepting the sock */
 	quic_inq_backlog_tail(sk, skb);
 	sk->sk_data_ready(sk);
 out:
@@ -637,10 +637,10 @@ static int quic_packet_handshake_header_process(struct sock *sk, struct sk_buff 
 static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb, u8 resume)
 {
 	struct quic_packet *packet = quic_packet(sk);
+	struct quic_frame frame = {}, *nframe;
 	struct quic_connection_id *active;
 	struct quic_crypto_info ci = {};
 	struct quic_crypto *crypto;
-	struct quic_frame *frame;
 	struct quic_pnmap *pnmap;
 	struct quichshdr *hshdr;
 	int err = -EINVAL;
@@ -685,25 +685,25 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb, u
 			goto err;
 		}
 
-		skb_pull(skb, ci.number_offset + ci.number_len);
-		packet->len = ci.length - ci.number_len - packet->taglen[1];
-		QUIC_RCV_CB(skb)->level = packet->level;
-		err = quic_frame_process(sk, skb);
+		frame.data = skb->data + ci.number_offset + ci.number_len;
+		frame.len = ci.length - ci.number_len - packet->taglen[1];
+		frame.level = packet->level;
+		err = quic_frame_process(sk, &frame);
 		if (err)
 			goto err;
 		err = quic_pnmap_mark(pnmap, ci.number);
 		if (err)
 			goto err;
-		skb_pull(skb, packet->taglen[1]);
+		skb_pull(skb, ci.number_offset + ci.length);
 		if (packet->ack_eliciting) {
 			if (!quic_is_serv(sk) && packet->level == QUIC_CRYPTO_INITIAL) {
 				active = quic_connection_id_active(quic_dest(sk));
 				quic_connection_id_update(active, packet->scid.data,
 							  packet->scid.len);
 			}
-			frame = quic_frame_create(sk, QUIC_FRAME_ACK, &packet->level);
-			if (frame)
-				quic_outq_ctrl_tail(sk, frame, true);
+			nframe = quic_frame_create(sk, QUIC_FRAME_ACK, &packet->level);
+			if (nframe)
+				quic_outq_ctrl_tail(sk, nframe, true);
 		}
 		resume = 0;
 		skb->decrypted = 0;
@@ -785,6 +785,7 @@ static int quic_packet_app_process(struct sock *sk, struct sk_buff *skb, u8 resu
 	struct quic_packet *packet = quic_packet(sk);
 	struct quichdr *hdr = quic_hdr(skb);
 	struct quic_crypto_info ci = {};
+	struct quic_frame frame = {};
 	int err = -EINVAL, taglen;
 
 	WARN_ON(!skb_set_owner_sk_safe(skb, sk));
@@ -841,10 +842,9 @@ static int quic_packet_app_process(struct sock *sk, struct sk_buff *skb, u8 resu
 		rcv_cb->path_alt |= QUIC_PATH_ALT_DST;
 	}
 
-	skb_pull(skb, ci.number_offset + ci.number_len);
-	packet->len = ci.length - ci.number_len - taglen;
-	rcv_cb->level = 0;
-	err = quic_frame_process(sk, skb);
+	frame.data = skb->data + ci.number_offset + ci.number_len;
+	frame.len = ci.length - ci.number_len - taglen;
+	err = quic_frame_process(sk, &frame);
 	if (err)
 		goto err;
 	err = quic_pnmap_mark(pnmap, ci.number);

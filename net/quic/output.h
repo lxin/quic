@@ -205,10 +205,11 @@ void quic_outq_transmitted_sack(struct sock *sk, u8 level, s64 largest,
 				s64 smallest, s64 ack_largest, u32 ack_delay);
 void quic_outq_retransmit_list(struct sock *sk, struct list_head *head);
 int quic_outq_retransmit_mark(struct sock *sk, u8 level, u8 immediate);
-void quic_outq_validate_path(struct sock *sk, struct sk_buff *skb,
+void quic_outq_validate_path(struct sock *sk, struct quic_frame *frame,
 			     struct quic_path_addr *path);
 void quic_outq_update_loss_timer(struct sock *sk, u8 level);
 void quic_outq_stream_purge(struct sock *sk, struct quic_stream *stream);
+void quic_outq_list_purge(struct sock *sk, struct list_head *head);
 void quic_outq_set_param(struct sock *sk, struct quic_transport_param *p);
 void quic_outq_transmit_close(struct sock *sk, u8 frame, u32 errcode, u8 level);
 void quic_outq_transmit_app_close(struct sock *sk);

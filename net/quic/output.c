@@ -552,12 +552,13 @@ out:
 	quic_outq_update_loss_timer(sk, level);
 }
 
-void quic_outq_validate_path(struct sock *sk, struct sk_buff *skb, struct quic_path_addr *path)
+void quic_outq_validate_path(struct sock *sk, struct quic_frame *frame,
+			     struct quic_path_addr *path)
 {
 	u8 local = quic_path_udp_bind(path), path_alt = QUIC_PATH_ALT_DST;
 	struct quic_outqueue *outq = quic_outq(sk);
 	struct quic_inqueue *inq = quic_inq(sk);
-	struct quic_frame *frame;
+	struct quic_frame *pos;
 	struct list_head *head;
 
 	if (quic_inq_event_recv(sk, QUIC_EVENT_CONNECTION_MIGRATION, &local))
@@ -574,14 +575,14 @@ void quic_outq_validate_path(struct sock *sk, struct sk_buff *skb, struct quic_p
 	quic_timer_reset(sk, QUIC_TIMER_PATH, quic_inq_probe_timeout(inq));
 
 	head = &outq->control_list;
-	list_for_each_entry(frame, head, list)
-		frame->path_alt &= ~path_alt;
+	list_for_each_entry(pos, head, list)
+		pos->path_alt &= ~path_alt;
 
 	head = &outq->transmitted_list;
-	list_for_each_entry(frame, head, list)
-		frame->path_alt &= ~path_alt;
+	list_for_each_entry(pos, head, list)
+		pos->path_alt &= ~path_alt;
 
-	QUIC_RCV_CB(skb)->path_alt &= ~path_alt;
+	frame->path_alt &= ~path_alt;
 	quic_packet_set_ecn_probes(quic_packet(sk), 0);
 }
 
@@ -608,6 +609,16 @@ void quic_outq_stream_purge(struct sock *sk, struct quic_stream *stream)
 	list_for_each_entry_safe(frame, tmp, head, list) {
 		if (frame->stream != stream)
 			continue;
+		list_del(&frame->list);
+		quic_outq_wfree(frame, sk);
+	}
+}
+
+void quic_outq_list_purge(struct sock *sk, struct list_head *head)
+{
+	struct quic_frame *frame, *next;
+
+	list_for_each_entry_safe(frame, next, head, list) {
 		list_del(&frame->list);
 		quic_outq_wfree(frame, sk);
 	}
@@ -695,9 +706,9 @@ void quic_outq_free(struct sock *sk)
 {
 	struct quic_outqueue *outq = quic_outq(sk);
 
-	quic_frame_purge(sk, &outq->transmitted_list);
-	quic_frame_purge(sk, &outq->datagram_list);
-	quic_frame_purge(sk, &outq->control_list);
-	quic_frame_purge(sk, &outq->stream_list);
+	quic_outq_list_purge(sk, &outq->transmitted_list);
+	quic_outq_list_purge(sk, &outq->datagram_list);
+	quic_outq_list_purge(sk, &outq->control_list);
+	quic_outq_list_purge(sk, &outq->stream_list);
 	kfree(outq->close_phrase);
 }

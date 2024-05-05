@@ -15,11 +15,11 @@
 #define QUIC_DEF_ACK_DELAY		25000
 
 struct quic_inqueue {
-	struct sk_buff_head reassemble_list;
-	struct sk_buff_head handshake_list;
-	struct sk_buff_head decrypted_list;
 	struct sk_buff_head backlog_list;
-	struct sk_buff *last_event;
+	struct list_head reassemble_list;
+	struct list_head handshake_list;
+	struct list_head stream_list;
+	struct quic_frame *last_event;
 	struct work_struct work;
 	u64 max_bytes;
 	u64 window;
@@ -108,14 +108,14 @@ static inline u8 quic_inq_grease_quic_bit(struct quic_inqueue *inq)
 	return inq->grease_quic_bit;
 }
 
-static inline struct sk_buff *quic_inq_last_event(struct quic_inqueue *inq)
+static inline struct quic_frame *quic_inq_last_event(struct quic_inqueue *inq)
 {
 	return inq->last_event;
 }
 
-static inline void quic_inq_set_last_event(struct quic_inqueue *inq, struct sk_buff *skb)
+static inline void quic_inq_set_last_event(struct quic_inqueue *inq, struct quic_frame *frame)
 {
-	inq->last_event = skb;
+	inq->last_event = frame;
 }
 
 static inline u32 quic_inq_events(struct quic_inqueue *inq)
@@ -176,14 +176,15 @@ static inline void quic_inq_set_need_sack(struct quic_inqueue *inq, u8 need_sack
 int quic_rcv(struct sk_buff *skb);
 int quic_rcv_err(struct sk_buff *skb);
 void quic_rcv_err_icmp(struct sock *sk);
-int quic_inq_reasm_tail(struct sock *sk, struct sk_buff *skb);
-int quic_inq_dgram_tail(struct sock *sk, struct sk_buff *skb);
+int quic_inq_reasm_tail(struct sock *sk, struct quic_frame *frame);
+int quic_inq_dgram_tail(struct sock *sk, struct quic_frame *frame);
 void quic_inq_flow_control(struct sock *sk, struct quic_stream *stream, int len);
 void quic_inq_stream_purge(struct sock *sk, struct quic_stream *stream);
 void quic_inq_set_param(struct sock *sk, struct quic_transport_param *p);
-void quic_inq_set_owner_r(struct sk_buff *skb, struct sock *sk);
+void quic_inq_set_owner_r(struct quic_frame *frame, struct sock *sk);
+void quic_inq_rfree(struct quic_frame *frame, struct sock *sk);
 int quic_inq_event_recv(struct sock *sk, u8 event, void *args);
-int quic_inq_handshake_tail(struct sock *sk, struct sk_buff *skb);
+int quic_inq_handshake_tail(struct sock *sk, struct quic_frame *frame);
 void quic_inq_init(struct sock *sk);
 void quic_inq_free(struct sock *sk);
 void quic_inq_decrypted_tail(struct sock *sk, struct sk_buff *skb);
