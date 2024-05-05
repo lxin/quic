@@ -14,10 +14,10 @@ struct quic_packet {
 	struct sk_buff *head;
 	union quic_addr *da;
 	union quic_addr *sa;
-	u32 overhead;
-	u32 mss[2];
+	u16 mss[2];
 	u16 count;
 	u16 max_count;
+	u8  overhead;
 	u8  ecn_probes;
 	u8  ipfragok:1;
 	u8  path_alt:2;
@@ -26,13 +26,13 @@ struct quic_packet {
 	u8  taglen[2];
 
 	/* send or recv */
-	u32 len;
+	u16 len;
 	u8  level;
 	u8  ack_eliciting:1;
 
 	/* recv */
 	u32 version;
-	u32 errcode;
+	u16 errcode;
 	u8  frame;
 	u8  non_probing:1;
 	u8  ack_immediate:1;

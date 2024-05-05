@@ -39,7 +39,7 @@ void quic_inq_set_owner_r(struct quic_frame *frame, struct sock *sk)
 
 int quic_rcv(struct sk_buff *skb)
 {
-	struct quic_rcv_cb *rcv_cb = QUIC_RCV_CB(skb);
+	struct quic_crypto_cb *cb = QUIC_CRYPTO_CB(skb);
 	struct quic_addr_family_ops *af_ops;
 	struct quic_connection_id *conn_id;
 	union quic_addr daddr, saddr;
@@ -57,7 +57,7 @@ int quic_rcv(struct sk_buff *skb)
 		dcid = (u8 *)quic_hdr(skb) + 1;
 		conn_id = quic_connection_id_lookup(dev_net(skb->dev), dcid, skb->len - 1);
 		if (conn_id) {
-			rcv_cb->number_offset = conn_id->len + sizeof(struct quichdr);
+			cb->number_offset = conn_id->len + sizeof(struct quichdr);
 			sk = quic_connection_id_sk(conn_id);
 		}
 	}
@@ -70,7 +70,7 @@ int quic_rcv(struct sk_buff *skb)
 	}
 	bh_lock_sock(sk);
 	if (sock_owned_by_user(sk)) {
-		rcv_cb->backlog = 1;
+		cb->backlog = 1;
 		if (sk_add_backlog(sk, skb, READ_ONCE(sk->sk_rcvbuf))) {
 			bh_unlock_sock(sk);
 			goto err;

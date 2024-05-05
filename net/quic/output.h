@@ -31,7 +31,7 @@ struct quic_outqueue {
 	u8 grease_quic_bit:1;
 	u8 disable_1rtt_encryption:1;
 	/* Use for 0-RTT/1-RTT DATA (re)transmit,
-	 * as QUIC_SND_CB(skb)->level is always QUIC_CRYPTO_APP.
+	 * as QUIC_CRYPTO_CB(skb)->level is always QUIC_CRYPTO_APP.
 	 * Set this level to QUIC_CRYPTO_EARLY or QUIC_CRYPTO_APP
 	 * when the corresponding crypto is ready for send.
 	 */
@@ -46,17 +46,6 @@ struct quic_outqueue {
 	u8 serv:1;
 	u8 retry:1;
 };
-
-struct quic_snd_cb {
-	struct sk_buff *last;
-	s64 number;
-	u8 number_offset;
-	u8 level;
-	u8 path_alt:2;
-	u8 ecn:2;
-};
-
-#define QUIC_SND_CB(__skb)      ((struct quic_snd_cb *)&((__skb)->cb[0]))
 
 static inline void quic_outq_set_window(struct quic_outqueue *outq, u32 window)
 {

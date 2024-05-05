@@ -15,9 +15,11 @@
 #include <linux/version.h>
 
 #include "uapi/linux/quic.h"
+#include "connection.h"
 #include "hashtable.h"
 #include "protocol.h"
 #include "stream.h"
+#include "crypto.h"
 #include "input.h"
 #include "path.h"
 
@@ -27,7 +29,7 @@ static int quic_udp_rcv(struct sock *sk, struct sk_buff *skb)
 		return 0;
 
 	memset(skb->cb, 0, sizeof(skb->cb));
-	QUIC_RCV_CB(skb)->udph_offset = skb->transport_header;
+	QUIC_CRYPTO_CB(skb)->udph_offset = skb->transport_header;
 	skb_set_transport_header(skb, sizeof(struct udphdr));
 	quic_rcv(skb);
 	return 0;

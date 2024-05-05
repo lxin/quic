@@ -88,13 +88,13 @@ static int quic_v4_flow_route(struct sock *sk, union quic_addr *da, union quic_a
 static void quic_v4_lower_xmit(struct sock *sk, struct sk_buff *skb, union quic_addr *da,
 			       union quic_addr *sa)
 {
-	struct quic_snd_cb *snd_cb = QUIC_SND_CB(skb);
-	u8 tos = (inet_sk(sk)->tos | snd_cb->ecn);
+	struct quic_crypto_cb *cb = QUIC_CRYPTO_CB(skb);
+	u8 tos = (inet_sk(sk)->tos | cb->ecn);
 	struct dst_entry *dst;
 	__be16 df = 0;
 
 	pr_debug("[QUIC] %s: skb: %p len: %d num: %llu | path: %pI4:%d -> %pI4:%d\n", __func__,
-		 skb, skb->len, snd_cb->number, &sa->v4.sin_addr.s_addr, ntohs(sa->v4.sin_port),
+		 skb, skb->len, cb->number, &sa->v4.sin_addr.s_addr, ntohs(sa->v4.sin_port),
 		 &da->v4.sin_addr.s_addr, ntohs(da->v4.sin_port));
 
 	dst = sk_dst_get(sk);
@@ -113,8 +113,8 @@ static void quic_v4_lower_xmit(struct sock *sk, struct sk_buff *skb, union quic_
 static void quic_v6_lower_xmit(struct sock *sk, struct sk_buff *skb, union quic_addr *da,
 			       union quic_addr *sa)
 {
-	struct quic_snd_cb *snd_cb = QUIC_SND_CB(skb);
-	u8 tc = (inet6_sk(sk)->tclass | snd_cb->ecn);
+	struct quic_crypto_cb *cb = QUIC_CRYPTO_CB(skb);
+	u8 tc = (inet6_sk(sk)->tclass | cb->ecn);
 	struct dst_entry *dst = sk_dst_get(sk);
 
 	if (!dst) {
@@ -122,7 +122,7 @@ static void quic_v6_lower_xmit(struct sock *sk, struct sk_buff *skb, union quic_
 		return;
 	}
 	pr_debug("[QUIC] %s: skb: %p len: %d num: %llu | path: %pI6c:%d -> %pI6c:%d\n", __func__,
-		 skb, skb->len, snd_cb->number, &sa->v6.sin6_addr, ntohs(sa->v6.sin6_port),
+		 skb, skb->len, cb->number, &sa->v6.sin6_addr, ntohs(sa->v6.sin6_port),
 		 &da->v6.sin6_addr, ntohs(da->v6.sin6_port));
 
 	udp_tunnel6_xmit_skb(dst, sk, skb, NULL, &sa->v6.sin6_addr, &da->v6.sin6_addr, tc,
@@ -148,7 +148,7 @@ static void quic_v6_udp_conf_init(struct sock *sk, struct udp_port_cfg *conf, un
 
 static void quic_v4_get_msg_addr(union quic_addr *a, struct sk_buff *skb, bool src)
 {
-	struct udphdr *uh = (struct udphdr *)(skb->head + QUIC_RCV_CB(skb)->udph_offset);
+	struct udphdr *uh = (struct udphdr *)(skb->head + QUIC_CRYPTO_CB(skb)->udph_offset);
 	struct sockaddr_in *sa = &a->v4;
 
 	a->v4.sin_family = AF_INET;
@@ -166,12 +166,12 @@ static void quic_v4_get_msg_addr(union quic_addr *a, struct sk_buff *skb, bool s
 
 static void quic_v6_get_msg_addr(union quic_addr *a, struct sk_buff *skb, bool src)
 {
-	struct udphdr *uh = (struct udphdr *)(skb->head + QUIC_RCV_CB(skb)->udph_offset);
+	struct udphdr *uh = (struct udphdr *)(skb->head + QUIC_CRYPTO_CB(skb)->udph_offset);
 	struct sockaddr_in6 *sa = &a->v6;
 
 	a->v6.sin6_family = AF_INET6;
 	a->v6.sin6_flowinfo = 0;
-	a->v6.sin6_scope_id = ((struct inet6_skb_parm *)skb->cb)->iif;
+	a->v6.sin6_scope_id = 0;
 	if (src) {
 		sa->sin6_port = uh->source;
 		sa->sin6_addr = ipv6_hdr(skb)->saddr;
@@ -884,15 +884,8 @@ static void quic_sysctl_unregister(void)
 
 static __init int quic_init(void)
 {
-	struct quic_frame *frame;
-	struct sk_buff *skb;
 	int err = -ENOMEM;
 
-	skb = alloc_skb(1, GFP_ATOMIC);
-	if (skb) {
-		printk("%ld %d %ld\n", sizeof(*skb), skb->truesize, sizeof(*frame));
-		kfree_skb(skb);
-	}
 	if (quic_hash_tables_init())
 		goto err;
 

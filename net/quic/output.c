@@ -640,9 +640,9 @@ static void quic_outq_encrypted_work(struct work_struct *work)
 
 	skb = skb_dequeue(head);
 	while (skb) {
-		struct quic_snd_cb *snd_cb = QUIC_SND_CB(skb);
+		struct quic_crypto_cb *cb = QUIC_CRYPTO_CB(skb);
 
-		quic_packet_config(sk, snd_cb->level, snd_cb->path_alt);
+		quic_packet_config(sk, cb->level, cb->path_alt);
 		/* the skb here is ready to send */
 		quic_packet_xmit(sk, skb, 1);
 		skb = skb_dequeue(head);

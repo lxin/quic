@@ -41,23 +41,6 @@ struct quic_inqueue {
 	u8 disable_1rtt_encryption:1;
 };
 
-struct quic_rcv_cb {
-	struct quic_stream *stream;
-	u64 offset; /* stream or crypto offset */
-	u32 errcode;
-	u16 read_offset;
-	u16 udph_offset;
-	u8 number_offset;
-	u8 event;
-	u8 level;
-	u8 dgram:1;
-	u8 backlog:1;
-	u8 stream_fin:1;
-	u8 path_alt:2;
-};
-
-#define QUIC_RCV_CB(__skb)	((struct quic_rcv_cb *)&((__skb)->cb[0]))
-
 static inline u32 quic_inq_max_idle_timeout(struct quic_inqueue *inq)
 {
 	return inq->max_idle_timeout;

@@ -178,7 +178,5 @@ int quic_frame_set_transport_params_ext(struct sock *sk, struct quic_transport_p
 					u8 *data, u32 len);
 int quic_frame_get_transport_params_ext(struct sock *sk, struct quic_transport_param *params,
 					u8 *data, u32 *len);
-int quic_frame_handshake_process(struct sock *sk, struct sk_buff *skb,
-				 struct quic_crypto_info *ci);
 struct sk_buff *quic_frame_handshake_create(struct sock *sk, u8 type, void *data);
 struct quic_frame *quic_frame_alloc(unsigned int size, gfp_t priority);

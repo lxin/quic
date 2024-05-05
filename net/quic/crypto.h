@@ -10,18 +10,29 @@
 
 #include <linux/crypto.h>
 
-struct quic_crypto_info {
-	s64 number;
+struct quic_crypto_cb {
+	union {
+		struct sk_buff *last;
+		void *crypto_done;
+	};
 	s64 number_max;
-	u32 number_len;
-	u32 number_offset;
-	u64 length;
-	u32 errcode;
+	s64 number;
+	u16 length;
+	u16 errcode;
+	u8 number_len;
+	u8 number_offset;
+	u8 udph_offset;
+	u8 level;
+
 	u8 resume:1;
 	u8 key_phase:1;
 	u8 key_update:1;
-	void *crypto_done;
+	u8 backlog:1;
+	u8 path_alt:2;
+	u8 ecn:2;
 };
+
+#define QUIC_CRYPTO_CB(__skb)      ((struct quic_crypto_cb *)&((__skb)->cb[0]))
 
 #define QUIC_TAG_LEN	16
 #define QUIC_IV_LEN	12
@@ -114,10 +125,8 @@ static inline void quic_crypto_set_key_update_send_ts(struct quic_crypto *crypto
 
 int quic_crypto_initial_keys_install(struct quic_crypto *crypto, struct quic_connection_id *conn_id,
 				     u32 version, u8 flag, bool is_serv);
-int quic_crypto_encrypt(struct quic_crypto *crypto, struct sk_buff *skb,
-			struct quic_crypto_info *ci);
-int quic_crypto_decrypt(struct quic_crypto *crypto, struct sk_buff *skb,
-			struct quic_crypto_info *ci);
+int quic_crypto_encrypt(struct quic_crypto *crypto, struct sk_buff *skb);
+int quic_crypto_decrypt(struct quic_crypto *crypto, struct sk_buff *skb);
 int quic_crypto_set_secret(struct quic_crypto *crypto, struct quic_crypto_secret *srt,
 			   u32 version, u8 flag);
 int quic_crypto_get_secret(struct quic_crypto *crypto, struct quic_crypto_secret *srt);
