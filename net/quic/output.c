@@ -58,7 +58,7 @@ static void quic_outq_transmit_dgram(struct sock *sk)
 			break;
 		}
 		if (quic_packet_tail(sk, frame, 1)) {
-			outq->data_inflight += frame->data_bytes;
+			outq->data_inflight += frame->bytes;
 			continue;
 		}
 		quic_packet_create(sk);
@@ -70,7 +70,7 @@ static int quic_outq_flow_control(struct sock *sk, struct quic_frame *frame)
 {
 	struct quic_outqueue *outq = quic_outq(sk);
 	struct quic_frame *nframe = NULL;
-	u32 len = frame->data_bytes;
+	u32 len = frame->bytes;
 	struct quic_stream *stream;
 	u8 blocked = 0;
 
@@ -130,9 +130,9 @@ static void quic_outq_transmit_stream(struct sock *sk)
 		}
 		if (quic_packet_tail(sk, frame, 0)) {
 			frame->stream->send.frags++;
-			frame->stream->send.bytes += frame->data_bytes;
-			outq->bytes += frame->data_bytes;
-			outq->data_inflight += frame->data_bytes;
+			frame->stream->send.bytes += frame->bytes;
+			outq->bytes += frame->bytes;
+			outq->data_inflight += frame->bytes;
 			continue;
 		}
 		quic_packet_create(sk);
@@ -154,10 +154,10 @@ int quic_outq_transmit(struct sock *sk)
 
 void quic_outq_wfree(struct quic_frame *frame, struct sock *sk)
 {
-	int len = frame->data_bytes;
+	int len = frame->bytes;
 
 	if (!len)
-		goto out;
+		return quic_frame_free(frame);
 
 	WARN_ON(refcount_sub_and_test(len, &sk->sk_wmem_alloc));
 	sk_wmem_queued_add(sk, -len);
@@ -165,13 +165,13 @@ void quic_outq_wfree(struct quic_frame *frame, struct sock *sk)
 
 	if (sk_stream_wspace(sk) > 0)
 		sk->sk_write_space(sk);
-out:
-	kfree(frame);
+
+	quic_frame_free(frame);
 }
 
 static void quic_outq_set_owner_w(struct quic_frame *frame, struct sock *sk)
 {
-	int len = frame->data_bytes;
+	int len = frame->bytes;
 
 	refcount_add(len, &sk->sk_wmem_alloc);
 	sk_wmem_queued_add(sk, len);
@@ -372,7 +372,7 @@ void quic_outq_transmitted_sack(struct sock *sk, u8 level, s64 largest, s64 smal
 			quic_set_sk_ecn(sk, INET_ECN_ECT_0);
 
 		stream = frame->stream;
-		if (frame->data_bytes) {
+		if (frame->bytes) {
 			if (!stream)
 				goto unlink;
 			stream->send.frags--;
@@ -399,10 +399,10 @@ void quic_outq_transmitted_sack(struct sock *sk, u8 level, s64 largest, s64 smal
 		}
 unlink:
 		quic_pnmap_set_max_pn_acked(pnmap, frame->number);
-		acked_bytes += frame->data_bytes;
+		acked_bytes += frame->bytes;
 
 		quic_pnmap_dec_inflight(pnmap, frame->len);
-		outq->data_inflight -= frame->data_bytes;
+		outq->data_inflight -= frame->bytes;
 		outq->inflight -= frame->len;
 		list_del(&frame->list);
 		quic_outq_wfree(frame, sk);
@@ -445,11 +445,11 @@ static void quic_outq_retransmit_one(struct sock *sk, struct quic_frame *frame)
 	struct list_head *head;
 
 	head = &outq->control_list;
-	if (frame->data_bytes) {
+	if (frame->bytes) {
 		head = &outq->stream_list;
 		frame->stream->send.frags--;
-		frame->stream->send.bytes -= frame->data_bytes;
-		outq->bytes -= frame->data_bytes;
+		frame->stream->send.bytes -= frame->bytes;
+		outq->bytes -= frame->bytes;
 	}
 
 	list_for_each_entry_safe(pos, tmp, head, list) {
@@ -492,7 +492,7 @@ int quic_outq_retransmit_mark(struct sock *sk, u8 level, u8 immediate)
 			break;
 		}
 		quic_pnmap_dec_inflight(pnmap, frame->len);
-		outq->data_inflight -= frame->data_bytes;
+		outq->data_inflight -= frame->bytes;
 		outq->inflight -= frame->len;
 		list_del(&frame->list);
 		if (quic_frame_is_dgram(frame->type)) { /* no need to retransmit dgram */
@@ -502,7 +502,7 @@ int quic_outq_retransmit_mark(struct sock *sk, u8 level, u8 immediate)
 			count++;
 		}
 
-		if (frame->data_bytes) {
+		if (frame->bytes) {
 			quic_cong_cwnd_update_after_timeout(cong, number, transmit_ts, last);
 			quic_outq_set_window(outq, quic_cong_window(cong));
 		}
@@ -518,7 +518,7 @@ void quic_outq_retransmit_list(struct sock *sk, struct list_head *head)
 
 	list_for_each_entry_safe(frame, tmp, head, list) {
 		list_del(&frame->list);
-		outq->data_inflight -= frame->data_bytes;
+		outq->data_inflight -= frame->bytes;
 		if (quic_frame_is_dgram(frame->type))
 			quic_outq_wfree(frame, sk);
 		else
@@ -599,7 +599,7 @@ void quic_outq_stream_purge(struct sock *sk, struct quic_stream *stream)
 			continue;
 		pnmap = quic_pnmap(sk, frame->level);
 		quic_pnmap_dec_inflight(pnmap, frame->len);
-		outq->data_inflight -= frame->data_bytes;
+		outq->data_inflight -= frame->bytes;
 		outq->inflight -= frame->len;
 		list_del(&frame->list);
 		quic_outq_wfree(frame, sk);

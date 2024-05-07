@@ -14,25 +14,27 @@
 
 void quic_inq_rfree(struct quic_frame *frame, struct sock *sk)
 {
-	int len = frame->data_bytes;
+	int len = frame->bytes;
 
-	if (!len)
-		goto out;
+	if (len) {
+		atomic_sub(len, &sk->sk_rmem_alloc);
+		sk_mem_uncharge(sk, len);
+	}
 
-	atomic_sub(len, &sk->sk_rmem_alloc);
-	sk_mem_uncharge(sk, len);
-
-out:
-	kfree(frame);
+	if (frame->skb) {
+		kfree_skb(frame->skb);
+		frame->data = NULL;
+	}
+	quic_frame_free(frame);
 }
 
 void quic_inq_set_owner_r(struct quic_frame *frame, struct sock *sk)
 {
-	if (frame->data_bytes) {
-		atomic_sub(frame->data_bytes, &sk->sk_rmem_alloc);
-		sk_mem_uncharge(sk, frame->data_bytes);
+	if (frame->bytes) {
+		atomic_sub(frame->bytes, &sk->sk_rmem_alloc);
+		sk_mem_uncharge(sk, frame->bytes);
 	}
-	frame->data_bytes = frame->len;
+	frame->bytes = frame->len;
 	atomic_add(frame->len, &sk->sk_rmem_alloc);
 	sk_mem_charge(sk, frame->len);
 }
@@ -231,7 +233,7 @@ int quic_inq_reasm_tail(struct sock *sk, struct quic_frame *frame)
 	struct quic_frame *pos;
 
 	if (stream->recv.offset >= offset + frame->len) { /* dup */
-		kfree(frame);
+		quic_inq_rfree(frame, sk);
 		return 0;
 	}
 
@@ -360,7 +362,7 @@ int quic_inq_handshake_tail(struct sock *sk, struct quic_frame *frame)
 	pr_debug("[QUIC] %s recv_offset: %llu offset: %llu level: %u len: %u\n",
 		 __func__, crypto_offset, offset, level, frame->len);
 	if (offset < crypto_offset) { /* dup */
-		kfree(frame);
+		quic_inq_rfree(frame, sk);
 		return 0;
 	}
 	if (atomic_read(&sk->sk_rmem_alloc) + frame->len > sk->sk_rcvbuf) {
@@ -475,7 +477,7 @@ int quic_inq_event_recv(struct sock *sk, u8 event, void *args)
 		return -EINVAL;
 	}
 
-	frame = quic_frame_alloc(1 + args_len, GFP_ATOMIC);
+	frame = quic_frame_alloc(1 + args_len, NULL, GFP_ATOMIC);
 	if (!frame)
 		return -ENOMEM;
 	p = quic_put_data(frame->data, &event, 1);

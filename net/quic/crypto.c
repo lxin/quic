@@ -845,7 +845,7 @@ int quic_crypto_generate_token(struct quic_crypto *crypto, void *addr, u32 addrl
 	struct scatterlist *sg;
 	int err, len;
 
-	quic_data(&srt, random_data, 32);
+	quic_data(&srt, quic_random_data, 32);
 	quic_data(&k, key, 16);
 	quic_data(&i, iv, 12);
 	err = quic_crypto_keys_derive(crypto->secret_tfm, &srt, &k, &i, NULL, QUIC_VERSION_V1);
@@ -892,7 +892,7 @@ int quic_crypto_verify_token(struct quic_crypto *crypto, void *addr, u32 addrlen
 	int err;
 	u64 t;
 
-	quic_data(&srt, random_data, 32);
+	quic_data(&srt, quic_random_data, 32);
 	quic_data(&k, key, 16);
 	quic_data(&i, iv, 12);
 	err = quic_crypto_keys_derive(crypto->secret_tfm, &srt, &k, &i, NULL, QUIC_VERSION_V1);
@@ -951,7 +951,7 @@ static int quic_crypto_generate_key(struct quic_crypto *crypto, void *data, u32 
 	int err;
 
 	quic_data(&salt, data, len);
-	quic_data(&k, random_data, 32);
+	quic_data(&k, quic_random_data, 32);
 	quic_data(&s, secret, 32);
 	err = quic_crypto_hkdf_extract(tfm, &salt, &k, &s);
 	if (err)

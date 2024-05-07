@@ -21,9 +21,10 @@
 #include <linux/version.h>
 
 struct quic_hash_table quic_hash_tables[QUIC_HT_MAX_TABLES] __read_mostly;
+struct kmem_cache *quic_frame_cachep __read_mostly;
+struct workqueue_struct *quic_wq __read_mostly;
 struct percpu_counter quic_sockets_allocated;
-struct workqueue_struct *quic_wq;
-u8 random_data[32];
+u8 quic_random_data[32] __read_mostly;
 
 long sysctl_quic_mem[3];
 int sysctl_quic_rmem[3];
@@ -889,6 +890,11 @@ static __init int quic_init(void)
 	if (quic_hash_tables_init())
 		goto err;
 
+	quic_frame_cachep = kmem_cache_create("quic_frame", sizeof(struct quic_frame),
+					      0, SLAB_HWCACHE_ALIGN, NULL);
+	if (!quic_frame_cachep)
+		goto err_cachep;
+
 	quic_wq = create_workqueue("quic_workqueue");
 	if (!quic_wq)
 		goto err_wq;
@@ -907,7 +913,7 @@ static __init int quic_init(void)
 
 	quic_sysctl_register();
 
-	get_random_bytes(random_data, 32);
+	get_random_bytes(quic_random_data, 32);
 	pr_info("[QUIC] init\n");
 	return 0;
 
@@ -918,6 +924,8 @@ err_protosw:
 err_percpu_counter:
 	destroy_workqueue(quic_wq);
 err_wq:
+	kmem_cache_destroy(quic_frame_cachep);
+err_cachep:
 	quic_hash_tables_destroy();
 err:
 	pr_err("[QUIC] init error\n");

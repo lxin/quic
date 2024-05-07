@@ -681,7 +681,7 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb, u
 		}
 
 		pr_debug("[QUIC] %s number: %llu level: %d len: %d\n", __func__,
-			cb->number, packet->level, skb->len);
+			 cb->number, packet->level, skb->len);
 
 		err = quic_pnmap_check(pnmap, cb->number);
 		if (err) {
@@ -692,6 +692,7 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb, u
 		frame.data = skb->data + cb->number_offset + cb->number_len;
 		frame.len = cb->length - cb->number_len - packet->taglen[1];
 		frame.level = packet->level;
+		frame.skb = skb;
 		err = quic_frame_process(sk, &frame);
 		if (err)
 			goto err;
@@ -845,6 +846,7 @@ static int quic_packet_app_process(struct sock *sk, struct sk_buff *skb, u8 resu
 
 	frame.data = skb->data + cb->number_offset + cb->number_len;
 	frame.len = cb->length - cb->number_len - taglen;
+	frame.skb = skb;
 	err = quic_frame_process(sk, &frame);
 	if (err)
 		goto err;
