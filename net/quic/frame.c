@@ -24,6 +24,16 @@
  * }
  */
 
+static bool quic_frame_copy_from_iter_full(void *addr, size_t bytes, struct iov_iter *i)
+{
+	size_t copied = _copy_from_iter(addr, bytes, i);
+
+	if (likely(copied == bytes))
+		return true;
+	iov_iter_revert(i, copied);
+	return false;
+}
+
 static struct quic_frame *quic_frame_ack_create(struct sock *sk, void *data, u8 type)
 {
 	struct quic_outqueue *outq = quic_outq(sk);
@@ -193,7 +203,7 @@ static struct quic_frame *quic_frame_stream_create(struct sock *sk, void *data, 
 	p = quic_put_var(p, msg_len);
 	frame_len = (u32)(p - frame->data);
 
-	if (!copy_from_iter_full(p, msg_len, info->msg)) {
+	if (!quic_frame_copy_from_iter_full(p, msg_len, info->msg)) {
 		quic_frame_free(frame);
 		return NULL;
 	}
@@ -247,7 +257,7 @@ static struct quic_frame *quic_frame_crypto_create(struct sock *sk, void *data, 
 		p = quic_put_var(frame->data, type);
 		p = quic_put_var(p, 0);
 		p = quic_put_var(p, msg_len);
-		if (!copy_from_iter_full(p, msg_len, info->msg)) {
+		if (!quic_frame_copy_from_iter_full(p, msg_len, info->msg)) {
 			quic_frame_free(frame);
 			return NULL;
 		}
@@ -267,7 +277,7 @@ static struct quic_frame *quic_frame_crypto_create(struct sock *sk, void *data, 
 	p = quic_put_var(frame->data, type);
 	p = quic_put_var(p, offset);
 	p = quic_put_var(p, msg_len);
-	if (!copy_from_iter_full(p, msg_len, info->msg)) {
+	if (!quic_frame_copy_from_iter_full(p, msg_len, info->msg)) {
 		quic_frame_free(frame);
 		return NULL;
 	}
@@ -1288,7 +1298,7 @@ static struct quic_frame *quic_frame_datagram_create(struct sock *sk, void *data
 	p = quic_put_var(p, msg_len);
 	frame_len = (u32)(p - frame->data);
 
-	if (!copy_from_iter_full(p, msg_len, msg)) {
+	if (!quic_frame_copy_from_iter_full(p, msg_len, msg)) {
 		quic_frame_free(frame);
 		return NULL;
 	}
