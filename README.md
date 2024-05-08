@@ -213,29 +213,55 @@ in [ktls-utils](https://github.com/lxin/ktls-utils) will handle the handshake re
     # make
     # sudo make install
 
-    On server:
-    # iperf3 -s --pkey /root/quic/tests/keys/server-key.pem  --cert /root/quic/tests/keys/server-cert.pem
+QUIC vs kTLS iperf testing over 100G physical NIC with different packet size and MTU:
 
-    On client:
-    # iperf3 -c $SERVER_IP --quic -l $PACKET_LEN
+      On server:
+      # iperf3 -s --pkey /root/quic/tests/keys/server-key.pem  \
+                  --cert /root/quic/tests/keys/server-cert.pem
 
-    QUIC vs kTLS iperf testing over 100G physical NIC with different packet size and MTU:
+      On client:
+      # iperf3 -c $SERVER_IP --quic -l $PACKET_LEN
 
       UNIT        size:1024        size:4096        size:16384        size:65536
       Gbits/sec   QUIC | kTLS      QUIC | kTLS      QUIC | kTLS       QUIC | kTLS
       ---------------------------------------------------------------------------
-      mtu:1500    1.63 | 2.16      2.83 | 5.04      3.17 | 7.84       3.47 | 7.95
+      mtu:1500    1.67 | 2.16      3.04 | 5.04      3.49 | 7.84       3.83 | 7.95
+      no GSO           | 1.73           | 3.12           | 4.05            | 4.28
       ---------------------------------------------------------------------------
-      mtu:4500    2.11 | 2.36      4.12 | 5.97      3.76 | 8.11       4.71 | 8.11
+      mtu:9000    2.17 | 2.41      5.47 | 6.19      6.45 | 8.66       7.48 | 8.90
+      no GSO           | 2.30           | 5.69           | 8.66            | 8.82
+
+
+QUIC (disable\_1rtt\_encryption) vs TCP iperf testing over 100G physical NIC with
+different packet size and MTU:
+
+      On server:
+      # iperf3 -s --pkey /root/quic/tests/keys/server-key.pem  \
+                  --cert /root/quic/tests/keys/server-cert.pem --no-cryption
+
+      On client:
+      # iperf3 -c $SERVER_IP --quic -l $PACKET_LEN --no-cryption
+
+      UNIT        size:1024        size:4096        size:16384        size:65536
+      Gbits/sec   QUIC | TCP       QUIC | TCP       QUIC | TCP        QUIC | TCP
       ---------------------------------------------------------------------------
-      mtu:9000    2.11 | 2.41      5.24 | 6.19      5.03 | 8.66       6.79 | 8.90
+      mtu:1500    2.17 | 2.49      3.59 | 8.36      6.09 | 15.1       6.92 | 16.2
+      no GSO           | 2.50           | 4.12           | 4.86            | 5.04
+      ---------------------------------------------------------------------------
+      mtu:9000    2.47 | 2.54      7.66 | 7.97      14.7 | 20.3       19.1 | 31.3
+      no GSO           | 2.51           | 8.34           | 18.3            | 22.3
 
-    Note kTLS testing is using iperf from https://github.com/Mellanox/iperf_ssl.
-    The performance gap between QUIC and kTLS might be caused by:
 
-      - QUIC does not support GSO.
+Note kTLS testing is using iperf from https://github.com/Mellanox/iperf_ssl, and
+the only way to disable TCP GSO is to remove sk_is_tcp() check in sk_setup_caps()
+and bring sk_can_gso() back in kernel code.
+
+As the test data shows, the TCP GSO contributes to performance a lot for TCP and
+kTLS with mtu 1500 and large msgs. With TCP GSO disabled, the small performance
+gap between QUIC and kTLS, QUIC with disable_1rtt_encryption and TCP is caused by:
+
       - QUIC has an extra copy on TX path.
-      - QUIC has an extra encryption for header.
+      - QUIC has an extra encryption for header protection.
       - QUIC has a longer header for the stream DATA.
 
 ## USAGE
