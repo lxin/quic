@@ -152,12 +152,10 @@ int quic_outq_transmit(struct sock *sk)
 	return quic_packet_flush(sk);
 }
 
-void quic_outq_wfree(struct quic_frame *frame, struct sock *sk)
+void quic_outq_wfree(int len, struct sock *sk)
 {
-	int len = frame->bytes;
-
 	if (!len)
-		return quic_frame_free(frame);
+		return;
 
 	WARN_ON(refcount_sub_and_test(len, &sk->sk_wmem_alloc));
 	sk_wmem_queued_add(sk, -len);
@@ -165,13 +163,12 @@ void quic_outq_wfree(struct quic_frame *frame, struct sock *sk)
 
 	if (sk_stream_wspace(sk) > 0)
 		sk->sk_write_space(sk);
-
-	quic_frame_free(frame);
 }
 
-static void quic_outq_set_owner_w(struct quic_frame *frame, struct sock *sk)
+void quic_outq_set_owner_w(int len, struct sock *sk)
 {
-	int len = frame->bytes;
+	if (!len)
+		return;
 
 	refcount_add(len, &sk->sk_wmem_alloc);
 	sk_wmem_queued_add(sk, len);
@@ -193,7 +190,6 @@ void quic_outq_stream_tail(struct sock *sk, struct quic_frame *frame, bool cork)
 		stream->send.state = QUIC_STREAM_SEND_STATE_SENT;
 	}
 
-	quic_outq_set_owner_w(frame, sk);
 	list_add_tail(&frame->list, &quic_outq(sk)->stream_list);
 	if (!cork)
 		quic_outq_transmit(sk);
@@ -201,7 +197,6 @@ void quic_outq_stream_tail(struct sock *sk, struct quic_frame *frame, bool cork)
 
 void quic_outq_dgram_tail(struct sock *sk, struct quic_frame *frame, bool cork)
 {
-	quic_outq_set_owner_w(frame, sk);
 	list_add_tail(&frame->list, &quic_outq(sk)->datagram_list);
 	if (!cork)
 		quic_outq_transmit(sk);
@@ -317,8 +312,8 @@ void quic_outq_transmit_app_close(struct sock *sk)
 	}
 }
 
-void quic_outq_transmitted_sack(struct sock *sk, u8 level, s64 largest, s64 smallest,
-				s64 ack_largest, u32 ack_delay)
+int quic_outq_transmitted_sack(struct sock *sk, u8 level, s64 largest, s64 smallest,
+			       s64 ack_largest, u32 ack_delay)
 {
 	u32 pathmtu, acked_bytes = 0, transmit_ts = 0, rto, taglen;
 	struct quic_path_addr *path = quic_dst(sk);
@@ -405,15 +400,16 @@ unlink:
 		outq->data_inflight -= frame->bytes;
 		outq->inflight -= frame->len;
 		list_del(&frame->list);
-		quic_outq_wfree(frame, sk);
+		quic_frame_free(frame);
 	}
 
 	outq->rtx_count = 0;
-	if (!acked_bytes)
-		return;
-	quic_cong_cwnd_update_after_sack(cong, acked_number, transmit_ts,
-					 acked_bytes, outq->data_inflight);
-	quic_outq_set_window(outq, quic_cong_window(cong));
+	if (acked_bytes) {
+		quic_cong_cwnd_update_after_sack(cong, acked_number, transmit_ts,
+						 acked_bytes, outq->data_inflight);
+		quic_outq_set_window(outq, quic_cong_window(cong));
+	}
+	return acked_bytes;
 }
 
 void quic_outq_update_loss_timer(struct sock *sk, u8 level)
@@ -470,9 +466,9 @@ static void quic_outq_retransmit_one(struct sock *sk, struct quic_frame *frame)
 int quic_outq_retransmit_mark(struct sock *sk, u8 level, u8 immediate)
 {
 	struct quic_pnmap *pnmap = quic_pnmap(sk, level);
+	u32 transmit_ts, now, rto, count = 0, bytes = 0;
 	struct quic_outqueue *outq = quic_outq(sk);
 	struct quic_cong *cong = quic_cong(sk);
-	u32 transmit_ts, now, rto, count = 0;
 	struct quic_frame *frame, *tmp;
 	struct list_head *head;
 	s64 number, last;
@@ -496,7 +492,8 @@ int quic_outq_retransmit_mark(struct sock *sk, u8 level, u8 immediate)
 		outq->inflight -= frame->len;
 		list_del(&frame->list);
 		if (quic_frame_is_dgram(frame->type)) { /* no need to retransmit dgram */
-			quic_outq_wfree(frame, sk);
+			bytes += frame->bytes;
+			quic_frame_free(frame);
 		} else {
 			quic_outq_retransmit_one(sk, frame); /* mark as loss */
 			count++;
@@ -507,6 +504,7 @@ int quic_outq_retransmit_mark(struct sock *sk, u8 level, u8 immediate)
 			quic_outq_set_window(outq, quic_cong_window(cong));
 		}
 	}
+	quic_outq_wfree(bytes, sk);
 	quic_outq_update_loss_timer(sk, level);
 	return count;
 }
@@ -515,15 +513,19 @@ void quic_outq_retransmit_list(struct sock *sk, struct list_head *head)
 {
 	struct quic_outqueue *outq = quic_outq(sk);
 	struct quic_frame *frame, *tmp;
+	int bytes = 0;
 
 	list_for_each_entry_safe(frame, tmp, head, list) {
 		list_del(&frame->list);
 		outq->data_inflight -= frame->bytes;
-		if (quic_frame_is_dgram(frame->type))
-			quic_outq_wfree(frame, sk);
-		else
-			quic_outq_retransmit_one(sk, frame);
+		if (quic_frame_is_dgram(frame->type)) {
+			bytes += frame->bytes;
+			quic_frame_free(frame);
+			continue;
+		}
+		quic_outq_retransmit_one(sk, frame);
 	}
+	quic_outq_wfree(bytes, sk);
 }
 
 void quic_outq_transmit_one(struct sock *sk, u8 level)
@@ -592,6 +594,7 @@ void quic_outq_stream_purge(struct sock *sk, struct quic_stream *stream)
 	struct quic_frame *frame, *tmp;
 	struct quic_pnmap *pnmap;
 	struct list_head *head;
+	int bytes = 0;
 
 	head = &outq->transmitted_list;
 	list_for_each_entry_safe(frame, tmp, head, list) {
@@ -602,7 +605,8 @@ void quic_outq_stream_purge(struct sock *sk, struct quic_stream *stream)
 		outq->data_inflight -= frame->bytes;
 		outq->inflight -= frame->len;
 		list_del(&frame->list);
-		quic_outq_wfree(frame, sk);
+		bytes += frame->bytes;
+		quic_frame_free(frame);
 	}
 
 	head = &outq->stream_list;
@@ -610,18 +614,23 @@ void quic_outq_stream_purge(struct sock *sk, struct quic_stream *stream)
 		if (frame->stream != stream)
 			continue;
 		list_del(&frame->list);
-		quic_outq_wfree(frame, sk);
+		bytes += frame->bytes;
+		quic_frame_free(frame);
 	}
+	quic_outq_wfree(bytes, sk);
 }
 
 void quic_outq_list_purge(struct sock *sk, struct list_head *head)
 {
 	struct quic_frame *frame, *next;
+	int bytes = 0;
 
 	list_for_each_entry_safe(frame, next, head, list) {
 		list_del(&frame->list);
-		quic_outq_wfree(frame, sk);
+		bytes += frame->bytes;
+		quic_frame_free(frame);
 	}
+	quic_outq_wfree(bytes, sk);
 }
 
 static void quic_outq_encrypted_work(struct work_struct *work)

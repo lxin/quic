@@ -724,8 +724,8 @@ static int quic_frame_ack_process(struct sock *sk, struct quic_frame *frame, u8 
 	u64 largest, smallest, range, delay, count, gap, i, ecn_count[3];
 	u8 *p = frame->data, level = frame->level;
 	struct quic_cong *cong = quic_cong(sk);
+	u32 len = frame->len, bytes;
 	struct quic_pnmap *map;
-	u32 len = frame->len;
 
 	if (!quic_get_var(&p, &len, &largest) ||
 	    !quic_get_var(&p, &len, &delay) ||
@@ -740,7 +740,7 @@ static int quic_frame_ack_process(struct sock *sk, struct quic_frame *frame, u8 
 	}
 
 	smallest = largest - range;
-	quic_outq_transmitted_sack(sk, level, largest, smallest, largest, delay);
+	bytes = quic_outq_transmitted_sack(sk, level, largest, smallest, largest, delay);
 
 	for (i = 0; i < count; i++) {
 		if (!quic_get_var(&p, &len, &gap) ||
@@ -748,7 +748,7 @@ static int quic_frame_ack_process(struct sock *sk, struct quic_frame *frame, u8 
 			return -EINVAL;
 		largest = smallest - gap - 2;
 		smallest = largest - range;
-		quic_outq_transmitted_sack(sk, level, largest, smallest, 0, 0);
+		bytes += quic_outq_transmitted_sack(sk, level, largest, smallest, 0, 0);
 	}
 
 	if (type == QUIC_FRAME_ACK_ECN) {
@@ -762,6 +762,7 @@ static int quic_frame_ack_process(struct sock *sk, struct quic_frame *frame, u8 
 		}
 	}
 
+	quic_outq_wfree(bytes, sk);
 	quic_outq_retransmit_mark(sk, level, 0);
 
 	return frame->len - len;

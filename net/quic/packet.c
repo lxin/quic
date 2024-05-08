@@ -1038,7 +1038,7 @@ static u8 *quic_packet_pack_frames(struct sock *sk, struct sk_buff *skb, s64 num
 		pr_debug("[QUIC] %s number: %llu type: %u packet_len: %u frame_len: %u level: %u\n",
 			 __func__, number, frame->type, skb->len, frame->len, packet->level);
 		if (!quic_frame_retransmittable(frame->type)) {
-			quic_outq_wfree(frame, sk);
+			quic_frame_free(frame);
 			continue;
 		}
 		len += frame->len;

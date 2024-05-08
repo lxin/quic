@@ -626,7 +626,7 @@ static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 	struct quic_stream *stream;
 	struct quic_frame *frame;
 	bool has_hinfo = false;
-	int err = 0;
+	int err = 0, bytes = 0;
 	long timeo;
 
 	lock_sock(sk);
@@ -670,6 +670,7 @@ static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 			frame = quic_frame_create(sk, QUIC_FRAME_DATAGRAM_LEN, &msg->msg_iter);
 			if (!frame)
 				goto out;
+			bytes += frame->bytes;
 			quic_outq_dgram_tail(sk, frame, true);
 		}
 		goto out;
@@ -696,9 +697,11 @@ static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 		frame = quic_frame_create(sk, QUIC_FRAME_STREAM, &msginfo);
 		if (!frame)
 			goto out;
+		bytes += frame->bytes;
 		quic_outq_stream_tail(sk, frame, true);
 	}
 out:
+	quic_outq_set_owner_w(bytes, sk);
 	err = msg_len - iov_iter_count(&msg->msg_iter);
 	if (!(msg->msg_flags & MSG_MORE) && err)
 		quic_outq_transmit(sk);

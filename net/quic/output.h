@@ -190,8 +190,8 @@ void quic_outq_stream_tail(struct sock *sk, struct quic_frame *frame, bool cork)
 void quic_outq_dgram_tail(struct sock *sk, struct quic_frame *frame, bool cork);
 void quic_outq_ctrl_tail(struct sock *sk, struct quic_frame *frame, bool cork);
 void quic_outq_transmitted_tail(struct sock *sk, struct quic_frame *frame);
-void quic_outq_transmitted_sack(struct sock *sk, u8 level, s64 largest,
-				s64 smallest, s64 ack_largest, u32 ack_delay);
+int quic_outq_transmitted_sack(struct sock *sk, u8 level, s64 largest,
+			       s64 smallest, s64 ack_largest, u32 ack_delay);
 void quic_outq_retransmit_list(struct sock *sk, struct list_head *head);
 int quic_outq_retransmit_mark(struct sock *sk, u8 level, u8 immediate);
 void quic_outq_validate_path(struct sock *sk, struct quic_frame *frame,
@@ -206,4 +206,5 @@ void quic_outq_transmit_probe(struct sock *sk);
 void quic_outq_init(struct sock *sk);
 void quic_outq_free(struct sock *sk);
 void quic_outq_encrypted_tail(struct sock *sk, struct sk_buff *skb);
-void quic_outq_wfree(struct quic_frame *frame, struct sock *sk);
+void quic_outq_wfree(int len, struct sock *sk);
+void quic_outq_set_owner_w(int len, struct sock *sk);
