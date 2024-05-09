@@ -762,9 +762,9 @@ static int quic_recvmsg(struct sock *sk, struct msghdr *msg, size_t len, int fla
 {
 	int nonblock = flags & MSG_DONTWAIT;
 #endif
+	int err, copy, copied = 0, freed = 0, bytes = 0;
 	struct quic_inqueue *inq = quic_inq(sk);
 	struct quic_handshake_info hinfo = {};
-	int err, copy, copied = 0, freed = 0;
 	struct quic_stream_info sinfo = {};
 	int fin, off, event, dgram, level;
 	struct quic_frame *frame, *next;
@@ -813,6 +813,7 @@ static int quic_recvmsg(struct sock *sk, struct msghdr *msg, size_t len, int fla
 			frame->offset += copy;
 			break;
 		}
+		bytes += frame->len;
 		if (event) {
 			if (frame == quic_inq_last_event(inq))
 				quic_inq_set_last_event(inq, NULL); /* no more event on list */
@@ -822,22 +823,22 @@ static int quic_recvmsg(struct sock *sk, struct msghdr *msg, size_t len, int fla
 			msg->msg_flags |= MSG_EOR;
 			sinfo.stream_flag |= QUIC_STREAM_FLAG_FIN;
 			list_del(&frame->list);
-			quic_inq_rfree(frame, sk);
+			quic_frame_free(frame);
 			break;
 		} else if (dgram) {
 			msg->msg_flags |= MSG_EOR;
 			sinfo.stream_flag |= QUIC_STREAM_FLAG_FIN;
 			list_del(&frame->list);
-			quic_inq_rfree(frame, sk);
+			quic_frame_free(frame);
 			break;
 		} else if (!stream) {
 			list_del(&frame->list);
-			quic_inq_rfree(frame, sk);
+			quic_frame_free(frame);
 			break;
 		}
 		freed += frame->len;
 		list_del(&frame->list);
-		quic_inq_rfree(frame, sk);
+		quic_frame_free(frame);
 		if (fin) {
 			stream->recv.state = QUIC_STREAM_RECV_STATE_READ;
 			msg->msg_flags |= MSG_EOR;
@@ -857,6 +858,8 @@ static int quic_recvmsg(struct sock *sk, struct msghdr *msg, size_t len, int fla
 	}
 	if (event || stream)
 		put_cmsg(msg, IPPROTO_QUIC, QUIC_STREAM_INFO, sizeof(sinfo), &sinfo);
+
+	quic_inq_rfree(bytes, sk);
 	err = copied;
 out:
 	release_sock(sk);

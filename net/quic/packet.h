@@ -33,7 +33,6 @@ struct quic_packet {
 	/* recv */
 	u32 version;
 	u16 errcode;
-	u8  frame;
 	u8  non_probing:1;
 	u8  ack_immediate:1;
 	union quic_addr daddr;
@@ -95,7 +94,6 @@ static inline void quic_packet_reset(struct quic_packet *packet)
 {
 	packet->len = 0;
 	packet->level = 0;
-	packet->frame = 0;
 	packet->errcode = 0;
 	packet->non_probing = 0;
 	packet->ack_eliciting = 0;

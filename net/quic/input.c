@@ -12,31 +12,22 @@
 
 #include "socket.h"
 
-void quic_inq_rfree(struct quic_frame *frame, struct sock *sk)
+void quic_inq_rfree(int len, struct sock *sk)
 {
-	int len = frame->bytes;
+	if (!len)
+		return;
 
-	if (len) {
-		atomic_sub(len, &sk->sk_rmem_alloc);
-		sk_mem_uncharge(sk, len);
-	}
-
-	if (frame->skb) {
-		kfree_skb(frame->skb);
-		frame->data = NULL;
-	}
-	quic_frame_free(frame);
+	atomic_sub(len, &sk->sk_rmem_alloc);
+	sk_mem_uncharge(sk, len);
 }
 
-void quic_inq_set_owner_r(struct quic_frame *frame, struct sock *sk)
+void quic_inq_set_owner_r(int len, struct sock *sk)
 {
-	if (frame->bytes) {
-		atomic_sub(frame->bytes, &sk->sk_rmem_alloc);
-		sk_mem_uncharge(sk, frame->bytes);
-	}
-	frame->bytes = frame->len;
-	atomic_add(frame->len, &sk->sk_rmem_alloc);
-	sk_mem_charge(sk, frame->len);
+	if (!len)
+		return;
+
+	atomic_add(len, &sk->sk_rmem_alloc);
+	sk_mem_charge(sk, len);
 }
 
 int quic_rcv(struct sk_buff *skb)
@@ -156,9 +147,10 @@ static void quic_inq_recv_tail(struct sock *sk, struct quic_stream *stream,
 
 	overlap = stream->recv.offset - frame->offset;
 	if (overlap) {
+		quic_inq_rfree(frame->len, sk);
 		frame->data += overlap;
 		frame->len -= overlap;
-		quic_inq_set_owner_r(frame, sk);
+		quic_inq_set_owner_r(frame->len, sk);
 		frame->offset += overlap;
 	}
 
@@ -233,15 +225,14 @@ int quic_inq_reasm_tail(struct sock *sk, struct quic_frame *frame)
 	struct quic_frame *pos;
 
 	if (stream->recv.offset >= offset + frame->len) { /* dup */
-		quic_inq_rfree(frame, sk);
+		quic_frame_free(frame);
 		return 0;
 	}
 
-	if (atomic_read(&sk->sk_rmem_alloc) + frame->len > sk->sk_rcvbuf ||
-	    !quic_sk_rmem_schedule(sk, frame->len))
+	quic_inq_set_owner_r(frame->len, sk);
+	if (sk_rmem_alloc_get(sk) > sk->sk_rcvbuf || !quic_sk_rmem_schedule(sk, frame->len))
 		return -ENOBUFS;
 
-	quic_inq_set_owner_r(frame, sk);
 	off = offset + frame->len;
 	if (off > stream->recv.highest) {
 		highest = off - stream->recv.highest;
@@ -275,7 +266,8 @@ int quic_inq_reasm_tail(struct sock *sk, struct quic_frame *frame)
 				break;
 			}
 			if (pos->offset + pos->len >= offset + frame->len) { /* dup */
-				quic_inq_rfree(frame, sk);
+				quic_inq_rfree(frame->len, sk);
+				quic_frame_free(frame);
 				return 0;
 			}
 		}
@@ -317,7 +309,8 @@ int quic_inq_reasm_tail(struct sock *sk, struct quic_frame *frame)
 		list_del(&frame->list);
 		stream->recv.frags--;
 		if (frame->offset + frame->len <= stream->recv.offset) { /* dup */
-			quic_inq_rfree(frame, sk);
+			quic_inq_rfree(frame->len, sk);
+			quic_frame_free(frame);
 			continue;
 		}
 		quic_inq_recv_tail(sk, stream, frame);
@@ -329,23 +322,29 @@ void quic_inq_stream_purge(struct sock *sk, struct quic_stream *stream)
 {
 	struct list_head *head = &quic_inq(sk)->reassemble_list;
 	struct quic_frame *frame, *next;
+	int bytes = 0;
 
 	list_for_each_entry_safe(frame, next, head, list) {
 		if (frame->stream != stream)
 			continue;
 		list_del(&frame->list);
-		quic_inq_rfree(frame, sk);
+		bytes += frame->len;
+		quic_frame_free(frame);
 	}
+	quic_inq_rfree(bytes, sk);
 }
 
 static void quic_inq_list_purge(struct sock *sk, struct list_head *head)
 {
 	struct quic_frame *frame, *next;
+	int bytes = 0;
 
 	list_for_each_entry_safe(frame, next, head, list) {
 		list_del(&frame->list);
-		quic_inq_rfree(frame, sk);
+		bytes += frame->len;
+		quic_frame_free(frame);
 	}
+	quic_inq_rfree(bytes, sk);
 }
 
 int quic_inq_handshake_tail(struct sock *sk, struct quic_frame *frame)
@@ -362,14 +361,14 @@ int quic_inq_handshake_tail(struct sock *sk, struct quic_frame *frame)
 	pr_debug("[QUIC] %s recv_offset: %llu offset: %llu level: %u len: %u\n",
 		 __func__, crypto_offset, offset, level, frame->len);
 	if (offset < crypto_offset) { /* dup */
-		quic_inq_rfree(frame, sk);
+		quic_frame_free(frame);
 		return 0;
 	}
-	if (atomic_read(&sk->sk_rmem_alloc) + frame->len > sk->sk_rcvbuf) {
+	quic_inq_set_owner_r(frame->len, sk);
+	if (sk_rmem_alloc_get(sk) > sk->sk_rcvbuf) {
 		frame->errcode = QUIC_TRANSPORT_ERROR_CRYPTO_BUF_EXCEEDED;
 		return -ENOBUFS;
 	}
-	quic_inq_set_owner_r(frame, sk);
 	head = &inq->handshake_list;
 	if (offset > crypto_offset) {
 		list_for_each_entry(pos, head, list) {
@@ -384,7 +383,8 @@ int quic_inq_handshake_tail(struct sock *sk, struct quic_frame *frame)
 				break;
 			}
 			if (pos->offset == offset) { /* dup */
-				quic_inq_rfree(frame, sk);
+				quic_inq_rfree(frame->len, sk);
+				quic_frame_free(frame);
 				return 0;
 			}
 		}
@@ -489,6 +489,7 @@ int quic_inq_event_recv(struct sock *sk, u8 event, void *args)
 	/* always put event ahead of data */
 	if (quic_inq(sk)->last_event)
 		head = &quic_inq(sk)->last_event->list;
+	quic_inq_set_owner_r(frame->len, sk);
 	list_add(&frame->list, head);
 	quic_inq(sk)->last_event = frame;
 	sk->sk_data_ready(sk);
@@ -497,11 +498,10 @@ int quic_inq_event_recv(struct sock *sk, u8 event, void *args)
 
 int quic_inq_dgram_tail(struct sock *sk, struct quic_frame *frame)
 {
-	if (atomic_read(&sk->sk_rmem_alloc) + frame->len > sk->sk_rcvbuf ||
-	    !quic_sk_rmem_schedule(sk, frame->len))
+	quic_inq_set_owner_r(frame->len, sk);
+	if (sk_rmem_alloc_get(sk) > sk->sk_rcvbuf || !quic_sk_rmem_schedule(sk, frame->len))
 		return -ENOBUFS;
 
-	quic_inq_set_owner_r(frame, sk);
 	frame->dgram = 1;
 	list_add_tail(&frame->list, &quic_inq(sk)->stream_list);
 	sk->sk_data_ready(sk);

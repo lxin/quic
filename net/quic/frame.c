@@ -654,7 +654,8 @@ static int quic_frame_crypto_process(struct sock *sk, struct quic_frame *frame, 
 	err = quic_inq_handshake_tail(sk, nframe);
 	if (err) {
 		frame->errcode = nframe->errcode;
-		quic_inq_rfree(nframe, sk);
+		quic_inq_rfree(nframe->len, sk);
+		quic_frame_free(nframe);
 		return err;
 	}
 out:
@@ -711,7 +712,8 @@ static int quic_frame_stream_process(struct sock *sk, struct quic_frame *frame, 
 	err = quic_inq_reasm_tail(sk, nframe);
 	if (err) {
 		frame->errcode = nframe->errcode;
-		quic_inq_rfree(nframe, sk);
+		quic_inq_rfree(nframe->len, sk);
+		quic_frame_free(nframe);
 		return err;
 	}
 
@@ -1344,7 +1346,8 @@ static int quic_frame_datagram_process(struct sock *sk, struct quic_frame *frame
 
 	err = quic_inq_dgram_tail(sk, nframe);
 	if (err) {
-		quic_inq_rfree(nframe, sk);
+		quic_inq_rfree(nframe->len, sk);
+		quic_frame_free(nframe);
 		return err;
 	}
 
@@ -1439,8 +1442,8 @@ int quic_frame_process(struct sock *sk, struct quic_frame *frame)
 		if (ret < 0) {
 			pr_warn("[QUIC] %s type: %x level: %d err: %d\n", __func__,
 				type, level, ret);
+			frame->type = type;
 			packet->errcode = frame->errcode;
-			packet->frame = type;
 			return ret;
 		}
 		if (quic_frame_ack_eliciting(type)) {
@@ -1883,6 +1886,9 @@ out:
 
 void quic_frame_free(struct quic_frame *frame)
 {
-	kfree(frame->data);
+	if (!frame->type && frame->skb) /* type is 0 on rx path */
+		kfree_skb(frame->skb);
+	else
+		kfree(frame->data);
 	kmem_cache_free(quic_frame_cachep, frame);
 }

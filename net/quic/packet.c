@@ -719,7 +719,7 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb, u
 err:
 	pr_warn("[QUIC] %s number: %llu level: %d err: %d\n", __func__,
 		cb->number, packet->level, err);
-	quic_outq_transmit_close(sk, packet->frame, packet->errcode, packet->level);
+	quic_outq_transmit_close(sk, frame.type, packet->errcode, packet->level);
 	kfree_skb(skb);
 	return err;
 }
@@ -858,7 +858,7 @@ static int quic_packet_app_process(struct sock *sk, struct sk_buff *skb, u8 resu
 
 err:
 	pr_warn("[QUIC] %s number: %llu len: %d err: %d\n", __func__, cb->number, skb->len, err);
-	quic_outq_transmit_close(sk, packet->frame, packet->errcode, 0);
+	quic_outq_transmit_close(sk, frame.type, packet->errcode, 0);
 	kfree_skb(skb);
 	return err;
 }
