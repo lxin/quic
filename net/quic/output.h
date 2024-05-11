@@ -19,7 +19,6 @@ struct quic_outqueue {
 	u64 last_max_bytes;
 	u64 data_inflight;
 	u64 max_bytes;
-	u64 inflight;
 	u64 window;
 	u64 bytes;
 
@@ -169,19 +168,9 @@ static inline u8 quic_outq_pref_addr(struct quic_outqueue *outq)
 	return outq->pref_addr;
 }
 
-static inline void quic_outq_inc_inflight(struct quic_outqueue *outq, u16 bytes)
+static inline u32 quic_outq_data_inflight(struct quic_outqueue *outq)
 {
-	outq->inflight += bytes;
-}
-
-static inline void quic_outq_dec_inflight(struct quic_outqueue *outq, u16 bytes)
-{
-	outq->inflight -= bytes;
-}
-
-static inline u32 quic_outq_inflight(struct quic_outqueue *outq)
-{
-	return outq->inflight;
+	return outq->data_inflight;
 }
 
 int quic_outq_transmit(struct sock *sk);

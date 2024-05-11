@@ -653,7 +653,7 @@ static int quic_seq_show(struct seq_file *seq, void *v)
 		outq = quic_outq(sk);
 		seq_printf(seq, "%d\t%lld\t%d\t%d\t%d\t%d\n", sk->sk_state,
 			   quic_outq_window(outq), quic_packet_mss(quic_packet(sk)),
-			   quic_outq_inflight(outq), READ_ONCE(sk->sk_wmem_queued),
+			   quic_outq_data_inflight(outq), READ_ONCE(sk->sk_wmem_queued),
 			   sk_rmem_alloc_get(sk));
 	}
 	spin_unlock(&head->lock);

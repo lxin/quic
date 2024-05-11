@@ -398,7 +398,6 @@ unlink:
 
 		quic_pnmap_dec_inflight(pnmap, frame->len);
 		outq->data_inflight -= frame->bytes;
-		outq->inflight -= frame->len;
 		list_del(&frame->list);
 		quic_frame_free(frame);
 	}
@@ -489,7 +488,6 @@ int quic_outq_retransmit_mark(struct sock *sk, u8 level, u8 immediate)
 		}
 		quic_pnmap_dec_inflight(pnmap, frame->len);
 		outq->data_inflight -= frame->bytes;
-		outq->inflight -= frame->len;
 		list_del(&frame->list);
 		if (quic_frame_is_dgram(frame->type)) { /* no need to retransmit dgram */
 			bytes += frame->bytes;
@@ -603,7 +601,6 @@ void quic_outq_stream_purge(struct sock *sk, struct quic_stream *stream)
 		pnmap = quic_pnmap(sk, frame->level);
 		quic_pnmap_dec_inflight(pnmap, frame->len);
 		outq->data_inflight -= frame->bytes;
-		outq->inflight -= frame->len;
 		list_del(&frame->list);
 		bytes += frame->bytes;
 		quic_frame_free(frame);

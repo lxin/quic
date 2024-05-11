@@ -1061,7 +1061,6 @@ static u8 *quic_packet_pack_frames(struct sock *sk, struct sk_buff *skb, s64 num
 	if (!len)
 		return p;
 
-	quic_outq_inc_inflight(quic_outq(sk), len);
 	quic_pnmap_inc_inflight(pnmap, len);
 	quic_pnmap_set_last_sent_ts(pnmap, now);
 	quic_outq_update_loss_timer(sk, level);
