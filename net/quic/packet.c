@@ -1018,8 +1018,8 @@ static u8 *quic_packet_pack_frames(struct sock *sk, struct sk_buff *skb, s64 num
 	struct quic_crypto_cb *cb = QUIC_CRYPTO_CB(skb);
 	struct quic_packet *packet = quic_packet(sk);
 	u32 now = jiffies_to_usecs(jiffies), len = 0;
+	struct quic_frame *frame, *next, *tmp = NULL;
 	u8 *p = skb->data + packet->len, ecn = 0;
-	struct quic_frame *frame, *tmp;
 	struct list_head *head;
 
 	cb->number_len = QUIC_PACKET_NUMBER_LEN;
@@ -1031,7 +1031,7 @@ static u8 *quic_packet_pack_frames(struct sock *sk, struct sk_buff *skb, s64 num
 	p = quic_put_int(p, number, cb->number_len);
 
 	head = &packet->frame_list;
-	list_for_each_entry_safe(frame, tmp, head, list) {
+	list_for_each_entry_safe(frame, next, head, list) {
 		list_del(&frame->list);
 		p = quic_put_data(p, frame->data, frame->len);
 		pr_debug("[QUIC] %s number: %llu type: %u packet_len: %u frame_len: %u level: %u\n",
@@ -1040,6 +1040,9 @@ static u8 *quic_packet_pack_frames(struct sock *sk, struct sk_buff *skb, s64 num
 			quic_frame_free(frame);
 			continue;
 		}
+		tmp = frame;
+		tmp->last = 0;
+		tmp->first = !len;
 		len += frame->len;
 
 		if (!packet->level && !ecn && packet->ecn_probes < 3) {
@@ -1060,6 +1063,7 @@ static u8 *quic_packet_pack_frames(struct sock *sk, struct sk_buff *skb, s64 num
 	if (!len)
 		return p;
 
+	tmp->last = 1;
 	quic_pnmap_inc_inflight(pnmap, len);
 	quic_pnmap_set_last_sent_ts(pnmap, now);
 	quic_outq_update_loss_timer(sk, level);

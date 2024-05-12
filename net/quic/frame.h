@@ -114,14 +114,16 @@ struct quic_frame {
 	u16 len;	/* data length */
 	u8  level;
 	u8  type;
+	u8  path_alt:2;	/* bit 1: src, bit 2: dst */
 
 	u32 transmit_ts;
 	u16 errcode;
 	u8  event;
 	u8  stream_fin:1;
-	u8  path_alt:2;	/* bit 1: src, bit 2: dst */
 	u8  padding:1;
 	u8  dgram:1;
+	u8  first:1;
+	u8  last:1;
 	u8  ecn:2;
 };
 
