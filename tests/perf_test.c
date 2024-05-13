@@ -89,6 +89,7 @@ struct options {
 	char *addr;
 	char *port;
 	uint8_t is_serv;
+	uint8_t no_crypt;
 	uint64_t tot_len;
 	uint64_t msg_len;
 };
@@ -101,6 +102,7 @@ static struct option long_options[] = {
 	{"msg_len",	required_argument,	0,	'm'},
 	{"tot_len",	required_argument,	0,	't'},
 	{"listen",	no_argument,		0,	'l'},
+	{"no_crypt",	no_argument,		0,	'x'},
 	{"help",	no_argument,		0,	'h'},
 	{0,		0,			0,	 0 }
 };
@@ -115,7 +117,8 @@ static void print_usage(char *cmd)
 	printf("    --cert/-c <c>:          certificate\n");
 	printf("    --help/-h <h>:          show help\n");
 	printf("    --msg_len/-m <m>:       msg_len to send\n");
-	printf("    --tot_len/-t <t>:       tot_len to send\n\n");
+	printf("    --tot_len/-t <t>:       tot_len to send\n");
+	printf("    --no_crypt/-x <x>:      disable 1rtt encryption\n\n");
 }
 
 static int parse_options(int argc, char *argv[], struct options *opts)
@@ -123,7 +126,7 @@ static int parse_options(int argc, char *argv[], struct options *opts)
 	int c, option_index = 0;
 
 	while (1) {
-		c = getopt_long(argc, argv, "la:p:m:t:k:c:h", long_options, &option_index);
+		c = getopt_long(argc, argv, "la:p:m:t:k:c:xh", long_options, &option_index);
 		if (c == -1)
 			break;
 
@@ -152,6 +155,9 @@ static int parse_options(int argc, char *argv[], struct options *opts)
 			opts->tot_len = atoll(optarg);
 			if (opts->tot_len > TOT_LEN)
 				return -1;
+			break;
+		case 'x':
+			opts->no_crypt = 1;
 			break;
 		case 'h':
 			print_usage(argv[0]);
@@ -219,6 +225,7 @@ listen:
 	param.grease_quic_bit = 1;
 	param.certificate_request = 1;
 	param.stateless_reset = 1;
+	param.disable_1rtt_encryption = opts->no_crypt;
 	if (setsockopt(listenfd, SOL_QUIC, QUIC_SOCKOPT_TRANSPORT_PARAM, &param, sizeof(param)))
 		return -1;
 
@@ -325,6 +332,7 @@ static int do_client(struct options *opts)
 		param.version = 5; /* invalid version to trigger version negotiation */
 		param.receive_session_ticket = 1;
 		param.payload_cipher_type = TLS_CIPHER_CHACHA20_POLY1305;
+		param.disable_1rtt_encryption = opts->no_crypt;
 		if (setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_TRANSPORT_PARAM,
 			       &param, sizeof(param)))
 			return -1;

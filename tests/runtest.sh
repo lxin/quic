@@ -54,18 +54,23 @@ daemon_run ./perf_test -l --pkey ./keys/server-key.pem --cert ./keys/server-cert
 ./perf_test --addr 127.0.0.1 || exit 1
 daemon_stop "perf_test"
 
-print_start "Performance Tests (IPv6)"
+print_start "Performance Tests (IPv6, Disable 1RTT Encryption)"
+daemon_run ./perf_test -l --pkey ./keys/server-key.pem --cert ./keys/server-cert.pem --no_crypt
+./perf_test --addr ::1 --no_crypt || exit 1
+daemon_stop "perf_test"
+
+print_start "Performance Tests (IPv6, CHACHA20_POLY1305)"
 daemon_run ./perf_test -l --pkey ./keys/server-key.pem --cert ./keys/server-cert.pem
 ./perf_test --addr ::1 || exit 1
 daemon_stop "perf_test"
 
 tc qdisc add dev lo root netem loss 15%
-print_start "Performance Tests (IPv4, TC netem loss)"
+print_start "Performance Tests (IPv4, 15% packet loss on both sides)"
 daemon_run ./perf_test -l --pkey ./keys/server-key.pem --cert ./keys/server-cert.pem
 ./perf_test --addr 127.0.0.1 --tot_len 1048576 --msg_len 1024 || exit 1
 daemon_stop "perf_test"
 
-print_start "Performance Tests (IPv6, TC netem loss)"
+print_start "Performance Tests (IPv6, 15% packet loss on both sides)"
 daemon_run ./perf_test -l --pkey ./keys/server-key.pem --cert ./keys/server-cert.pem
 ./perf_test --addr ::1 --tot_len 1048576 --msg_len 1024 || exit 1
 daemon_stop "perf_test"
