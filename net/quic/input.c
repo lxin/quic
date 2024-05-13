@@ -524,7 +524,7 @@ static void quic_inq_decrypted_work(struct work_struct *work)
 
 	skb = skb_dequeue(head);
 	while (skb) {
-		skb->decrypted = 1;
+		QUIC_CRYPTO_CB(skb)->resume = 1;
 		quic_packet_process(sk, skb);
 		skb = skb_dequeue(head);
 	}

@@ -636,7 +636,7 @@ static int quic_packet_handshake_header_process(struct sock *sk, struct sk_buff 
 	return 0;
 }
 
-static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb, u8 resume)
+static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb)
 {
 	struct quic_crypto_cb *cb = QUIC_CRYPTO_CB(skb);
 	struct quic_packet *packet = quic_packet(sk);
@@ -667,7 +667,6 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb, u
 
 		cb->number_max = quic_pnmap_max_pn_seen(pnmap);
 		cb->crypto_done = quic_packet_decrypt_done;
-		cb->resume = resume;
 		err = quic_crypto_decrypt(crypto, skb);
 		if (err) {
 			if (err == -EINPROGRESS)
@@ -710,8 +709,7 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb, u
 			if (nframe)
 				quic_outq_ctrl_tail(sk, nframe, true);
 		}
-		resume = 0;
-		skb->decrypted = 0;
+		cb->resume = 0;
 		skb_reset_transport_header(skb);
 	}
 	consume_skb(skb);
@@ -781,7 +779,7 @@ out:
 	return 0;
 }
 
-static int quic_packet_app_process(struct sock *sk, struct sk_buff *skb, u8 resume)
+static int quic_packet_app_process(struct sock *sk, struct sk_buff *skb)
 {
 	struct quic_crypto *crypto = quic_crypto(sk, QUIC_CRYPTO_APP);
 	struct quic_pnmap *pnmap = quic_pnmap(sk, QUIC_CRYPTO_APP);
@@ -810,7 +808,8 @@ static int quic_packet_app_process(struct sock *sk, struct sk_buff *skb, u8 resu
 
 	taglen = quic_packet_taglen(packet);
 	cb->crypto_done = quic_packet_decrypt_done;
-	cb->resume = (!taglen || resume); /* !taglen means disable_1rtt_encryption */
+	if (!taglen)
+		cb->resume = 1; /* !taglen means disable_1rtt_encryption */
 	err = quic_crypto_decrypt(crypto, skb);
 	if (err) {
 		if (err == -EINPROGRESS)
@@ -874,9 +873,9 @@ int quic_packet_process(struct sock *sk, struct sk_buff *skb)
 	}
 
 	if (quic_hdr(skb)->form)
-		return quic_packet_handshake_process(sk, skb, skb->decrypted);
+		return quic_packet_handshake_process(sk, skb);
 
-	return quic_packet_app_process(sk, skb, skb->decrypted);
+	return quic_packet_app_process(sk, skb);
 }
 
 #define TLS_MT_CLIENT_HELLO	1
@@ -986,7 +985,7 @@ int quic_packet_parse_alpn(struct sk_buff *skb, struct quic_data *alpn)
 		memcpy(skb->data, data, skb->len);
 		goto out;
 	}
-	skb->decrypted = 1;
+	cb->resume = 1;
 
 	/* QUIC CRYPTO frame */
 	err = -EINVAL;
@@ -1405,7 +1404,7 @@ out:
 	return !cb->level;
 }
 
-int quic_packet_xmit(struct sock *sk, struct sk_buff *skb, u8 resume)
+int quic_packet_xmit(struct sock *sk, struct sk_buff *skb)
 {
 	struct quic_crypto_cb *cb = QUIC_CRYPTO_CB(skb);
 	struct quic_packet *packet = quic_packet(sk);
@@ -1417,7 +1416,6 @@ int quic_packet_xmit(struct sock *sk, struct sk_buff *skb, u8 resume)
 		goto xmit;
 
 	cb->crypto_done = quic_packet_encrypt_done;
-	cb->resume = resume;
 	err = quic_crypto_encrypt(quic_crypto(sk, packet->level), skb);
 	if (err) {
 		if (err != -EINPROGRESS)
@@ -1451,7 +1449,7 @@ void quic_packet_create(struct sock *sk)
 		goto err;
 	}
 
-	err = quic_packet_xmit(sk, skb, 0);
+	err = quic_packet_xmit(sk, skb);
 	if (err && err != -EINPROGRESS)
 		goto err;
 	return;

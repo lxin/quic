@@ -108,7 +108,7 @@ int quic_packet_process(struct sock *sk, struct sk_buff *skb);
 int quic_packet_tail(struct sock *sk, struct quic_frame *frame, u8 dgram);
 int quic_packet_flush(struct sock *sk);
 int quic_packet_parse_alpn(struct sk_buff *skb, struct quic_data *alpn);
-int quic_packet_xmit(struct sock *sk, struct sk_buff *skb, u8 resume);
+int quic_packet_xmit(struct sock *sk, struct sk_buff *skb);
 void quic_packet_mss_update(struct sock *sk, int mss);
 void quic_packet_init(struct sock *sk);
 int quic_packet_select_version(struct sock *sk, u32 *versions, u8 count);

@@ -650,7 +650,8 @@ static void quic_outq_encrypted_work(struct work_struct *work)
 
 		quic_packet_config(sk, cb->level, cb->path_alt);
 		/* the skb here is ready to send */
-		quic_packet_xmit(sk, skb, 1);
+		cb->resume = 1;
+		quic_packet_xmit(sk, skb);
 		skb = skb_dequeue(head);
 	}
 	quic_packet_flush(sk);
