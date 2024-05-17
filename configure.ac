@@ -17,10 +17,5 @@ AC_CHECK_FILE([/lib/modules/$with_kernel/build/Makefile],
 	      [], [AC_MSG_ERROR(no kernel-devel found)])
 
 AC_CONFIG_HEADERS([config.h])
-AC_CONFIG_FILES([
-	Makefile
-	handshake/Makefile
-	handshake/libquic.pc
-	tests/Makefile
-])
+AC_CONFIG_FILES([Makefile handshake/Makefile handshake/libquic.pc])
 AC_OUTPUT

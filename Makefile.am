@@ -1,5 +1,5 @@
 EXTRA_DIST		= net include autogen.sh
-SUBDIRS			= handshake/ tests/
+SUBDIRS			= handshake/
 
 module:
 	$(MAKE) -C $(KERNEL_SRC) M=$(CURDIR)/net/quic modules ROOTDIR=$(CURDIR) CONFIG_IP_QUIC=m CONFIG_IP_QUIC_TEST=m
