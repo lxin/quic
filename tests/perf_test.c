@@ -86,6 +86,7 @@ static int read_cert_file(char *file, gnutls_pcert_st **cert)
 struct options {
 	char *pkey;
 	char *cert;
+	char *ca;
 	char *addr;
 	char *port;
 	uint8_t is_serv;
@@ -99,6 +100,7 @@ static struct option long_options[] = {
 	{"port",	required_argument,	0,	'p'},
 	{"pkey",	required_argument,	0,	'k'},
 	{"cert",	required_argument,	0,	'c'},
+	{"ca",		required_argument,	0,	's'},
 	{"msg_len",	required_argument,	0,	'm'},
 	{"tot_len",	required_argument,	0,	't'},
 	{"listen",	no_argument,		0,	'l'},
@@ -113,8 +115,9 @@ static void print_usage(char *cmd)
 	printf("    --listen/-l:            work as a server\n");
 	printf("    --addr/-a <a>:          server IP address\n");
 	printf("    --port/-p <p>:          server port\n");
-	printf("    --pkey/-k <k>:          private key\n");
-	printf("    --cert/-c <c>:          certificate\n");
+	printf("    --pkey/-k <k>:          private key file\n");
+	printf("    --cert/-c <c>:          certificate file\n");
+	printf("    --ca/-s <s>:            ca file\n");
 	printf("    --help/-h <h>:          show help\n");
 	printf("    --msg_len/-m <m>:       msg_len to send\n");
 	printf("    --tot_len/-t <t>:       tot_len to send\n");
@@ -126,7 +129,7 @@ static int parse_options(int argc, char *argv[], struct options *opts)
 	int c, option_index = 0;
 
 	while (1) {
-		c = getopt_long(argc, argv, "la:p:m:t:k:c:xh", long_options, &option_index);
+		c = getopt_long(argc, argv, "la:p:m:t:k:c:s:xh", long_options, &option_index);
 		if (c == -1)
 			break;
 
@@ -142,6 +145,9 @@ static int parse_options(int argc, char *argv[], struct options *opts)
 			break;
 		case 'c':
 			opts->cert = optarg;
+			break;
+		case 's':
+			opts->ca = optarg;
 			break;
 		case 'k':
 			opts->pkey = optarg;
@@ -254,6 +260,7 @@ loop:
 		printf("parse prikey or cert files failed\n");
 		return -1;
 	}
+	parms.cafile = opts->ca;
 	parms.timeout = 15000;
 	if (quic_server_handshake_parms(sockfd, &parms))
 		return -1;
@@ -372,6 +379,7 @@ handshake:
 			return -1;
 		}
 	}
+	parms.cafile = opts->ca;
 	parms.timeout = 15000;
 	if (quic_client_handshake_parms(sockfd, &parms))
 		return -1;

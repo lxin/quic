@@ -28,6 +28,7 @@ struct quic_handshake_parms {
 
 	gnutls_privkey_t	privkey;	/* private key for x509 handshake */
 	gnutls_pcert_st		*cert;		/* certificate for x509 handshake */
+	char			*cafile;	/* system ca is used if not set */
 	char 			*peername;	/* - server name for client side x509 handshake or,
 						 * - psk identity name chosen during PSK handshake
 						 */

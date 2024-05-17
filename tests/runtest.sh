@@ -26,6 +26,9 @@ cleanup()
 	pkill func_test > /dev/null 2>&1
 	pkill perf_test > /dev/null 2>&1
 	pkill msquic_test > /dev/null 2>&1
+	pkill alpn_test > /dev/null 2>&1
+	pkill ticket_test > /dev/null 2>&1
+	pkill sample_test > /dev/null 2>&1
 	rmmod quic_sample_test > /dev/null 2>&1
 }
 
@@ -98,14 +101,14 @@ fi
 
 if systemctl is-active --quiet tlshd && modinfo quic_sample_test > /dev/null 2>&1; then
 	print_start "Kernel Tests (kernel -> lkquic)"
-	daemon_run ./perf_test -l --pkey ./keys/server-key.pem --cert ./keys/server-cert.pem
+	daemon_run ./perf_test -l --pkey ./keys/server-key.pem --cert ./keys/server-cert.pem --ca ./keys/ca-cert.pem
 	modprobe quic_sample_test || exit 1
 	rmmod quic_sample_test
 	dmesg |tail -n 5
 	daemon_stop "perf_test"
 
 	print_start "Kernel Tests (lkquic -> kernel)"
-	daemon_run ./perf_test --addr 127.0.0.1
+	daemon_run ./perf_test --addr 127.0.0.1 --ca ./keys/ca-cert.pem
 	modprobe quic_sample_test role=server || exit 1
 	rmmod quic_sample_test
 	dmesg |tail -n 5

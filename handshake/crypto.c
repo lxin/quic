@@ -352,7 +352,11 @@ int quic_crypto_client_set_x509_session(struct quic_conn *conn)
 	ret = gnutls_certificate_allocate_credentials(&cred);
 	if (ret)
 		goto err;
-	ret = gnutls_certificate_set_x509_system_trust(cred);
+	if (conn->parms->cafile)
+		ret = gnutls_certificate_set_x509_trust_file(cred, conn->parms->cafile,
+							     GNUTLS_X509_FMT_PEM);
+	else
+		ret = gnutls_certificate_set_x509_system_trust(cred);
 	if (ret < 0)
 		goto err_cred;
 	ret = client_set_x509_cred(conn, cred);
@@ -527,7 +531,11 @@ int quic_crypto_server_set_x509_session(struct quic_conn *conn)
 	ret = gnutls_certificate_allocate_credentials(&cred);
 	if (ret)
 		goto err;
-	ret = gnutls_certificate_set_x509_system_trust(cred);
+	if (conn->parms->cafile)
+		ret = gnutls_certificate_set_x509_trust_file(cred, conn->parms->cafile,
+							     GNUTLS_X509_FMT_PEM);
+	else
+		ret = gnutls_certificate_set_x509_system_trust(cred);
 	if (ret < 0)
 		goto err_cred;
 	ret = server_set_x509_cred(conn, cred);

@@ -50,7 +50,7 @@ static int do_client_notification_test(int sockfd)
 		printf("test2: FAIL flag %d, event %d\n", flag, msg[0]);
 		return -1;
 	}
-	ev = (void *)&msg[1];
+	ev = (union quic_event *)&msg[1];
 	if (ev->update.state != QUIC_STREAM_SEND_STATE_RECVD) {
 		printf("test2: FAIL state %d\n", ev->update.state);
 		return -1;
@@ -66,7 +66,7 @@ static int do_client_notification_test(int sockfd)
 		printf("test3: FAIL flag %d, event %d\n", flag, msg[0]);
 		return -1;
 	}
-	ev = (void *)&msg[1];
+	ev = (union quic_event *)&msg[1];
 	if (ev->update.state != QUIC_STREAM_RECV_STATE_RECVD ||
 	    ev->update.errcode != strlen("quic event test2")) {
 		printf("test3: FAIL state %d\n", ev->update.state);
@@ -110,7 +110,7 @@ static int do_client_notification_test(int sockfd)
 		printf("test5: FAIL flag %d, event %d\n", flag, msg[0]);
 		return -1;
 	}
-	ev = (void *)&msg[1];
+	ev = (union quic_event *)&msg[1];
 	if (ev->update.state != QUIC_STREAM_SEND_STATE_RESET_RECVD || ev->update.errcode != 1) {
 		printf("test5: FAIL state %d\n", ev->update.state);
 		return -1;
@@ -135,7 +135,7 @@ static int do_client_notification_test(int sockfd)
 		printf("test6: FAIL flag %d event %d\n", flag, msg[0]);
 		return -1;
 	}
-	ev = (void *)&msg[1];
+	ev = (union quic_event *)&msg[1];
 	if (ev->update.state != QUIC_STREAM_SEND_STATE_RESET_SENT || ev->update.errcode != 1) {
 		printf("test6: FAIL state %d\n", ev->update.state);
 		return -1;
@@ -151,7 +151,7 @@ static int do_client_notification_test(int sockfd)
 		printf("test7: FAIL flag %d, event %d\n", flag, msg[0]);
 		return -1;
 	}
-	ev = (void *)&msg[1];
+	ev = (union quic_event *)&msg[1];
 	if (ev->update.state != QUIC_STREAM_SEND_STATE_RESET_RECVD || ev->update.errcode != 1) {
 		printf("test7: FAIL state %d\n", ev->update.state);
 		return -1;
@@ -181,7 +181,7 @@ static int do_client_notification_test(int sockfd)
 		printf("test8: FAIL flag %d, event %d\n", flag, msg[0]);
 		return -1;
 	}
-	ev = (void *)&msg[1];
+	ev = (union quic_event *)&msg[1];
 	if (ev->update.state != QUIC_STREAM_RECV_STATE_RECV || ev->update.id != 107) {
 		printf("test8: FAIL state %d\n", ev->update.state);
 		return -1;
@@ -198,7 +198,7 @@ static int do_client_notification_test(int sockfd)
 		printf("test9: FAIL flag %d, event %d\n", flag, msg[0]);
 		return -1;
 	}
-	ev = (void *)&msg[1];
+	ev = (union quic_event *)&msg[1];
 	if (ev->update.state != QUIC_STREAM_RECV_STATE_RESET_RECVD || ev->update.id != 107) {
 		printf("test9: FAIL state %d\n", ev->update.state);
 		return -1;
@@ -252,7 +252,7 @@ static int do_client_notification_test(int sockfd)
 		printf("test13: FAIL flag %d, event %d\n", flag, msg[0]);
 		return -1;
 	}
-	ev = (void *)&msg[1];
+	ev = (union quic_event *)&msg[1];
 	if (ev->max_stream != 600) {
 		printf("test13: FAIL max_stream %lu\n", ev->max_stream);
 		return -1;
@@ -277,7 +277,7 @@ static int do_client_notification_test(int sockfd)
 		printf("test14: FAIL flag %d, event %d\n", flag, msg[0]);
 		return -1;
 	}
-	ev = (void *)&msg[1];
+	ev = (union quic_event *)&msg[1];
 	if (ev->max_stream != 602) {
 		printf("test14: FAIL max_stream %lu\n", ev->max_stream);
 		return -1;
@@ -332,7 +332,7 @@ static int do_client_notification_test(int sockfd)
 		printf("test17: FAIL flag %d, event %d\n", flag, msg[0]);
 		return -1;
 	}
-	ev = (void *)&msg[1];
+	ev = (union quic_event *)&msg[1];
 	if (ev->local_migration != 1) {
 		printf("test17: FAIL local_migration %d\n", ev->local_migration);
 		return -1;
@@ -366,7 +366,7 @@ static int do_client_notification_test(int sockfd)
 		printf("test18: FAIL flag %d, event %d\n", flag, msg[0]);
 		return -1;
 	}
-	ev = (void *)&msg[1];
+	ev = (union quic_event *)&msg[1];
 	if (ev->local_migration != 0) {
 		printf("test18: FAIL local_migration %d\n", ev->local_migration);
 		return -1;
@@ -440,7 +440,7 @@ static int do_client_notification_test(int sockfd)
 		printf("test21: FAIL flag %d, event %d\n", flag, msg[0]);
 		return -1;
 	}
-	ev = (void *)&msg[1];
+	ev = (union quic_event *)&msg[1];
 	if (ev->key_update_phase != 1) {
 		printf("test21: FAIL key_phase %d\n", ev->key_update_phase);
 		return -1;
@@ -491,7 +491,7 @@ static int do_client_notification_test(int sockfd)
 		printf("test22: FAIL flag %d, event %d\n", flag, msg[0]);
 		return -1;
 	}
-	ev = (void *)&msg[1];
+	ev = (union quic_event *)&msg[1];
 	if (ev->key_update_phase != 0) {
 		printf("test22: FAIL key_phase %d\n", ev->key_update_phase);
 		return -1;
@@ -662,7 +662,7 @@ static int do_client_close_test(int sockfd)
 		printf("test7: FAIL flag %d, event %d\n", flag, msg[0]);
 		return -1;
 	}
-	info = (void *)&msg[1];
+	info = (struct quic_connection_close *)&msg[1];
 	if (info->errcode != 10 || info->frame != 0 ||
 	    strcmp((char *)info->phrase, "this is app err")) {
 		printf("test7: FAIL errcode %d, frame %d, phrase %s\n",
