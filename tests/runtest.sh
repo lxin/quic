@@ -39,6 +39,13 @@ trap cleanup EXIT
 print_start "Install Keys & Certificates"
 pushd keys/ && sh ca_cert_pkey.sh || exit 1
 popd
+if [ -d /etc/pki/ca-trust/source/anchors/ ]; then
+	install keys/ca-cert.pem /etc/pki/ca-trust/source/anchors/ca-cert.pem
+	update-ca-trust
+elif [ -d /usr/local/share/ca-certificates/ ]; then
+	install keys/ca-cert.pem /usr/local/share/ca-certificates/ca-cert.crt
+	update-ca-certificates
+fi
 
 setenforce 0 > /dev/null 2>&1
 

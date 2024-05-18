@@ -5,15 +5,8 @@ if [ "$1" = "clean" ]; then
 	exit 0
 fi
 
-# create CA and install it
+# create CA
 openssl req -newkey rsa:2048 -nodes -keyout ca-key.pem -x509 -days 365 -out ca-cert.pem -subj "/C=CN/ST=ON/L=Ottawa/O=RH/OU=NET/CN=lucien.xin@gmail.com"
-if [ -d /etc/pki/ca-trust/source/anchors/ ]; then
-	cp ca-cert.pem /etc/pki/ca-trust/source/anchors/ca-cert.pem
-	update-ca-trust
-elif [ -d /usr/local/share/ca-certificates/ ]; then
-	cp ca-cert.pem /usr/local/share/ca-certificates/ca-cert.crt
-	update-ca-certificates
-fi
 
 cat > server.ext << EOF
 authorityKeyIdentifier=keyid,issuer
