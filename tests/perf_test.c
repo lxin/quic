@@ -20,6 +20,61 @@ char snd_msg[SND_MSG_LEN];
 char rcv_msg[RCV_MSG_LEN];
 char alpn[ALPN_LEN] = "sample";
 
+static int read_psk_file(char *psk, char *identity[], gnutls_datum_t *pkey)
+{
+	unsigned char *end, *key, *buf;
+	int fd, err = -1, i = 0;
+	struct stat statbuf;
+	gnutls_datum_t gkey;
+	unsigned int size;
+
+	fd = open(psk, O_RDONLY);
+	if (fd == -1)
+		return -1;
+	if (fstat(fd, &statbuf))
+		goto out;
+
+	size = (unsigned int)statbuf.st_size;
+	buf = malloc(size);
+	if (!buf)
+		goto out;
+	if (read(fd, buf, size) == -1) {
+		free(buf);
+		goto out;
+	}
+
+	end = buf + size - 1;
+	do {
+		key = (unsigned char *)strchr((char *)buf, ':');
+		if (!key)
+			goto out;
+		*key = '\0';
+		identity[i] = (char *)buf;
+
+		key++;
+		gkey.data = key;
+
+		buf = (unsigned char *)strchr((char *)key, '\n');
+		if (!buf) {
+			gkey.size = end - gkey.data;
+			buf = end;
+			goto decode;
+		}
+		*buf = '\0';
+		buf++;
+		gkey.size = strlen((char *)gkey.data);
+decode:
+		if (gnutls_hex_decode2(&gkey, &pkey[i]))
+			goto out;
+		i++;
+	} while (buf < end);
+
+	err = i;
+out:
+	close(fd);
+	return err;
+}
+
 static int read_datum(const char *file, gnutls_datum_t *data)
 {
 	struct stat statbuf;
@@ -86,6 +141,7 @@ static int read_cert_file(char *file, gnutls_pcert_st **cert)
 struct options {
 	char *pkey;
 	char *cert;
+	char *psk;
 	char *ca;
 	char *addr;
 	char *port;
@@ -100,6 +156,7 @@ static struct option long_options[] = {
 	{"port",	required_argument,	0,	'p'},
 	{"pkey",	required_argument,	0,	'k'},
 	{"cert",	required_argument,	0,	'c'},
+	{"psk",		required_argument,	0,	'i'},
 	{"ca",		required_argument,	0,	's'},
 	{"msg_len",	required_argument,	0,	'm'},
 	{"tot_len",	required_argument,	0,	't'},
@@ -117,6 +174,7 @@ static void print_usage(char *cmd)
 	printf("    --port/-p <p>:          server port\n");
 	printf("    --pkey/-k <k>:          private key file\n");
 	printf("    --cert/-c <c>:          certificate file\n");
+	printf("    --psk/-i <i>:           pre-shared key file\n");
 	printf("    --ca/-s <s>:            ca file\n");
 	printf("    --help/-h <h>:          show help\n");
 	printf("    --msg_len/-m <m>:       msg_len to send\n");
@@ -129,7 +187,7 @@ static int parse_options(int argc, char *argv[], struct options *opts)
 	int c, option_index = 0;
 
 	while (1) {
-		c = getopt_long(argc, argv, "la:p:m:t:k:c:s:xh", long_options, &option_index);
+		c = getopt_long(argc, argv, "la:p:m:t:k:c:s:i:xh", long_options, &option_index);
 		if (c == -1)
 			break;
 
@@ -148,6 +206,9 @@ static int parse_options(int argc, char *argv[], struct options *opts)
 			break;
 		case 's':
 			opts->ca = optarg;
+			break;
+		case 'i':
+			opts->psk = optarg;
 			break;
 		case 'k':
 			opts->pkey = optarg;
@@ -173,7 +234,7 @@ static int parse_options(int argc, char *argv[], struct options *opts)
 		}
 	}
 
-	if (opts->is_serv && (!opts->cert || !opts->pkey))
+	if (opts->is_serv && !opts->psk && (!opts->cert || !opts->pkey))
 		return -1;
 	return 0;
 }
@@ -253,6 +314,17 @@ loop:
 	}
 
 	printf("accept %d\n", sockfd);
+	parms.timeout = 15000;
+	if (opts->psk) {
+		ret = read_psk_file(opts->psk, parms.names, parms.keys);
+		if (ret <= 0) {
+			printf("parse pre-shared key failed\n");
+			return -1;
+		}
+		parms.num_keys = ret;
+		goto do_handshake;
+	}
+
 	/* start doing handshake with tlshd API */
 	parms.cert = &gcert;
 	if (read_pkey_file(opts->pkey, &parms.privkey) ||
@@ -261,7 +333,8 @@ loop:
 		return -1;
 	}
 	parms.cafile = opts->ca;
-	parms.timeout = 15000;
+
+do_handshake:
 	if (quic_server_handshake_parms(sockfd, &parms))
 		return -1;
 
@@ -370,6 +443,17 @@ handshake:
 	if (setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_ALPN, alpn, strlen(alpn)))
 		return -1;
 
+	parms.timeout = 15000;
+	if (opts->psk) {
+		ret = read_psk_file(opts->psk, parms.names, parms.keys);
+		if (ret <= 0) {
+			printf("parse pre-shared key failed\n");
+			return -1;
+		}
+		parms.num_keys = ret;
+		goto do_handshake;
+	}
+
 	/* start doing handshake with tlshd API */
 	if (opts->pkey && opts->cert) {
 		parms.cert = &gcert;
@@ -380,7 +464,8 @@ handshake:
 		}
 	}
 	parms.cafile = opts->ca;
-	parms.timeout = 15000;
+
+do_handshake:
 	if (quic_client_handshake_parms(sockfd, &parms))
 		return -1;
 
