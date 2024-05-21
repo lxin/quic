@@ -25,9 +25,10 @@
 #define ALPN_LEN	20
 
 static char role[ROLE_LEN] = "client";
+static char alpn[ALPN_LEN] = "sample";
 static char ip[IP_LEN] = "127.0.0.1";
 static int port = 1234;
-static char alpn[ALPN_LEN] = "sample";
+static int psk = 0;
 
 #define SND_MSG_LEN	4096
 #define RCV_MSG_LEN	(4096 * 16)
@@ -116,11 +117,22 @@ static int quic_test_client_handshake(struct socket *sock, struct quic_test_priv
 	args.ta_sock = sock;
 	args.ta_done = quic_test_handshake_done;
 	args.ta_data = priv;
-	args.ta_peername = "server.test";
 	args.ta_timeout_ms = 3000;
+
+	if (psk) {
+		args.ta_my_peerids[0] = psk;
+		args.ta_num_peerids = 1;
+		err = tls_client_hello_psk(&args, GFP_KERNEL);
+		if (err)
+			return err;
+		goto wait;
+	}
+
+	args.ta_peername = "server.test";
 	err = tls_client_hello_x509(&args, GFP_KERNEL);
 	if (err)
 		return err;
+wait:
 	err = wait_for_completion_interruptible_timeout(&priv->sk_handshake_done, 5 * HZ);
 	if (err <= 0) {
 		tls_handshake_cancel(sock->sk);
@@ -140,9 +152,18 @@ static int quic_test_server_handshake(struct socket *sock, struct quic_test_priv
 	args.ta_done = quic_test_handshake_done;
 	args.ta_data = priv;
 	args.ta_timeout_ms = 3000;
+
+	if (psk) {
+		err = tls_server_hello_psk(&args, GFP_KERNEL);
+		if (err)
+			return err;
+		goto wait;
+	}
+
 	err = tls_server_hello_x509(&args, GFP_KERNEL);
 	if (err)
 		return err;
+wait:
 	err = wait_for_completion_interruptible_timeout(&priv->sk_handshake_done, 5 * HZ);
 	if (err <= 0) {
 		tls_handshake_cancel(sock->sk);
@@ -324,11 +345,13 @@ module_param_string(role, role, ROLE_LEN, 0644);
 module_param_string(alpn, alpn, ALPN_LEN, 0644);
 module_param_string(ip, ip, IP_LEN, 0644);
 module_param_named(port, port, int, 0644);
+module_param_named(psk, psk, int, 0644);
 
 MODULE_PARM_DESC(role, "client or server");
 MODULE_PARM_DESC(ip, "server address");
 MODULE_PARM_DESC(port, "server port");
 MODULE_PARM_DESC(alpn, "alpn name");
+MODULE_PARM_DESC(psk, "key_serial_t for psk");
 
 MODULE_AUTHOR("Xin Long <lucien.xin@gmail.com>");
 MODULE_DESCRIPTION("Test For Support for the QUIC protocol (RFC9000)");
