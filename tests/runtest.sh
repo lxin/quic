@@ -37,7 +37,7 @@ make || exit 1
 trap cleanup EXIT
 
 print_start "Install Keys & Certificates"
-pushd keys/ && sh ca_cert_pkey.sh || exit 1
+pushd keys/ && sh ca_cert_pkey_psk.sh || exit 1
 popd
 if [ -d /etc/pki/ca-trust/source/anchors/ ]; then
 	install keys/ca-cert.pem /etc/pki/ca-trust/source/anchors/ca-cert.pem

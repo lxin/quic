@@ -13,7 +13,7 @@ clean:
 	rm -rf perf_test func_test sample_test ticket_test alpn_test
 	rm -rf msquic_test
 distclean: clean
-	rm -rf keys/*.pem keys/*.ext
+	rm -rf keys/*.pem keys/*.ext keys/*.txt
 
 run: all
 	./runtest.sh

@@ -117,6 +117,7 @@ in [ktls-utils](https://github.com/lxin/ktls-utils) will handle the handshake re
     - make autoconf automake libtool pkg-config
     - gnutls-devel / gnutls-dev
     - kernel-devel / linux-headers-$(uname -r)
+    - keyutils-libs-devel / libkeyutils-dev
 
     # cd ~/
     # git clone https://github.com/lxin/quic.git
@@ -157,7 +158,6 @@ in [ktls-utils](https://github.com/lxin/ktls-utils) will handle the handshake re
     (NOTE: you can skip this if you don't want to use QUIC in kernel space)
 
     Packages Required:
-    - keyutils-libs-devel / libkeyutils-dev
     - glib2-devel / glib-2.0-dev
     - libnl3-devel / libnl-genl-3-dev
 
