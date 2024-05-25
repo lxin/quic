@@ -102,9 +102,9 @@ static struct quic_frame *quic_frame_ping_create(struct sock *sk, void *data, u8
 	u16 *probe_size = data;
 	u32 frame_len;
 
-	quic_packet_config(sk, 0, 0);
+	if (quic_packet_config(sk, 0, 0))
+		return NULL;
 	frame_len = *probe_size - packet->overhead;
-
 	frame = quic_frame_alloc(frame_len, NULL, GFP_ATOMIC);
 	if (!frame)
 		return NULL;
@@ -173,6 +173,8 @@ static struct quic_frame *quic_frame_stream_create(struct sock *sk, void *data, 
 	struct quic_frame *frame;
 	u8 *p;
 
+	if (quic_packet_config(sk, 0, 0))
+		return NULL;
 	max_frame_len = quic_packet_max_payload(quic_packet(sk));
 	stream = info->stream;
 	hlen += quic_var_len(stream->id);
@@ -243,7 +245,8 @@ static struct quic_frame *quic_frame_crypto_create(struct sock *sk, void *data, 
 	u64 offset;
 	u8 *p;
 
-	quic_packet_config(sk, info->level, 0);
+	if (quic_packet_config(sk, info->level, 0))
+		return NULL;
 	max_frame_len = quic_packet_max_payload(quic_packet(sk));
 	crypto = quic_crypto(sk, info->level);
 	msg_len = iov_iter_count(info->msg);
@@ -372,7 +375,8 @@ static struct quic_frame *quic_frame_path_challenge_create(struct sock *sk, void
 	u32 frame_len;
 	u8 *p;
 
-	quic_packet_config(sk, 0, 0);
+	if (quic_packet_config(sk, 0, 0))
+		return NULL;
 	frame_len = QUIC_MIN_UDP_PAYLOAD - QUIC_TAG_LEN - packet->overhead;
 	get_random_bytes(quic_path_entropy(path), 8);
 
@@ -1291,7 +1295,7 @@ static struct quic_frame *quic_frame_datagram_create(struct sock *sk, void *data
 
 	msg_len = iov_iter_count(msg);
 	if (msg_len > max_frame_len - hlen)
-		msg_len = max_frame_len - hlen;
+		return NULL;
 
 	frame = quic_frame_alloc(msg_len + hlen, NULL, GFP_ATOMIC);
 	if (!frame)
@@ -1330,13 +1334,15 @@ static int quic_frame_datagram_process(struct sock *sk, struct quic_frame *frame
 	if (quic_inq_receive_session_ticket(inq))
 		return -EINVAL;
 
-	if (!quic_inq_max_dgram(inq))
-		return -EINVAL;
-
 	payload_len = frame->len;
 	if (type == QUIC_FRAME_DATAGRAM_LEN) {
 		if (!quic_get_var(&p, &len, &payload_len) || payload_len > len)
 			return -EINVAL;
+	}
+
+	if (payload_len + (p - frame->data) + 1 > quic_inq_max_dgram(inq)) {
+		frame->errcode = QUIC_TRANSPORT_ERROR_PROTOCOL_VIOLATION;
+		return -EINVAL;
 	}
 
 	nframe = quic_frame_alloc(payload_len, p, GFP_ATOMIC);
@@ -1468,7 +1474,7 @@ struct quic_frame *quic_frame_create(struct sock *sk, u8 type, void *data)
 		return NULL;
 	frame = quic_frame_ops[type].frame_create(sk, data, type);
 	if (!frame) {
-		pr_err("[QUIC] frame create failed %x\n", type);
+		pr_debug("[QUIC] frame create failed %x\n", type);
 		return NULL;
 	}
 	pr_debug("[QUIC] %s type: %u len: %u\n", __func__, type, frame->len);

@@ -666,13 +666,13 @@ static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 			if (err)
 				goto err;
 		}
-		while (iov_iter_count(&msg->msg_iter) > 0) {
-			frame = quic_frame_create(sk, QUIC_FRAME_DATAGRAM_LEN, &msg->msg_iter);
-			if (!frame)
-				goto out;
-			bytes += frame->bytes;
-			quic_outq_dgram_tail(sk, frame, true);
+		frame = quic_frame_create(sk, QUIC_FRAME_DATAGRAM_LEN, &msg->msg_iter);
+		if (!frame) {
+			err = -EINVAL;
+			goto err;
 		}
+		bytes += frame->bytes;
+		quic_outq_dgram_tail(sk, frame, true);
 		goto out;
 	}
 
@@ -1024,6 +1024,8 @@ static int quic_sock_set_transport_param(struct sock *sk, struct quic_transport_
 		return -EINVAL;
 
 	if (p->remote) {
+		if (!quic_is_establishing(sk))
+			return -EINVAL;
 		param->remote = 1;
 		quic_outq_set_param(sk, param);
 		quic_connection_id_set_param(quic_source(sk), param);

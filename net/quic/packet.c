@@ -1347,8 +1347,7 @@ int quic_packet_config(struct sock *sk, u8 level, u8 path_alt)
 	packet->level = level;
 	packet->path_alt = path_alt;
 
-	quic_packet_route(sk);
-	return 0;
+	return quic_packet_route(sk) < 0 ? -1 : 0;
 }
 
 #if KERNEL_VERSION(6, 2, 0) <= LINUX_VERSION_CODE

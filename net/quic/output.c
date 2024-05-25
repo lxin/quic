@@ -635,6 +635,7 @@ static void quic_outq_encrypted_work(struct work_struct *work)
 	struct quic_sock *qs = container_of(work, struct quic_sock, outq.work);
 	struct sock *sk = &qs->inet.sk;
 	struct sk_buff_head *head;
+	struct quic_crypto_cb *cb;
 	struct sk_buff *skb;
 
 	lock_sock(sk);
@@ -646,9 +647,12 @@ static void quic_outq_encrypted_work(struct work_struct *work)
 
 	skb = skb_dequeue(head);
 	while (skb) {
-		struct quic_crypto_cb *cb = QUIC_CRYPTO_CB(skb);
-
-		quic_packet_config(sk, cb->level, cb->path_alt);
+		cb = QUIC_CRYPTO_CB(skb);
+		if (quic_packet_config(sk, cb->level, cb->path_alt)) {
+			kfree_skb(skb);
+			skb = skb_dequeue(head);
+			continue;
+		}
 		/* the skb here is ready to send */
 		cb->resume = 1;
 		quic_packet_xmit(sk, skb);
@@ -675,9 +679,12 @@ void quic_outq_set_param(struct sock *sk, struct quic_transport_param *p)
 {
 	struct quic_outqueue *outq = quic_outq(sk);
 	struct quic_inqueue *inq = quic_inq(sk);
-	u32 remote_idle, local_idle;
+	u32 remote_idle, local_idle, pmtu;
 
 	outq->max_datagram_frame_size = p->max_datagram_frame_size;
+	pmtu = min_t(u32, dst_mtu(__sk_dst_get(sk)), QUIC_PATH_MAX_PMTU);
+	quic_packet_mss_update(sk, pmtu - quic_encap_len(sk));
+
 	outq->max_udp_payload_size = p->max_udp_payload_size;
 	outq->ack_delay_exponent = p->ack_delay_exponent;
 	outq->max_idle_timeout = p->max_idle_timeout;
