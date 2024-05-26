@@ -1068,6 +1068,15 @@ static int do_client_connection_test(int sockfd)
 		return -1;
 	}
 	printf("test27: PASS (send and recv datagram)\n");
+
+	flag = QUIC_STREAM_FLAG_DATAGRAM;
+	strcpy(msg, "client datagram");
+	ret = quic_sendmsg(sockfd, msg, sizeof(msg), sid, flag);
+	if (ret != -1) {
+		printf("test28: FAIL msg len %d\n", ret);
+		return -1;
+	}
+	printf("test28: PASS (do not allow to send datagram bigger than max_datagram)\n");
 	return 0;
 }
 
