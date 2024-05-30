@@ -63,6 +63,8 @@ struct quic_pnmap {
 	u32 loss_ts;
 	u32 inflight;
 	u32 last_sent_ts;
+
+	u32 max_pn_acked_ts;
 	s64 max_pn_acked;
 };
 
@@ -91,11 +93,17 @@ static inline void quic_pnmap_set_max_pn_acked(struct quic_pnmap *map, s64 max_p
 	if (map->max_pn_acked >= max_pn_acked)
 		return;
 	map->max_pn_acked = max_pn_acked;
+	map->max_pn_acked_ts = jiffies_to_usecs(jiffies);
 }
 
 static inline s64 quic_pnmap_max_pn_acked(const struct quic_pnmap *map)
 {
 	return map->max_pn_acked;
+}
+
+static inline s32 quic_pnmap_max_pn_acked_ts(const struct quic_pnmap *map)
+{
+	return map->max_pn_acked_ts;
 }
 
 static inline void quic_pnmap_set_loss_ts(struct quic_pnmap *map, u32 loss_ts)

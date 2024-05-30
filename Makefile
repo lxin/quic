@@ -1,4 +1,4 @@
-MODULES = quic quic_unit_test quic_sample_test
+MODULES = quic_unit_test quic_sample_test quic
 KERNEL_EXTRA = /lib/modules/$(shell uname -r)/extra
 KERNEL_BUILD = /lib/modules/$(shell uname -r)/build
 
@@ -6,7 +6,7 @@ all:
 	$(MAKE) -C $(KERNEL_BUILD) M=$(CURDIR)/net/quic modules \
 		ROOTDIR=$(CURDIR) CONFIG_IP_QUIC=m CONFIG_IP_QUIC_TEST=m
 
-install: install_headers install_modules depmod
+install: uninstall_modules install_headers install_modules depmod
 
 uninstall: uninstall_modules uninstall_headers depmod
 

@@ -116,7 +116,7 @@ struct quic_frame {
 	u8  type;
 	u8  path_alt:2;	/* bit 1: src, bit 2: dst */
 
-	u32 transmit_ts;
+	u32 sent_time;
 	u16 errcode;
 	u8  event;
 	u8  stream_fin:1;

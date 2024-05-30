@@ -26,29 +26,23 @@ struct quic_cong {
 	u32 latest_rtt;
 	u32 smoothed_rtt;
 
-	s64 last_sent_number;
-	s64 max_acked_number;
-	u32 max_acked_transmit_ts;
 	u32 ack_delay_exponent;
 	u32 max_ack_delay;
+	s64 recovery_time;
 
 	u32 mss;
 	u32 window;
 	u32 max_window;
-	u32 prior_window;
 	u32 threshold;
-	u32 prior_threshold;
 
 	u8 state;
 	struct quic_cong_ops *ops;
 };
 
 struct quic_cong_ops {
-	void (*cwnd_update_after_timeout)(struct quic_cong *cong, s64 number,
-					  u32 transmit_ts, s64 last_sent_number);
-	void (*cwnd_update_after_sack)(struct quic_cong *cong, s64 acked_number,
-				       u32 transmit_ts, u32 acked_bytes, u32 inflight);
-	void (*cwnd_update_after_ecn)(struct quic_cong *cong);
+	void (*on_packet_lost)(struct quic_cong *cong, u32 time, u32 bytes);
+	void (*on_packet_acked)(struct quic_cong *cong, u32 time, u32 bytes);
+	void (*on_process_ecn)(struct quic_cong *cong);
 };
 
 static inline void quic_cong_set_window(struct quic_cong *cong, u32 window)
@@ -82,9 +76,7 @@ static inline u32 quic_cong_latest_rtt(struct quic_cong *cong)
 }
 
 void quic_cong_set_param(struct quic_cong *cong, struct quic_transport_param *p);
-void quic_cong_rtt_update(struct quic_cong *cong, u32 transmit_ts, u32 ack_delay);
-void quic_cong_cwnd_update_after_timeout(struct quic_cong *cong, s64 number,
-					 u32 transmit_ts, s64 last_sent_number);
-void quic_cong_cwnd_update_after_sack(struct quic_cong *cong, s64 acked_number,
-				      u32 transmit_ts, u32 acked_bytes, u32 inflight);
-void quic_cong_cwnd_update_after_ecn(struct quic_cong *cong);
+void quic_cong_rtt_update(struct quic_cong *cong, u32 time, u32 ack_delay);
+void quic_cong_on_packet_lost(struct quic_cong *cong, u32 time, u32 bytes);
+void quic_cong_on_packet_acked(struct quic_cong *cong, u32 time, u32 bytes);
+void quic_cong_on_process_ecn(struct quic_cong *cong);

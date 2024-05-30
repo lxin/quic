@@ -1053,10 +1053,10 @@ static u8 *quic_packet_pack_frames(struct sock *sk, struct sk_buff *skb, s64 num
 		cb->ecn = ecn;
 
 		quic_outq_transmitted_tail(sk, frame);
-		if (!frame->transmit_ts)
+		if (!frame->sent_time)
 			frame->offset = number;
 		frame->number = number;
-		frame->transmit_ts = now;
+		frame->sent_time = now;
 	}
 
 	packet->count++;

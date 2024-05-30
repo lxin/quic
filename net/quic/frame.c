@@ -763,7 +763,7 @@ static int quic_frame_ack_process(struct sock *sk, struct quic_frame *frame, u8 
 		    !quic_get_var(&p, &len, &ecn_count[2]))
 			return -EINVAL;
 		if (quic_pnmap_set_ecn_count(map, ecn_count)) {
-			quic_cong_cwnd_update_after_ecn(cong);
+			quic_cong_on_process_ecn(cong);
 			quic_outq_set_window(quic_outq(sk), quic_cong_window(cong));
 		}
 	}

@@ -520,8 +520,8 @@ out:
 static void quic_cong_test1(struct kunit *test)
 {
 	struct quic_transport_param p = {};
-	u32 transmit_ts, ack_delay;
 	struct quic_cong cong = {};
+	u32 time, ack_delay;
 
 	p.max_ack_delay = 25000;
 	p.ack_delay_exponent = 3;
@@ -530,9 +530,9 @@ static void quic_cong_test1(struct kunit *test)
 	KUNIT_EXPECT_EQ(test, cong.rttvar, 166500);
 	KUNIT_EXPECT_EQ(test, cong.rto, 499500);
 
-	transmit_ts = jiffies_to_usecs(jiffies) - 30000;
+	time = jiffies_to_usecs(jiffies) - 30000;
 	ack_delay = 2500;
-	quic_cong_rtt_update(&cong, transmit_ts, ack_delay);
+	quic_cong_rtt_update(&cong, time, ack_delay);
 	KUNIT_EXPECT_EQ(test, cong.latest_rtt, 30000);
 	KUNIT_EXPECT_EQ(test, cong.min_rtt, 30000);
 	/* (smoothed_rtt * 7 + adjusted_rtt) / 8 */
@@ -542,198 +542,198 @@ static void quic_cong_test1(struct kunit *test)
 	/* smoothed_rtt + rttvar */
 	KUNIT_EXPECT_EQ(test, cong.rto, 486281);
 
-	transmit_ts = jiffies_to_usecs(jiffies) - 30000;
+	time = jiffies_to_usecs(jiffies) - 30000;
 	ack_delay = 2500;
-	quic_cong_rtt_update(&cong, transmit_ts, ack_delay);
+	quic_cong_rtt_update(&cong, time, ack_delay);
 	KUNIT_EXPECT_EQ(test, cong.latest_rtt, 30000);
 	KUNIT_EXPECT_EQ(test, cong.min_rtt, 30000);
 	KUNIT_EXPECT_EQ(test, cong.smoothed_rtt, 261984);
 	KUNIT_EXPECT_EQ(test, cong.rttvar, 201363);
 	KUNIT_EXPECT_EQ(test, cong.rto, 463347);
 
-	transmit_ts = jiffies_to_usecs(jiffies) - 30000;
+	time = jiffies_to_usecs(jiffies) - 30000;
 	ack_delay = 2500;
-	quic_cong_rtt_update(&cong, transmit_ts, ack_delay);
+	quic_cong_rtt_update(&cong, time, ack_delay);
 	KUNIT_EXPECT_EQ(test, cong.latest_rtt, 30000);
 	KUNIT_EXPECT_EQ(test, cong.min_rtt, 30000);
 	KUNIT_EXPECT_EQ(test, cong.smoothed_rtt, 232986);
 	KUNIT_EXPECT_EQ(test, cong.rttvar, 201768);
 	KUNIT_EXPECT_EQ(test, cong.rto, 434754);
 
-	transmit_ts = jiffies_to_usecs(jiffies) - 3000;
+	time = jiffies_to_usecs(jiffies) - 3000;
 	ack_delay = 250;
-	quic_cong_rtt_update(&cong, transmit_ts, ack_delay);
+	quic_cong_rtt_update(&cong, time, ack_delay);
 	KUNIT_EXPECT_EQ(test, cong.latest_rtt, 3000);
 	KUNIT_EXPECT_EQ(test, cong.min_rtt, 3000);
 	KUNIT_EXPECT_EQ(test, cong.smoothed_rtt, 204237);
 	KUNIT_EXPECT_EQ(test, cong.rttvar, 201635);
 	KUNIT_EXPECT_EQ(test, cong.rto, 405872);
 
-	transmit_ts = jiffies_to_usecs(jiffies) - 3000;
+	time = jiffies_to_usecs(jiffies) - 3000;
 	ack_delay = 250;
-	quic_cong_rtt_update(&cong, transmit_ts, ack_delay);
+	quic_cong_rtt_update(&cong, time, ack_delay);
 	KUNIT_EXPECT_EQ(test, cong.latest_rtt, 3000);
 	KUNIT_EXPECT_EQ(test, cong.min_rtt, 3000);
 	KUNIT_EXPECT_EQ(test, cong.smoothed_rtt, 179082);
 	KUNIT_EXPECT_EQ(test, cong.rttvar, 195246);
 	KUNIT_EXPECT_EQ(test, cong.rto, 374328);
 
-	transmit_ts = jiffies_to_usecs(jiffies) - 300;
+	time = jiffies_to_usecs(jiffies) - 300;
 	ack_delay = 25;
-	quic_cong_rtt_update(&cong, transmit_ts, ack_delay);
+	quic_cong_rtt_update(&cong, time, ack_delay);
 	KUNIT_EXPECT_EQ(test, cong.latest_rtt, 300);
 	KUNIT_EXPECT_EQ(test, cong.min_rtt, 300);
 	KUNIT_EXPECT_EQ(test, cong.smoothed_rtt, 156734);
 	KUNIT_EXPECT_EQ(test, cong.rttvar, 185543);
 	KUNIT_EXPECT_EQ(test, cong.rto, 342277);
 
-	transmit_ts = jiffies_to_usecs(jiffies) - 30;
+	time = jiffies_to_usecs(jiffies) - 30;
 	ack_delay = 2;
-	quic_cong_rtt_update(&cong, transmit_ts, ack_delay);
+	quic_cong_rtt_update(&cong, time, ack_delay);
 	KUNIT_EXPECT_EQ(test, cong.latest_rtt, 30);
 	KUNIT_EXPECT_EQ(test, cong.min_rtt, 30);
 	KUNIT_EXPECT_EQ(test, cong.smoothed_rtt, 137146);
 	KUNIT_EXPECT_EQ(test, cong.rttvar, 173436);
 	KUNIT_EXPECT_EQ(test, cong.rto, 310582);
 
-	transmit_ts = jiffies_to_usecs(jiffies) - 3;
+	time = jiffies_to_usecs(jiffies) - 3;
 	ack_delay = 0;
-	quic_cong_rtt_update(&cong, transmit_ts, ack_delay);
+	quic_cong_rtt_update(&cong, time, ack_delay);
 	KUNIT_EXPECT_EQ(test, cong.latest_rtt, 3);
 	KUNIT_EXPECT_EQ(test, cong.min_rtt, 3);
 	KUNIT_EXPECT_EQ(test, cong.smoothed_rtt, 120003);
 	KUNIT_EXPECT_EQ(test, cong.rttvar, 160077);
 	KUNIT_EXPECT_EQ(test, cong.rto, 280080);
 
-	transmit_ts = jiffies_to_usecs(jiffies) - 1;
+	time = jiffies_to_usecs(jiffies) - 1;
 	ack_delay = 0;
-	quic_cong_rtt_update(&cong, transmit_ts, ack_delay);
+	quic_cong_rtt_update(&cong, time, ack_delay);
 	KUNIT_EXPECT_EQ(test, cong.latest_rtt, 1);
 	KUNIT_EXPECT_EQ(test, cong.min_rtt, 1);
 	KUNIT_EXPECT_EQ(test, cong.smoothed_rtt, 105002);
 	KUNIT_EXPECT_EQ(test, cong.rttvar, 146308);
 	KUNIT_EXPECT_EQ(test, cong.rto, 251310);
 
-	transmit_ts = jiffies_to_usecs(jiffies) - 0;
+	time = jiffies_to_usecs(jiffies) - 0;
 	ack_delay = 0;
-	quic_cong_rtt_update(&cong, transmit_ts, ack_delay);
+	quic_cong_rtt_update(&cong, time, ack_delay);
 	KUNIT_EXPECT_EQ(test, cong.latest_rtt, 0);
 	KUNIT_EXPECT_EQ(test, cong.min_rtt, 0);
 	KUNIT_EXPECT_EQ(test, cong.smoothed_rtt, 91876);
 	KUNIT_EXPECT_EQ(test, cong.rttvar, 132700);
 	KUNIT_EXPECT_EQ(test, cong.rto, 224576);
 
-	transmit_ts = jiffies_to_usecs(jiffies) - 3;
+	time = jiffies_to_usecs(jiffies) - 3;
 	ack_delay = 0;
-	quic_cong_rtt_update(&cong, transmit_ts, ack_delay);
+	quic_cong_rtt_update(&cong, time, ack_delay);
 	KUNIT_EXPECT_EQ(test, cong.latest_rtt, 3);
 	KUNIT_EXPECT_EQ(test, cong.min_rtt, 3);
 	KUNIT_EXPECT_EQ(test, cong.smoothed_rtt, 80391);
 	KUNIT_EXPECT_EQ(test, cong.rttvar, 119622);
 	KUNIT_EXPECT_EQ(test, cong.rto, 200013);
 
-	transmit_ts = jiffies_to_usecs(jiffies) - 300;
+	time = jiffies_to_usecs(jiffies) - 300;
 	ack_delay = 25;
-	quic_cong_rtt_update(&cong, transmit_ts, ack_delay);
+	quic_cong_rtt_update(&cong, time, ack_delay);
 	KUNIT_EXPECT_EQ(test, cong.latest_rtt, 300);
 	KUNIT_EXPECT_EQ(test, cong.min_rtt, 3);
 	KUNIT_EXPECT_EQ(test, cong.smoothed_rtt, 70354);
 	KUNIT_EXPECT_EQ(test, cong.rttvar, 107280);
 	KUNIT_EXPECT_EQ(test, cong.rto, 177634);
 
-	transmit_ts = jiffies_to_usecs(jiffies) - 300;
+	time = jiffies_to_usecs(jiffies) - 300;
 	ack_delay = 25;
-	quic_cong_rtt_update(&cong, transmit_ts, ack_delay);
+	quic_cong_rtt_update(&cong, time, ack_delay);
 	KUNIT_EXPECT_EQ(test, cong.latest_rtt, 300);
 	KUNIT_EXPECT_EQ(test, cong.min_rtt, 3);
 	KUNIT_EXPECT_EQ(test, cong.smoothed_rtt, 61572);
 	KUNIT_EXPECT_EQ(test, cong.rttvar, 95828);
 	KUNIT_EXPECT_EQ(test, cong.rto, 157400);
 
-	transmit_ts = jiffies_to_usecs(jiffies) - 3000;
+	time = jiffies_to_usecs(jiffies) - 3000;
 	ack_delay = 250;
-	quic_cong_rtt_update(&cong, transmit_ts, ack_delay);
+	quic_cong_rtt_update(&cong, time, ack_delay);
 	KUNIT_EXPECT_EQ(test, cong.latest_rtt, 3000);
 	KUNIT_EXPECT_EQ(test, cong.min_rtt, 3);
 	KUNIT_EXPECT_EQ(test, cong.smoothed_rtt, 54000);
 	KUNIT_EXPECT_EQ(test, cong.rttvar, 85121);
 	KUNIT_EXPECT_EQ(test, cong.rto, 139121);
 
-	transmit_ts = jiffies_to_usecs(jiffies) - 0;
+	time = jiffies_to_usecs(jiffies) - 0;
 	ack_delay = 0;
-	quic_cong_rtt_update(&cong, transmit_ts, ack_delay);
+	quic_cong_rtt_update(&cong, time, ack_delay);
 	KUNIT_EXPECT_EQ(test, cong.latest_rtt, 0);
 	KUNIT_EXPECT_EQ(test, cong.min_rtt, 0);
 	KUNIT_EXPECT_EQ(test, cong.smoothed_rtt, 47250);
 	KUNIT_EXPECT_EQ(test, cong.rttvar, 75653);
 	KUNIT_EXPECT_EQ(test, cong.rto, 122903);
 
-	transmit_ts = jiffies_to_usecs(jiffies) - 0;
+	time = jiffies_to_usecs(jiffies) - 0;
 	ack_delay = 0;
-	quic_cong_rtt_update(&cong, transmit_ts, ack_delay);
+	quic_cong_rtt_update(&cong, time, ack_delay);
 	KUNIT_EXPECT_EQ(test, cong.latest_rtt, 0);
 	KUNIT_EXPECT_EQ(test, cong.min_rtt, 0);
 	KUNIT_EXPECT_EQ(test, cong.smoothed_rtt, 41343);
 	KUNIT_EXPECT_EQ(test, cong.rttvar, 67075);
 	KUNIT_EXPECT_EQ(test, cong.rto, 108418);
 
-	transmit_ts = jiffies_to_usecs(jiffies) - 30000;
+	time = jiffies_to_usecs(jiffies) - 30000;
 	ack_delay = 2500;
-	quic_cong_rtt_update(&cong, transmit_ts, ack_delay);
+	quic_cong_rtt_update(&cong, time, ack_delay);
 	KUNIT_EXPECT_EQ(test, cong.latest_rtt, 30000);
 	KUNIT_EXPECT_EQ(test, cong.min_rtt, 30000);
 	KUNIT_EXPECT_EQ(test, cong.smoothed_rtt, 39925);
 	KUNIT_EXPECT_EQ(test, cong.rttvar, 52787);
 	KUNIT_EXPECT_EQ(test, cong.rto, 100000);
 
-	transmit_ts = jiffies_to_usecs(jiffies) - 30000;
+	time = jiffies_to_usecs(jiffies) - 30000;
 	ack_delay = 2500;
-	quic_cong_rtt_update(&cong, transmit_ts, ack_delay);
+	quic_cong_rtt_update(&cong, time, ack_delay);
 	KUNIT_EXPECT_EQ(test, cong.latest_rtt, 30000);
 	KUNIT_EXPECT_EQ(test, cong.min_rtt, 30000);
 	KUNIT_EXPECT_EQ(test, cong.smoothed_rtt, 38684);
 	KUNIT_EXPECT_EQ(test, cong.rttvar, 41761);
 	KUNIT_EXPECT_EQ(test, cong.rto, 100000);
 
-	transmit_ts = jiffies_to_usecs(jiffies) - 3000000;
+	time = jiffies_to_usecs(jiffies) - 3000000;
 	ack_delay = 2500;
-	quic_cong_rtt_update(&cong, transmit_ts, ack_delay);
+	quic_cong_rtt_update(&cong, time, ack_delay);
 	KUNIT_EXPECT_EQ(test, cong.latest_rtt, 3000000);
 	KUNIT_EXPECT_EQ(test, cong.min_rtt, 30000);
 	KUNIT_EXPECT_EQ(test, cong.smoothed_rtt, 406348);
 	KUNIT_EXPECT_EQ(test, cong.rttvar, 674733);
 	KUNIT_EXPECT_EQ(test, cong.rto, 1081081);
 
-	transmit_ts = jiffies_to_usecs(jiffies) - 3000000;
+	time = jiffies_to_usecs(jiffies) - 3000000;
 	ack_delay = 2500;
-	quic_cong_rtt_update(&cong, transmit_ts, ack_delay);
+	quic_cong_rtt_update(&cong, time, ack_delay);
 	KUNIT_EXPECT_EQ(test, cong.latest_rtt, 3000000);
 	KUNIT_EXPECT_EQ(test, cong.min_rtt, 30000);
 	KUNIT_EXPECT_EQ(test, cong.smoothed_rtt, 728054);
 	KUNIT_EXPECT_EQ(test, cong.rttvar, 1069036);
 	KUNIT_EXPECT_EQ(test, cong.rto, 1797090);
 
-	transmit_ts = jiffies_to_usecs(jiffies) - 3000000;
+	time = jiffies_to_usecs(jiffies) - 3000000;
 	ack_delay = 2500;
-	quic_cong_rtt_update(&cong, transmit_ts, ack_delay);
+	quic_cong_rtt_update(&cong, time, ack_delay);
 	KUNIT_EXPECT_EQ(test, cong.latest_rtt, 3000000);
 	KUNIT_EXPECT_EQ(test, cong.min_rtt, 30000);
 	KUNIT_EXPECT_EQ(test, cong.smoothed_rtt, 1009547);
 	KUNIT_EXPECT_EQ(test, cong.rttvar, 1294390);
 	KUNIT_EXPECT_EQ(test, cong.rto, 2303937);
 
-	transmit_ts = jiffies_to_usecs(jiffies) - 6000000;
+	time = jiffies_to_usecs(jiffies) - 6000000;
 	ack_delay = 2500;
-	quic_cong_rtt_update(&cong, transmit_ts, ack_delay);
+	quic_cong_rtt_update(&cong, time, ack_delay);
 	KUNIT_EXPECT_EQ(test, cong.latest_rtt, 6000000);
 	KUNIT_EXPECT_EQ(test, cong.min_rtt, 30000);
 	KUNIT_EXPECT_EQ(test, cong.smoothed_rtt, 1630853);
 	KUNIT_EXPECT_EQ(test, cong.rttvar, 2058079);
 	KUNIT_EXPECT_EQ(test, cong.rto, 3688932);
 
-	transmit_ts = jiffies_to_usecs(jiffies) - 10000000;
+	time = jiffies_to_usecs(jiffies) - 10000000;
 	ack_delay = 2500;
-	quic_cong_rtt_update(&cong, transmit_ts, ack_delay);
+	quic_cong_rtt_update(&cong, time, ack_delay);
 	KUNIT_EXPECT_EQ(test, cong.latest_rtt, 10000000);
 	KUNIT_EXPECT_EQ(test, cong.min_rtt, 30000);
 	KUNIT_EXPECT_EQ(test, cong.smoothed_rtt, 2674496);
@@ -743,10 +743,9 @@ static void quic_cong_test1(struct kunit *test)
 
 static void quic_cong_test2(struct kunit *test)
 {
-	u32 transmit_ts, acked_number, acked_bytes, inflight;
 	struct quic_transport_param p = {};
 	struct quic_cong cong = {};
-	u32 number, last_number;
+	u32 time, bytes;
 
 	p.max_data = 106496;
 	p.max_ack_delay = 25000;
@@ -761,259 +760,135 @@ static void quic_cong_test2(struct kunit *test)
 	KUNIT_EXPECT_EQ(test, cong.state, QUIC_CONG_SLOW_START);
 	KUNIT_EXPECT_EQ(test, cong.threshold, U32_MAX);
 
-	/* slow_start:  cwnd increases by acked_bytes after SACK */
-	transmit_ts = jiffies_to_usecs(jiffies) - 300000;
-	acked_number = 3;
-	acked_bytes = 1400;
-	inflight = 0;
-	quic_cong_cwnd_update_after_sack(&cong, acked_number, transmit_ts, acked_bytes, inflight);
+	/* slow_start:  cwnd increases by bytes after SACK */
+	time = jiffies_to_usecs(jiffies) - 300000;
+	bytes = 1400;
+	quic_cong_on_packet_acked(&cong, time, bytes);
 	KUNIT_EXPECT_EQ(test, cong.window, 16120);
-	KUNIT_EXPECT_EQ(test, cong.max_acked_number, acked_number);
-	KUNIT_EXPECT_EQ(test, cong.max_acked_transmit_ts, transmit_ts);
 
-	transmit_ts = jiffies_to_usecs(jiffies) - 300000;
-	acked_number = 4;
-	acked_bytes = 7000;
-	inflight = 0;
-	quic_cong_cwnd_update_after_sack(&cong, acked_number, transmit_ts, acked_bytes, inflight);
+	time = jiffies_to_usecs(jiffies) - 300000;
+	bytes = 7000;
+	quic_cong_on_packet_acked(&cong, time, bytes);
 	KUNIT_EXPECT_EQ(test, cong.window, 23120);
-	KUNIT_EXPECT_EQ(test, cong.max_acked_number, acked_number);
-	KUNIT_EXPECT_EQ(test, cong.max_acked_transmit_ts, transmit_ts);
 
-	transmit_ts = jiffies_to_usecs(jiffies) - 300000;
-	acked_number = 5;
-	acked_bytes = 14000;
-	inflight = 0;
-	quic_cong_cwnd_update_after_sack(&cong, acked_number, transmit_ts, acked_bytes, inflight);
+	time = jiffies_to_usecs(jiffies) - 300000;
+	bytes = 14000;
+	quic_cong_on_packet_acked(&cong, time, bytes);
 	KUNIT_EXPECT_EQ(test, cong.window, 37120);
-	KUNIT_EXPECT_EQ(test, cong.max_acked_number, acked_number);
-	KUNIT_EXPECT_EQ(test, cong.max_acked_transmit_ts, transmit_ts);
 
-	transmit_ts = jiffies_to_usecs(jiffies) - 300000;
-	acked_number = 6;
-	acked_bytes = 28000;
-	inflight = 0;
-	quic_cong_cwnd_update_after_sack(&cong, acked_number, transmit_ts, acked_bytes, inflight);
+	time = jiffies_to_usecs(jiffies) - 300000;
+	bytes = 28000;
+	quic_cong_on_packet_acked(&cong, time, bytes);
 	KUNIT_EXPECT_EQ(test, cong.window, 65120);
-	KUNIT_EXPECT_EQ(test, cong.max_acked_number, acked_number);
-	KUNIT_EXPECT_EQ(test, cong.max_acked_transmit_ts, transmit_ts);
 
-	transmit_ts = jiffies_to_usecs(jiffies) - 300000;
-	acked_number = 8;
-	acked_bytes = 56000;
-	inflight = 1400;
-	quic_cong_cwnd_update_after_sack(&cong, acked_number, transmit_ts, acked_bytes, inflight);
-	KUNIT_EXPECT_EQ(test, cong.window, 106496);
-	KUNIT_EXPECT_EQ(test, cong.max_acked_number, acked_number);
-	KUNIT_EXPECT_EQ(test, cong.max_acked_transmit_ts, transmit_ts);
-
-	/* slow_start -> recovery: go to recovery after one timeout */
-	transmit_ts = jiffies_to_usecs(jiffies) - 300000;
-	number = 7;
-	last_number = 8;
-	quic_cong_cwnd_update_after_timeout(&cong, number, transmit_ts, last_number);
-	KUNIT_EXPECT_EQ(test, cong.last_sent_number, last_number);
-	KUNIT_EXPECT_EQ(test, cong.state, QUIC_CONG_RECOVERY_PERIOD);
-	KUNIT_EXPECT_EQ(test, cong.prior_threshold, U32_MAX);
-	KUNIT_EXPECT_EQ(test, cong.prior_window, 106496);
-	KUNIT_EXPECT_EQ(test, cong.threshold, 53248);
-	KUNIT_EXPECT_EQ(test, cong.window, 53248);
-
-	/* recovery: no cwnd update after more timeout */
-	transmit_ts = jiffies_to_usecs(jiffies) - 300000;
-	number = 7;
-	last_number = 8;
-	quic_cong_cwnd_update_after_timeout(&cong, number, transmit_ts, last_number);
-	KUNIT_EXPECT_EQ(test, cong.last_sent_number, last_number);
-	KUNIT_EXPECT_EQ(test, cong.state, QUIC_CONG_RECOVERY_PERIOD);
-	KUNIT_EXPECT_EQ(test, cong.prior_threshold, U32_MAX);
-	KUNIT_EXPECT_EQ(test, cong.prior_window, 106496);
-	KUNIT_EXPECT_EQ(test, cong.threshold, 53248);
-	KUNIT_EXPECT_EQ(test, cong.window, 53248);
-
-	/* recovery -> slow_start: go back to slow_start after SACK */
-	transmit_ts = jiffies_to_usecs(jiffies) - 300000;
-	acked_number = 7;
-	acked_bytes = 1400;
-	inflight = 0;
-	quic_cong_cwnd_update_after_sack(&cong, acked_number, transmit_ts, acked_bytes, inflight);
-	KUNIT_EXPECT_EQ(test, cong.state, QUIC_CONG_SLOW_START);
-	KUNIT_EXPECT_EQ(test, cong.threshold, U32_MAX);
+	time = jiffies_to_usecs(jiffies) - 300000;
+	bytes = 56000;
+	quic_cong_on_packet_acked(&cong, time, bytes);
 	KUNIT_EXPECT_EQ(test, cong.window, 106496);
 
-	/* slow_start -> recovery: go to recovery after one timeout */
-	transmit_ts = jiffies_to_usecs(jiffies) - 300000;
-	number = 9;
-	last_number = 9;
-	quic_cong_cwnd_update_after_timeout(&cong, number, transmit_ts, last_number);
-	KUNIT_EXPECT_EQ(test, cong.last_sent_number, last_number);
+	/* slow_start -> recovery: go to recovery after one loss */
+	time = jiffies_to_usecs(jiffies) - 300000;
+	bytes = 1400;
+	quic_cong_on_packet_lost(&cong, time, bytes);
 	KUNIT_EXPECT_EQ(test, cong.state, QUIC_CONG_RECOVERY_PERIOD);
-	KUNIT_EXPECT_EQ(test, cong.prior_threshold, U32_MAX);
-	KUNIT_EXPECT_EQ(test, cong.prior_window, 106496);
 	KUNIT_EXPECT_EQ(test, cong.threshold, 53248);
 	KUNIT_EXPECT_EQ(test, cong.window, 53248);
 
-	/* recovery -> cong_avoid: go to cong_avoid after SACK if there's inflight */
-	transmit_ts = jiffies_to_usecs(jiffies) - 300000;
-	acked_number = 11;
-	acked_bytes = 1400;
-	inflight = 2800;
-	quic_cong_cwnd_update_after_sack(&cong, acked_number, transmit_ts, acked_bytes, inflight);
+	/* recovery: no cwnd update after more loss */
+	time = jiffies_to_usecs(jiffies) - 300000;
+	bytes = 1400;
+	quic_cong_on_packet_lost(&cong, time, bytes);
+	KUNIT_EXPECT_EQ(test, cong.state, QUIC_CONG_RECOVERY_PERIOD);
+	KUNIT_EXPECT_EQ(test, cong.threshold, 53248);
+	KUNIT_EXPECT_EQ(test, cong.window, 53248);
+
+	/* recovery -> cong_avoid: go to cong_avoid after SACK if recovery_time < time */
+	msleep(1);
+	time = jiffies_to_usecs(jiffies);
+	bytes = 1400;
+	quic_cong_on_packet_acked(&cong, time, bytes);
 	KUNIT_EXPECT_EQ(test, cong.state, QUIC_CONG_CONGESTION_AVOIDANCE);
-	KUNIT_EXPECT_EQ(test, cong.max_acked_number, 11);
 
-	/* cong_avoid: cwnd increase by 'mss * acked_bytes / cwnd' after SACK if there's inflight */
-	transmit_ts = jiffies_to_usecs(jiffies) - 300000;
-	acked_number = 12;
-	acked_bytes = 1400;
-	inflight = 2800;
-	quic_cong_cwnd_update_after_sack(&cong, acked_number, transmit_ts, acked_bytes, inflight);
+	/* cong_avoid: cwnd increase by 'mss * bytes / cwnd' after SACK */
+	time = jiffies_to_usecs(jiffies) - 300000;
+	bytes = 1400;
+	quic_cong_on_packet_acked(&cong, time, bytes);
 	KUNIT_EXPECT_EQ(test, cong.state, QUIC_CONG_CONGESTION_AVOIDANCE);
 	KUNIT_EXPECT_EQ(test, cong.window, 53284);
 
-	transmit_ts = jiffies_to_usecs(jiffies) - 300000;
-	acked_number = 13;
-	acked_bytes = 1400;
-	inflight = 2800;
-	quic_cong_cwnd_update_after_sack(&cong, acked_number, transmit_ts, acked_bytes, inflight);
+	time = jiffies_to_usecs(jiffies) - 300000;
+	bytes = 1400;
+	quic_cong_on_packet_acked(&cong, time, bytes);
 	KUNIT_EXPECT_EQ(test, cong.state, QUIC_CONG_CONGESTION_AVOIDANCE);
 	KUNIT_EXPECT_EQ(test, cong.window, 53320);
 
-	/* cong_avoid: no update if the rtx was not a long time ago */
-	transmit_ts = jiffies_to_usecs(jiffies) - 300000;
-	number = 9;
-	last_number = 13;
-	quic_cong_cwnd_update_after_timeout(&cong, number, transmit_ts, last_number);
-	KUNIT_EXPECT_EQ(test, cong.last_sent_number, 9);
-	KUNIT_EXPECT_EQ(test, cong.state, QUIC_CONG_CONGESTION_AVOIDANCE);
-
-	/* cong_avoid -> recovery: go back to recovery after one timeout after enough time */
-	transmit_ts = jiffies_to_usecs(jiffies) - 500000;
-	number = 9;
-	last_number = 13;
-	quic_cong_cwnd_update_after_timeout(&cong, number, transmit_ts, last_number);
-	KUNIT_EXPECT_EQ(test, cong.last_sent_number, last_number);
+	/* cong_avoid -> recovery: go back to recovery after one loss */
+	time = jiffies_to_usecs(jiffies) - 300000;
+	bytes = 1400;
+	quic_cong_on_packet_lost(&cong, time, bytes);
 	KUNIT_EXPECT_EQ(test, cong.state, QUIC_CONG_RECOVERY_PERIOD);
 	KUNIT_EXPECT_EQ(test, cong.threshold, 26660);
 	KUNIT_EXPECT_EQ(test, cong.window, 26660);
 
-	/* recovery: no update after SACK if there's inflight and acked_number < last_sent_number */
-	transmit_ts = jiffies_to_usecs(jiffies) - 300000;
-	acked_number = 9;
-	acked_bytes = 1400;
-	inflight = 1400;
-	quic_cong_cwnd_update_after_sack(&cong, acked_number, transmit_ts, acked_bytes, inflight);
+	/* recovery: no update after SACK if recovery_time >= time */
+	time = jiffies_to_usecs(jiffies) - 300000;
+	bytes = 1400;
+	quic_cong_on_packet_acked(&cong, time, bytes);
 	KUNIT_EXPECT_EQ(test, cong.state, QUIC_CONG_RECOVERY_PERIOD);
 	KUNIT_EXPECT_EQ(test, cong.window, 26660);
 
-	/* recovery -> cong_avoid: go to cong_avoid after SACK if there's inflight */
-	transmit_ts = jiffies_to_usecs(jiffies) - 300000;
-	acked_number = 14;
-	acked_bytes = 1400;
-	inflight = 1400;
-	quic_cong_cwnd_update_after_sack(&cong, acked_number, transmit_ts, acked_bytes, inflight);
-	KUNIT_EXPECT_EQ(test, cong.max_acked_number, acked_number);
-	KUNIT_EXPECT_EQ(test, cong.state, QUIC_CONG_CONGESTION_AVOIDANCE);
-	KUNIT_EXPECT_EQ(test, cong.window, 26660);
-
-	/* cong_avoid -> slow_start: got back to slow_start after SACK if there is no inflight */
-	transmit_ts = jiffies_to_usecs(jiffies) - 300000;
-	acked_number = 10;
-	acked_bytes = 1400;
-	inflight = 0;
-	quic_cong_cwnd_update_after_sack(&cong, acked_number, transmit_ts, acked_bytes, inflight);
+	/* recovery -> slow_start: go back to start if in persistent congestion */
+	time = jiffies_to_usecs(jiffies) - 5000000;
+	bytes = 1400;
+	quic_cong_on_packet_lost(&cong, time, bytes);
 	KUNIT_EXPECT_EQ(test, cong.state, QUIC_CONG_SLOW_START);
-	KUNIT_EXPECT_EQ(test, cong.threshold, U32_MAX);
-	KUNIT_EXPECT_EQ(test, cong.window, 106496);
+	KUNIT_EXPECT_EQ(test, cong.threshold, 26660);
+	KUNIT_EXPECT_EQ(test, cong.window, 2800);
+
+	time = jiffies_to_usecs(jiffies) - 300000;
+	bytes = 23860;
+	quic_cong_on_packet_acked(&cong, time, bytes);
+	KUNIT_EXPECT_EQ(test, cong.state, QUIC_CONG_SLOW_START);
+	KUNIT_EXPECT_EQ(test, cong.window, 26660);
 
 	/* slow_start -> recovery: go to recovery after ECN */
-	quic_cong_cwnd_update_after_ecn(&cong);
+	quic_cong_on_process_ecn(&cong);
 	KUNIT_EXPECT_EQ(test, cong.state, QUIC_CONG_RECOVERY_PERIOD);
-	KUNIT_EXPECT_EQ(test, cong.prior_threshold, U32_MAX);
-	KUNIT_EXPECT_EQ(test, cong.prior_window, 106496);
-	KUNIT_EXPECT_EQ(test, cong.threshold, 53248);
-	KUNIT_EXPECT_EQ(test, cong.window, 53248);
+	KUNIT_EXPECT_EQ(test, cong.threshold, 13330);
+	KUNIT_EXPECT_EQ(test, cong.window, 13330);
 
 	/* recovery: no update after ECN */
-	quic_cong_cwnd_update_after_ecn(&cong);
+	quic_cong_on_process_ecn(&cong);
 	KUNIT_EXPECT_EQ(test, cong.state, QUIC_CONG_RECOVERY_PERIOD);
-	KUNIT_EXPECT_EQ(test, cong.window, 53248);
+	KUNIT_EXPECT_EQ(test, cong.window, 13330);
 
-	/* recovery -> cong_avoid: go to cong_avoid after SACK if there's inflight */
-	transmit_ts = jiffies_to_usecs(jiffies) - 4000000;
-	acked_number = 18;
-	acked_bytes = 1400;
-	inflight = 4200;
-	quic_cong_cwnd_update_after_sack(&cong, acked_number, transmit_ts, acked_bytes, inflight);
-	KUNIT_EXPECT_EQ(test, cong.max_acked_number, acked_number);
+	/* recovery -> cong_avoid: go to cong_avoid after SACK if recovery_time < time */
+	msleep(1);
+	time = jiffies_to_usecs(jiffies);
+	bytes = 1400;
+	quic_cong_on_packet_acked(&cong, time, bytes);
 	KUNIT_EXPECT_EQ(test, cong.state, QUIC_CONG_CONGESTION_AVOIDANCE);
-	KUNIT_EXPECT_EQ(test, cong.window, 53248);
 
-	/* any (recovery) -> slow_start -> recovery: persistent congestion after one timeout */
-	transmit_ts = jiffies_to_usecs(jiffies) - 500000;
-	number = 15;
-	last_number = 18;
-	quic_cong_cwnd_update_after_timeout(&cong, number, transmit_ts, last_number);
-	KUNIT_EXPECT_EQ(test, cong.last_sent_number, last_number);
-	KUNIT_EXPECT_EQ(test, cong.state, QUIC_CONG_RECOVERY_PERIOD);
-	KUNIT_EXPECT_EQ(test, cong.prior_threshold, 53248);
-	KUNIT_EXPECT_EQ(test, cong.prior_window, 2800);
-	KUNIT_EXPECT_EQ(test, cong.threshold, 2800);
-	KUNIT_EXPECT_EQ(test, cong.window, 2800);
-
-	/* recovery: no update after SACK if there's inflight and acked_number < last_sent_number */
-	transmit_ts = jiffies_to_usecs(jiffies) - 300000;
-	acked_number = 15;
-	acked_bytes = 1400;
-	inflight = 2800;
-	quic_cong_cwnd_update_after_sack(&cong, acked_number, transmit_ts, acked_bytes, inflight);
-	KUNIT_EXPECT_EQ(test, cong.state, QUIC_CONG_RECOVERY_PERIOD);
-	KUNIT_EXPECT_EQ(test, cong.window, 2800);
-
-	transmit_ts = jiffies_to_usecs(jiffies) - 300000;
-	acked_number = 16;
-	acked_bytes = 1400;
-	inflight = 1400;
-	quic_cong_cwnd_update_after_sack(&cong, acked_number, transmit_ts, acked_bytes, inflight);
-	KUNIT_EXPECT_EQ(test, cong.state, QUIC_CONG_RECOVERY_PERIOD);
-	KUNIT_EXPECT_EQ(test, cong.window, 2800);
-
-	/* recovery -> slow_start: go back to slow_start after SACK */
-	transmit_ts = jiffies_to_usecs(jiffies) - 300000;
-	acked_number = 17;
-	acked_bytes = 1400;
-	inflight = 0;
-	quic_cong_cwnd_update_after_sack(&cong, acked_number, transmit_ts, acked_bytes, inflight);
+	/* cong_avoid -> slow_start: go back to start if in persistent congestion */
+	time = jiffies_to_usecs(jiffies) - 5000000;
+	bytes = 1400;
+	quic_cong_on_packet_lost(&cong, time, bytes);
 	KUNIT_EXPECT_EQ(test, cong.state, QUIC_CONG_SLOW_START);
+	KUNIT_EXPECT_EQ(test, cong.threshold, 13330);
 	KUNIT_EXPECT_EQ(test, cong.window, 2800);
-	KUNIT_EXPECT_EQ(test, cong.threshold, 53248);
 
-	/* slow_start: cwnd increases by acked_bytes after SACK */
-	transmit_ts = jiffies_to_usecs(jiffies) - 300000;
-	acked_number = 19;
-	acked_bytes = 44800;
-	inflight = 0;
-	quic_cong_cwnd_update_after_sack(&cong, acked_number, transmit_ts, acked_bytes, inflight);
-	KUNIT_EXPECT_EQ(test, cong.state, QUIC_CONG_SLOW_START);
-	KUNIT_EXPECT_EQ(test, cong.window, 47600);
-	KUNIT_EXPECT_EQ(test, cong.threshold, 53248);
-
-	/* slow_start -> cong_void: go to cong_void after SACK if cwnd > threshold */
-	transmit_ts = jiffies_to_usecs(jiffies) - 300000;
-	acked_number = 20;
-	acked_bytes = 11200;
-	inflight = 0;
-	quic_cong_cwnd_update_after_sack(&cong, acked_number, transmit_ts, acked_bytes, inflight);
+	/* slow_start -> cong_avoid: go to cong_void after SACK if cwnd > threshold */
+	time = jiffies_to_usecs(jiffies) - 300000;
+	bytes = 10532;
+	quic_cong_on_packet_acked(&cong, time, bytes);
 	KUNIT_EXPECT_EQ(test, cong.state, QUIC_CONG_CONGESTION_AVOIDANCE);
-	KUNIT_EXPECT_EQ(test, cong.window, 58800);
-	KUNIT_EXPECT_EQ(test, cong.prior_window, 58800);
-	KUNIT_EXPECT_EQ(test, cong.threshold, 53248);
-	KUNIT_EXPECT_EQ(test, cong.prior_threshold, 53248);
+	KUNIT_EXPECT_EQ(test, cong.window, 13332);
+	KUNIT_EXPECT_EQ(test, cong.threshold, 13330);
 
-	/* cong_void -> recovery: go back to recovery after ECN */
-	quic_cong_cwnd_update_after_ecn(&cong);
+	/* cong_avoid -> recovery: go back to recovery after ECN */
+	quic_cong_on_process_ecn(&cong);
 	KUNIT_EXPECT_EQ(test, cong.state, QUIC_CONG_RECOVERY_PERIOD);
-	KUNIT_EXPECT_EQ(test, cong.window, 29400);
+	KUNIT_EXPECT_EQ(test, cong.window, 6666);
 }
 
 static struct kunit_case quic_test_cases[] = {
