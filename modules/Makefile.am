@@ -1,6 +1,5 @@
-MODULES = quic_unit_test quic_sample_test quic
-KERNEL_EXTRA = /lib/modules/$(shell uname -r)/extra
-KERNEL_BUILD = /lib/modules/$(shell uname -r)/build
+EXTRA_DIST	= include net
+MODULES		= quic_unit_test quic_sample_test quic
 
 all:
 	$(MAKE) -C $(KERNEL_BUILD) M=$(CURDIR)/net/quic modules \
@@ -34,3 +33,5 @@ $(KERNEL_EXTRA):
 
 depmod:
 	depmod -a
+
+MAINTAINERCLEANFILES	= Makefile.in
