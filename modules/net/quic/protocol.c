@@ -15,12 +15,14 @@
 #include <net/protocol.h>
 #include <linux/seq_file.h>
 #include <linux/proc_fs.h>
+#include <linux/swap.h>
 #include <linux/icmp.h>
 #include <net/tls.h>
 
 #include <linux/version.h>
 
 struct quic_hash_table quic_hash_tables[QUIC_HT_MAX_TABLES] __read_mostly;
+static DEFINE_PER_CPU(int, quic_memory_per_cpu_fw_alloc);
 struct kmem_cache *quic_frame_cachep __read_mostly;
 struct workqueue_struct *quic_wq __read_mostly;
 struct percpu_counter quic_sockets_allocated;
@@ -766,13 +768,29 @@ static struct inet_protosw quicv6_seqpacket_protosw = {
 
 static int quic_protosw_init(void)
 {
+	struct proto *proto;
+	void *offset;
 	int err;
 
-	err = proto_register(&quic_prot, 1);
+	proto = &quic_prot;
+	offset = (void *)(&proto->memory_allocated) + sizeof(proto->memory_allocated);
+	if (offset != &proto->sockets_allocated) /* per_cpu_fw_alloc */
+		*(int  __percpu **)offset = &quic_memory_per_cpu_fw_alloc;
+
+	err = proto_register(proto, 1);
 	if (err)
 		return err;
 
-	err = proto_register(&quicv6_prot, 1);
+	proto = &quicv6_prot;
+	offset = (void *)(&proto->memory_allocated) + sizeof(proto->memory_allocated);
+	if (offset != &proto->sockets_allocated) /* per_cpu_fw_alloc */
+		*(int  __percpu **)offset = &quic_memory_per_cpu_fw_alloc;
+
+	offset = (void *)(&proto->obj_size) + sizeof(proto->obj_size);
+	if (offset != &proto->slab_flags) /* ipv6_pinfo_offset */
+		*(unsigned int *)offset = offsetof(struct quic6_sock, inet6);
+
+	err = proto_register(proto, 1);
 	if (err) {
 		proto_unregister(&quic_prot);
 		return err;

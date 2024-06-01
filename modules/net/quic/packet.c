@@ -556,16 +556,8 @@ err:
 	return -EINVAL;
 }
 
-#if KERNEL_VERSION(6, 2, 0) <= LINUX_VERSION_CODE
-static void quic_packet_decrypt_done(void *data, int err)
+static void quic_packet_decrypt_done(struct sk_buff *skb, int err)
 {
-	struct sk_buff *skb = data;
-#else
-static void quic_packet_decrypt_done(struct crypto_async_request *base, int err)
-{
-	struct sk_buff *skb = base->data;
-#endif
-
 	if (err) {
 		kfree_skb(skb);
 		pr_warn_once("%s: err %d\n", __func__, err);
@@ -1354,16 +1346,8 @@ int quic_packet_config(struct sock *sk, u8 level, u8 path_alt)
 	return quic_packet_route(sk) < 0 ? -1 : 0;
 }
 
-#if KERNEL_VERSION(6, 2, 0) <= LINUX_VERSION_CODE
-static void quic_packet_encrypt_done(void *data, int err)
+static void quic_packet_encrypt_done(struct sk_buff *skb, int err)
 {
-	struct sk_buff *skb = data;
-#else
-static void quic_packet_encrypt_done(struct crypto_async_request *base, int err)
-{
-	struct sk_buff *skb = base->data;
-#endif
-
 	if (err) {
 		kfree_skb(skb);
 		pr_warn_once("%s: err %d\n", __func__, err);

@@ -11,6 +11,7 @@
  */
 
 #include <uapi/linux/quic.h>
+#include <linux/jiffies.h>
 #include "cong.h"
 
 static void quic_reno_on_packet_lost(struct quic_cong *cong, u32 time, u32 bytes)

@@ -331,15 +331,8 @@ static u8 encrypted_data[296] = {
 
 static struct quic_crypto crypto;
 
-#if KERNEL_VERSION(6, 2, 0) <= LINUX_VERSION_CODE
-static void quic_encrypt_done(void *data, int err)
+static void quic_encrypt_done(struct sk_buff *skb, int err)
 {
-	struct sk_buff *skb = data;
-#else
-static void quic_encrypt_done(struct crypto_async_request *base, int err)
-{
-	struct sk_buff *skb = base->data;
-#endif
 	struct quic_crypto_cb *cb = QUIC_CRYPTO_CB(skb);
 
 	WARN_ON(!skb_set_owner_sk_safe(skb, skb->sk));
@@ -352,15 +345,8 @@ static void quic_encrypt_done(struct crypto_async_request *base, int err)
 	quic_crypto_encrypt(&crypto, skb);
 }
 
-#if KERNEL_VERSION(6, 2, 0) <= LINUX_VERSION_CODE
-static void quic_decrypt_done(void *data, int err)
+static void quic_decrypt_done(struct sk_buff *skb, int err)
 {
-	struct sk_buff *skb = data;
-#else
-static void quic_decrypt_done(struct crypto_async_request *base, int err)
-{
-	struct sk_buff *skb = base->data;
-#endif
 	struct quic_crypto_cb *cb = QUIC_CRYPTO_CB(skb);
 
 	WARN_ON(!skb_set_owner_sk_safe(skb, skb->sk));
@@ -432,7 +418,7 @@ static void quic_crypto_test1(struct kunit *test)
 	ret = quic_crypto_verify_token(&crypto, &addr, sizeof(addr), &tmpid, token, tokenlen);
 	KUNIT_EXPECT_EQ(test, ret, 0);
 	KUNIT_EXPECT_EQ(test, tmpid.len, conn_id.len);
-	KUNIT_EXPECT_MEMEQ(test, tmpid.data, conn_id.data, tmpid.len);
+	KUNIT_EXPECT_EQ(test, memcmp(tmpid.data, conn_id.data, tmpid.len), 0);
 
 	skb = alloc_skb(296, GFP_ATOMIC);
 	if (!skb)
@@ -485,7 +471,7 @@ static void quic_crypto_test2(struct kunit *test)
 		msleep(50);
 	}
 
-	KUNIT_EXPECT_MEMEQ(test, encrypted_data, skb->data, skb->len);
+	KUNIT_EXPECT_EQ(test, memcmp(encrypted_data, skb->data, skb->len), 0);
 	quic_crypto_destroy(&crypto);
 
 	srt.send = 0;
@@ -509,7 +495,7 @@ static void quic_crypto_test2(struct kunit *test)
 		msleep(50);
 	}
 
-	KUNIT_EXPECT_MEMEQ(test, data, skb->data, 280);
+	KUNIT_EXPECT_EQ(test, memcmp(data, skb->data, 280), 0);
 
 out:
 	kfree_skb(skb);

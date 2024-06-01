@@ -16,7 +16,6 @@
 #include <linux/version.h>
 #include <net/tls.h>
 
-static DEFINE_PER_CPU(int, quic_memory_per_cpu_fw_alloc);
 static unsigned long quic_memory_pressure;
 static atomic_long_t quic_memory_allocated;
 
@@ -2013,7 +2012,6 @@ struct proto quic_prot = {
 	.memory_pressure	=  &quic_memory_pressure,
 	.enter_memory_pressure	=  quic_enter_memory_pressure,
 	.memory_allocated	=  &quic_memory_allocated,
-	.per_cpu_fw_alloc	=  &quic_memory_per_cpu_fw_alloc,
 	.sockets_allocated	=  &quic_sockets_allocated,
 };
 
@@ -2038,15 +2036,11 @@ struct proto quicv6_prot = {
 	.release_cb	=  quic_release_cb,
 	.no_autobind	=  true,
 	.obj_size	= sizeof(struct quic6_sock),
-#if KERNEL_VERSION(6, 5, 0) <= LINUX_VERSION_CODE
-	.ipv6_pinfo_offset	= offsetof(struct quic6_sock, inet6),
-#endif
 	.sysctl_mem		=  sysctl_quic_mem,
 	.sysctl_rmem		=  sysctl_quic_rmem,
 	.sysctl_wmem		=  sysctl_quic_wmem,
 	.memory_pressure	=  &quic_memory_pressure,
 	.enter_memory_pressure	=  quic_enter_memory_pressure,
 	.memory_allocated	=  &quic_memory_allocated,
-	.per_cpu_fw_alloc	=  &quic_memory_per_cpu_fw_alloc,
 	.sockets_allocated	=  &quic_sockets_allocated,
 };

@@ -293,6 +293,17 @@ static void quic_crypto_destruct_skb(struct sk_buff *skb)
 	sock_efree(skb);
 }
 
+static void quic_crypto_done(void *data, int err)
+{
+	struct crypto_async_request *base = data;
+	struct sk_buff *skb = data;
+
+	if (base->flags == CRYPTO_TFM_REQ_MAY_BACKLOG)
+		skb = base->data;
+
+	QUIC_CRYPTO_CB(skb)->crypto_done(skb, err);
+}
+
 static int quic_crypto_payload_encrypt(struct crypto_aead *tfm, struct sk_buff *skb,
 				       u8 *tx_iv, bool ccm)
 {
@@ -333,7 +344,7 @@ static int quic_crypto_payload_encrypt(struct crypto_aead *tfm, struct sk_buff *
 	aead_request_set_tfm(req, tfm);
 	aead_request_set_ad(req, hlen);
 	aead_request_set_crypt(req, sg, sg, len - hlen, iv);
-	aead_request_set_callback(req, CRYPTO_TFM_REQ_MAY_BACKLOG, cb->crypto_done, skb);
+	aead_request_set_callback(req, CRYPTO_TFM_REQ_MAY_BACKLOG, (void *)quic_crypto_done, skb);
 
 	err = crypto_aead_encrypt(req);
 	if (err == -EINPROGRESS) {
@@ -385,7 +396,7 @@ static int quic_crypto_payload_decrypt(struct crypto_aead *tfm, struct sk_buff *
 	aead_request_set_tfm(req, tfm);
 	aead_request_set_ad(req, hlen);
 	aead_request_set_crypt(req, sg, sg, len - hlen, iv);
-	aead_request_set_callback(req, CRYPTO_TFM_REQ_MAY_BACKLOG, cb->crypto_done, skb);
+	aead_request_set_callback(req, CRYPTO_TFM_REQ_MAY_BACKLOG, (void *)quic_crypto_done, skb);
 
 	err = crypto_aead_decrypt(req);
 	if (err == -EINPROGRESS) {

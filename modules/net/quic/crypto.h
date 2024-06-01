@@ -12,8 +12,8 @@
 
 struct quic_crypto_cb {
 	union {
+		void (*crypto_done)(struct sk_buff *skb, int err);
 		struct sk_buff *last;
-		void *crypto_done;
 	};
 	s64 number_max;
 	s64 number;
