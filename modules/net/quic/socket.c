@@ -751,15 +751,15 @@ out:
 	}
 }
 
-#if KERNEL_VERSION(5, 18, 0) >= LINUX_VERSION_CODE
-static int quic_recvmsg(struct sock *sk, struct msghdr *msg, size_t len, int nonblock,
-			int flags, int *addr_len)
-{
-#else
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 19, 0)
 static int quic_recvmsg(struct sock *sk, struct msghdr *msg, size_t len, int flags,
 			int *addr_len)
 {
 	int nonblock = flags & MSG_DONTWAIT;
+#else
+static int quic_recvmsg(struct sock *sk, struct msghdr *msg, size_t len, int nonblock,
+			int flags, int *addr_len)
+{
 #endif
 	int err, copy, copied = 0, freed = 0, bytes = 0;
 	struct quic_inqueue *inq = quic_inq(sk);
@@ -1140,8 +1140,15 @@ out:
 	return err;
 }
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 10, 0)
+static struct sock *quic_accept(struct sock *sk, struct proto_accept_arg *arg)
+{
+	int flags = arg->flags, *errp = &arg->err;
+	bool kern = arg->kern;
+#else
 static struct sock *quic_accept(struct sock *sk, int flags, int *errp, bool kern)
 {
+#endif
 	struct quic_request_sock *req = NULL;
 	struct sock *nsk = NULL;
 	int err = -EINVAL;

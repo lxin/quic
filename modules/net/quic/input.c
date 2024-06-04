@@ -182,7 +182,7 @@ void quic_inq_flow_control(struct sock *sk, struct quic_stream *stream, int len)
 	/* recv flow control */
 	if (inq->max_bytes - inq->bytes < inq->window / 2) {
 		window = inq->window;
-		if (sk_under_memory_pressure(sk))
+		if (quic_under_memory_pressure(sk))
 			window >>= 1;
 		inq->max_bytes = inq->bytes + window;
 		frame = quic_frame_create(sk, QUIC_FRAME_MAX_DATA, inq);
@@ -192,7 +192,7 @@ void quic_inq_flow_control(struct sock *sk, struct quic_stream *stream, int len)
 
 	if (stream->recv.max_bytes - stream->recv.bytes < stream->recv.window / 2) {
 		window = stream->recv.window;
-		if (sk_under_memory_pressure(sk))
+		if (quic_under_memory_pressure(sk))
 			window >>= 1;
 		stream->recv.max_bytes = stream->recv.bytes + window;
 		frame = quic_frame_create(sk, QUIC_FRAME_MAX_STREAM_DATA, stream);

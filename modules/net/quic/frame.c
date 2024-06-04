@@ -1159,7 +1159,7 @@ static int quic_frame_data_blocked_process(struct sock *sk, struct quic_frame *f
 	recv_max_bytes = quic_inq_max_bytes(inq);
 
 	window = quic_inq_window(inq);
-	if (sk_under_memory_pressure(sk))
+	if (quic_under_memory_pressure(sk))
 		window >>= 1;
 
 	quic_inq_set_max_bytes(inq, quic_inq_bytes(inq) + window);
@@ -1198,7 +1198,7 @@ static int quic_frame_stream_data_blocked_process(struct sock *sk, struct quic_f
 	}
 
 	window = stream->recv.window;
-	if (sk_under_memory_pressure(sk))
+	if (quic_under_memory_pressure(sk))
 		window >>= 1;
 
 	recv_max_bytes = stream->recv.max_bytes;
