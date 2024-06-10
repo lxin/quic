@@ -19,7 +19,7 @@ msquic_test: msquic_test.c
 	$(CXX) $^ -o $@ -lmsquic -Wl,-rpath=/usr/local/lib -Wall
 
 check:
-	./runtest.sh
+	./runtest.sh $(tests)
 
 CLEANFILES		= msquic_test
 DISTCLEANFILES		= keys/*.pem keys/*.ext keys/*.txt

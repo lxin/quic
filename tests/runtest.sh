@@ -149,10 +149,10 @@ tlshd_tests()
 					  --cert ./keys/server-cert.pem --ca ./keys/ca-cert.pem
 		insmod ../modules/net/quic/quic_sample_test.ko || return 1
 	else
-		modprobe -n quic_same_test || return 0
+		modprobe -n quic_sample_test || return 0
 		daemon_run ./perf_test -l --pkey ./keys/server-key.pem \
 					  --cert ./keys/server-cert.pem --ca ./keys/ca-cert.pem
-		modprobe quic_same_test || return 1
+		modprobe quic_sample_test || return 1
 	fi
 	rmmod quic_sample_test
 	dmesg | tail -n 5
@@ -163,9 +163,9 @@ tlshd_tests()
 		daemon_run ./perf_test --addr 127.0.0.1 --ca ./keys/ca-cert.pem
 		insmod ../modules/net/quic/quic_sample_test.ko role=server || return 1
 	else
-		modprobe -n quic_same_test || return 0
+		modprobe -n quic_sample_test || return 0
 		daemon_run ./perf_test --addr 127.0.0.1 --ca ./keys/ca-cert.pem
-		modprobe quic_same_test role=server || return 1
+		modprobe quic_sample_test role=server || return 1
 	fi
 	rmmod quic_sample_test
 	dmesg | tail -n 5
@@ -177,9 +177,9 @@ tlshd_tests()
 		daemon_run ./perf_test -l --psk ./keys/server-psk.txt
 		insmod ../modules/net/quic/quic_sample_test.ko psk=$PSK || return 1
 	else
-		modprobe -n quic_same_test || return 0
+		modprobe -n quic_sample_test || return 0
 		daemon_run ./perf_test -l --psk ./keys/server-psk.txt
-		modprobe quic_same_test psk=$PSK || return 1
+		modprobe quic_sample_test psk=$PSK || return 1
 	fi
 	rmmod quic_sample_test
 	dmesg | tail -n 5
@@ -190,9 +190,9 @@ tlshd_tests()
 		daemon_run ./perf_test --addr 127.0.0.1 --psk ./keys/client-psk.txt
 		insmod ../modules/net/quic/quic_sample_test.ko role=server psk=1 || return 1
 	else
-		modprobe -n quic_same_test || return 0
+		modprobe -n quic_sample_test || return 0
 		daemon_run ./perf_test --addr 127.0.0.1 --psk ./keys/client-psk.txt
-		modprobe quic_same_test role=server psk=1 || return 1
+		modprobe quic_sample_test role=server psk=1 || return 1
 	fi
 	rmmod quic_sample_test
 	dmesg | tail -n 5
@@ -217,13 +217,15 @@ sample_tests()
 	daemon_stop
 }
 
+TESTS="func perf netem msquic tlshd sample"
 trap cleanup EXIT
 
-start_tests	&& \
-func_tests	&& \
-perf_tests	&& \
-netem_tests	&& \
-msquic_tests	&& \
-tlshd_tests	&& \
-sample_tests	&& \
+[ "$1" = "" ] || TESTS=$1
+
+start_tests || exit $?
+
+for name in $TESTS; do
+	eval ${name}_tests || exit $?
+done
+
 done_tests

@@ -13,12 +13,15 @@ psk_key2=b8d3a37be2c9a08eaf25cf6abe602ecc94417f8ba6211a58b8d0a3fb0d2e3a91
 
 if [ "$1" = "psk-keyring" ]; then
 	# create PSK keyring
-	KEY=`keyctl newring quic @s`
-	keyctl setperm $KEY 0x3f1f1f1f
-	keyctl link $KEY @u
-	keyctl add user $psk_id1 `echo $psk_key1 | xxd -r -p` %:quic
-	keyctl add user $psk_id2 `echo $psk_key2 | xxd -r -p` %:quic
-	keyctl unlink $KEY @s
+	KEYRING=`keyctl newring quic @s`
+	keyctl setperm $KEYRING 0x3f1f1f1f
+	keyctl link $KEYRING @u
+	KEY1=$(keyctl add user $psk_id1 `echo $psk_key1 | xxd -r -p` %:quic)
+	keyctl setperm $KEY1 0x3f1f1f1f
+	KEY2=$(keyctl add user $psk_id2 `echo $psk_key2 | xxd -r -p` %:quic)
+	keyctl setperm $KEY2 0x3f1f1f1f
+	keyctl unlink $KEYRING @s
+	echo "keyring $KEYRING with user keys $KEY1 and $KEY2 is created"
 	exit 0
 fi
 
