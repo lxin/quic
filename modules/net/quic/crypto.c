@@ -385,6 +385,7 @@ static int quic_crypto_payload_decrypt(struct crypto_aead *tfm, struct sk_buff *
 	err = skb_to_sgvec(skb, sg, 0, len);
 	if (err < 0)
 		goto err;
+	skb_dst_force(skb);
 
 	memcpy(nonce, rx_iv, QUIC_IV_LEN);
 	n = cpu_to_be64(cb->number);
