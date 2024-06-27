@@ -32,7 +32,7 @@ protocol number needed from IANA) running over UDP TUNNELs. See:
 
 - **How Kernel Consumers Use It**: Kernel users can send Handshake request from kernel via
 [handshake netlink](https://docs.kernel.org/networking/tls-handshake.html) to Userspace. tlshd
-in [ktls-utils](https://github.com/lxin/ktls-utils) will handle the handshake request for QUIC.
+in [ktls-utils](https://github.com/oracle/ktls-utils) will handle the handshake request for QUIC.
 
 ### Infrastructures
 
@@ -42,8 +42,8 @@ in [ktls-utils](https://github.com/lxin/ktls-utils) will handle the handshake re
       | APP1 |  | APP2 | ...
       +------+  +------+
       +--------------------------------------------+
-      |            libquic (gnutls)                |<----------+
-      |  {quic_handshake_server/client/param()}    |           |
+      |            libquic (gnutls)                |
+      |  {quic_handshake_server/client/param()}    |
       +--------------------------------------------+  +------------------+
        {send/recvmsg()}       {set/getsockopt()}      |tlshd (ktls-utils)|
        [CMSG handshake_info]  [SOCKOPT_CRYPTO_SECRET] +------------------+
@@ -148,7 +148,7 @@ above will skip QUIC modules building and use the one provided by kernel.
     - keyutils keyutils-libs-devel / libkeyutils-dev
 
     # cd /home/lxin
-    # git clone https://github.com/lxin/ktls-utils
+    # git clone https://github.com/oracle/ktls-utils
     # cd ktls-utils/
     # ./autogen.sh
     # ./configure --with-systemd
@@ -175,7 +175,7 @@ above will skip QUIC modules building and use the one provided by kernel.
     # sudo systemctl restart tlshd
 
     # cd /home/lxin/quic
-    # sudo make check (optional, re-run selftests)
+    # sudo make check tests=tlshd (optional, run some tests for tlshd)
 
 ### Build and Install iperf (For performance tests):
     # git clone https://github.com/lxin/iperf.git
