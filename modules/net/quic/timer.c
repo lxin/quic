@@ -67,13 +67,13 @@ static void quic_timer_loss_timeout(struct sock *sk, u8 level)
 		goto out;
 
 	pnmap = quic_pnmap(sk, level);
-	if (quic_pnmap_loss_ts(pnmap)) {
+	if (quic_pnmap_loss_time(pnmap)) {
 		if (quic_outq_retransmit_mark(sk, level, 0))
 			quic_outq_transmit(sk);
 		goto out;
 	}
 
-	if (quic_pnmap_last_sent_ts(pnmap))
+	if (quic_pnmap_last_sent_time(pnmap))
 		quic_outq_transmit_one(sk, level);
 out:
 	bh_unlock_sock(sk);

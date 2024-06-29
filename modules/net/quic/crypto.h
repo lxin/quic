@@ -61,8 +61,8 @@ struct quic_crypto {
 	u8 tx_iv[2][QUIC_IV_LEN];
 	u8 rx_iv[2][QUIC_IV_LEN];
 
-	u32 key_update_send_ts;
-	u32 key_update_ts;
+	u32 key_update_send_time;
+	u32 key_update_time;
 	u64 send_offset;
 	u64 recv_offset;
 	u32 version;
@@ -118,9 +118,9 @@ static inline void quic_crypto_set_key_pending(struct quic_crypto *crypto, u8 pe
 	crypto->key_pending = pending;
 }
 
-static inline void quic_crypto_set_key_update_send_ts(struct quic_crypto *crypto, u32 send_ts)
+static inline void quic_crypto_set_key_update_send_time(struct quic_crypto *crypto, u32 send_time)
 {
-	crypto->key_update_send_ts = send_ts;
+	crypto->key_update_send_time = send_time;
 }
 
 int quic_crypto_initial_keys_install(struct quic_crypto *crypto, struct quic_connection_id *conn_id,
@@ -132,7 +132,7 @@ int quic_crypto_set_secret(struct quic_crypto *crypto, struct quic_crypto_secret
 int quic_crypto_get_secret(struct quic_crypto *crypto, struct quic_crypto_secret *srt);
 void quic_crypto_destroy(struct quic_crypto *crypto);
 int quic_crypto_key_update(struct quic_crypto *crypto);
-void quic_crypto_set_key_update_ts(struct quic_crypto *crypto, u32 key_update_ts);
+void quic_crypto_set_key_update_time(struct quic_crypto *crypto, u32 key_update_time);
 int quic_crypto_get_retry_tag(struct quic_crypto *crypto, struct sk_buff *skb,
 			      struct quic_connection_id *odcid, u32 version, u8 *tag);
 int quic_crypto_generate_session_ticket_key(struct quic_crypto *crypto, void *data,

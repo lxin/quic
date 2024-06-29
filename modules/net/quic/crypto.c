@@ -508,8 +508,8 @@ int quic_crypto_encrypt(struct quic_crypto *crypto, struct sk_buff *skb)
 	if (cb->resume)
 		goto out;
 
-	if (crypto->key_pending && !crypto->key_update_send_ts)
-		crypto->key_update_send_ts = jiffies_to_usecs(jiffies);
+	if (crypto->key_pending && !crypto->key_update_send_time)
+		crypto->key_update_send_time = jiffies_to_usecs(jiffies);
 
 	ccm = quic_crypto_is_cipher_ccm(crypto);
 	err = quic_crypto_payload_encrypt(crypto->tx_tfm[phase], skb, iv, ccm);
@@ -560,8 +560,8 @@ out:
 	 * some time after unprotecting a packet sent using the new keys.
 	 */
 	if (cb->key_phase == crypto->key_phase &&
-	    crypto->key_pending && crypto->key_update_send_ts &&
-	    jiffies_to_usecs(jiffies) - crypto->key_update_send_ts >= crypto->key_update_ts)
+	    crypto->key_pending && crypto->key_update_send_time &&
+	    jiffies_to_usecs(jiffies) - crypto->key_update_send_time >= crypto->key_update_time)
 		cb->key_update = 1;
 	return err;
 }
@@ -715,9 +715,9 @@ err:
 }
 EXPORT_SYMBOL_GPL(quic_crypto_key_update);
 
-void quic_crypto_set_key_update_ts(struct quic_crypto *crypto, u32 key_update_ts)
+void quic_crypto_set_key_update_time(struct quic_crypto *crypto, u32 key_update_time)
 {
-	crypto->key_update_ts = key_update_ts;
+	crypto->key_update_time = key_update_time;
 }
 
 void quic_crypto_destroy(struct quic_crypto *crypto)

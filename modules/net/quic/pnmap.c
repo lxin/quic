@@ -43,8 +43,8 @@ int quic_pnmap_init(struct quic_pnmap *map)
 	map->max_pn_seen = map->base_pn - 1;
 	map->last_max_pn_seen = map->base_pn - 1;
 
-	map->max_pn_ts = jiffies_to_usecs(jiffies);
-	map->last_max_pn_ts = map->max_pn_ts;
+	map->max_pn_time = jiffies_to_usecs(jiffies);
+	map->last_max_pn_time = map->max_pn_time;
 
 	return 0;
 }
@@ -88,7 +88,7 @@ int quic_pnmap_mark(struct quic_pnmap *map, s64 pn)
 
 	if (map->max_pn_seen < pn) {
 		map->max_pn_seen = pn;
-		map->max_pn_ts = jiffies_to_usecs(jiffies);
+		map->max_pn_time = jiffies_to_usecs(jiffies);
 	}
 
 	if (pn < map->min_pn_seen) { /* only in the 1st period */
@@ -145,10 +145,10 @@ static int quic_pnmap_next_gap_ack(const struct quic_pnmap *map, struct quic_pnm
 
 static void quic_pnmap_update(struct quic_pnmap *map, s64 pn)
 {
-	u32 current_ts = jiffies_to_usecs(jiffies);
+	u32 now = jiffies_to_usecs(jiffies);
 	u16 zero_bit, offset;
 
-	if (current_ts < map->max_record_ts + map->last_max_pn_ts &&
+	if (now < map->last_max_pn_time + map->max_time_limit &&
 	    map->max_pn_seen <= map->base_pn + QUIC_PN_MAP_LIMIT &&
 	    map->max_pn_seen <= map->last_max_pn_seen + QUIC_PN_MAP_LIMIT)
 		return;
@@ -164,7 +164,7 @@ static void quic_pnmap_update(struct quic_pnmap *map, s64 pn)
 
 out:
 	map->min_pn_seen = map->last_max_pn_seen;
-	map->last_max_pn_ts = current_ts;
+	map->last_max_pn_time = now;
 	map->last_max_pn_seen = map->max_pn_seen;
 }
 

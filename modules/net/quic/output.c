@@ -375,7 +375,7 @@ int quic_outq_transmitted_sack(struct sock *sk, u8 level, s64 largest, s64 small
 		if (frame->ecn)
 			quic_set_sk_ecn(sk, INET_ECN_ECT_0);
 
-		quic_pnmap_set_max_pn_acked(pnmap, frame->number);
+		quic_pnmap_set_max_pn_acked_seen(pnmap, frame->number);
 		quic_pnmap_dec_inflight(pnmap, frame->len);
 		outq->data_inflight -= frame->bytes;
 		list_del(&frame->list);
@@ -385,8 +385,8 @@ int quic_outq_transmitted_sack(struct sock *sk, u8 level, s64 largest, s64 small
 			if (frame->number == ack_largest) {
 				quic_cong_rtt_update(cong, frame->sent_time, ack_delay);
 				rto = quic_cong_rto(cong);
-				quic_pnmap_set_max_record_ts(pnmap, rto * 2);
-				quic_crypto_set_key_update_ts(crypto, rto * 2);
+				quic_pnmap_set_max_time_limit(pnmap, rto * 2);
+				quic_crypto_set_key_update_time(crypto, rto * 2);
 			}
 			if (bytes) {
 				quic_cong_on_packet_acked(cong, frame->sent_time, bytes);
@@ -408,7 +408,7 @@ void quic_outq_update_loss_timer(struct sock *sk, u8 level)
 	struct quic_pnmap *pnmap = quic_pnmap(sk, level);
 	u32 timeout, now = jiffies_to_usecs(jiffies);
 
-	timeout = quic_pnmap_loss_ts(pnmap);
+	timeout = quic_pnmap_loss_time(pnmap);
 	if (timeout)
 		goto out;
 
@@ -417,7 +417,7 @@ void quic_outq_update_loss_timer(struct sock *sk, u8 level)
 
 	timeout = quic_cong_duration(quic_cong(sk));
 	timeout *= (1 + quic_outq(sk)->rtx_count);
-	timeout += quic_pnmap_last_sent_ts(pnmap);
+	timeout += quic_pnmap_last_sent_time(pnmap);
 out:
 	if (timeout < now)
 		timeout = now + 1;
@@ -463,7 +463,7 @@ int quic_outq_retransmit_mark(struct sock *sk, u8 level, u8 immediate)
 	struct quic_frame *frame, *tmp;
 	struct list_head *head;
 
-	quic_pnmap_set_loss_ts(pnmap, 0);
+	quic_pnmap_set_loss_time(pnmap, 0);
 	now = jiffies_to_usecs(jiffies);
 	head = &outq->transmitted_list;
 	list_for_each_entry_safe(frame, tmp, head, list) {
@@ -472,8 +472,8 @@ int quic_outq_retransmit_mark(struct sock *sk, u8 level, u8 immediate)
 
 		rto = quic_cong_rto(cong);
 		if (!immediate && frame->sent_time + rto > now &&
-		    frame->number + 6 > quic_pnmap_max_pn_acked(pnmap)) {
-			quic_pnmap_set_loss_ts(pnmap, frame->sent_time + rto);
+		    frame->number + 6 > quic_pnmap_max_pn_acked_seen(pnmap)) {
+			quic_pnmap_set_loss_time(pnmap, frame->sent_time + rto);
 			break;
 		}
 
@@ -483,7 +483,7 @@ int quic_outq_retransmit_mark(struct sock *sk, u8 level, u8 immediate)
 		bytes += frame->bytes;
 
 		if (frame->last && bytes) {
-			time = quic_pnmap_max_pn_acked_ts(pnmap);
+			time = quic_pnmap_max_pn_acked_time(pnmap);
 			quic_cong_on_packet_lost(cong, time, bytes);
 			quic_outq_set_window(outq, quic_cong_window(cong));
 			bytes = 0;

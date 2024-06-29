@@ -35,7 +35,7 @@ struct quic_gap_ack_block {
  *   cum_ack_point = base_pn - 1;
  *   last_max_pn_seen = max_pn_seen;
  * when:
- *   'max_pn_ts - last_max_pn_ts >= max_record_ts' or
+ *   'max_pn_time - last_max_pn_time >= max_time_limit' or
  *   'max_pn_seen - base_pn > QUIC_PN_MAP_LIMIT'
  *   'max_pn_seen - last_max_pn_seen > QUIC_PN_MAP_LIMIT' or
  * gaps search:
@@ -50,22 +50,22 @@ struct quic_pnmap {
 
 	s64 base_pn;
 	s64 min_pn_seen;
-
-	s64 max_pn_seen;
-	u32 max_pn_ts;
-
-	u32 max_record_ts;
 	s64 cum_ack_point;
 
-	u32 last_max_pn_ts;
+	u32 max_pn_time;
+	s64 max_pn_seen;
+
+	u32 last_max_pn_time;
 	s64 last_max_pn_seen;
 
-	u32 loss_ts;
-	u32 inflight;
-	u32 last_sent_ts;
+	u32 max_pn_acked_time;
+	s64 max_pn_acked_seen;
 
-	u32 max_pn_acked_ts;
-	s64 max_pn_acked;
+	u32 loss_time;
+	u32 inflight;
+	u32 last_sent_time;
+	u32 max_time_limit;
+
 };
 
 static inline struct quic_gap_ack_block *quic_pnmap_gabs(struct quic_pnmap *map)
@@ -73,9 +73,9 @@ static inline struct quic_gap_ack_block *quic_pnmap_gabs(struct quic_pnmap *map)
 	return map->gabs;
 }
 
-static inline void quic_pnmap_set_max_record_ts(struct quic_pnmap *map, u32 max_record_ts)
+static inline void quic_pnmap_set_max_time_limit(struct quic_pnmap *map, u32 max_time_limit)
 {
-	map->max_record_ts = max_record_ts;
+	map->max_time_limit = max_time_limit;
 }
 
 static inline s64 quic_pnmap_min_pn_seen(const struct quic_pnmap *map)
@@ -88,42 +88,42 @@ static inline s64 quic_pnmap_max_pn_seen(const struct quic_pnmap *map)
 	return map->max_pn_seen;
 }
 
-static inline void quic_pnmap_set_max_pn_acked(struct quic_pnmap *map, s64 max_pn_acked)
+static inline void quic_pnmap_set_max_pn_acked_seen(struct quic_pnmap *map, s64 max_pn_acked_seen)
 {
-	if (map->max_pn_acked >= max_pn_acked)
+	if (map->max_pn_acked_seen >= max_pn_acked_seen)
 		return;
-	map->max_pn_acked = max_pn_acked;
-	map->max_pn_acked_ts = jiffies_to_usecs(jiffies);
+	map->max_pn_acked_seen = max_pn_acked_seen;
+	map->max_pn_acked_time = jiffies_to_usecs(jiffies);
 }
 
-static inline s64 quic_pnmap_max_pn_acked(const struct quic_pnmap *map)
+static inline s64 quic_pnmap_max_pn_acked_seen(const struct quic_pnmap *map)
 {
-	return map->max_pn_acked;
+	return map->max_pn_acked_seen;
 }
 
-static inline s32 quic_pnmap_max_pn_acked_ts(const struct quic_pnmap *map)
+static inline s32 quic_pnmap_max_pn_acked_time(const struct quic_pnmap *map)
 {
-	return map->max_pn_acked_ts;
+	return map->max_pn_acked_time;
 }
 
-static inline void quic_pnmap_set_loss_ts(struct quic_pnmap *map, u32 loss_ts)
+static inline void quic_pnmap_set_loss_time(struct quic_pnmap *map, u32 loss_time)
 {
-	map->loss_ts = loss_ts;
+	map->loss_time = loss_time;
 }
 
-static inline u32 quic_pnmap_loss_ts(const struct quic_pnmap *map)
+static inline u32 quic_pnmap_loss_time(const struct quic_pnmap *map)
 {
-	return map->loss_ts;
+	return map->loss_time;
 }
 
-static inline void quic_pnmap_set_last_sent_ts(struct quic_pnmap *map, u32 last_sent_ts)
+static inline void quic_pnmap_set_last_sent_time(struct quic_pnmap *map, u32 last_sent_time)
 {
-	map->last_sent_ts = last_sent_ts;
+	map->last_sent_time = last_sent_time;
 }
 
-static inline u32 quic_pnmap_last_sent_ts(const struct quic_pnmap *map)
+static inline u32 quic_pnmap_last_sent_time(const struct quic_pnmap *map)
 {
-	return map->last_sent_ts;
+	return map->last_sent_time;
 }
 
 static inline s64 quic_pnmap_next_number(const struct quic_pnmap *map)
@@ -156,9 +156,9 @@ static inline s64 quic_pnmap_base_pn(const struct quic_pnmap *map)
 	return map->base_pn;
 }
 
-static inline u32 quic_pnmap_max_pn_ts(const struct quic_pnmap *map)
+static inline u32 quic_pnmap_max_pn_time(const struct quic_pnmap *map)
 {
-	return map->max_pn_ts;
+	return map->max_pn_time;
 }
 
 static inline bool quic_pnmap_has_gap(const struct quic_pnmap *map)

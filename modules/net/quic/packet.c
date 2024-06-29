@@ -742,7 +742,7 @@ static int quic_packet_app_process_done(struct sock *sk, struct sk_buff *skb)
 		key_phase = cb->key_phase;
 		if (!quic_inq_event_recv(sk, QUIC_EVENT_KEY_UPDATE, &key_phase)) {
 			quic_crypto_set_key_pending(crypto, 0);
-			quic_crypto_set_key_update_send_ts(crypto, 0);
+			quic_crypto_set_key_update_send_time(crypto, 0);
 		}
 	}
 
@@ -1057,7 +1057,7 @@ static u8 *quic_packet_pack_frames(struct sock *sk, struct sk_buff *skb, s64 num
 
 	tmp->last = 1;
 	quic_pnmap_inc_inflight(pnmap, len);
-	quic_pnmap_set_last_sent_ts(pnmap, now);
+	quic_pnmap_set_last_sent_time(pnmap, now);
 	quic_outq_update_loss_timer(sk, level);
 	return p;
 }

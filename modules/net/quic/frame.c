@@ -39,7 +39,7 @@ static struct quic_frame *quic_frame_ack_create(struct sock *sk, void *data, u8 
 	struct quic_outqueue *outq = quic_outq(sk);
 	u64 largest, smallest, range, *ecn_count;
 	struct quic_gap_ack_block *gabs;
-	u32 frame_len, num_gabs, pn_ts;
+	u32 frame_len, num_gabs, time;
 	u8 *p, level = *((u8 *)data);
 	struct quic_frame *frame;
 	struct quic_pnmap *map;
@@ -53,7 +53,7 @@ static struct quic_frame *quic_frame_ack_create(struct sock *sk, void *data, u8 
 	frame_len += sizeof(struct quic_gap_ack_block) * num_gabs;
 
 	largest = quic_pnmap_max_pn_seen(map);
-	pn_ts = quic_pnmap_max_pn_ts(map);
+	time = quic_pnmap_max_pn_time(map);
 	smallest = quic_pnmap_min_pn_seen(map);
 	if (num_gabs)
 		smallest = quic_pnmap_base_pn(map) + gabs[num_gabs - 1].end;
@@ -61,11 +61,11 @@ static struct quic_frame *quic_frame_ack_create(struct sock *sk, void *data, u8 
 	frame = quic_frame_alloc(frame_len, NULL, GFP_ATOMIC);
 	if (!frame)
 		return NULL;
-	pn_ts = jiffies_to_usecs(jiffies) - pn_ts;
-	pn_ts = pn_ts / BIT(quic_outq_ack_delay_exponent(outq));
+	time = jiffies_to_usecs(jiffies) - time;
+	time = time / BIT(quic_outq_ack_delay_exponent(outq));
 	p = quic_put_var(frame->data, type);
 	p = quic_put_var(p, largest); /* Largest Acknowledged */
-	p = quic_put_var(p, pn_ts); /* ACK Delay */
+	p = quic_put_var(p, time); /* ACK Delay */
 	p = quic_put_var(p, num_gabs); /* ACK Count */
 	p = quic_put_var(p, range); /* First ACK Range */
 

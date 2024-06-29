@@ -29,7 +29,7 @@ static void quic_pnmap_test1(struct kunit *test)
 	int i;
 
 	KUNIT_ASSERT_EQ(test, 0, quic_pnmap_init(map));
-	quic_pnmap_set_max_record_ts(map, 30000);
+	quic_pnmap_set_max_time_limit(map, 30000);
 	gabs = quic_pnmap_gabs(map);
 
 	KUNIT_EXPECT_EQ(test, map->base_pn, QUIC_PN_MAP_BASE_PN);
@@ -171,7 +171,7 @@ static void quic_pnmap_test2(struct kunit *test)
 	struct quic_pnmap _map = {}, *map = &_map;
 
 	KUNIT_ASSERT_EQ(test, 0, quic_pnmap_init(map));
-	quic_pnmap_set_max_record_ts(map, 30000);
+	quic_pnmap_set_max_time_limit(map, 30000);
 
 	KUNIT_EXPECT_EQ(test, 0, quic_pnmap_mark(map, 3));
 	KUNIT_EXPECT_EQ(test, 0, quic_pnmap_mark(map, 4));
@@ -185,7 +185,7 @@ static void quic_pnmap_test2(struct kunit *test)
 	KUNIT_EXPECT_EQ(test, 1, quic_pnmap_num_gabs(map));
 
 	msleep(50);
-	/* ! current_ts - map->last_max_pn_ts < map->max_record_ts */
+	/* ! current_time - map->last_max_pn_time < map->max_time_limit */
 	KUNIT_EXPECT_EQ(test, 0, quic_pnmap_mark(map, 5));
 	KUNIT_EXPECT_EQ(test, 7, map->base_pn);
 	KUNIT_EXPECT_EQ(test, 2, map->min_pn_seen);
