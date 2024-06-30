@@ -239,7 +239,7 @@ void quic_outq_transmitted_tail(struct sock *sk, struct quic_frame *frame)
 void quic_outq_transmit_probe(struct sock *sk)
 {
 	struct quic_path_dst *d = (struct quic_path_dst *)quic_dst(sk);
-	struct quic_pnmap *pnmap = quic_pnmap(sk, QUIC_CRYPTO_APP);
+	struct quic_pnspace *space = quic_pnspace(sk, QUIC_CRYPTO_APP);
 	u8 taglen = quic_packet_taglen(quic_packet(sk));
 	struct quic_inqueue *inq = quic_inq(sk);
 	struct quic_frame *frame;
@@ -251,7 +251,7 @@ void quic_outq_transmit_probe(struct sock *sk)
 
 	frame = quic_frame_create(sk, QUIC_FRAME_PING, &d->pl.probe_size);
 	if (frame) {
-		number = quic_pnmap_next_pn(pnmap);
+		number = quic_pnspace_next_pn(space);
 		quic_outq_ctrl_tail(sk, frame, false);
 
 		pathmtu = quic_path_pl_send(quic_dst(sk), number);
@@ -316,7 +316,7 @@ int quic_outq_transmitted_sack(struct sock *sk, u8 level, s64 largest, s64 small
 			       s64 ack_largest, u32 ack_delay)
 {
 	struct quic_crypto *crypto = quic_crypto(sk, level);
-	struct quic_pnmap *pnmap = quic_pnmap(sk, level);
+	struct quic_pnspace *space = quic_pnspace(sk, level);
 	u32 pathmtu, rto, acked_bytes = 0, bytes = 0;
 	struct quic_path_addr *path = quic_dst(sk);
 	struct quic_outqueue *outq = quic_outq(sk);
@@ -375,8 +375,8 @@ int quic_outq_transmitted_sack(struct sock *sk, u8 level, s64 largest, s64 small
 		if (frame->ecn)
 			quic_set_sk_ecn(sk, INET_ECN_ECT_0);
 
-		quic_pnmap_set_max_pn_acked_seen(pnmap, frame->number);
-		quic_pnmap_dec_inflight(pnmap, frame->len);
+		quic_pnspace_set_max_pn_acked_seen(space, frame->number);
+		quic_pnspace_dec_inflight(space, frame->len);
 		outq->data_inflight -= frame->bytes;
 		list_del(&frame->list);
 		bytes += frame->bytes;
@@ -385,7 +385,7 @@ int quic_outq_transmitted_sack(struct sock *sk, u8 level, s64 largest, s64 small
 			if (frame->number == ack_largest) {
 				quic_cong_rtt_update(cong, frame->sent_time, ack_delay);
 				rto = quic_cong_rto(cong);
-				quic_pnmap_set_max_time_limit(pnmap, rto * 2);
+				quic_pnspace_set_max_time_limit(space, rto * 2);
 				quic_crypto_set_key_update_time(crypto, rto * 2);
 			}
 			if (bytes) {
@@ -405,19 +405,19 @@ int quic_outq_transmitted_sack(struct sock *sk, u8 level, s64 largest, s64 small
 
 void quic_outq_update_loss_timer(struct sock *sk, u8 level)
 {
-	struct quic_pnmap *pnmap = quic_pnmap(sk, level);
+	struct quic_pnspace *space = quic_pnspace(sk, level);
 	u32 timeout, now = jiffies_to_usecs(jiffies);
 
-	timeout = quic_pnmap_loss_time(pnmap);
+	timeout = quic_pnspace_loss_time(space);
 	if (timeout)
 		goto out;
 
-	if (!quic_pnmap_inflight(pnmap))
+	if (!quic_pnspace_inflight(space))
 		return quic_timer_stop(sk, level);
 
 	timeout = quic_cong_duration(quic_cong(sk));
 	timeout *= (1 + quic_outq(sk)->rtx_count);
-	timeout += quic_pnmap_last_sent_time(pnmap);
+	timeout += quic_pnspace_last_sent_time(space);
 out:
 	if (timeout < now)
 		timeout = now + 1;
@@ -456,14 +456,14 @@ static void quic_outq_retransmit_one(struct sock *sk, struct quic_frame *frame)
 
 int quic_outq_retransmit_mark(struct sock *sk, u8 level, u8 immediate)
 {
+	struct quic_pnspace *space = quic_pnspace(sk, level);
 	u32 time, now, rto, count = 0, freed = 0, bytes = 0;
-	struct quic_pnmap *pnmap = quic_pnmap(sk, level);
 	struct quic_outqueue *outq = quic_outq(sk);
 	struct quic_cong *cong = quic_cong(sk);
 	struct quic_frame *frame, *tmp;
 	struct list_head *head;
 
-	quic_pnmap_set_loss_time(pnmap, 0);
+	quic_pnspace_set_loss_time(space, 0);
 	now = jiffies_to_usecs(jiffies);
 	head = &outq->transmitted_list;
 	list_for_each_entry_safe(frame, tmp, head, list) {
@@ -472,18 +472,18 @@ int quic_outq_retransmit_mark(struct sock *sk, u8 level, u8 immediate)
 
 		rto = quic_cong_rto(cong);
 		if (!immediate && frame->sent_time + rto > now &&
-		    frame->number + 6 > quic_pnmap_max_pn_acked_seen(pnmap)) {
-			quic_pnmap_set_loss_time(pnmap, frame->sent_time + rto);
+		    frame->number + 6 > quic_pnspace_max_pn_acked_seen(space)) {
+			quic_pnspace_set_loss_time(space, frame->sent_time + rto);
 			break;
 		}
 
-		quic_pnmap_dec_inflight(pnmap, frame->len);
+		quic_pnspace_dec_inflight(space, frame->len);
 		outq->data_inflight -= frame->bytes;
 		list_del(&frame->list);
 		bytes += frame->bytes;
 
 		if (frame->last && bytes) {
-			time = quic_pnmap_max_pn_acked_time(pnmap);
+			time = quic_pnspace_max_pn_acked_time(space);
 			quic_cong_on_packet_lost(cong, time, bytes);
 			quic_outq_set_window(outq, quic_cong_window(cong));
 			bytes = 0;
@@ -584,7 +584,7 @@ void quic_outq_stream_purge(struct sock *sk, struct quic_stream *stream)
 {
 	struct quic_outqueue *outq = quic_outq(sk);
 	struct quic_frame *frame, *tmp;
-	struct quic_pnmap *pnmap;
+	struct quic_pnspace *space;
 	struct list_head *head;
 	int bytes = 0;
 
@@ -593,8 +593,8 @@ void quic_outq_stream_purge(struct sock *sk, struct quic_stream *stream)
 		if (frame->stream != stream)
 			continue;
 
-		pnmap = quic_pnmap(sk, frame->level);
-		quic_pnmap_dec_inflight(pnmap, frame->len);
+		space = quic_pnspace(sk, frame->level);
+		quic_pnspace_dec_inflight(space, frame->len);
 		outq->data_inflight -= frame->bytes;
 		list_del(&frame->list);
 		bytes += frame->bytes;

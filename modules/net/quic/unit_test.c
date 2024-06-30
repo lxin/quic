@@ -19,252 +19,253 @@
 #include <net/sock.h>
 #include "connection.h"
 #include "crypto.h"
-#include "pnmap.h"
+#include "pnspace.h"
 #include "cong.h"
 
-static void quic_pnmap_test1(struct kunit *test)
+static void quic_pnspace_test1(struct kunit *test)
 {
-	struct quic_pnmap _map = {}, *map = &_map;
+	struct quic_pnspace _space = {}, *space = &_space;
 	struct quic_gap_ack_block *gabs;
 	int i;
 
-	KUNIT_ASSERT_EQ(test, 0, quic_pnmap_init(map));
-	quic_pnmap_set_max_time_limit(map, 30000);
-	gabs = quic_pnmap_gabs(map);
+	KUNIT_ASSERT_EQ(test, 0, quic_pnspace_init(space));
+	quic_pnspace_set_max_time_limit(space, 30000);
+	gabs = quic_pnspace_gabs(space);
 
-	KUNIT_EXPECT_EQ(test, map->base_pn, QUIC_PN_MAP_BASE_PN);
-	KUNIT_EXPECT_EQ(test, map->min_pn_seen, QUIC_PN_MAP_MAX_PN);
-	KUNIT_EXPECT_EQ(test, map->len, QUIC_PN_MAP_INITIAL);
+	KUNIT_EXPECT_EQ(test, space->base_pn, QUIC_PN_MAP_BASE_PN);
+	KUNIT_EXPECT_EQ(test, space->min_pn_seen, QUIC_PN_MAP_MAX_PN);
+	KUNIT_EXPECT_EQ(test, space->pn_map_len, QUIC_PN_MAP_INITIAL);
 
-	KUNIT_EXPECT_EQ(test, 0, quic_pnmap_mark(map, -1));
-	KUNIT_EXPECT_EQ(test, -ENOMEM, quic_pnmap_mark(map, QUIC_PN_MAP_SIZE + 1));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, -1));
+	KUNIT_EXPECT_EQ(test, -ENOMEM, quic_pnspace_mark(space, QUIC_PN_MAP_SIZE + 1));
 
-	KUNIT_EXPECT_EQ(test, 0, quic_pnmap_mark(map, 0));
-	KUNIT_EXPECT_EQ(test, 0, quic_pnmap_mark(map, 1));
-	KUNIT_EXPECT_EQ(test, 0, quic_pnmap_mark(map, 2));
-	KUNIT_EXPECT_EQ(test, 0, quic_pnmap_mark(map, 3));
-	KUNIT_EXPECT_EQ(test, 4, map->base_pn);
-	KUNIT_EXPECT_EQ(test, 0, map->min_pn_seen);
-	KUNIT_EXPECT_EQ(test, 0, map->mid_pn_seen);
-	KUNIT_EXPECT_EQ(test, 3, map->max_pn_seen);
-	KUNIT_EXPECT_EQ(test, 0, quic_pnmap_num_gabs(map));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 0));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 1));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 2));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 3));
+	KUNIT_EXPECT_EQ(test, 4, space->base_pn);
+	KUNIT_EXPECT_EQ(test, 0, space->min_pn_seen);
+	KUNIT_EXPECT_EQ(test, 0, space->mid_pn_seen);
+	KUNIT_EXPECT_EQ(test, 3, space->max_pn_seen);
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_num_gabs(space));
 
-	KUNIT_EXPECT_EQ(test, 0, quic_pnmap_mark(map, 4));
-	KUNIT_EXPECT_EQ(test, 0, quic_pnmap_mark(map, 6));
-	KUNIT_EXPECT_EQ(test, 0, quic_pnmap_mark(map, 9));
-	KUNIT_EXPECT_EQ(test, 0, quic_pnmap_mark(map, 13));
-	KUNIT_EXPECT_EQ(test, 0, quic_pnmap_mark(map, 18));
-	KUNIT_EXPECT_EQ(test, 0, quic_pnmap_mark(map, 24));
-	KUNIT_EXPECT_EQ(test, 5, map->base_pn);
-	KUNIT_EXPECT_EQ(test, 0, map->min_pn_seen);
-	KUNIT_EXPECT_EQ(test, 0, map->mid_pn_seen);
-	KUNIT_EXPECT_EQ(test, 24, map->max_pn_seen);
-	KUNIT_EXPECT_EQ(test, 5, quic_pnmap_num_gabs(map));
-	KUNIT_EXPECT_EQ(test, 6, gabs[0].start + map->base_pn);
-	KUNIT_EXPECT_EQ(test, 6, gabs[0].end + map->base_pn);
-	KUNIT_EXPECT_EQ(test, 8, gabs[1].start + map->base_pn);
-	KUNIT_EXPECT_EQ(test, 9, gabs[1].end + map->base_pn);
-	KUNIT_EXPECT_EQ(test, 11, gabs[2].start + map->base_pn);
-	KUNIT_EXPECT_EQ(test, 13, gabs[2].end + map->base_pn);
-	KUNIT_EXPECT_EQ(test, 15, gabs[3].start + map->base_pn);
-	KUNIT_EXPECT_EQ(test, 18, gabs[3].end + map->base_pn);
-	KUNIT_EXPECT_EQ(test, 20, gabs[4].start + map->base_pn);
-	KUNIT_EXPECT_EQ(test, 24, gabs[4].end + map->base_pn);
-	KUNIT_EXPECT_EQ(test, 4, gabs[0].start - 1 + quic_pnmap_base_pn(map) -
-				 (quic_pnmap_min_pn_seen(map) + 1));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 4));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 6));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 9));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 13));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 18));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 24));
+	KUNIT_EXPECT_EQ(test, 5, space->base_pn);
+	KUNIT_EXPECT_EQ(test, 0, space->min_pn_seen);
+	KUNIT_EXPECT_EQ(test, 0, space->mid_pn_seen);
+	KUNIT_EXPECT_EQ(test, 24, space->max_pn_seen);
+	KUNIT_EXPECT_EQ(test, 5, quic_pnspace_num_gabs(space));
+	KUNIT_EXPECT_EQ(test, 6, gabs[0].start + space->base_pn);
+	KUNIT_EXPECT_EQ(test, 6, gabs[0].end + space->base_pn);
+	KUNIT_EXPECT_EQ(test, 8, gabs[1].start + space->base_pn);
+	KUNIT_EXPECT_EQ(test, 9, gabs[1].end + space->base_pn);
+	KUNIT_EXPECT_EQ(test, 11, gabs[2].start + space->base_pn);
+	KUNIT_EXPECT_EQ(test, 13, gabs[2].end + space->base_pn);
+	KUNIT_EXPECT_EQ(test, 15, gabs[3].start + space->base_pn);
+	KUNIT_EXPECT_EQ(test, 18, gabs[3].end + space->base_pn);
+	KUNIT_EXPECT_EQ(test, 20, gabs[4].start + space->base_pn);
+	KUNIT_EXPECT_EQ(test, 24, gabs[4].end + space->base_pn);
+	KUNIT_EXPECT_EQ(test, 4, gabs[0].start - 1 + quic_pnspace_base_pn(space) -
+				 (quic_pnspace_min_pn_seen(space) + 1));
 
-	KUNIT_EXPECT_EQ(test, 0, quic_pnmap_mark(map, 7));
-	KUNIT_EXPECT_EQ(test, 0, quic_pnmap_mark(map, 8));
-	KUNIT_EXPECT_EQ(test, 5, map->base_pn);
-	KUNIT_EXPECT_EQ(test, 4, quic_pnmap_num_gabs(map));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 7));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 8));
+	KUNIT_EXPECT_EQ(test, 5, space->base_pn);
+	KUNIT_EXPECT_EQ(test, 4, quic_pnspace_num_gabs(space));
 
-	KUNIT_EXPECT_EQ(test, 0, quic_pnmap_mark(map, 5));
-	KUNIT_EXPECT_EQ(test, 10, map->base_pn);
-	KUNIT_EXPECT_EQ(test, 3, quic_pnmap_num_gabs(map));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 5));
+	KUNIT_EXPECT_EQ(test, 10, space->base_pn);
+	KUNIT_EXPECT_EQ(test, 3, quic_pnspace_num_gabs(space));
 
-	KUNIT_EXPECT_EQ(test, 0, quic_pnmap_mark(map, 15));
-	KUNIT_EXPECT_EQ(test, 0, quic_pnmap_mark(map, 16));
-	KUNIT_EXPECT_EQ(test, 10, map->base_pn);
-	KUNIT_EXPECT_EQ(test, 4, quic_pnmap_num_gabs(map));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 15));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 16));
+	KUNIT_EXPECT_EQ(test, 10, space->base_pn);
+	KUNIT_EXPECT_EQ(test, 4, quic_pnspace_num_gabs(space));
 
-	KUNIT_EXPECT_EQ(test, 0, quic_pnmap_mark(map, 14));
-	KUNIT_EXPECT_EQ(test, 0, quic_pnmap_mark(map, 17));
-	KUNIT_EXPECT_EQ(test, 0, quic_pnmap_mark(map, 10));
-	KUNIT_EXPECT_EQ(test, 0, quic_pnmap_mark(map, 11));
-	KUNIT_EXPECT_EQ(test, 0, quic_pnmap_mark(map, 12));
-	KUNIT_EXPECT_EQ(test, 19, map->base_pn);
-	KUNIT_EXPECT_EQ(test, 1, quic_pnmap_num_gabs(map));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 14));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 17));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 10));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 11));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 12));
+	KUNIT_EXPECT_EQ(test, 19, space->base_pn);
+	KUNIT_EXPECT_EQ(test, 1, quic_pnspace_num_gabs(space));
 
-	KUNIT_EXPECT_EQ(test, 0, quic_pnmap_mark(map, 128));
-	KUNIT_EXPECT_EQ(test, 19, map->base_pn);
-	KUNIT_EXPECT_EQ(test, 0, map->min_pn_seen);
-	KUNIT_EXPECT_EQ(test, 128, map->max_pn_seen);
-	KUNIT_EXPECT_EQ(test, 0, map->mid_pn_seen);
-	KUNIT_EXPECT_EQ(test, 128 + QUIC_PN_MAP_INITIAL, map->len);
-	KUNIT_EXPECT_EQ(test, 2, quic_pnmap_num_gabs(map));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 128));
+	KUNIT_EXPECT_EQ(test, 19, space->base_pn);
+	KUNIT_EXPECT_EQ(test, 0, space->min_pn_seen);
+	KUNIT_EXPECT_EQ(test, 128, space->max_pn_seen);
+	KUNIT_EXPECT_EQ(test, 0, space->mid_pn_seen);
+	KUNIT_EXPECT_EQ(test, 128 + QUIC_PN_MAP_INITIAL, space->pn_map_len);
+	KUNIT_EXPECT_EQ(test, 2, quic_pnspace_num_gabs(space));
 
-	/* ! map->max_pn_seen <= map->mid_pn_seen + QUIC_PN_MAP_LIMIT */
-	KUNIT_EXPECT_EQ(test, 0, quic_pnmap_mark(map, 3073));
-	KUNIT_EXPECT_EQ(test, 19, map->base_pn);
-	KUNIT_EXPECT_EQ(test, 0, map->min_pn_seen);
-	KUNIT_EXPECT_EQ(test, 3073, map->max_pn_seen);
-	KUNIT_EXPECT_EQ(test, 3073, map->mid_pn_seen);
-	KUNIT_EXPECT_EQ(test, 3136, map->len);
-	KUNIT_EXPECT_EQ(test, 3, quic_pnmap_num_gabs(map));
+	/* ! space->max_pn_seen <= space->mid_pn_seen + QUIC_PN_MAP_LIMIT */
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 3073));
+	KUNIT_EXPECT_EQ(test, 19, space->base_pn);
+	KUNIT_EXPECT_EQ(test, 0, space->min_pn_seen);
+	KUNIT_EXPECT_EQ(test, 3073, space->max_pn_seen);
+	KUNIT_EXPECT_EQ(test, 3073, space->mid_pn_seen);
+	KUNIT_EXPECT_EQ(test, 3136, space->pn_map_len);
+	KUNIT_EXPECT_EQ(test, 3, quic_pnspace_num_gabs(space));
 
-	KUNIT_EXPECT_EQ(test, 0, quic_pnmap_mark(map, 3074));
-	KUNIT_EXPECT_EQ(test, 0, quic_pnmap_mark(map, 3075));
-	KUNIT_EXPECT_EQ(test, 0, quic_pnmap_mark(map, 3090));
-	KUNIT_EXPECT_EQ(test, 19, map->base_pn);
-	KUNIT_EXPECT_EQ(test, 3090, map->max_pn_seen);
-	KUNIT_EXPECT_EQ(test, 3073, map->mid_pn_seen);
-	KUNIT_EXPECT_EQ(test, 3136, map->len);
-	KUNIT_EXPECT_EQ(test, 4, quic_pnmap_num_gabs(map));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 3074));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 3075));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 3090));
+	KUNIT_EXPECT_EQ(test, 19, space->base_pn);
+	KUNIT_EXPECT_EQ(test, 3090, space->max_pn_seen);
+	KUNIT_EXPECT_EQ(test, 3073, space->mid_pn_seen);
+	KUNIT_EXPECT_EQ(test, 3136, space->pn_map_len);
+	KUNIT_EXPECT_EQ(test, 4, quic_pnspace_num_gabs(space));
 
-	/* ! map->max_pn_seen <= map->base_pn + QUIC_PN_MAP_LIMIT */
-	KUNIT_EXPECT_EQ(test, 0, quic_pnmap_mark(map, 3190));
-	KUNIT_EXPECT_EQ(test, 3076, map->base_pn);
-	KUNIT_EXPECT_EQ(test, 3190, map->max_pn_seen);
-	KUNIT_EXPECT_EQ(test, 3190, map->mid_pn_seen);
-	KUNIT_EXPECT_EQ(test, 3264, map->len);
-	KUNIT_EXPECT_EQ(test, 2, quic_pnmap_num_gabs(map));
+	/* ! space->max_pn_seen <= space->base_pn + QUIC_PN_MAP_LIMIT */
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 3190));
+	KUNIT_EXPECT_EQ(test, 3076, space->base_pn);
+	KUNIT_EXPECT_EQ(test, 3190, space->max_pn_seen);
+	KUNIT_EXPECT_EQ(test, 3190, space->mid_pn_seen);
+	KUNIT_EXPECT_EQ(test, 3264, space->pn_map_len);
+	KUNIT_EXPECT_EQ(test, 2, quic_pnspace_num_gabs(space));
 
-	KUNIT_EXPECT_EQ(test, 0, quic_pnmap_mark(map, 3290));
-	KUNIT_EXPECT_EQ(test, 3076, map->base_pn);
-	KUNIT_EXPECT_EQ(test, 3290, map->max_pn_seen);
-	KUNIT_EXPECT_EQ(test, 3190, map->mid_pn_seen);
-	KUNIT_EXPECT_EQ(test, 3264, map->len);
-	KUNIT_EXPECT_EQ(test, 3, quic_pnmap_num_gabs(map));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 3290));
+	KUNIT_EXPECT_EQ(test, 3076, space->base_pn);
+	KUNIT_EXPECT_EQ(test, 3290, space->max_pn_seen);
+	KUNIT_EXPECT_EQ(test, 3190, space->mid_pn_seen);
+	KUNIT_EXPECT_EQ(test, 3264, space->pn_map_len);
+	KUNIT_EXPECT_EQ(test, 3, quic_pnspace_num_gabs(space));
 
-	KUNIT_EXPECT_EQ(test, 0, quic_pnmap_mark(map, 3289));
-	KUNIT_EXPECT_EQ(test, 0, quic_pnmap_mark(map, 3288));
-	KUNIT_EXPECT_EQ(test, 0, quic_pnmap_mark(map, 3192));
-	KUNIT_EXPECT_EQ(test, 0, quic_pnmap_mark(map, 3191));
-	KUNIT_EXPECT_EQ(test, 3076, map->base_pn);
-	KUNIT_EXPECT_EQ(test, 3290, map->max_pn_seen);
-	KUNIT_EXPECT_EQ(test, 3190, map->mid_pn_seen);
-	KUNIT_EXPECT_EQ(test, 3264, map->len);
-	KUNIT_EXPECT_EQ(test, 3, quic_pnmap_num_gabs(map));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 3289));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 3288));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 3192));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 3191));
+	KUNIT_EXPECT_EQ(test, 3076, space->base_pn);
+	KUNIT_EXPECT_EQ(test, 3290, space->max_pn_seen);
+	KUNIT_EXPECT_EQ(test, 3190, space->mid_pn_seen);
+	KUNIT_EXPECT_EQ(test, 3264, space->pn_map_len);
+	KUNIT_EXPECT_EQ(test, 3, quic_pnspace_num_gabs(space));
 
 	for (i = 1; i <= 128; i++)
-		KUNIT_EXPECT_EQ(test, 0, quic_pnmap_mark(map, 256 * i));
+		KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 256 * i));
 
-	KUNIT_EXPECT_EQ(test, 0, quic_pnmap_mark(map, QUIC_PN_MAP_SIZE + 1));
-	KUNIT_EXPECT_EQ(test, -ENOMEM, quic_pnmap_mark(map, map->base_pn + QUIC_PN_MAP_SIZE + 1));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, QUIC_PN_MAP_SIZE + 1));
+	KUNIT_EXPECT_EQ(test, -ENOMEM,
+			quic_pnspace_mark(space, space->base_pn + QUIC_PN_MAP_SIZE + 1));
 
-	quic_pnmap_free(map);
-	KUNIT_EXPECT_EQ(test, map->len, 0);
+	quic_pnspace_free(space);
+	KUNIT_EXPECT_EQ(test, space->pn_map_len, 0);
 }
 
-static void quic_pnmap_test2(struct kunit *test)
+static void quic_pnspace_test2(struct kunit *test)
 {
-	struct quic_pnmap _map = {}, *map = &_map;
+	struct quic_pnspace _space = {}, *space = &_space;
 	struct quic_gap_ack_block *gabs;
 
-	KUNIT_ASSERT_EQ(test, 0, quic_pnmap_init(map));
-	quic_pnmap_set_max_time_limit(map, 30000);
-	gabs = quic_pnmap_gabs(map);
+	KUNIT_ASSERT_EQ(test, 0, quic_pnspace_init(space));
+	quic_pnspace_set_max_time_limit(space, 30000);
+	gabs = quic_pnspace_gabs(space);
 
-	KUNIT_EXPECT_EQ(test, 0, quic_pnmap_mark(map, 2));
-	KUNIT_EXPECT_EQ(test, 0, quic_pnmap_mark(map, 3));
-	KUNIT_EXPECT_EQ(test, 0, quic_pnmap_mark(map, 5));
-	KUNIT_EXPECT_EQ(test, 0, map->base_pn);
-	KUNIT_EXPECT_EQ(test, 2, map->min_pn_seen);
-	KUNIT_EXPECT_EQ(test, 2, map->mid_pn_seen);
-	KUNIT_EXPECT_EQ(test, 5, map->max_pn_seen);
-	KUNIT_EXPECT_EQ(test, 1, quic_pnmap_num_gabs(map));
-	KUNIT_EXPECT_EQ(test, 5, gabs[0].start + map->base_pn);
-	KUNIT_EXPECT_EQ(test, 5, gabs[0].end + map->base_pn);
-	KUNIT_EXPECT_EQ(test, 1, gabs[0].start - 1 + quic_pnmap_base_pn(map) -
-				 (quic_pnmap_min_pn_seen(map) + 1));
-
-	msleep(50);
-	/* ! map->max_pn_time - map->mid_pn_time < map->max_time_limit */
-	KUNIT_EXPECT_EQ(test, 0, quic_pnmap_mark(map, 4));
-	KUNIT_EXPECT_EQ(test, 0, map->base_pn);
-	KUNIT_EXPECT_EQ(test, 0, quic_pnmap_mark(map, 6));
-	KUNIT_EXPECT_EQ(test, 7, map->base_pn);
-	KUNIT_EXPECT_EQ(test, 2, map->min_pn_seen);
-	KUNIT_EXPECT_EQ(test, 6, map->mid_pn_seen);
-	KUNIT_EXPECT_EQ(test, 6, map->max_pn_seen);
-	KUNIT_EXPECT_EQ(test, 0, quic_pnmap_num_gabs(map));
-
-	KUNIT_EXPECT_EQ(test, 0, quic_pnmap_mark(map, 8));
-	KUNIT_EXPECT_EQ(test, 7, map->base_pn);
-	KUNIT_EXPECT_EQ(test, 2, map->min_pn_seen);
-	KUNIT_EXPECT_EQ(test, 6, map->mid_pn_seen);
-	KUNIT_EXPECT_EQ(test, 8, map->max_pn_seen);
-	KUNIT_EXPECT_EQ(test, 1, quic_pnmap_num_gabs(map));
-
-	KUNIT_EXPECT_EQ(test, 0, quic_pnmap_mark(map, 7));
-	KUNIT_EXPECT_EQ(test, 9, map->base_pn);
-	KUNIT_EXPECT_EQ(test, 2, map->min_pn_seen);
-	KUNIT_EXPECT_EQ(test, 6, map->mid_pn_seen);
-	KUNIT_EXPECT_EQ(test, 8, map->max_pn_seen);
-	KUNIT_EXPECT_EQ(test, 0, quic_pnmap_num_gabs(map));
-
-	KUNIT_EXPECT_EQ(test, 0, quic_pnmap_mark(map, 11));
-	KUNIT_EXPECT_EQ(test, 0, quic_pnmap_mark(map, 10));
-	KUNIT_EXPECT_EQ(test, 9, map->base_pn);
-	KUNIT_EXPECT_EQ(test, 2, map->min_pn_seen);
-	KUNIT_EXPECT_EQ(test, 6, map->mid_pn_seen);
-	KUNIT_EXPECT_EQ(test, 11, map->max_pn_seen);
-	KUNIT_EXPECT_EQ(test, 1, quic_pnmap_num_gabs(map));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 2));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 3));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 5));
+	KUNIT_EXPECT_EQ(test, 0, space->base_pn);
+	KUNIT_EXPECT_EQ(test, 2, space->min_pn_seen);
+	KUNIT_EXPECT_EQ(test, 2, space->mid_pn_seen);
+	KUNIT_EXPECT_EQ(test, 5, space->max_pn_seen);
+	KUNIT_EXPECT_EQ(test, 1, quic_pnspace_num_gabs(space));
+	KUNIT_EXPECT_EQ(test, 5, gabs[0].start + space->base_pn);
+	KUNIT_EXPECT_EQ(test, 5, gabs[0].end + space->base_pn);
+	KUNIT_EXPECT_EQ(test, 1, gabs[0].start - 1 + quic_pnspace_base_pn(space) -
+				 (quic_pnspace_min_pn_seen(space) + 1));
 
 	msleep(50);
-	KUNIT_EXPECT_EQ(test, 0, quic_pnmap_mark(map, 18));
-	KUNIT_EXPECT_EQ(test, 9, map->base_pn);
-	KUNIT_EXPECT_EQ(test, 6, map->min_pn_seen);
-	KUNIT_EXPECT_EQ(test, 18, map->mid_pn_seen);
-	KUNIT_EXPECT_EQ(test, 18, map->max_pn_seen);
-	KUNIT_EXPECT_EQ(test, 2, quic_pnmap_num_gabs(map));
+	/* ! space->max_pn_time - space->mid_pn_time < space->max_time_limit */
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 4));
+	KUNIT_EXPECT_EQ(test, 0, space->base_pn);
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 6));
+	KUNIT_EXPECT_EQ(test, 7, space->base_pn);
+	KUNIT_EXPECT_EQ(test, 2, space->min_pn_seen);
+	KUNIT_EXPECT_EQ(test, 6, space->mid_pn_seen);
+	KUNIT_EXPECT_EQ(test, 6, space->max_pn_seen);
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_num_gabs(space));
 
-	KUNIT_EXPECT_EQ(test, 0, quic_pnmap_mark(map, 9));
-	KUNIT_EXPECT_EQ(test, 12, map->base_pn);
-	KUNIT_EXPECT_EQ(test, 6, map->min_pn_seen);
-	KUNIT_EXPECT_EQ(test, 18, map->mid_pn_seen);
-	KUNIT_EXPECT_EQ(test, 18, map->max_pn_seen);
-	KUNIT_EXPECT_EQ(test, 1, quic_pnmap_num_gabs(map));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 8));
+	KUNIT_EXPECT_EQ(test, 7, space->base_pn);
+	KUNIT_EXPECT_EQ(test, 2, space->min_pn_seen);
+	KUNIT_EXPECT_EQ(test, 6, space->mid_pn_seen);
+	KUNIT_EXPECT_EQ(test, 8, space->max_pn_seen);
+	KUNIT_EXPECT_EQ(test, 1, quic_pnspace_num_gabs(space));
 
-	msleep(50);
-	KUNIT_EXPECT_EQ(test, 0, quic_pnmap_mark(map, 17));
-	KUNIT_EXPECT_EQ(test, 12, map->base_pn);
-	KUNIT_EXPECT_EQ(test, 6, map->min_pn_seen);
-	KUNIT_EXPECT_EQ(test, 18, map->mid_pn_seen);
-	KUNIT_EXPECT_EQ(test, 18, map->max_pn_seen);
-	KUNIT_EXPECT_EQ(test, 1, quic_pnmap_num_gabs(map));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 7));
+	KUNIT_EXPECT_EQ(test, 9, space->base_pn);
+	KUNIT_EXPECT_EQ(test, 2, space->min_pn_seen);
+	KUNIT_EXPECT_EQ(test, 6, space->mid_pn_seen);
+	KUNIT_EXPECT_EQ(test, 8, space->max_pn_seen);
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_num_gabs(space));
 
-	KUNIT_EXPECT_EQ(test, 0, quic_pnmap_mark(map, 19));
-	KUNIT_EXPECT_EQ(test, 20, map->base_pn);
-	KUNIT_EXPECT_EQ(test, 19, map->max_pn_seen);
-	KUNIT_EXPECT_EQ(test, 19, map->mid_pn_seen);
-	KUNIT_EXPECT_EQ(test, 18, map->min_pn_seen);
-	KUNIT_EXPECT_EQ(test, 0, quic_pnmap_num_gabs(map));
-
-	KUNIT_EXPECT_EQ(test, 0, quic_pnmap_mark(map, 25));
-	KUNIT_EXPECT_EQ(test, 0, quic_pnmap_mark(map, 26));
-	KUNIT_EXPECT_EQ(test, 0, quic_pnmap_mark(map, 29));
-	KUNIT_EXPECT_EQ(test, 20, map->base_pn);
-	KUNIT_EXPECT_EQ(test, 29, map->max_pn_seen);
-	KUNIT_EXPECT_EQ(test, 19, map->mid_pn_seen);
-	KUNIT_EXPECT_EQ(test, 18, map->min_pn_seen);
-	KUNIT_EXPECT_EQ(test, 2, quic_pnmap_num_gabs(map));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 11));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 10));
+	KUNIT_EXPECT_EQ(test, 9, space->base_pn);
+	KUNIT_EXPECT_EQ(test, 2, space->min_pn_seen);
+	KUNIT_EXPECT_EQ(test, 6, space->mid_pn_seen);
+	KUNIT_EXPECT_EQ(test, 11, space->max_pn_seen);
+	KUNIT_EXPECT_EQ(test, 1, quic_pnspace_num_gabs(space));
 
 	msleep(50);
-	KUNIT_EXPECT_EQ(test, 0, quic_pnmap_mark(map, 30));
-	KUNIT_EXPECT_EQ(test, 20, map->base_pn);
-	KUNIT_EXPECT_EQ(test, 30, map->max_pn_seen);
-	KUNIT_EXPECT_EQ(test, 19, map->min_pn_seen);
-	KUNIT_EXPECT_EQ(test, 30, map->mid_pn_seen);
-	KUNIT_EXPECT_EQ(test, 2, quic_pnmap_num_gabs(map));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 18));
+	KUNIT_EXPECT_EQ(test, 9, space->base_pn);
+	KUNIT_EXPECT_EQ(test, 6, space->min_pn_seen);
+	KUNIT_EXPECT_EQ(test, 18, space->mid_pn_seen);
+	KUNIT_EXPECT_EQ(test, 18, space->max_pn_seen);
+	KUNIT_EXPECT_EQ(test, 2, quic_pnspace_num_gabs(space));
 
-	KUNIT_EXPECT_EQ(test, 1, quic_pnmap_check(map, 29));
-	KUNIT_EXPECT_EQ(test, 1, quic_pnmap_check(map, 19));
-	KUNIT_EXPECT_EQ(test, 0, quic_pnmap_check(map, 35));
-	KUNIT_EXPECT_EQ(test, -1, quic_pnmap_check(map, map->base_pn + QUIC_PN_MAP_SIZE));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 9));
+	KUNIT_EXPECT_EQ(test, 12, space->base_pn);
+	KUNIT_EXPECT_EQ(test, 6, space->min_pn_seen);
+	KUNIT_EXPECT_EQ(test, 18, space->mid_pn_seen);
+	KUNIT_EXPECT_EQ(test, 18, space->max_pn_seen);
+	KUNIT_EXPECT_EQ(test, 1, quic_pnspace_num_gabs(space));
 
-	quic_pnmap_free(map);
-	KUNIT_EXPECT_EQ(test, map->len, 0);
+	msleep(50);
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 17));
+	KUNIT_EXPECT_EQ(test, 12, space->base_pn);
+	KUNIT_EXPECT_EQ(test, 6, space->min_pn_seen);
+	KUNIT_EXPECT_EQ(test, 18, space->mid_pn_seen);
+	KUNIT_EXPECT_EQ(test, 18, space->max_pn_seen);
+	KUNIT_EXPECT_EQ(test, 1, quic_pnspace_num_gabs(space));
+
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 19));
+	KUNIT_EXPECT_EQ(test, 20, space->base_pn);
+	KUNIT_EXPECT_EQ(test, 19, space->max_pn_seen);
+	KUNIT_EXPECT_EQ(test, 19, space->mid_pn_seen);
+	KUNIT_EXPECT_EQ(test, 18, space->min_pn_seen);
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_num_gabs(space));
+
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 25));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 26));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 29));
+	KUNIT_EXPECT_EQ(test, 20, space->base_pn);
+	KUNIT_EXPECT_EQ(test, 29, space->max_pn_seen);
+	KUNIT_EXPECT_EQ(test, 19, space->mid_pn_seen);
+	KUNIT_EXPECT_EQ(test, 18, space->min_pn_seen);
+	KUNIT_EXPECT_EQ(test, 2, quic_pnspace_num_gabs(space));
+
+	msleep(50);
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 30));
+	KUNIT_EXPECT_EQ(test, 20, space->base_pn);
+	KUNIT_EXPECT_EQ(test, 30, space->max_pn_seen);
+	KUNIT_EXPECT_EQ(test, 19, space->min_pn_seen);
+	KUNIT_EXPECT_EQ(test, 30, space->mid_pn_seen);
+	KUNIT_EXPECT_EQ(test, 2, quic_pnspace_num_gabs(space));
+
+	KUNIT_EXPECT_EQ(test, 1, quic_pnspace_check(space, 29));
+	KUNIT_EXPECT_EQ(test, 1, quic_pnspace_check(space, 19));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_check(space, 35));
+	KUNIT_EXPECT_EQ(test, -1, quic_pnspace_check(space, space->base_pn + QUIC_PN_MAP_SIZE));
+
+	quic_pnspace_free(space);
+	KUNIT_EXPECT_EQ(test, space->pn_map_len, 0);
 }
 
 static u8 secret[48] = {
@@ -864,8 +865,8 @@ static void quic_cong_test2(struct kunit *test)
 }
 
 static struct kunit_case quic_test_cases[] = {
-	KUNIT_CASE(quic_pnmap_test1),
-	KUNIT_CASE(quic_pnmap_test2),
+	KUNIT_CASE(quic_pnspace_test1),
+	KUNIT_CASE(quic_pnspace_test2),
 	KUNIT_CASE(quic_crypto_test1),
 	KUNIT_CASE(quic_crypto_test2),
 	KUNIT_CASE(quic_cong_test1),

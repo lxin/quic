@@ -54,7 +54,7 @@ out:
 
 static void quic_timer_loss_timeout(struct sock *sk, u8 level)
 {
-	struct quic_pnmap *pnmap;
+	struct quic_pnspace *space;
 
 	bh_lock_sock(sk);
 	if (sock_owned_by_user(sk)) {
@@ -66,14 +66,14 @@ static void quic_timer_loss_timeout(struct sock *sk, u8 level)
 	if (quic_is_closed(sk))
 		goto out;
 
-	pnmap = quic_pnmap(sk, level);
-	if (quic_pnmap_loss_time(pnmap)) {
+	space = quic_pnspace(sk, level);
+	if (quic_pnspace_loss_time(space)) {
 		if (quic_outq_retransmit_mark(sk, level, 0))
 			quic_outq_transmit(sk);
 		goto out;
 	}
 
-	if (quic_pnmap_last_sent_time(pnmap))
+	if (quic_pnspace_last_sent_time(space))
 		quic_outq_transmit_one(sk, level);
 out:
 	bh_unlock_sock(sk);

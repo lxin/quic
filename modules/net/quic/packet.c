@@ -635,7 +635,7 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb)
 	struct quic_frame frame = {}, *nframe;
 	struct quic_connection_id *active;
 	struct quic_crypto *crypto;
-	struct quic_pnmap *pnmap;
+	struct quic_pnspace *space;
 	struct quichshdr *hshdr;
 	int err = -EINVAL;
 
@@ -655,9 +655,9 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb)
 		/* Do decryption */
 		crypto = quic_crypto(sk, packet->level);
 		packet->level %= QUIC_CRYPTO_EARLY;
-		pnmap = quic_pnmap(sk, packet->level);
+		space = quic_pnspace(sk, packet->level);
 
-		cb->number_max = quic_pnmap_max_pn_seen(pnmap);
+		cb->number_max = quic_pnspace_max_pn_seen(space);
 		cb->crypto_done = quic_packet_decrypt_done;
 		err = quic_crypto_decrypt(crypto, skb);
 		if (err) {
@@ -674,7 +674,7 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb)
 		pr_debug("[QUIC] %s number: %llu level: %d len: %d\n", __func__,
 			 cb->number, packet->level, skb->len);
 
-		err = quic_pnmap_check(pnmap, cb->number);
+		err = quic_pnspace_check(space, cb->number);
 		if (err) {
 			err = -EINVAL;
 			goto err;
@@ -687,7 +687,7 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb)
 		err = quic_frame_process(sk, &frame);
 		if (err)
 			goto err;
-		err = quic_pnmap_mark(pnmap, cb->number);
+		err = quic_pnspace_mark(space, cb->number);
 		if (err)
 			goto err;
 		skb_pull(skb, cb->number_offset + cb->length);
@@ -716,20 +716,20 @@ err:
 
 static int quic_packet_app_process_done(struct sock *sk, struct sk_buff *skb)
 {
+	struct quic_pnspace *space = quic_pnspace(sk, QUIC_CRYPTO_APP);
 	struct quic_crypto *crypto = quic_crypto(sk, QUIC_CRYPTO_APP);
-	struct quic_pnmap *pnmap = quic_pnmap(sk, QUIC_CRYPTO_APP);
 	struct quic_crypto_cb *cb = QUIC_CRYPTO_CB(skb);
 	struct quic_packet *packet = quic_packet(sk);
 	struct quic_inqueue *inq = quic_inq(sk);
 	struct quic_frame *frame;
 	u8 key_phase, level = 0;
 
-	quic_pnmap_inc_ecn_count(pnmap, quic_get_msg_ecn(sk, skb));
+	quic_pnspace_inc_ecn_count(space, quic_get_msg_ecn(sk, skb));
 
 	/* connection migration check: an endpoint only changes the address to which
 	 * it sends packets in response to the highest-numbered non-probing packet.
 	 */
-	if (packet->non_probing && cb->number == quic_pnmap_max_pn_seen(pnmap)) {
+	if (packet->non_probing && cb->number == quic_pnspace_max_pn_seen(space)) {
 		if (!quic_connection_id_disable_active_migration(quic_dest(sk)) &&
 		    (cb->path_alt & QUIC_PATH_ALT_DST))
 			quic_sock_change_daddr(sk, packet->da, quic_addr_len(sk));
@@ -749,7 +749,7 @@ static int quic_packet_app_process_done(struct sock *sk, struct sk_buff *skb)
 	if (!packet->ack_eliciting)
 		goto out;
 
-	if (!packet->ack_immediate && !quic_pnmap_has_gap(pnmap)) {
+	if (!packet->ack_immediate && !quic_pnspace_has_gap(space)) {
 		if (!quic_inq_need_sack(inq)) {
 			quic_timer_reset(sk, QUIC_TIMER_SACK, quic_inq_max_ack_delay(inq));
 			quic_inq_set_need_sack(inq, 1);
@@ -773,8 +773,8 @@ out:
 
 static int quic_packet_app_process(struct sock *sk, struct sk_buff *skb)
 {
+	struct quic_pnspace *space = quic_pnspace(sk, QUIC_CRYPTO_APP);
 	struct quic_crypto *crypto = quic_crypto(sk, QUIC_CRYPTO_APP);
-	struct quic_pnmap *pnmap = quic_pnmap(sk, QUIC_CRYPTO_APP);
 	struct quic_crypto_cb *cb = QUIC_CRYPTO_CB(skb);
 	struct quic_packet *packet = quic_packet(sk);
 	struct quichdr *hdr = quic_hdr(skb);
@@ -796,7 +796,7 @@ static int quic_packet_app_process(struct sock *sk, struct sk_buff *skb)
 	if (!cb->number_offset)
 		cb->number_offset = quic_connection_id_active(quic_source(sk))->len + sizeof(*hdr);
 	cb->length = skb->len - cb->number_offset;
-	cb->number_max = quic_pnmap_max_pn_seen(pnmap);
+	cb->number_max = quic_pnspace_max_pn_seen(space);
 
 	taglen = quic_packet_taglen(packet);
 	cb->crypto_done = quic_packet_decrypt_done;
@@ -818,7 +818,7 @@ static int quic_packet_app_process(struct sock *sk, struct sk_buff *skb)
 
 	pr_debug("[QUIC] %s number: %llu len: %d\n", __func__, cb->number, skb->len);
 
-	err = quic_pnmap_check(pnmap, cb->number);
+	err = quic_pnspace_check(space, cb->number);
 	if (err) {
 		packet->errcode = QUIC_TRANSPORT_ERROR_INTERNAL;
 		err = -EINVAL;
@@ -841,7 +841,7 @@ static int quic_packet_app_process(struct sock *sk, struct sk_buff *skb)
 	err = quic_frame_process(sk, &frame);
 	if (err)
 		goto err;
-	err = quic_pnmap_mark(pnmap, cb->number);
+	err = quic_pnspace_mark(space, cb->number);
 	if (err)
 		goto err;
 
@@ -1006,7 +1006,7 @@ out:
 
 static u8 *quic_packet_pack_frames(struct sock *sk, struct sk_buff *skb, s64 number, u8 level)
 {
-	struct quic_pnmap *pnmap = quic_pnmap(sk, level);
+	struct quic_pnspace *space = quic_pnspace(sk, level);
 	struct quic_crypto_cb *cb = QUIC_CRYPTO_CB(skb);
 	struct quic_packet *packet = quic_packet(sk);
 	u32 now = jiffies_to_usecs(jiffies), len = 0;
@@ -1056,8 +1056,8 @@ static u8 *quic_packet_pack_frames(struct sock *sk, struct sk_buff *skb, s64 num
 		return p;
 
 	tmp->last = 1;
-	quic_pnmap_inc_inflight(pnmap, len);
-	quic_pnmap_set_last_sent_time(pnmap, now);
+	quic_pnspace_inc_inflight(space, len);
+	quic_pnspace_set_last_sent_time(space, now);
 	quic_outq_update_loss_timer(sk, level);
 	return p;
 }
@@ -1113,7 +1113,7 @@ static struct sk_buff *quic_packet_handshake_create(struct sock *sk)
 		type = QUIC_PACKET_HANDSHAKE;
 	} else if (level == QUIC_CRYPTO_EARLY) {
 		type = QUIC_PACKET_0RTT;
-		level = QUIC_CRYPTO_APP; /* pnmap level */
+		level = QUIC_CRYPTO_APP; /* space level */
 	}
 	version = quic_inq_version(quic_inq(sk));
 
@@ -1133,7 +1133,7 @@ static struct sk_buff *quic_packet_handshake_create(struct sock *sk)
 	skb->ignore_df = packet->ipfragok;
 	skb_reserve(skb, hlen + len);
 
-	number = quic_pnmap_inc_next_pn(quic_pnmap(sk, level));
+	number = quic_pnspace_inc_next_pn(quic_pnspace(sk, level));
 	hdr = skb_push(skb, len);
 	hdr->form = 1;
 	hdr->fixed = !quic_outq_grease_quic_bit(quic_outq(sk));
@@ -1176,10 +1176,10 @@ static struct sk_buff *quic_packet_handshake_create(struct sock *sk)
 static int quic_packet_number_check(struct sock *sk)
 {
 	struct quic_packet *packet = quic_packet(sk);
-	struct quic_pnmap *pnmap;
+	struct quic_pnspace *space;
 
-	pnmap = quic_pnmap(sk, (packet->level % QUIC_CRYPTO_EARLY));
-	if (quic_pnmap_next_pn(pnmap) + 1 <= QUIC_PN_MAP_MAX_PN)
+	space = quic_pnspace(sk, (packet->level % QUIC_CRYPTO_EARLY));
+	if (quic_pnspace_next_pn(space) + 1 <= QUIC_PN_MAP_MAX_PN)
 		return 0;
 
 	quic_outq_retransmit_list(sk, &packet->frame_list);
@@ -1235,7 +1235,7 @@ static struct sk_buff *quic_packet_app_create(struct sock *sk)
 	skb->ignore_df = packet->ipfragok;
 	skb_reserve(skb, hlen + len);
 
-	number = quic_pnmap_inc_next_pn(quic_pnmap(sk, level));
+	number = quic_pnspace_inc_next_pn(quic_pnspace(sk, level));
 	hdr = skb_push(skb, len);
 	hdr->form = 0;
 	hdr->fixed = !quic_outq_grease_quic_bit(quic_outq(sk));

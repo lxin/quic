@@ -19,7 +19,7 @@
 #include "protocol.h"
 #include "crypto.h"
 #include "stream.h"
-#include "pnmap.h"
+#include "pnspace.h"
 #include "frame.h"
 #include "packet.h"
 #include "path.h"
@@ -68,7 +68,7 @@ struct quic_sock {
 	struct quic_stream_table	streams;
 	struct quic_cong		cong;
 	struct quic_crypto		crypto[QUIC_CRYPTO_MAX];
-	struct quic_pnmap		pn_map[QUIC_PNMAP_MAX];
+	struct quic_pnspace		space[QUIC_PNSPACE_MAX];
 
 	struct quic_transport_param	local;
 	struct quic_transport_param	remote;
@@ -137,9 +137,9 @@ static inline struct quic_crypto *quic_crypto(const struct sock *sk, u8 level)
 	return &quic_sk(sk)->crypto[level];
 }
 
-static inline struct quic_pnmap *quic_pnmap(const struct sock *sk, u8 level)
+static inline struct quic_pnspace *quic_pnspace(const struct sock *sk, u8 level)
 {
-	return &quic_sk(sk)->pn_map[level];
+	return &quic_sk(sk)->space[level];
 }
 
 static inline struct quic_stream_table *quic_streams(const struct sock *sk)
