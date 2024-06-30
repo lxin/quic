@@ -251,7 +251,7 @@ void quic_outq_transmit_probe(struct sock *sk)
 
 	frame = quic_frame_create(sk, QUIC_FRAME_PING, &d->pl.probe_size);
 	if (frame) {
-		number = quic_pnmap_next_number(pnmap);
+		number = quic_pnmap_next_pn(pnmap);
 		quic_outq_ctrl_tail(sk, frame, false);
 
 		pathmtu = quic_path_pl_send(quic_dst(sk), number);

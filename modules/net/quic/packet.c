@@ -1133,7 +1133,7 @@ static struct sk_buff *quic_packet_handshake_create(struct sock *sk)
 	skb->ignore_df = packet->ipfragok;
 	skb_reserve(skb, hlen + len);
 
-	number = quic_pnmap_inc_next_number(quic_pnmap(sk, level));
+	number = quic_pnmap_inc_next_pn(quic_pnmap(sk, level));
 	hdr = skb_push(skb, len);
 	hdr->form = 1;
 	hdr->fixed = !quic_outq_grease_quic_bit(quic_outq(sk));
@@ -1179,7 +1179,7 @@ static int quic_packet_number_check(struct sock *sk)
 	struct quic_pnmap *pnmap;
 
 	pnmap = quic_pnmap(sk, (packet->level % QUIC_CRYPTO_EARLY));
-	if (quic_pnmap_next_number(pnmap) + 1 <= QUIC_PN_MAP_MAX_PN)
+	if (quic_pnmap_next_pn(pnmap) + 1 <= QUIC_PN_MAP_MAX_PN)
 		return 0;
 
 	quic_outq_retransmit_list(sk, &packet->frame_list);
@@ -1235,7 +1235,7 @@ static struct sk_buff *quic_packet_app_create(struct sock *sk)
 	skb->ignore_df = packet->ipfragok;
 	skb_reserve(skb, hlen + len);
 
-	number = quic_pnmap_inc_next_number(quic_pnmap(sk, level));
+	number = quic_pnmap_inc_next_pn(quic_pnmap(sk, level));
 	hdr = skb_push(skb, len);
 	hdr->form = 0;
 	hdr->fixed = !quic_outq_grease_quic_bit(quic_outq(sk));

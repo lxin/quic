@@ -25,47 +25,40 @@ struct quic_gap_ack_block {
 };
 
 /* pn_map:
- * cum_ack_point --v
  * min_pn_seen -->  |----------------------|---------------------|...
- *        base_pn --^   last_max_pn_seen --^       max_pn_seen --^
+ *        base_pn --^        mid_pn_seen --^       max_pn_seen --^
  *
  * move forward:
- *   min_pn_seen = last_max_pn_seen;
- *   base_pn = first_zero_bit from last_max_pn_seen + 1;
- *   cum_ack_point = base_pn - 1;
- *   last_max_pn_seen = max_pn_seen;
+ *   min_pn_seen = mid_pn_seen;
+ *   base_pn = first_zero_bit from mid_pn_seen + 1;
+ *   mid_pn_seen = max_pn_seen;
+ *   mid_pn_time = now;
  * when:
- *   'max_pn_time - last_max_pn_time >= max_time_limit' or
- *   'max_pn_seen - base_pn > QUIC_PN_MAP_LIMIT'
- *   'max_pn_seen - last_max_pn_seen > QUIC_PN_MAP_LIMIT' or
+ *   'max_pn_time - mid_pn_time >= max_time_limit' or
+ *   'max_pn_seen - mid_pn_seen > QUIC_PN_MAP_LIMIT'
  * gaps search:
- *    from cum_ack_point/min_pn_seen to max_pn_seen
+ *    from base_pn - 1 to max_pn_seen
  */
 struct quic_pnmap {
 	struct quic_gap_ack_block gabs[QUIC_PN_MAX_GABS];
 	unsigned long *pn_map;
-	s64 next_number; /* next packet number to send */
 	u64 ecn_count[2][3]; /* ECT_1, ECT_0, CE count of local and peer */
 	u16 len;
 
 	s64 base_pn;
 	s64 min_pn_seen;
-	s64 cum_ack_point;
-
-	u32 max_pn_time;
+	s64 mid_pn_seen;
 	s64 max_pn_seen;
-
-	u32 last_max_pn_time;
-	s64 last_max_pn_seen;
-
-	u32 max_pn_acked_time;
-	s64 max_pn_acked_seen;
-
-	u32 loss_time;
-	u32 inflight;
-	u32 last_sent_time;
+	u32 mid_pn_time;
+	u32 max_pn_time;
 	u32 max_time_limit;
 
+	s64 next_pn; /* next packet number to send */
+	u32 inflight;
+	u32 loss_time;
+	u32 last_sent_time;
+	u32 max_pn_acked_time;
+	s64 max_pn_acked_seen;
 };
 
 static inline struct quic_gap_ack_block *quic_pnmap_gabs(struct quic_pnmap *map)
@@ -126,14 +119,14 @@ static inline u32 quic_pnmap_last_sent_time(const struct quic_pnmap *map)
 	return map->last_sent_time;
 }
 
-static inline s64 quic_pnmap_next_number(const struct quic_pnmap *map)
+static inline s64 quic_pnmap_next_pn(const struct quic_pnmap *map)
 {
-	return map->next_number;
+	return map->next_pn;
 }
 
-static inline s64 quic_pnmap_inc_next_number(struct quic_pnmap *map)
+static inline s64 quic_pnmap_inc_next_pn(struct quic_pnmap *map)
 {
-	return map->next_number++;
+	return map->next_pn++;
 }
 
 static inline u32 quic_pnmap_inflight(struct quic_pnmap *map)
@@ -163,7 +156,7 @@ static inline u32 quic_pnmap_max_pn_time(const struct quic_pnmap *map)
 
 static inline bool quic_pnmap_has_gap(const struct quic_pnmap *map)
 {
-	return map->cum_ack_point != map->max_pn_seen;
+	return map->base_pn != map->max_pn_seen + 1;
 }
 
 static inline void quic_pnmap_inc_ecn_count(struct quic_pnmap *map, u8 ecn)

@@ -49,6 +49,7 @@ static struct quic_frame *quic_frame_ack_create(struct sock *sk, void *data, u8 
 	gabs = quic_pnmap_gabs(map);
 	type += quic_pnmap_has_ecn_count(map);
 	num_gabs = quic_pnmap_num_gabs(map);
+	WARN_ON_ONCE(num_gabs == QUIC_PN_MAX_GABS);
 	frame_len = sizeof(type) + sizeof(u32) * 7;
 	frame_len += sizeof(struct quic_gap_ack_block) * num_gabs;
 
@@ -76,9 +77,8 @@ static struct quic_frame *quic_frame_ack_create(struct sock *sk, void *data, u8 
 			p = quic_put_var(p, gabs[i].start - gabs[i - 1].end - 2);
 		}
 		p = quic_put_var(p, gabs[0].end - gabs[0].start); /* Gap */
-		range = gabs[0].start - 1;
-		if (map->cum_ack_point == -1)
-			range -= map->min_pn_seen;
+		range = gabs[0].start - 1 + quic_pnmap_base_pn(map);
+		range -= (quic_pnmap_min_pn_seen(map) + 1);
 		p = quic_put_var(p, range); /* ACK Range Length */
 	}
 	if (type == QUIC_FRAME_ACK_ECN) {
@@ -740,7 +740,7 @@ static int quic_frame_ack_process(struct sock *sk, struct quic_frame *frame, u8 
 		return -EINVAL;
 
 	map = quic_pnmap(sk, level);
-	if (largest >= quic_pnmap_next_number(map)) {
+	if (largest >= quic_pnmap_next_pn(map)) {
 		frame->errcode = QUIC_TRANSPORT_ERROR_PROTOCOL_VIOLATION;
 		return -EINVAL;
 	}
