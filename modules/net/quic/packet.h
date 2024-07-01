@@ -37,8 +37,8 @@ struct quic_packet {
 	u8  ack_immediate:1;
 	union quic_addr daddr;
 	union quic_addr saddr;
-	struct quic_connection_id dcid;
-	struct quic_connection_id scid;
+	struct quic_conn_id dcid;
+	struct quic_conn_id scid;
 };
 
 #define QUIC_PACKET_INITIAL_V1		0

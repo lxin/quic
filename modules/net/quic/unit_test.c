@@ -17,9 +17,10 @@
 #include <linux/delay.h>
 #include <kunit/test.h>
 #include <net/sock.h>
-#include "connection.h"
-#include "crypto.h"
+
 #include "pnspace.h"
+#include "connid.h"
+#include "crypto.h"
 #include "cong.h"
 
 static void quic_pnspace_test1(struct kunit *test)
@@ -348,7 +349,7 @@ static void quic_decrypt_done(struct sk_buff *skb, int err)
 
 static void quic_crypto_test1(struct kunit *test)
 {
-	struct quic_connection_id conn_id, tmpid = {};
+	struct quic_conn_id conn_id, tmpid = {};
 	struct quic_crypto_secret srt = {};
 	struct sockaddr_in addr = {};
 	struct sk_buff *skb;
@@ -378,7 +379,7 @@ static void quic_crypto_test1(struct kunit *test)
 	ret = quic_crypto_key_update(&crypto);
 	KUNIT_EXPECT_EQ(test, ret, 0);
 
-	quic_connection_id_generate(&conn_id);
+	quic_conn_id_generate(&conn_id);
 	quic_crypto_destroy(&crypto);
 	ret = quic_crypto_initial_keys_install(&crypto, &conn_id, QUIC_VERSION_V1, 0, 0);
 	KUNIT_EXPECT_EQ(test, ret, 0);

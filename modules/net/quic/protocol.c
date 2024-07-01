@@ -10,16 +10,16 @@
  *    Xin Long <lucien.xin@gmail.com>
  */
 
-#include "socket.h"
 #include <net/inet_common.h>
-#include <net/protocol.h>
 #include <linux/seq_file.h>
+#include <linux/version.h>
 #include <linux/proc_fs.h>
+#include <net/protocol.h>
 #include <linux/swap.h>
 #include <linux/icmp.h>
 #include <net/tls.h>
 
-#include <linux/version.h>
+#include "socket.h"
 
 struct quic_hash_table quic_hash_tables[QUIC_HT_MAX_TABLES] __read_mostly;
 static DEFINE_PER_CPU(int, quic_memory_per_cpu_fw_alloc);
@@ -431,8 +431,8 @@ static int quic_inet_connect(struct socket *sock, struct sockaddr *addr, int add
 
 static int quic_inet_listen(struct socket *sock, int backlog)
 {
-	struct quic_connection_id_set *source, *dest;
-	struct quic_connection_id conn_id, *active;
+	struct quic_conn_id_set *source, *dest;
+	struct quic_conn_id conn_id, *active;
 	struct quic_crypto *crypto;
 	struct quic_outqueue *outq;
 	struct sock *sk = sock->sk;
@@ -451,15 +451,15 @@ static int quic_inet_listen(struct socket *sock, int backlog)
 
 	if (!hlist_unhashed(&quic_sk(sk)->inet.sk.sk_node))
 		goto out;
-	quic_connection_id_generate(&conn_id);
-	err = quic_connection_id_add(dest, &conn_id, 0, NULL);
+	quic_conn_id_generate(&conn_id);
+	err = quic_conn_id_add(dest, &conn_id, 0, NULL);
 	if (err)
 		goto free;
-	quic_connection_id_generate(&conn_id);
-	err = quic_connection_id_add(source, &conn_id, 0, sk);
+	quic_conn_id_generate(&conn_id);
+	err = quic_conn_id_add(source, &conn_id, 0, sk);
 	if (err)
 		goto free;
-	active = quic_connection_id_active(dest);
+	active = quic_conn_id_active(dest);
 	flag = CRYPTO_ALG_ASYNC;
 	outq = quic_outq(sk);
 	quic_outq_set_serv(outq);
@@ -478,8 +478,8 @@ out:
 free:
 	sk->sk_prot->unhash(sk);
 	quic_crypto_destroy(crypto);
-	quic_connection_id_set_free(dest);
-	quic_connection_id_set_free(source);
+	quic_conn_id_set_free(dest);
+	quic_conn_id_set_free(source);
 	quic_set_state(sk, QUIC_SS_CLOSED);
 	goto out;
 }

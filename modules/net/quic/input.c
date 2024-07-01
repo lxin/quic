@@ -34,7 +34,7 @@ int quic_rcv(struct sk_buff *skb)
 {
 	struct quic_crypto_cb *cb = QUIC_CRYPTO_CB(skb);
 	struct quic_addr_family_ops *af_ops;
-	struct quic_connection_id *conn_id;
+	struct quic_conn_id *conn_id;
 	union quic_addr daddr, saddr;
 	struct sock *sk = NULL;
 	int err = -EINVAL;
@@ -48,10 +48,10 @@ int quic_rcv(struct sk_buff *skb)
 
 	if (!quic_hdr(skb)->form) { /* search scid hashtable for post-handshake packets */
 		dcid = (u8 *)quic_hdr(skb) + 1;
-		conn_id = quic_connection_id_lookup(dev_net(skb->dev), dcid, skb->len - 1);
+		conn_id = quic_conn_id_lookup(dev_net(skb->dev), dcid, skb->len - 1);
 		if (conn_id) {
 			cb->number_offset = conn_id->len + sizeof(struct quichdr);
-			sk = quic_connection_id_sk(conn_id);
+			sk = quic_conn_id_sk(conn_id);
 		}
 	}
 	if (!sk) {

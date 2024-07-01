@@ -125,7 +125,7 @@ static inline struct quic_hash_head *quic_bind_port_head(struct net *net, u16 po
 	return &ht->hash[port & (ht->size - 1)];
 }
 
-static inline struct quic_hash_head *quic_source_connection_id_head(struct net *net, u8 *scid)
+static inline struct quic_hash_head *quic_source_conn_id_head(struct net *net, u8 *scid)
 {
 	struct quic_hash_table *ht = &quic_hash_tables[QUIC_HT_CONNECTION_ID];
 

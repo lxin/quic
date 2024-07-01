@@ -10,14 +10,14 @@
  *    Xin Long <lucien.xin@gmail.com>
  */
 
+#include <linux/completion.h>
 #include <uapi/linux/quic.h>
 #include <linux/module.h>
+#include <net/handshake.h>
 #include <linux/kernel.h>
+#include <linux/delay.h>
 #include <linux/inet.h>
 #include <linux/net.h>
-#include <linux/delay.h>
-#include <linux/completion.h>
-#include <net/handshake.h>
 #include <net/sock.h>
 
 #define ROLE_LEN	10

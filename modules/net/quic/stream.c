@@ -10,12 +10,13 @@
  *    Xin Long <lucien.xin@gmail.com>
  */
 
-#include "uapi/linux/quic.h"
-#include <linux/jhash.h>
+#include <uapi/linux/quic.h>
 #include <net/netns/hash.h>
+#include <linux/jhash.h>
 #include <net/sock.h>
-#include "connection.h"
+
 #include "hashtable.h"
+#include "connid.h"
 #include "stream.h"
 #include "crypto.h"
 #include "frame.h"

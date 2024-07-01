@@ -10,14 +10,13 @@
  *    Xin Long <lucien.xin@gmail.com>
  */
 
+#include <uapi/linux/quic.h>
 #include <net/udp_tunnel.h>
-
 #include <linux/version.h>
 
-#include "uapi/linux/quic.h"
-#include "connection.h"
 #include "hashtable.h"
 #include "protocol.h"
+#include "connid.h"
 #include "stream.h"
 #include "crypto.h"
 #include "input.h"

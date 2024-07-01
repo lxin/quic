@@ -18,13 +18,14 @@
 #include <linux/jhash.h>
 #include <crypto/aead.h>
 #include <crypto/hash.h>
-#include "connection.h"
-#include "hashtable.h"
 #include <net/tls.h>
+
+#include "hashtable.h"
 #include "protocol.h"
-#include "crypto.h"
 #include "number.h"
+#include "connid.h"
 #include "stream.h"
+#include "crypto.h"
 #include "frame.h"
 
 static int quic_crypto_hkdf_extract(struct crypto_shash *tfm, struct quic_data *srt,
@@ -740,7 +741,7 @@ EXPORT_SYMBOL_GPL(quic_crypto_destroy);
 #define QUIC_INITIAL_SALT_V2    \
 	"\x0d\xed\xe3\xde\xf7\x00\xa6\xdb\x81\x93\x81\xbe\x6e\x26\x9d\xcb\xf9\xbd\x2e\xd9"
 
-int quic_crypto_initial_keys_install(struct quic_crypto *crypto, struct quic_connection_id *conn_id,
+int quic_crypto_initial_keys_install(struct quic_crypto *crypto, struct quic_conn_id *conn_id,
 				     u32 version, u8 flag, bool is_serv)
 {
 	struct quic_data salt, s, k, l, dcid, z = {};
@@ -803,7 +804,7 @@ EXPORT_SYMBOL_GPL(quic_crypto_initial_keys_install);
 #define QUIC_RETRY_NONCE_V2 "\xd8\x69\x69\xbc\x2d\x7c\x6d\x99\x90\xef\xb0\x4a"
 
 int quic_crypto_get_retry_tag(struct quic_crypto *crypto, struct sk_buff *skb,
-			      struct quic_connection_id *odcid, u32 version, u8 *tag)
+			      struct quic_conn_id *odcid, u32 version, u8 *tag)
 {
 	struct crypto_aead *tfm = crypto->tag_tfm;
 	u8 *pseudo_retry, *p, *iv, *key;
@@ -847,7 +848,7 @@ int quic_crypto_get_retry_tag(struct quic_crypto *crypto, struct sk_buff *skb,
 EXPORT_SYMBOL_GPL(quic_crypto_get_retry_tag);
 
 int quic_crypto_generate_token(struct quic_crypto *crypto, void *addr, u32 addrlen,
-			       struct quic_connection_id *conn_id, u8 *token, u32 *tokenlen)
+			       struct quic_conn_id *conn_id, u8 *token, u32 *tokenlen)
 {
 	u8 key[16], iv[12], *retry_token, *tx_iv, *p;
 	struct crypto_aead *tfm = crypto->tag_tfm;
@@ -893,7 +894,7 @@ int quic_crypto_generate_token(struct quic_crypto *crypto, void *addr, u32 addrl
 EXPORT_SYMBOL_GPL(quic_crypto_generate_token);
 
 int quic_crypto_verify_token(struct quic_crypto *crypto, void *addr, u32 addrlen,
-			     struct quic_connection_id *conn_id, u8 *token, u32 len)
+			     struct quic_conn_id *conn_id, u8 *token, u32 len)
 {
 	u8 key[16], iv[12], *retry_token, *rx_iv, *p, retry = *token;
 	u32 ts = jiffies_to_usecs(jiffies), timeout = 3000000;
@@ -942,11 +943,11 @@ int quic_crypto_verify_token(struct quic_crypto *crypto, void *addr, u32 addrlen
 	if (!quic_get_int(&p, &len, &t, 4) || t + timeout < ts)
 		goto out;
 	len -= QUIC_TAG_LEN;
-	if (len > QUIC_CONNECTION_ID_MAX_LEN)
+	if (len > QUIC_CONN_ID_MAX_LEN)
 		goto out;
 
 	if (retry)
-		quic_connection_id_update(conn_id, p, len);
+		quic_conn_id_update(conn_id, p, len);
 	err = 0;
 out:
 	kfree(retry_token);

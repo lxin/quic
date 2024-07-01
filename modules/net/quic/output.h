@@ -9,8 +9,8 @@
  */
 
 struct quic_outqueue {
-	struct quic_connection_id retry_dcid;
-	struct quic_connection_id orig_dcid;
+	struct quic_conn_id retry_dcid;
+	struct quic_conn_id orig_dcid;
 	struct list_head transmitted_list;
 	struct list_head datagram_list;
 	struct list_head control_list;
@@ -126,24 +126,24 @@ static inline u8 quic_outq_grease_quic_bit(struct quic_outqueue *outq)
 	return outq->grease_quic_bit;
 }
 
-static inline struct quic_connection_id *quic_outq_orig_dcid(struct quic_outqueue *outq)
+static inline struct quic_conn_id *quic_outq_orig_dcid(struct quic_outqueue *outq)
 {
 	return &outq->orig_dcid;
 }
 
 static inline void quic_outq_set_orig_dcid(struct quic_outqueue *outq,
-					   struct quic_connection_id *dcid)
+					   struct quic_conn_id *dcid)
 {
 	outq->orig_dcid = *dcid;
 }
 
-static inline struct quic_connection_id *quic_outq_retry_dcid(struct quic_outqueue *outq)
+static inline struct quic_conn_id *quic_outq_retry_dcid(struct quic_outqueue *outq)
 {
 	return &outq->retry_dcid;
 }
 
 static inline void quic_outq_set_retry_dcid(struct quic_outqueue *outq,
-					    struct quic_connection_id *dcid)
+					    struct quic_conn_id *dcid)
 {
 	outq->retry_dcid = *dcid;
 }

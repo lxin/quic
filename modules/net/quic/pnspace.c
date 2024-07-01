@@ -10,9 +10,10 @@
  *    Xin Long <lucien.xin@gmail.com>
  */
 
-#include <linux/slab.h>
-#include <linux/types.h>
 #include <linux/bitmap.h>
+#include <linux/types.h>
+#include <linux/slab.h>
+
 #include "pnspace.h"
 
 static int quic_pnspace_grow(struct quic_pnspace *space, u16 size)

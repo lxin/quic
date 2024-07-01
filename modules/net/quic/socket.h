@@ -13,20 +13,21 @@
 
 #include <uapi/linux/quic.h>
 #include <net/udp_tunnel.h>
-#include "connection.h"
+
 #include "hashtable.h"
-#include "number.h"
 #include "protocol.h"
-#include "crypto.h"
-#include "stream.h"
 #include "pnspace.h"
+#include "number.h"
+#include "connid.h"
+#include "stream.h"
+#include "crypto.h"
 #include "frame.h"
-#include "packet.h"
+#include "cong.h"
 #include "path.h"
+#include "packet.h"
 #include "output.h"
 #include "input.h"
 #include "timer.h"
-#include "cong.h"
 
 extern struct proto quic_prot;
 extern struct proto quicv6_prot;
@@ -42,14 +43,14 @@ enum quic_state {
 };
 
 struct quic_request_sock {
-	struct list_head		list;
-	union quic_addr			da;
-	union quic_addr			sa;
-	struct quic_connection_id	dcid;
-	struct quic_connection_id	scid;
-	struct quic_connection_id	orig_dcid;
-	u8				retry;
-	u32				version;
+	struct list_head	list;
+	union quic_addr		da;
+	union quic_addr		sa;
+	struct quic_conn_id	dcid;
+	struct quic_conn_id	scid;
+	struct quic_conn_id	orig_dcid;
+	u8			retry;
+	u32			version;
 };
 
 enum quic_tsq_enum {
@@ -63,8 +64,8 @@ struct quic_sock {
 	struct quic_path_dst		dst;
 	struct quic_addr_family_ops	*af_ops; /* inet4 or inet6 */
 
-	struct quic_connection_id_set	source;
-	struct quic_connection_id_set	dest;
+	struct quic_conn_id_set		source;
+	struct quic_conn_id_set		dest;
 	struct quic_stream_table	streams;
 	struct quic_cong		cong;
 	struct quic_crypto		crypto[QUIC_CRYPTO_MAX];
@@ -172,12 +173,12 @@ static inline struct quic_data *quic_alpn(const struct sock *sk)
 	return &quic_sk(sk)->alpn;
 }
 
-static inline struct quic_connection_id_set *quic_source(const struct sock *sk)
+static inline struct quic_conn_id_set *quic_source(const struct sock *sk)
 {
 	return &quic_sk(sk)->source;
 }
 
-static inline struct quic_connection_id_set *quic_dest(const struct sock *sk)
+static inline struct quic_conn_id_set *quic_dest(const struct sock *sk)
 {
 	return &quic_sk(sk)->dest;
 }
@@ -236,7 +237,7 @@ int quic_sock_change_saddr(struct sock *sk, union quic_addr *addr, u32 len);
 int quic_sock_change_daddr(struct sock *sk, union quic_addr *addr, u32 len);
 struct sock *quic_sock_lookup(struct sk_buff *skb, union quic_addr *sa, union quic_addr *da);
 struct quic_request_sock *quic_request_sock_dequeue(struct sock *sk);
-int quic_request_sock_enqueue(struct sock *sk, struct quic_connection_id *odcid, u8 retry);
+int quic_request_sock_enqueue(struct sock *sk, struct quic_conn_id *odcid, u8 retry);
 int quic_accept_sock_exists(struct sock *sk, struct sk_buff *skb);
 bool quic_request_sock_exists(struct sock *sk);
 
