@@ -385,7 +385,7 @@ static int quic_hash(struct sock *sk)
 
 	sa = quic_path_addr(quic_src(sk), 0);
 	da = quic_path_addr(quic_dst(sk), 0);
-	if (!quic_is_listen(sk)) {
+	if (!sk->sk_max_ack_backlog) {
 		head = quic_sock_head(net, sa, da);
 		spin_lock(&head->lock);
 
@@ -448,7 +448,7 @@ static void quic_unhash(struct sock *sk)
 
 	sa = quic_path_addr(quic_src(sk), 0);
 	da = quic_path_addr(quic_dst(sk), 0);
-	if (quic_is_listen(sk)) {
+	if (sk->sk_max_ack_backlog) {
 		head = quic_listen_sock_head(net, ntohs(sa->v4.sin_port));
 		goto out;
 	}
@@ -1979,7 +1979,8 @@ static void quic_release_cb(struct sock *sk)
 
 static int quic_disconnect(struct sock *sk, int flags)
 {
-	return -EOPNOTSUPP;
+	quic_set_state(sk, QUIC_SS_CLOSED); /* for a listen socket only */
+	return 0;
 }
 
 static void quic_shutdown(struct sock *sk, int how)

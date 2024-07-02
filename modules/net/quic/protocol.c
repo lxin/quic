@@ -445,11 +445,10 @@ static int quic_inet_listen(struct socket *sock, int backlog)
 	source = quic_source(sk);
 	dest = quic_dest(sk);
 
-	sk->sk_max_ack_backlog = backlog;
 	if (!backlog)
 		goto free;
 
-	if (!hlist_unhashed(&quic_sk(sk)->inet.sk.sk_node))
+	if (!sk_unhashed(sk))
 		goto out;
 	quic_conn_id_generate(&conn_id);
 	err = quic_conn_id_add(dest, &conn_id, 0, NULL);
@@ -469,6 +468,7 @@ static int quic_inet_listen(struct socket *sock, int backlog)
 	if (err)
 		goto free;
 	quic_set_state(sk, QUIC_SS_LISTENING);
+	sk->sk_max_ack_backlog = backlog;
 	err = sk->sk_prot->hash(sk);
 	if (err)
 		goto free;
@@ -477,6 +477,7 @@ out:
 	return err;
 free:
 	sk->sk_prot->unhash(sk);
+	sk->sk_max_ack_backlog = 0;
 	quic_crypto_destroy(crypto);
 	quic_conn_id_set_free(dest);
 	quic_conn_id_set_free(source);
