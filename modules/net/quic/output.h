@@ -9,8 +9,6 @@
  */
 
 struct quic_outqueue {
-	struct quic_conn_id retry_dcid;
-	struct quic_conn_id orig_dcid;
 	struct list_head transmitted_list;
 	struct list_head datagram_list;
 	struct list_head control_list;
@@ -22,6 +20,8 @@ struct quic_outqueue {
 	u64 window;
 	u64 bytes;
 
+	struct quic_conn_id retry_dcid;
+	struct quic_conn_id orig_dcid;
 	u32 max_datagram_frame_size;
 	u32 max_udp_payload_size;
 	u32 ack_delay_exponent;
@@ -45,11 +45,6 @@ struct quic_outqueue {
 	u8 serv:1;
 	u8 retry:1;
 };
-
-static inline void quic_outq_set_window(struct quic_outqueue *outq, u32 window)
-{
-	outq->window = window;
-}
 
 static inline u64 quic_outq_window(struct quic_outqueue *outq)
 {
@@ -197,3 +192,4 @@ void quic_outq_free(struct sock *sk);
 void quic_outq_encrypted_tail(struct sock *sk, struct sk_buff *skb);
 void quic_outq_wfree(int len, struct sock *sk);
 void quic_outq_set_owner_w(int len, struct sock *sk);
+void quic_outq_sync_window(struct sock *sk);

@@ -377,8 +377,8 @@ static int quic_packet_listen_process(struct sock *sk, struct sk_buff *skb)
 	struct quic_inqueue *inq = quic_inq(sk);
 	int err = 0, errcode, len = skb->len;
 	u8 *p = skb->data, type, retry = 0;
-	struct quic_conn_id odcid;
 	struct quic_crypto *crypto;
+	struct quic_conn_id odcid;
 	struct quic_data token;
 
 	/* set af_ops for now in case sk_family != addr.v4.sin_family */
@@ -1100,10 +1100,10 @@ static u8 *quic_packet_pack_frames(struct sock *sk, struct sk_buff *skb, s64 num
 static struct sk_buff *quic_packet_handshake_create(struct sock *sk)
 {
 	struct quic_packet *packet = quic_packet(sk);
-	struct quic_conn_id_set *id_set;
 	u8 *p, type, level = packet->level;
-	struct quic_conn_id *active;
 	u32 version, len, hlen, plen = 0;
+	struct quic_conn_id_set *id_set;
+	struct quic_conn_id *active;
 	struct quichshdr *hdr;
 	struct sk_buff *skb;
 	s64 number;
@@ -1218,8 +1218,8 @@ static struct sk_buff *quic_packet_app_create(struct sock *sk)
 {
 	struct quic_conn_id_set *id_set = quic_dest(sk);
 	struct quic_packet *packet = quic_packet(sk);
-	struct quic_conn_id *active;
 	u8 *p, level = packet->level;
+	struct quic_conn_id *active;
 	struct sk_buff *skb;
 	struct quichdr *hdr;
 	u32 len, hlen;

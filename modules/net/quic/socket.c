@@ -247,6 +247,9 @@ static int quic_init_sock(struct sock *sk)
 		return -ENOMEM;
 	INIT_LIST_HEAD(quic_reqs(sk));
 
+	WRITE_ONCE(sk->sk_sndbuf, READ_ONCE(sysctl_quic_wmem[1]));
+	WRITE_ONCE(sk->sk_rcvbuf, READ_ONCE(sysctl_quic_rmem[1]));
+
 	local_bh_disable();
 	sk_sockets_allocated_inc(sk);
 	sock_prot_inuse_add(sock_net(sk), sk->sk_prot, 1);
@@ -1462,8 +1465,8 @@ static int quic_sock_set_crypto_secret(struct sock *sk, struct quic_crypto_secre
 	mss = quic_packet_mss(quic_packet(sk));
 	window = max_t(u32, mss * 2, 14720);
 	window = min_t(u32, mss * 10, window);
-	quic_outq_set_window(quic_outq(sk), window);
 	quic_cong_set_window(quic_cong(sk), window);
+	quic_outq_sync_window(sk);
 	return 0;
 }
 

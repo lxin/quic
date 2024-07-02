@@ -390,7 +390,7 @@ int quic_outq_transmitted_sack(struct sock *sk, u8 level, s64 largest, s64 small
 			}
 			if (bytes) {
 				quic_cong_on_packet_acked(cong, frame->sent_time, bytes);
-				quic_outq_set_window(outq, quic_cong_window(cong));
+				quic_outq_sync_window(sk);
 				acked_bytes += bytes;
 				bytes = 0;
 			}
@@ -422,6 +422,24 @@ out:
 	if (timeout < now)
 		timeout = now + 1;
 	quic_timer_reduce(sk, level, timeout - now);
+}
+
+void quic_outq_sync_window(struct sock *sk)
+{
+	struct quic_outqueue *outq = quic_outq(sk);
+	struct quic_cong *cong = quic_cong(sk);
+	u32 window = quic_cong_window(cong);
+
+	if (window == outq->window)
+		return;
+	outq->window = window;
+
+	if (sk->sk_userlocks & SOCK_SNDBUF_LOCK)
+		return;
+	if (sk->sk_sndbuf > 2 * window)
+		if (sk_stream_wspace(sk) > 0)
+			sk->sk_write_space(sk);
+	sk->sk_sndbuf = 2 * window;
 }
 
 /* put the timeout frame back to the corresponding outqueue */
@@ -485,7 +503,7 @@ int quic_outq_retransmit_mark(struct sock *sk, u8 level, u8 immediate)
 		if (frame->last && bytes) {
 			time = quic_pnspace_max_pn_acked_time(space);
 			quic_cong_on_packet_lost(cong, time, bytes);
-			quic_outq_set_window(outq, quic_cong_window(cong));
+			quic_outq_sync_window(sk);
 			bytes = 0;
 		}
 		if (quic_frame_is_dgram(frame->type)) { /* no need to retransmit dgram */
@@ -687,9 +705,7 @@ void quic_outq_set_param(struct sock *sk, struct quic_transport_param *p)
 	outq->max_ack_delay = p->max_ack_delay;
 	outq->grease_quic_bit = p->grease_quic_bit;
 	outq->disable_1rtt_encryption = p->disable_1rtt_encryption;
-
 	outq->max_bytes = p->max_data;
-	sk->sk_sndbuf = 2 * p->max_data;
 
 	remote_idle = outq->max_idle_timeout;
 	local_idle = quic_inq_max_idle_timeout(inq);

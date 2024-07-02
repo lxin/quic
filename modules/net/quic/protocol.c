@@ -654,10 +654,10 @@ static int quic_seq_show(struct seq_file *seq, void *v)
 		quic_af_ops_get(addr->v4.sin_family)->seq_dump_addr(seq, addr);
 
 		outq = quic_outq(sk);
-		seq_printf(seq, "%d\t%lld\t%d\t%d\t%d\t%d\n", sk->sk_state,
+		seq_printf(seq, "%d\t%lld\t%d\t%d\t%d\t%d\t%d\t%d\n", sk->sk_state,
 			   quic_outq_window(outq), quic_packet_mss(quic_packet(sk)),
 			   quic_outq_data_inflight(outq), READ_ONCE(sk->sk_wmem_queued),
-			   sk_rmem_alloc_get(sk));
+			   sk_rmem_alloc_get(sk), sk->sk_sndbuf, sk->sk_rcvbuf);
 	}
 	spin_unlock(&head->lock);
 	return 0;
@@ -672,8 +672,8 @@ static void *quic_seq_start(struct seq_file *seq, loff_t *pos)
 		*pos = 0;
 
 	if (*pos == 0)
-		seq_printf(seq, "LOCAL_ADDRESS\tREMOTE_ADDRESS\tUDP_ADDRESS\t"
-				"STATE\tWINDOW\tMSS\tIN_FLIGHT\tTX_QUEUE\tRX_QUEUE\n");
+		seq_printf(seq, "LOCAL_ADDRESS\tREMOTE_ADDRESS\tUDP_ADDRESS\tSTATE\t"
+				"WINDOW\tMSS\tIN_FLIGHT\tTX_QUEUE\tRX_QUEUE\tSNDBUF\tRCVBUF\n");
 
 	return (void *)pos;
 }
@@ -887,7 +887,7 @@ static void quic_sysctl_register(void)
 	max_share = min(4UL * 1024 * 1024, limit);
 
 	sysctl_quic_rmem[0] = PAGE_SIZE;
-	sysctl_quic_rmem[1] = 1500 * SKB_TRUESIZE(1);
+	sysctl_quic_rmem[1] = 1024 * 1024;
 	sysctl_quic_rmem[2] = max(sysctl_quic_rmem[1], max_share);
 
 	sysctl_quic_wmem[0] = PAGE_SIZE;
