@@ -77,6 +77,7 @@ static inline u32 quic_cong_latest_rtt(struct quic_cong *cong)
 
 void quic_cong_set_param(struct quic_cong *cong, struct quic_transport_param *p);
 void quic_cong_rtt_update(struct quic_cong *cong, u32 time, u32 ack_delay);
+void quic_cong_pace_update(struct quic_cong *cong, u32 bytes, struct sock *sk);
 void quic_cong_on_packet_lost(struct quic_cong *cong, u32 time, u32 bytes);
 void quic_cong_on_packet_acked(struct quic_cong *cong, u32 time, u32 bytes);
 void quic_cong_on_process_ecn(struct quic_cong *cong);

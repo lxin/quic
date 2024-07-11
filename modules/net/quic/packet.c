@@ -1000,16 +1000,35 @@ out:
 	return err;
 }
 
+static void quic_packet_update_pace_time(struct sock *sk, u16 bytes)
+{
+	unsigned long rate = READ_ONCE(sk->sk_pacing_rate);
+	struct quic_packet *packet = quic_packet(sk);
+	u64 prior_time, credit, len_ns;
+
+	if (!bytes || !rate)
+		return;
+
+	prior_time = packet->pace_time;
+	packet->pace_time = max(packet->pace_time, ktime_get_ns());
+	credit = packet->pace_time - prior_time;
+
+	/* take into account OS jitter */
+	len_ns = div64_ul((u64)bytes * NSEC_PER_SEC, rate);
+	len_ns -= min_t(u64, len_ns / 2, credit);
+	packet->pace_time += len_ns;
+}
+
 /* make these fixed for easy coding */
 #define QUIC_PACKET_NUMBER_LEN	4
 #define QUIC_PACKET_LENGTH_LEN	4
 
 static u8 *quic_packet_pack_frames(struct sock *sk, struct sk_buff *skb, s64 number, u8 level)
 {
+	u32 now = jiffies_to_usecs(jiffies), len = 0, bytes = 0;
 	struct quic_pnspace *space = quic_pnspace(sk, level);
 	struct quic_crypto_cb *cb = QUIC_CRYPTO_CB(skb);
 	struct quic_packet *packet = quic_packet(sk);
-	u32 now = jiffies_to_usecs(jiffies), len = 0;
 	struct quic_frame *frame, *next, *tmp = NULL;
 	u8 *p = skb->data + packet->len, ecn = 0;
 	struct list_head *head;
@@ -1036,6 +1055,7 @@ static u8 *quic_packet_pack_frames(struct sock *sk, struct sk_buff *skb, s64 num
 		tmp->last = 0;
 		tmp->first = !len;
 		len += frame->len;
+		bytes += frame->bytes;
 
 		if (!packet->level && !ecn && packet->ecn_probes < 3) {
 			packet->ecn_probes++;
@@ -1059,6 +1079,7 @@ static u8 *quic_packet_pack_frames(struct sock *sk, struct sk_buff *skb, s64 num
 	quic_pnspace_inc_inflight(space, len);
 	quic_pnspace_set_last_sent_time(space, now);
 	quic_outq_update_loss_timer(sk, level);
+	quic_packet_update_pace_time(sk, bytes);
 	return p;
 }
 
@@ -1305,7 +1326,21 @@ int quic_packet_route(struct sock *sk)
 	return 0;
 }
 
-int quic_packet_config(struct sock *sk, u8 level, u8 path_alt)
+static bool quic_packet_pace_check(struct sock *sk, u16 bytes)
+{
+	struct quic_packet *packet = quic_packet(sk);
+
+	if (!bytes)
+		return false;
+
+	if (packet->pace_time <= ktime_get_ns())
+		return false;
+
+	quic_timer_start(sk, QUIC_TIMER_PACE, packet->pace_time);
+	return true;
+}
+
+int quic_packet_config(struct sock *sk, u8 level, u8 path_alt, u16 bytes)
 {
 	struct quic_conn_id_set *id_set = quic_dest(sk);
 	struct quic_packet *packet = quic_packet(sk);
@@ -1320,6 +1355,8 @@ int quic_packet_config(struct sock *sk, u8 level, u8 path_alt)
 		if (packet->level < level)
 			return 1;
 	}
+	if (quic_packet_pace_check(sk, bytes))
+		return -1;
 	if (!list_empty(&packet->frame_list))
 		return 0;
 

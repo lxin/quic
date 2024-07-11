@@ -12,6 +12,7 @@
 
 #include <uapi/linux/quic.h>
 #include <linux/jiffies.h>
+#include <net/sock.h>
 
 #include "cong.h"
 
@@ -197,3 +198,21 @@ void quic_cong_rtt_update(struct quic_cong *cong, u32 time, u32 ack_delay)
 	quic_cong_rto_update(cong);
 }
 EXPORT_SYMBOL_GPL(quic_cong_rtt_update);
+
+void quic_cong_pace_update(struct quic_cong *cong, u32 bytes, struct sock *sk)
+{
+	u64 rate;
+
+	if (!bytes)
+		return;
+
+	/* rate = N * congestion_window / smoothed_rtt */
+	rate = 2 * cong->window * USEC_PER_SEC;
+	if (likely(cong->smoothed_rtt))
+		do_div(rate, cong->smoothed_rtt);
+
+	WRITE_ONCE(sk->sk_pacing_rate, min_t(u64, rate, READ_ONCE(sk->sk_max_pacing_rate)));
+	pr_debug("[QUIC] update pacing rate %lu max rate %lu srtt %u\n", sk->sk_pacing_rate,
+		 sk->sk_max_pacing_rate, cong->smoothed_rtt);
+}
+EXPORT_SYMBOL_GPL(quic_cong_pace_update);
