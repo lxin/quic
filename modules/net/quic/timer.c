@@ -10,25 +10,16 @@
 
 #include "socket.h"
 
-static void quic_timer_delay_ack_timeout(struct timer_list *t)
+void quic_timer_sack_handler(struct sock *sk)
 {
-	struct quic_sock *qs = from_timer(qs, t, timers[QUIC_TIMER_SACK].t);
 	u8 level = QUIC_CRYPTO_APP, buf[100] = {};
 	struct quic_connection_close *close;
-	struct sock *sk = &qs->inet.sk;
 	struct quic_inqueue *inq;
 	struct quic_frame *frame;
 	u32 timeout;
 
-	bh_lock_sock(sk);
-	if (sock_owned_by_user(sk)) {
-		if (!mod_timer(t, jiffies + (HZ / 20)))
-			sock_hold(sk);
-		goto out;
-	}
-
 	if (quic_is_closed(sk))
-		goto out;
+		return;
 
 	inq = quic_inq(sk);
 	if (quic_inq_need_sack(inq)) {
@@ -36,90 +27,119 @@ static void quic_timer_delay_ack_timeout(struct timer_list *t)
 		if (frame)
 			quic_outq_ctrl_tail(sk, frame, false);
 		quic_inq_set_need_sack(inq, 0);
-		goto out;
+		return;
 	}
 
 	close = (void *)buf;
 	if (quic_inq_event_recv(sk, QUIC_EVENT_CONNECTION_CLOSE, close)) {
 		timeout = quic_inq_max_idle_timeout(inq);
 		quic_timer_start(sk, QUIC_TIMER_SACK, timeout);
-		goto out;
+		return;
 	}
 	quic_set_state(sk, QUIC_SS_CLOSED);
 	pr_debug("[QUIC] IDLE TIMEOUT\n");
+}
+
+static void quic_timer_sack_timeout(struct timer_list *t)
+{
+	struct quic_sock *qs = from_timer(qs, t, timers[QUIC_TIMER_SACK].t);
+	struct sock *sk = &qs->inet.sk;
+
+	bh_lock_sock(sk);
+	if (sock_owned_by_user(sk)) {
+		if (!test_and_set_bit(QUIC_SACK_DEFERRED, &sk->sk_tsq_flags))
+			sock_hold(sk);
+		goto out;
+	}
+
+	quic_timer_sack_handler(sk);
 out:
 	bh_unlock_sock(sk);
 	sock_put(sk);
 }
 
-static void quic_timer_loss_timeout(struct sock *sk, u8 level)
+void quic_timer_loss_handler(struct sock *sk, u8 level)
 {
 	struct quic_pnspace *space;
 
-	bh_lock_sock(sk);
-	if (sock_owned_by_user(sk)) {
-		if (!mod_timer(quic_timer(sk, level), jiffies + (HZ / 20)))
-			sock_hold(sk);
-		goto out;
-	}
-
 	if (quic_is_closed(sk))
-		goto out;
+		return;
 
 	space = quic_pnspace(sk, level);
 	if (quic_pnspace_loss_time(space)) {
 		if (quic_outq_retransmit_mark(sk, level, 0))
 			quic_outq_transmit(sk);
-		goto out;
+		return;
 	}
 
 	if (quic_pnspace_last_sent_time(space))
 		quic_outq_transmit_one(sk, level);
-out:
-	bh_unlock_sock(sk);
-	sock_put(sk);
 }
 
 static void quic_timer_ap_loss_timeout(struct timer_list *t)
 {
 	struct quic_sock *qs = from_timer(qs, t, timers[QUIC_TIMER_AP_LOSS].t);
+	struct sock *sk = &qs->inet.sk;
 
-	quic_timer_loss_timeout(&qs->inet.sk, QUIC_TIMER_AP_LOSS);
+	bh_lock_sock(sk);
+	if (sock_owned_by_user(sk)) {
+		if (!test_and_set_bit(QUIC_AP_LOSS_DEFERRED, &sk->sk_tsq_flags))
+			sock_hold(sk);
+		goto out;
+	}
+
+	quic_timer_loss_handler(sk, QUIC_TIMER_AP_LOSS);
+out:
+	bh_unlock_sock(sk);
+	sock_put(sk);
 }
 
 static void quic_timer_in_loss_timeout(struct timer_list *t)
 {
 	struct quic_sock *qs = from_timer(qs, t, timers[QUIC_TIMER_IN_LOSS].t);
+	struct sock *sk = &qs->inet.sk;
 
-	quic_timer_loss_timeout(&qs->inet.sk, QUIC_TIMER_IN_LOSS);
+	bh_lock_sock(sk);
+	if (sock_owned_by_user(sk)) {
+		if (!test_and_set_bit(QUIC_IN_LOSS_DEFERRED, &sk->sk_tsq_flags))
+			sock_hold(sk);
+		goto out;
+	}
+
+	quic_timer_loss_handler(sk, QUIC_TIMER_IN_LOSS);
+out:
+	bh_unlock_sock(sk);
+	sock_put(sk);
 }
 
 static void quic_timer_hs_loss_timeout(struct timer_list *t)
 {
 	struct quic_sock *qs = from_timer(qs, t, timers[QUIC_TIMER_HS_LOSS].t);
+	struct sock *sk = &qs->inet.sk;
 
-	quic_timer_loss_timeout(&qs->inet.sk, QUIC_TIMER_HS_LOSS);
+	bh_lock_sock(sk);
+	if (sock_owned_by_user(sk)) {
+		if (!test_and_set_bit(QUIC_HS_LOSS_DEFERRED, &sk->sk_tsq_flags))
+			sock_hold(sk);
+		goto out;
+	}
+
+	quic_timer_loss_handler(sk, QUIC_TIMER_HS_LOSS);
+out:
+	bh_unlock_sock(sk);
+	sock_put(sk);
 }
 
-static void quic_timer_path_timeout(struct timer_list *t)
+void quic_timer_path_handler(struct sock *sk)
 {
-	struct quic_sock *qs = from_timer(qs, t, timers[QUIC_TIMER_PATH].t);
-	struct sock *sk = &qs->inet.sk;
 	struct quic_path_addr *path;
 	struct quic_packet *packet;
 	struct quic_frame *frame;
 	u8 cnt, probe = 1;
 	u32 timeout;
 
-	bh_lock_sock(sk);
-	if (sock_owned_by_user(sk)) {
-		if (!mod_timer(t, jiffies + (HZ / 20)))
-			sock_hold(sk);
-		goto out;
-	}
-
 	if (quic_is_closed(sk))
-		goto out;
+		return;
 
 	timeout = quic_cong_rto(quic_cong(sk)) * 3;
 	packet = quic_packet(sk);
@@ -130,7 +150,7 @@ static void quic_timer_path_timeout(struct timer_list *t)
 		if (cnt >= 5) {
 			quic_path_set_sent_cnt(path, 0);
 			quic_packet_set_ecn_probes(packet, 0);
-			goto out;
+			return;
 		}
 		frame = quic_frame_create(sk, QUIC_FRAME_PATH_CHALLENGE, path);
 		if (frame)
@@ -147,7 +167,7 @@ static void quic_timer_path_timeout(struct timer_list *t)
 			quic_path_set_sent_cnt(path, 0);
 			quic_path_swap_active(path);
 			quic_packet_set_ecn_probes(packet, 0);
-			goto out;
+			return;
 		}
 		frame = quic_frame_create(sk, QUIC_FRAME_PATH_CHALLENGE, path);
 		if (frame)
@@ -159,6 +179,21 @@ static void quic_timer_path_timeout(struct timer_list *t)
 	if (probe)
 		quic_outq_transmit_probe(sk);
 
+}
+
+static void quic_timer_path_timeout(struct timer_list *t)
+{
+	struct quic_sock *qs = from_timer(qs, t, timers[QUIC_TIMER_PATH].t);
+	struct sock *sk = &qs->inet.sk;
+
+	bh_lock_sock(sk);
+	if (sock_owned_by_user(sk)) {
+		if (!test_and_set_bit(QUIC_PATH_DEFERRED, &sk->sk_tsq_flags))
+			sock_hold(sk);
+		goto out;
+	}
+
+	quic_timer_path_handler(sk);
 out:
 	bh_unlock_sock(sk);
 	sock_put(sk);
@@ -243,7 +278,7 @@ void quic_timer_init(struct sock *sk)
 	timer_setup(quic_timer(sk, QUIC_TIMER_AP_LOSS), quic_timer_ap_loss_timeout, 0);
 	timer_setup(quic_timer(sk, QUIC_TIMER_IN_LOSS), quic_timer_in_loss_timeout, 0);
 	timer_setup(quic_timer(sk, QUIC_TIMER_HS_LOSS), quic_timer_hs_loss_timeout, 0);
-	timer_setup(quic_timer(sk, QUIC_TIMER_SACK), quic_timer_delay_ack_timeout, 0);
+	timer_setup(quic_timer(sk, QUIC_TIMER_SACK), quic_timer_sack_timeout, 0);
 	timer_setup(quic_timer(sk, QUIC_TIMER_PATH), quic_timer_path_timeout, 0);
 
 	hr = quic_timer(sk, QUIC_TIMER_PACE);

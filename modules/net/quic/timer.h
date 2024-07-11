@@ -38,3 +38,6 @@ void quic_timer_init(struct sock *sk);
 void quic_timer_free(struct sock *sk);
 
 void quic_timer_pace_handler(struct sock *sk);
+void quic_timer_path_handler(struct sock *sk);
+void quic_timer_sack_handler(struct sock *sk);
+void quic_timer_loss_handler(struct sock *sk, u8 level);

@@ -1973,14 +1973,40 @@ static int quic_getsockopt(struct sock *sk, int level, int optname,
 
 static void quic_release_cb(struct sock *sk)
 {
-	if (test_bit(QUIC_MTU_REDUCED_DEFERRED, &sk->sk_tsq_flags)) {
+	unsigned long nflags, flags = smp_load_acquire(&sk->sk_tsq_flags);
+
+	do {
+		if (!(flags & QUIC_DEFERRED_ALL))
+			return;
+		nflags = flags & ~QUIC_DEFERRED_ALL;
+	} while (!try_cmpxchg(&sk->sk_tsq_flags, &flags, nflags));
+
+	if (flags & QUIC_F_MTU_REDUCED_DEFERRED) {
 		quic_rcv_err_icmp(sk);
-		clear_bit(QUIC_MTU_REDUCED_DEFERRED, &sk->sk_tsq_flags);
 		__sock_put(sk);
 	}
-	if (test_bit(QUIC_TSQ_DEFERRED, &sk->sk_tsq_flags)) {
+	if (flags & QUIC_F_AP_LOSS_DEFERRED) {
+		quic_timer_loss_handler(sk, QUIC_TIMER_AP_LOSS);
+		__sock_put(sk);
+	}
+	if (flags & QUIC_F_IN_LOSS_DEFERRED) {
+		quic_timer_loss_handler(sk, QUIC_TIMER_IN_LOSS);
+		__sock_put(sk);
+	}
+	if (flags & QUIC_F_HS_LOSS_DEFERRED) {
+		quic_timer_loss_handler(sk, QUIC_TIMER_HS_LOSS);
+		__sock_put(sk);
+	}
+	if (flags & QUIC_F_SACK_DEFERRED) {
+		quic_timer_sack_handler(sk);
+		__sock_put(sk);
+	}
+	if (flags & QUIC_F_PATH_DEFERRED) {
+		quic_timer_path_handler(sk);
+		__sock_put(sk);
+	}
+	if (flags & QUIC_F_TSQ_DEFERRED) {
 		quic_timer_pace_handler(sk);
-		clear_bit(QUIC_TSQ_DEFERRED, &sk->sk_tsq_flags);
 		__sock_put(sk);
 	}
 }
