@@ -12,7 +12,7 @@
 
 static void quic_timer_delay_ack_timeout(struct timer_list *t)
 {
-	struct quic_sock *qs = from_timer(qs, t, timers[QUIC_TIMER_SACK]);
+	struct quic_sock *qs = from_timer(qs, t, timers[QUIC_TIMER_SACK].t);
 	u8 level = QUIC_CRYPTO_APP, buf[100] = {};
 	struct quic_connection_close *close;
 	struct sock *sk = &qs->inet.sk;
@@ -82,28 +82,28 @@ out:
 
 static void quic_timer_ap_loss_timeout(struct timer_list *t)
 {
-	struct quic_sock *qs = from_timer(qs, t, timers[QUIC_TIMER_AP_LOSS]);
+	struct quic_sock *qs = from_timer(qs, t, timers[QUIC_TIMER_AP_LOSS].t);
 
 	quic_timer_loss_timeout(&qs->inet.sk, QUIC_TIMER_AP_LOSS);
 }
 
 static void quic_timer_in_loss_timeout(struct timer_list *t)
 {
-	struct quic_sock *qs = from_timer(qs, t, timers[QUIC_TIMER_IN_LOSS]);
+	struct quic_sock *qs = from_timer(qs, t, timers[QUIC_TIMER_IN_LOSS].t);
 
 	quic_timer_loss_timeout(&qs->inet.sk, QUIC_TIMER_IN_LOSS);
 }
 
 static void quic_timer_hs_loss_timeout(struct timer_list *t)
 {
-	struct quic_sock *qs = from_timer(qs, t, timers[QUIC_TIMER_HS_LOSS]);
+	struct quic_sock *qs = from_timer(qs, t, timers[QUIC_TIMER_HS_LOSS].t);
 
 	quic_timer_loss_timeout(&qs->inet.sk, QUIC_TIMER_HS_LOSS);
 }
 
 static void quic_timer_path_timeout(struct timer_list *t)
 {
-	struct quic_sock *qs = from_timer(qs, t, timers[QUIC_TIMER_PATH]);
+	struct quic_sock *qs = from_timer(qs, t, timers[QUIC_TIMER_PATH].t);
 	struct sock *sk = &qs->inet.sk;
 	struct quic_path_addr *path;
 	struct quic_packet *packet;
@@ -164,7 +164,33 @@ out:
 	sock_put(sk);
 }
 
-void quic_timer_reset(struct sock *sk, u8 type, u32 timeout)
+void quic_timer_pace_handler(struct sock *sk)
+{
+	if (quic_is_closed(sk))
+		return;
+	quic_outq_transmit(sk);
+}
+
+enum hrtimer_restart quic_timer_pace_timeout(struct hrtimer *hr)
+{
+	struct quic_sock *qs = container_of(hr, struct quic_sock, timers[QUIC_TIMER_PACE].hr);
+	struct sock *sk = &qs->inet.sk;
+
+	bh_lock_sock(sk);
+	if (sock_owned_by_user(sk)) {
+		if (!test_and_set_bit(QUIC_TSQ_DEFERRED, &sk->sk_tsq_flags))
+			sock_hold(sk);
+		goto out;
+	}
+
+	quic_timer_pace_handler(sk);
+out:
+	bh_unlock_sock(sk);
+	sock_put(sk);
+	return HRTIMER_NORESTART;
+}
+
+void quic_timer_reset(struct sock *sk, u8 type, u64 timeout)
 {
 	struct timer_list *t = quic_timer(sk, type);
 
@@ -172,7 +198,7 @@ void quic_timer_reset(struct sock *sk, u8 type, u32 timeout)
 		sock_hold(sk);
 }
 
-void quic_timer_reduce(struct sock *sk, u8 type, u32 timeout)
+void quic_timer_reduce(struct sock *sk, u8 type, u64 timeout)
 {
 	struct timer_list *t = quic_timer(sk, type);
 
@@ -180,10 +206,22 @@ void quic_timer_reduce(struct sock *sk, u8 type, u32 timeout)
 		sock_hold(sk);
 }
 
-void quic_timer_start(struct sock *sk, u8 type, u32 timeout)
+void quic_timer_start(struct sock *sk, u8 type, u64 timeout)
 {
-	struct timer_list *t = quic_timer(sk, type);
+	struct timer_list *t;
+	struct hrtimer *hr;
 
+	if (type == QUIC_TIMER_PACE) {
+		hr = quic_timer(sk, type);
+
+		if (!hrtimer_is_queued(hr)) {
+			hrtimer_start(hr, ns_to_ktime(timeout), HRTIMER_MODE_ABS_PINNED_SOFT);
+			sock_hold(sk);
+		}
+		return;
+	}
+
+	t = quic_timer(sk, type);
 	if (timeout && !timer_pending(t)) {
 		if (!mod_timer(t, jiffies + usecs_to_jiffies(timeout)))
 			sock_hold(sk);
@@ -192,17 +230,25 @@ void quic_timer_start(struct sock *sk, u8 type, u32 timeout)
 
 void quic_timer_stop(struct sock *sk, u8 type)
 {
+	if (type == QUIC_TIMER_PACE)
+		return;
 	if (del_timer(quic_timer(sk, type)))
 		sock_put(sk);
 }
 
 void quic_timer_init(struct sock *sk)
 {
+	struct hrtimer *hr;
+
 	timer_setup(quic_timer(sk, QUIC_TIMER_AP_LOSS), quic_timer_ap_loss_timeout, 0);
 	timer_setup(quic_timer(sk, QUIC_TIMER_IN_LOSS), quic_timer_in_loss_timeout, 0);
 	timer_setup(quic_timer(sk, QUIC_TIMER_HS_LOSS), quic_timer_hs_loss_timeout, 0);
 	timer_setup(quic_timer(sk, QUIC_TIMER_SACK), quic_timer_delay_ack_timeout, 0);
 	timer_setup(quic_timer(sk, QUIC_TIMER_PATH), quic_timer_path_timeout, 0);
+
+	hr = quic_timer(sk, QUIC_TIMER_PACE);
+	hrtimer_init(hr, CLOCK_MONOTONIC, HRTIMER_MODE_ABS_PINNED_SOFT);
+	hr->function = quic_timer_pace_timeout;
 }
 
 void quic_timer_free(struct sock *sk)
@@ -212,4 +258,5 @@ void quic_timer_free(struct sock *sk)
 	quic_timer_stop(sk, QUIC_TIMER_HS_LOSS);
 	quic_timer_stop(sk, QUIC_TIMER_SACK);
 	quic_timer_stop(sk, QUIC_TIMER_PATH);
+	quic_timer_stop(sk, QUIC_TIMER_PACE);
 }

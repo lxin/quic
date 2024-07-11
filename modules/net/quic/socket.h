@@ -55,6 +55,7 @@ struct quic_request_sock {
 
 enum quic_tsq_enum {
 	QUIC_MTU_REDUCED_DEFERRED,
+	QUIC_TSQ_DEFERRED,
 };
 
 struct quic_sock {
@@ -80,7 +81,7 @@ struct quic_sock {
 	struct quic_outqueue		outq;
 	struct quic_inqueue		inq;
 	struct quic_packet		packet;
-	struct timer_list		timers[QUIC_TIMER_MAX];
+	struct quic_timer		timers[QUIC_TIMER_MAX];
 };
 
 struct quic6_sock {
@@ -148,9 +149,9 @@ static inline struct quic_stream_table *quic_streams(const struct sock *sk)
 	return &quic_sk(sk)->streams;
 }
 
-static inline struct timer_list *quic_timer(const struct sock *sk, u8 type)
+static inline void *quic_timer(const struct sock *sk, u8 type)
 {
-	return &quic_sk(sk)->timers[type];
+	return (void *)&quic_sk(sk)->timers[type];
 }
 
 static inline struct list_head *quic_reqs(const struct sock *sk)

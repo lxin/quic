@@ -1978,6 +1978,11 @@ static void quic_release_cb(struct sock *sk)
 		clear_bit(QUIC_MTU_REDUCED_DEFERRED, &sk->sk_tsq_flags);
 		__sock_put(sk);
 	}
+	if (test_bit(QUIC_TSQ_DEFERRED, &sk->sk_tsq_flags)) {
+		quic_timer_pace_handler(sk);
+		clear_bit(QUIC_TSQ_DEFERRED, &sk->sk_tsq_flags);
+		__sock_put(sk);
+	}
 }
 
 static int quic_disconnect(struct sock *sk, int flags)
