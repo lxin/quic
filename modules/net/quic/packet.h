@@ -16,8 +16,8 @@ struct quic_packet {
 	union quic_addr *sa;
 	u64 pace_time; /* planned time to send next packet */
 	u16 mss[2];
-	u16 count;
-	u16 max_count;
+	u16 snd_count;
+	u16 max_snd_count; /* the max count of packets to send when filter is set */
 	u8  overhead;
 	u8  ecn_probes;
 	u8  ipfragok:1;
@@ -34,6 +34,8 @@ struct quic_packet {
 	/* recv */
 	u32 version;
 	u16 errcode;
+	u16 rcv_count;
+	u16 max_rcv_count; /* the count of packets received to trigger an ACK */
 	u8  non_probing:1;
 	u8  ack_immediate:1;
 	union quic_addr daddr;

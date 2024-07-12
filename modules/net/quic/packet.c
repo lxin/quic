@@ -749,13 +749,15 @@ static int quic_packet_app_process_done(struct sock *sk, struct sk_buff *skb)
 	if (!packet->ack_eliciting)
 		goto out;
 
-	if (!packet->ack_immediate && !quic_pnspace_has_gap(space)) {
+	if (!packet->ack_immediate && !quic_pnspace_has_gap(space) &&
+	    packet->rcv_count++ < packet->max_rcv_count - 1) {
 		if (!quic_inq_need_sack(inq)) {
 			quic_timer_reset(sk, QUIC_TIMER_SACK, quic_inq_max_ack_delay(inq));
 			quic_inq_set_need_sack(inq, 1);
 		}
 		goto out;
 	}
+	packet->rcv_count = 0;
 	frame = quic_frame_create(sk, QUIC_FRAME_ACK, &level);
 	if (frame) {
 		frame->path_alt = cb->path_alt;
@@ -1071,7 +1073,7 @@ static u8 *quic_packet_pack_frames(struct sock *sk, struct sk_buff *skb, s64 num
 		frame->sent_time = now;
 	}
 
-	packet->count++;
+	packet->snd_count++;
 	if (!len)
 		return p;
 
@@ -1280,7 +1282,7 @@ void quic_packet_set_filter(struct sock *sk, u8 level, u16 count)
 
 	packet->filter = 1;
 	packet->level = level;
-	packet->max_count = count;
+	packet->max_snd_count = count;
 }
 
 void quic_packet_mss_update(struct sock *sk, int mss)
@@ -1292,6 +1294,7 @@ void quic_packet_mss_update(struct sock *sk, int mss)
 	if (max_udp && mss > max_udp)
 		mss = max_udp;
 	packet->mss[0] = mss;
+	packet->max_rcv_count = QUIC_PATH_MAX_PMTU / mss + 1;
 	quic_cong_set_mss(quic_cong(sk), packet->mss[0] - packet->taglen[0]);
 
 	mss_dgram = quic_outq_max_dgram(quic_outq(sk));
@@ -1348,7 +1351,7 @@ int quic_packet_config(struct sock *sk, u8 level, u8 path_alt, u16 bytes)
 	int hlen = sizeof(struct quichdr);
 
 	if (packet->filter) {
-		if (packet->count >= packet->max_count)
+		if (packet->snd_count >= packet->max_snd_count)
 			return -1;
 		if (packet->level > level)
 			return -1;
@@ -1493,9 +1496,9 @@ int quic_packet_flush(struct sock *sk)
 		quic_lower_xmit(sk, packet->head, packet->da, packet->sa);
 		packet->head = NULL;
 	}
-	count = packet->count;
+	count = packet->snd_count;
 
-	packet->count = 0;
+	packet->snd_count = 0;
 	packet->filter = 0;
 	return count;
 }
