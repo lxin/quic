@@ -19,28 +19,28 @@ enum quic_cong_state {
 };
 
 struct quic_cong {
-	u32 rto;
-	u32 rttvar;
-	u32 min_rtt;
-	u32 duration;
-	u32 latest_rtt;
 	u32 smoothed_rtt;
+	u32 latest_rtt;
+	u32 duration;
+	u32 min_rtt;
+	u32 rttvar;
+	u32 rto;
 
-	u64 pacing_time; /* planned time to send next packet */
-	u32 pacing_rate;
-	u32 time; /* current time cache */
+	u32 ack_delay_exponent;
 	u32 recovery_time;
 	u32 max_ack_delay;
-	u32 ack_delay_exponent;
+	u32 pacing_rate;
+	u64 pacing_time; /* planned time to send next packet */
+	u32 time; /* current time cache */
 
-	u32 mss;
-	u32 window;
 	u32 max_window;
 	u32 ssthresh;
+	u32 window;
+	u32 mss;
 
-	u8 state;
-	u64 priv[8];
 	struct quic_cong_ops *ops;
+	u64 priv[8];
+	u8 state;
 };
 
 struct quic_cong_ops {
@@ -49,6 +49,7 @@ struct quic_cong_ops {
 	void (*on_packet_lost)(struct quic_cong *cong, u32 time, u32 bytes, s64 number);
 	void (*on_process_ecn)(struct quic_cong *cong);
 	void (*on_init)(struct quic_cong *cong);
+
 	/* optional */
 	void (*on_packet_sent)(struct quic_cong *cong, u32 time, u32 bytes, s64 number);
 	void (*on_ack_recv)(struct quic_cong *cong, u32 bytes, u32 max_rate);
@@ -105,11 +106,11 @@ static inline u64 quic_cong_pacing_time(struct quic_cong *cong)
 	return cong->pacing_time;
 }
 
-void quic_cong_set_param(struct quic_cong *cong, struct quic_transport_param *p);
 void quic_cong_on_packet_acked(struct quic_cong *cong, u32 time, u32 bytes, s64 number);
 void quic_cong_on_packet_lost(struct quic_cong *cong, u32 time, u32 bytes, s64 number);
+void quic_cong_set_param(struct quic_cong *cong, struct quic_transport_param *p);
 void quic_cong_on_process_ecn(struct quic_cong *cong);
 
-void quic_cong_rtt_update(struct quic_cong *cong, u32 time, u32 ack_delay);
 void quic_cong_on_packet_sent(struct quic_cong *cong, u32 time, u32 bytes, s64 number);
 void quic_cong_on_ack_recv(struct quic_cong *cong, u32 bytes, u32 max_rate);
+void quic_cong_rtt_update(struct quic_cong *cong, u32 time, u32 ack_delay);

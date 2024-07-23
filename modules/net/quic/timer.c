@@ -206,7 +206,7 @@ void quic_timer_pace_handler(struct sock *sk)
 	quic_outq_transmit(sk);
 }
 
-enum hrtimer_restart quic_timer_pace_timeout(struct hrtimer *hr)
+static enum hrtimer_restart quic_timer_pace_timeout(struct hrtimer *hr)
 {
 	struct quic_sock *qs = container_of(hr, struct quic_sock, timers[QUIC_TIMER_PACE].hr);
 	struct sock *sk = &qs->inet.sk;

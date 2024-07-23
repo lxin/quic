@@ -19,26 +19,27 @@ struct quic_inqueue {
 	struct list_head reassemble_list;
 	struct list_head handshake_list;
 	struct list_head stream_list;
-	struct quic_frame *last_event;
 	struct work_struct work;
 	u64 max_bytes;
+	u64 highest;
 	u64 window;
 	u64 bytes;
-	u64 highest;
 
+	struct quic_frame *last_event;
 	u32 max_datagram_frame_size;
 	u32 max_udp_payload_size;
 	u32 ack_delay_exponent;
 	u32 max_idle_timeout;
 	u32 max_ack_delay;
-	u32 events;
 	u32 probe_timeout;
 	u32 version;
-	u8 need_sack:1;
-	u8 grease_quic_bit:1;
-	u8 validate_peer_address:1;
-	u8 receive_session_ticket:1;
+	u32 events;
+
 	u8 disable_1rtt_encryption:1;
+	u8 receive_session_ticket:1;
+	u8 validate_peer_address:1;
+	u8 grease_quic_bit:1;
+	u8 need_sack:1;
 };
 
 static inline u32 quic_inq_max_idle_timeout(struct quic_inqueue *inq)
@@ -156,19 +157,22 @@ static inline void quic_inq_set_need_sack(struct quic_inqueue *inq, u8 need_sack
 	inq->need_sack = need_sack;
 }
 
-int quic_rcv(struct sk_buff *skb);
-int quic_rcv_err(struct sk_buff *skb);
 void quic_rcv_err_icmp(struct sock *sk);
+int quic_rcv_err(struct sk_buff *skb);
+int quic_rcv(struct sk_buff *skb);
+
+int quic_inq_handshake_tail(struct sock *sk, struct quic_frame *frame);
 int quic_inq_reasm_tail(struct sock *sk, struct quic_frame *frame);
 int quic_inq_dgram_tail(struct sock *sk, struct quic_frame *frame);
+int quic_inq_event_recv(struct sock *sk, u8 event, void *args);
+
 void quic_inq_flow_control(struct sock *sk, struct quic_stream *stream, int len);
 void quic_inq_stream_purge(struct sock *sk, struct quic_stream *stream);
+void quic_inq_decrypted_tail(struct sock *sk, struct sk_buff *skb);
+void quic_inq_backlog_tail(struct sock *sk, struct sk_buff *skb);
+
 void quic_inq_set_param(struct sock *sk, struct quic_transport_param *p);
 void quic_inq_set_owner_r(int len, struct sock *sk);
 void quic_inq_rfree(int len, struct sock *sk);
-int quic_inq_event_recv(struct sock *sk, u8 event, void *args);
-int quic_inq_handshake_tail(struct sock *sk, struct quic_frame *frame);
 void quic_inq_init(struct sock *sk);
 void quic_inq_free(struct sock *sk);
-void quic_inq_decrypted_tail(struct sock *sk, struct sk_buff *skb);
-void quic_inq_backlog_tail(struct sock *sk, struct sk_buff *skb);

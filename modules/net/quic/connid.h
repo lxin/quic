@@ -14,8 +14,8 @@
 #define QUIC_CONN_ID_LIMIT	7
 
 struct quic_conn_id {
-	u8 len;
 	u8 data[QUIC_CONN_ID_MAX_LEN];
+	u8 len;
 };
 
 struct quic_common_conn_id {
@@ -43,6 +43,7 @@ struct quic_conn_id_set {
 	u32 entry_size;
 	u32 max_count;
 	u32 count;
+
 	u8 disable_active_migration;
 	u8 pending;
 };
@@ -110,11 +111,12 @@ static inline int quic_conn_id_cmp(struct quic_conn_id *a, struct quic_conn_id *
 	return a->len != b->len || memcmp(a->data, b->data, a->len);
 }
 
+int quic_conn_id_add(struct quic_conn_id_set *id_set, struct quic_conn_id *conn_id,
+		     u32 number, void *data);
 struct quic_conn_id *quic_conn_id_lookup(struct net *net, u8 *scid, u32 len);
 bool quic_conn_id_token_exists(struct quic_conn_id_set *id_set, u8 *token);
-int quic_conn_id_add(struct quic_conn_id_set *id_set,
-		     struct quic_conn_id *conn_id, u32 number, void *data);
 void quic_conn_id_remove(struct quic_conn_id_set *id_set, u32 number);
+
+void quic_conn_id_set_param(struct quic_conn_id_set *id_set, struct quic_transport_param *p);
 void quic_conn_id_set_init(struct quic_conn_id_set *id_set, bool source);
 void quic_conn_id_set_free(struct quic_conn_id_set *id_set);
-void quic_conn_id_set_param(struct quic_conn_id_set *id_set, struct quic_transport_param *p);

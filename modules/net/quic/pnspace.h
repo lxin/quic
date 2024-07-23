@@ -45,20 +45,20 @@ struct quic_pnspace {
 	u64 ecn_count[2][3]; /* ECT_1, ECT_0, CE count of local and peer */
 	u16 pn_map_len;
 
-	s64 base_pn;
+	u32 max_time_limit;
 	s64 min_pn_seen;
 	s64 mid_pn_seen;
 	s64 max_pn_seen;
 	u32 mid_pn_time;
 	u32 max_pn_time;
-	u32 max_time_limit;
+	s64 base_pn;
 
-	s64 next_pn; /* next packet number to send */
-	u32 inflight;
-	u32 loss_time;
-	u32 last_sent_time;
-	u32 max_pn_acked_time;
 	s64 max_pn_acked_seen;
+	u32 max_pn_acked_time;
+	u32 last_sent_time;
+	u32 loss_time;
+	u32 inflight;
+	s64 next_pn; /* next packet number to send */
 };
 
 static inline struct quic_gap_ack_block *quic_pnspace_gabs(struct quic_pnspace *space)
@@ -190,8 +190,9 @@ static inline bool quic_pnspace_has_ecn_count(struct quic_pnspace *space)
 	return space->ecn_count[0][0] || space->ecn_count[0][1] || space->ecn_count[0][2];
 }
 
-int quic_pnspace_init(struct quic_pnspace *space);
-void quic_pnspace_free(struct quic_pnspace *space);
 int quic_pnspace_check(const struct quic_pnspace *space, s64 pn);
 int quic_pnspace_mark(struct quic_pnspace *space, s64 pn);
 u16 quic_pnspace_num_gabs(struct quic_pnspace *space);
+
+void quic_pnspace_free(struct quic_pnspace *space);
+int quic_pnspace_init(struct quic_pnspace *space);

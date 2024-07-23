@@ -716,11 +716,6 @@ err:
 }
 EXPORT_SYMBOL_GPL(quic_crypto_key_update);
 
-void quic_crypto_set_key_update_time(struct quic_crypto *crypto, u32 key_update_time)
-{
-	crypto->key_update_time = key_update_time;
-}
-
 void quic_crypto_destroy(struct quic_crypto *crypto)
 {
 	crypto_free_aead(crypto->tag_tfm);

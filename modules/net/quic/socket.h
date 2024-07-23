@@ -24,6 +24,7 @@
 #include "frame.h"
 #include "cong.h"
 #include "path.h"
+
 #include "packet.h"
 #include "output.h"
 #include "input.h"
@@ -257,12 +258,13 @@ static inline bool quic_under_memory_pressure(const struct sock *sk)
 	return !!READ_ONCE(*sk->sk_prot->memory_pressure);
 }
 
-int quic_sock_change_saddr(struct sock *sk, union quic_addr *addr, u32 len);
-int quic_sock_change_daddr(struct sock *sk, union quic_addr *addr, u32 len);
 struct sock *quic_sock_lookup(struct sk_buff *skb, union quic_addr *sa, union quic_addr *da);
-struct quic_request_sock *quic_request_sock_dequeue(struct sock *sk);
 int quic_request_sock_enqueue(struct sock *sk, struct quic_conn_id *odcid, u8 retry);
+struct quic_request_sock *quic_request_sock_dequeue(struct sock *sk);
 int quic_accept_sock_exists(struct sock *sk, struct sk_buff *skb);
 bool quic_request_sock_exists(struct sock *sk);
+
+int quic_sock_change_saddr(struct sock *sk, union quic_addr *addr, u32 len);
+int quic_sock_change_daddr(struct sock *sk, union quic_addr *addr, u32 len);
 
 #endif /* __net_quic_h__ */
