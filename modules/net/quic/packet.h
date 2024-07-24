@@ -14,7 +14,6 @@ struct quic_packet {
 	struct sk_buff *head;
 	union quic_addr *da;
 	union quic_addr *sa;
-	u64 pace_time; /* planned time to send next packet */
 	u16 mss[2];
 	u16 snd_count;
 	u16 max_snd_count; /* the max count of packets to send when filter is set */
@@ -105,7 +104,7 @@ static inline void quic_packet_reset(struct quic_packet *packet)
 
 void quic_packet_set_filter(struct sock *sk, u8 level, u16 count);
 void quic_packet_create(struct sock *sk);
-int quic_packet_config(struct sock *sk, u8 level, u8 path_alt, u16 bytes);
+int quic_packet_config(struct sock *sk, u8 level, u8 path_alt);
 int quic_packet_route(struct sock *sk);
 int quic_packet_process(struct sock *sk, struct sk_buff *skb);
 int quic_packet_tail(struct sock *sk, struct quic_frame *frame, u8 dgram);

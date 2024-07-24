@@ -23,7 +23,7 @@ static void quic_outq_transmit_ctrl(struct sock *sk)
 	list_for_each_entry_safe(frame, tmp, head, list) {
 		if (!quic_crypto_send_ready(quic_crypto(sk, frame->level)))
 			break;
-		ret = quic_packet_config(sk, frame->level, frame->path_alt, 0);
+		ret = quic_packet_config(sk, frame->level, frame->path_alt);
 		if (ret) { /* filtered out this frame */
 			if (ret > 0)
 				continue;
@@ -34,6 +34,17 @@ static void quic_outq_transmit_ctrl(struct sock *sk)
 		quic_packet_create(sk); /* build and xmit the packed frames */
 		tmp = frame; /* go back but still pack the current frame */
 	}
+}
+
+static bool quic_outq_pacing_check(struct sock *sk, u16 bytes)
+{
+	u64 pacing_time = quic_cong_pacing_time(quic_cong(sk));
+
+	if (pacing_time <= ktime_get_ns())
+		return false;
+
+	quic_timer_start(sk, QUIC_TIMER_PACE, pacing_time);
+	return true;
 }
 
 static void quic_outq_transmit_dgram(struct sock *sk)
@@ -51,7 +62,9 @@ static void quic_outq_transmit_dgram(struct sock *sk)
 	list_for_each_entry_safe(frame, tmp, head, list) {
 		if (outq->data_inflight + frame->bytes > outq->window)
 			break;
-		ret = quic_packet_config(sk, level, frame->path_alt, frame->bytes);
+		if (quic_outq_pacing_check(sk, frame->bytes))
+			break;
+		ret = quic_packet_config(sk, level, frame->path_alt);
 		if (ret) {
 			if (ret > 0)
 				continue;
@@ -122,7 +135,9 @@ static void quic_outq_transmit_stream(struct sock *sk)
 	list_for_each_entry_safe(frame, tmp, head, list) {
 		if (!level && quic_outq_flow_control(sk, frame))
 			break;
-		ret = quic_packet_config(sk, level, frame->path_alt, frame->bytes);
+		if (quic_outq_pacing_check(sk, frame->bytes))
+			break;
+		ret = quic_packet_config(sk, level, frame->path_alt);
 		if (ret) {
 			if (ret > 0)
 				continue;
@@ -662,7 +677,7 @@ static void quic_outq_encrypted_work(struct work_struct *work)
 	skb = skb_dequeue(head);
 	while (skb) {
 		cb = QUIC_CRYPTO_CB(skb);
-		if (quic_packet_config(sk, cb->level, cb->path_alt, 0)) {
+		if (quic_packet_config(sk, cb->level, cb->path_alt)) {
 			kfree_skb(skb);
 			skb = skb_dequeue(head);
 			continue;

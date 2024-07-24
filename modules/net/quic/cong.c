@@ -172,6 +172,58 @@ void quic_cong_set_param(struct quic_cong *cong, struct quic_transport_param *p)
 }
 EXPORT_SYMBOL_GPL(quic_cong_set_param);
 
+static void quic_cong_update_pacing_time(struct quic_cong *cong, u16 bytes)
+{
+	unsigned long rate = READ_ONCE(cong->pacing_rate);
+	u64 prior_time, credit, len_ns;
+
+	if (!rate)
+		return;
+
+	prior_time = cong->pacing_time;
+	cong->pacing_time = max(cong->pacing_time, ktime_get_ns());
+	credit = cong->pacing_time - prior_time;
+
+	/* take into account OS jitter */
+	len_ns = div64_ul((u64)bytes * NSEC_PER_SEC, rate);
+	len_ns -= min_t(u64, len_ns / 2, credit);
+	cong->pacing_time += len_ns;
+}
+
+static void quic_cong_pace_update(struct quic_cong *cong, u32 bytes, u32 max_rate)
+{
+	u64 rate;
+
+	/* rate = N * congestion_window / smoothed_rtt */
+	rate = 2 * cong->window * USEC_PER_SEC;
+	if (likely(cong->smoothed_rtt))
+		do_div(rate, cong->smoothed_rtt);
+
+	WRITE_ONCE(cong->pacing_rate, min_t(u64, rate, max_rate));
+	pr_debug("[QUIC] update pacing rate %u max rate %u srtt %u\n",
+		 cong->pacing_rate, max_rate, cong->smoothed_rtt);
+}
+
+void quic_cong_on_packet_sent(struct quic_cong *cong, u32 time, u32 bytes, s64 number)
+{
+	if (!bytes)
+		return;
+	if (cong->ops->on_packet_sent)
+		cong->ops->on_packet_sent(cong, time, bytes, number);
+	quic_cong_update_pacing_time(cong, bytes);
+}
+EXPORT_SYMBOL_GPL(quic_cong_on_packet_sent);
+
+void quic_cong_on_ack_recv(struct quic_cong *cong, u32 bytes, u32 max_rate)
+{
+	if (!bytes)
+		return;
+	if (cong->ops->on_ack_recv)
+		cong->ops->on_ack_recv(cong, bytes, max_rate);
+	quic_cong_pace_update(cong, bytes, max_rate);
+}
+EXPORT_SYMBOL_GPL(quic_cong_on_ack_recv);
+
 /* Estimating the Round-Trip Time */
 void quic_cong_rtt_update(struct quic_cong *cong, u32 time, u32 ack_delay)
 {
@@ -196,23 +248,8 @@ void quic_cong_rtt_update(struct quic_cong *cong, u32 time, u32 ack_delay)
 	rttvar_sample = abs(cong->smoothed_rtt - adjusted_rtt);
 	cong->rttvar = (cong->rttvar * 3 + rttvar_sample) / 4;
 	quic_cong_rto_update(cong);
+
+	if (cong->ops->on_rtt_update)
+		cong->ops->on_rtt_update(cong);
 }
 EXPORT_SYMBOL_GPL(quic_cong_rtt_update);
-
-void quic_cong_pace_update(struct quic_cong *cong, u32 bytes, struct sock *sk)
-{
-	u64 rate;
-
-	if (!bytes)
-		return;
-
-	/* rate = N * congestion_window / smoothed_rtt */
-	rate = 2 * cong->window * USEC_PER_SEC;
-	if (likely(cong->smoothed_rtt))
-		do_div(rate, cong->smoothed_rtt);
-
-	WRITE_ONCE(sk->sk_pacing_rate, min_t(u64, rate, READ_ONCE(sk->sk_max_pacing_rate)));
-	pr_debug("[QUIC] update pacing rate %lu max rate %lu srtt %u\n", sk->sk_pacing_rate,
-		 sk->sk_max_pacing_rate, cong->smoothed_rtt);
-}
-EXPORT_SYMBOL_GPL(quic_cong_pace_update);
