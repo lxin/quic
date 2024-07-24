@@ -390,7 +390,7 @@ for type, on is 1 to enable and 0 to disable, all events are disabled by default
 
 .TP
 .B QUIC_SOCKOPT_CONNECTION_CLOSE
-This option is used to get or get the close context, which includes errcode and
+This option is used to set or get the close context, which includes errcode and
 phrase and frame. On close side, set it before calling close() to tell peer the
 closing info, while on being closed side get it to show the peer closing info.
 
