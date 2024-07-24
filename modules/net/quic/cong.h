@@ -26,16 +26,17 @@ struct quic_cong {
 	u32 latest_rtt;
 	u32 smoothed_rtt;
 
-	u32 ack_delay_exponent;
 	u64 pacing_time; /* planned time to send next packet */
 	u32 pacing_rate;
+	u32 time; /* current time cache */
+	u32 recovery_time;
 	u32 max_ack_delay;
-	s64 recovery_time;
+	u32 ack_delay_exponent;
 
 	u32 mss;
 	u32 window;
 	u32 max_window;
-	u32 threshold;
+	u32 ssthresh;
 
 	u8 state;
 	struct quic_cong_ops *ops;
@@ -43,14 +44,19 @@ struct quic_cong {
 
 struct quic_cong_ops {
 	/* required */
-	void (*on_packet_acked)(struct quic_cong *cong, u32 time, u32 bytes);
-	void (*on_packet_lost)(struct quic_cong *cong, u32 time, u32 bytes);
+	void (*on_packet_acked)(struct quic_cong *cong, u32 time, u32 bytes, s64 number);
+	void (*on_packet_lost)(struct quic_cong *cong, u32 time, u32 bytes, s64 number);
 	void (*on_process_ecn)(struct quic_cong *cong);
 	/* optional */
 	void (*on_packet_sent)(struct quic_cong *cong, u32 time, u32 bytes, s64 number);
 	void (*on_ack_recv)(struct quic_cong *cong, u32 bytes, u32 max_rate);
 	void (*on_rtt_update)(struct quic_cong *cong);
 };
+
+static inline void quic_cong_set_time(struct quic_cong *cong, u32 time)
+{
+	cong->time = time;
+}
 
 static inline void quic_cong_set_window(struct quic_cong *cong, u32 window)
 {
@@ -60,6 +66,11 @@ static inline void quic_cong_set_window(struct quic_cong *cong, u32 window)
 static inline void quic_cong_set_mss(struct quic_cong *cong, u32 mss)
 {
 	cong->mss = mss;
+}
+
+static inline u32 quic_cong_time(struct quic_cong *cong)
+{
+	return cong->time;
 }
 
 static inline u32 quic_cong_window(struct quic_cong *cong)
@@ -88,8 +99,8 @@ static inline u64 quic_cong_pacing_time(struct quic_cong *cong)
 }
 
 void quic_cong_set_param(struct quic_cong *cong, struct quic_transport_param *p);
-void quic_cong_on_packet_lost(struct quic_cong *cong, u32 time, u32 bytes);
-void quic_cong_on_packet_acked(struct quic_cong *cong, u32 time, u32 bytes);
+void quic_cong_on_packet_acked(struct quic_cong *cong, u32 time, u32 bytes, s64 number);
+void quic_cong_on_packet_lost(struct quic_cong *cong, u32 time, u32 bytes, s64 number);
 void quic_cong_on_process_ecn(struct quic_cong *cong);
 
 void quic_cong_rtt_update(struct quic_cong *cong, u32 time, u32 ack_delay);

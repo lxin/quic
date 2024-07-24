@@ -404,7 +404,8 @@ int quic_outq_transmitted_sack(struct sock *sk, u8 level, s64 largest, s64 small
 				quic_crypto_set_key_update_time(crypto, rto * 2);
 			}
 			if (bytes) {
-				quic_cong_on_packet_acked(cong, frame->sent_time, bytes);
+				quic_cong_on_packet_acked(cong, frame->sent_time, bytes,
+							  frame->number);
 				quic_outq_sync_window(sk);
 				acked_bytes += bytes;
 				bytes = 0;
@@ -498,6 +499,7 @@ int quic_outq_retransmit_mark(struct sock *sk, u8 level, u8 immediate)
 
 	quic_pnspace_set_loss_time(space, 0);
 	now = jiffies_to_usecs(jiffies);
+	quic_cong_set_time(cong, now);
 	head = &outq->transmitted_list;
 	list_for_each_entry_safe(frame, tmp, head, list) {
 		if (level != frame->level)
@@ -517,7 +519,7 @@ int quic_outq_retransmit_mark(struct sock *sk, u8 level, u8 immediate)
 
 		if (frame->last && bytes) {
 			time = quic_pnspace_max_pn_acked_time(space);
-			quic_cong_on_packet_lost(cong, time, bytes);
+			quic_cong_on_packet_lost(cong, time, bytes, frame->number);
 			quic_outq_sync_window(sk);
 			bytes = 0;
 		}

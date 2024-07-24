@@ -745,6 +745,8 @@ static int quic_frame_ack_process(struct sock *sk, struct quic_frame *frame, u8 
 		return -EINVAL;
 	}
 
+	quic_cong_set_time(cong, jiffies_to_usecs(jiffies));
+
 	smallest = largest - range;
 	bytes = quic_outq_transmitted_sack(sk, level, largest, smallest, largest, delay);
 
