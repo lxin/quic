@@ -125,6 +125,7 @@ struct quic_crypto_secret {
 
 enum {
 	QUIC_CONG_ALG_RENO,
+	QUIC_CONG_ALG_CUBIC,
 	QUIC_CONG_ALG_MAX,
 };
 

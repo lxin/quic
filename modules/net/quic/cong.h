@@ -39,6 +39,7 @@ struct quic_cong {
 	u32 ssthresh;
 
 	u8 state;
+	u64 priv[8];
 	struct quic_cong_ops *ops;
 };
 
@@ -47,6 +48,7 @@ struct quic_cong_ops {
 	void (*on_packet_acked)(struct quic_cong *cong, u32 time, u32 bytes, s64 number);
 	void (*on_packet_lost)(struct quic_cong *cong, u32 time, u32 bytes, s64 number);
 	void (*on_process_ecn)(struct quic_cong *cong);
+	void (*on_init)(struct quic_cong *cong);
 	/* optional */
 	void (*on_packet_sent)(struct quic_cong *cong, u32 time, u32 bytes, s64 number);
 	void (*on_ack_recv)(struct quic_cong *cong, u32 bytes, u32 max_rate);
@@ -66,6 +68,11 @@ static inline void quic_cong_set_window(struct quic_cong *cong, u32 window)
 static inline void quic_cong_set_mss(struct quic_cong *cong, u32 mss)
 {
 	cong->mss = mss;
+}
+
+static inline void *quic_cong_priv(struct quic_cong *cong)
+{
+	return (void *)cong->priv;
 }
 
 static inline u32 quic_cong_time(struct quic_cong *cong)
