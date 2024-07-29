@@ -1602,12 +1602,18 @@ static int quic_sock_set_connection_close(struct sock *sk, struct quic_connectio
 		return -EINVAL;
 
 	len -= sizeof(*close);
-	if (len > 80 || close->phrase[len - 1])
+	if (len > 80)
 		return -EINVAL;
-	data = kmemdup(close->phrase, len, GFP_KERNEL);
-	if (!data)
-		return -ENOMEM;
-	quic_outq_set_close_phrase(outq, data);
+
+	if (len) {
+		if (close->phrase[len - 1])
+			return -EINVAL;
+		data = kmemdup(close->phrase, len, GFP_KERNEL);
+		if (!data)
+			return -ENOMEM;
+		quic_outq_set_close_phrase(outq, data);
+	}
+
 	quic_outq_set_close_errcode(outq, close->errcode);
 	return 0;
 }
