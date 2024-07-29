@@ -1567,7 +1567,7 @@ int quic_frame_set_transport_params_ext(struct sock *sk, struct quic_transport_p
 	params->max_udp_payload_size = QUIC_MAX_UDP_PAYLOAD;
 	params->ack_delay_exponent = QUIC_DEF_ACK_DELAY_EXPONENT;
 	params->max_ack_delay = QUIC_DEF_ACK_DELAY;
-	params->active_connection_id_limit = QUIC_CONN_ID_LIMIT;
+	params->active_connection_id_limit = QUIC_CONN_ID_LEAST;
 	active = quic_conn_id_active(id_set);
 
 	while (len > 0) {
@@ -1672,7 +1672,7 @@ int quic_frame_set_transport_params_ext(struct sock *sk, struct quic_transport_p
 			break;
 		case QUIC_TRANSPORT_PARAM_ACTIVE_CONNECTION_ID_LIMIT:
 			if (quic_get_param(&params->active_connection_id_limit, &p, &len) ||
-			    params->active_connection_id_limit < 2)
+			    params->active_connection_id_limit < QUIC_CONN_ID_LEAST)
 				return -1;
 			break;
 		case QUIC_TRANSPORT_PARAM_MAX_DATAGRAM_FRAME_SIZE:
@@ -1858,7 +1858,8 @@ int quic_frame_get_transport_params_ext(struct sock *sk, struct quic_transport_p
 		p = quic_put_param(p, QUIC_TRANSPORT_PARAM_MAX_IDLE_TIMEOUT,
 				   params->max_idle_timeout / 1000);
 	}
-	if (params->active_connection_id_limit && params->active_connection_id_limit != 2) {
+	if (params->active_connection_id_limit &&
+	    params->active_connection_id_limit != QUIC_CONN_ID_LEAST) {
 		p = quic_put_param(p, QUIC_TRANSPORT_PARAM_ACTIVE_CONNECTION_ID_LIMIT,
 				   params->active_connection_id_limit);
 	}
