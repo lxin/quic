@@ -112,10 +112,11 @@ int quic_packet_flush(struct sock *sk);
 int quic_packet_route(struct sock *sk);
 
 void quic_packet_set_filter(struct sock *sk, u8 level, u16 count);
+void quic_packet_mss_update(struct sock *sk, int mss);
 void quic_packet_create(struct sock *sk);
 void quic_packet_init(struct sock *sk);
 
+int quic_packet_version_change(struct sock *sk, struct quic_conn_id *conn_id, u32 version, u8 flag);
 int quic_packet_select_version(struct sock *sk, u32 *versions, u8 count);
 int quic_packet_parse_alpn(struct sk_buff *skb, struct quic_data *alpn);
-void quic_packet_mss_update(struct sock *sk, int mss);
 u32 *quic_packet_compatible_versions(u32 version);

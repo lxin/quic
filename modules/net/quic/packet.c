@@ -33,23 +33,6 @@ u32 *quic_packet_compatible_versions(u32 version)
 	return NULL;
 }
 
-int quic_packet_select_version(struct sock *sk, u32 *versions, u8 count)
-{
-	u32 best = 0;
-	u8 i, j;
-
-	for (i = 0; i < count; i++) {
-		for (j = 0; j < QUIC_VERSION_NUM; j++) {
-			if (versions[i] == quic_versions[j][0] && best < versions[i]) {
-				best = versions[i];
-				quic_inq_set_version(quic_inq(sk), best);
-				return 0;
-			}
-		}
-	}
-	return -1;
-}
-
 static u8 quic_packet_version_get_type(u32 version, u8 type)
 {
 	if (version == QUIC_VERSION_V1)
@@ -118,6 +101,38 @@ static int quic_packet_get_version_and_connid(struct quic_packet *packet, u8 **p
 
 	packet->len = *pp - p;
 	return 0;
+}
+
+int quic_packet_version_change(struct sock *sk, struct quic_conn_id *conn_id, u32 version, u8 flag)
+{
+	struct quic_crypto *crypto = quic_crypto(sk, QUIC_CRYPTO_INITIAL);
+
+	/* initial keys must be updated when version changes */
+	quic_crypto_destroy(crypto);
+	if (quic_crypto_initial_keys_install(crypto, conn_id, version, flag, quic_is_serv(sk)))
+		return -EINVAL;
+	quic_inq_set_version(quic_inq(sk), version);
+	return 0;
+}
+
+int quic_packet_select_version(struct sock *sk, u32 *versions, u8 count)
+{
+	u32 best = 0;
+	u8 i, j;
+
+	for (i = 0; i < count; i++) {
+		for (j = 0; j < QUIC_VERSION_NUM; j++) {
+			if (versions[i] == quic_versions[j][0] && best < versions[i]) {
+				best = versions[i];
+				goto found;
+			}
+		}
+	}
+	return -1;
+found:
+	if (best == quic_inq_version(quic_inq(sk)))
+		return 0;
+	return quic_packet_version_change(sk, quic_outq_orig_dcid(quic_outq(sk)), best, 0);
 }
 
 static int quic_packet_get_token(struct quic_data *token, u8 **pp, u32 *plen)
@@ -339,7 +354,6 @@ static int quic_packet_stateless_reset_transmit(struct sock *sk)
 
 static int quic_packet_refuse_close_transmit(struct sock *sk, u32 errcode)
 {
-	struct quic_crypto *crypto = quic_crypto(sk, QUIC_CRYPTO_INITIAL);
 	struct quic_conn_id_set *source = quic_source(sk);
 	struct quic_packet *packet = quic_packet(sk);
 	struct quic_conn_id *active;
@@ -351,10 +365,8 @@ static int quic_packet_refuse_close_transmit(struct sock *sk, u32 errcode)
 	quic_conn_id_update(active, packet->dcid.data, packet->dcid.len);
 	quic_path_addr_set(quic_src(sk), packet->sa, 1);
 	quic_path_addr_set(quic_dst(sk), packet->da, 1);
-	quic_inq_set_version(quic_inq(sk), packet->version);
 
-	quic_crypto_destroy(crypto);
-	err = quic_crypto_initial_keys_install(crypto, active, packet->version, flag, 1);
+	err = quic_packet_version_change(sk, active, packet->version, flag);
 	if (err)
 		return err;
 
@@ -504,9 +516,8 @@ static int quic_packet_handshake_retry_process(struct sock *sk, struct sk_buff *
 		goto err;
 	if (quic_data_dup(quic_token(sk), p, len - 16))
 		goto err;
-
-	quic_crypto_destroy(crypto);
-	if (quic_crypto_initial_keys_install(crypto, &packet->scid, version, 0, 0))
+	/* similar to version change, update the initial keys */
+	if (quic_packet_version_change(sk, &packet->scid, version, 0))
 		goto err;
 	active = quic_conn_id_active(quic_dest(sk));
 	quic_conn_id_update(active, packet->scid.data, packet->scid.len);
@@ -524,7 +535,6 @@ err:
 
 static int quic_packet_handshake_version_process(struct sock *sk, struct sk_buff *skb)
 {
-	struct quic_crypto *crypto = quic_crypto(sk, QUIC_CRYPTO_INITIAL);
 	struct quic_packet *packet = quic_packet(sk);
 	int len = skb->len - packet->len;
 	u8 *p = skb->data + packet->len;
@@ -539,9 +549,7 @@ static int quic_packet_handshake_version_process(struct sock *sk, struct sk_buff
 			best = version;
 	}
 	if (best) {
-		quic_inq_set_version(quic_inq(sk), best);
-		quic_crypto_destroy(crypto);
-		if (quic_crypto_initial_keys_install(crypto, &packet->scid, best, 0, 0))
+		if (quic_packet_version_change(sk, &packet->scid, best, 0))
 			goto err;
 		quic_outq_retransmit_mark(sk, QUIC_CRYPTO_INITIAL, 1);
 		quic_outq_transmit(sk);
@@ -567,26 +575,30 @@ static void quic_packet_decrypt_done(struct sk_buff *skb, int err)
 
 static int quic_packet_handshake_header_process(struct sock *sk, struct sk_buff *skb)
 {
+	u8 *p = (u8 *)quic_hshdr(skb), type = quic_hshdr(skb)->type;
 	struct quic_crypto_cb *cb = QUIC_CRYPTO_CB(skb);
 	struct quic_packet *packet = quic_packet(sk);
-	struct quic_inqueue *inq = quic_inq(sk);
-	u8 *p = (u8 *)quic_hshdr(skb), type;
+	int len = skb->len, version;
 	struct quic_data token;
-	int len = skb->len;
 	u64 length;
 
 	quic_packet_reset(packet);
 	if (quic_packet_get_version_and_connid(packet, &p, &len))
 		return -EINVAL;
-	if (!packet->version) {
+	version = packet->version;
+	if (!version) {
 		quic_packet_handshake_version_process(sk, skb);
 		packet->level = 0;
 		return 0;
 	}
-	if (packet->version != quic_inq_version(inq))
-		return -EINVAL;
-
-	type = quic_packet_version_get_type(packet->version, quic_hshdr(skb)->type);
+	type = quic_packet_version_get_type(version, type);
+	if (version != quic_inq_version(quic_inq(sk))) {
+		if (type != QUIC_PACKET_INITIAL || !quic_packet_compatible_versions(version))
+			return -EINVAL;
+		/* change to this compatible version */
+		if (quic_packet_version_change(sk, quic_outq_orig_dcid(quic_outq(sk)), version, 0))
+			return -EINVAL;
+	}
 	switch (type) {
 	case QUIC_PACKET_INITIAL:
 		if (quic_packet_get_token(&token, &p, &len))

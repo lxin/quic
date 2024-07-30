@@ -1095,7 +1095,6 @@ static int quic_copy_sock(struct sock *nsk, struct sock *sk, struct quic_request
 
 static int quic_accept_sock_init(struct sock *sk, struct quic_request_sock *req)
 {
-	struct quic_crypto *crypto = quic_crypto(sk, QUIC_CRYPTO_INITIAL);
 	struct quic_outqueue *outq = quic_outq(sk);
 	struct quic_inqueue *inq = quic_inq(sk);
 	struct quic_conn_id conn_id;
@@ -1114,15 +1113,15 @@ static int quic_accept_sock_init(struct sock *sk, struct quic_request_sock *req)
 	err = quic_conn_id_add(quic_source(sk), &conn_id, 0, sk);
 	if (err)
 		goto out;
-	quic_inq_set_version(inq, req->version);
 	err = quic_conn_id_add(quic_dest(sk), &req->scid, 0, NULL);
-	if (err)
-		goto out;
-	err = quic_crypto_initial_keys_install(crypto, &req->dcid, req->version, 0, 1);
 	if (err)
 		goto out;
 
 	quic_outq_set_serv(outq);
+	err = quic_packet_version_change(sk, &req->dcid, req->version, 0);
+	if (err)
+		goto out;
+
 	quic_outq_set_orig_dcid(outq, &req->orig_dcid);
 	if (req->retry) {
 		quic_outq_set_retry(outq, 1);
