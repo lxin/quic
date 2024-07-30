@@ -1731,7 +1731,7 @@ static u8 *quic_frame_put_conn_id(u8 *p, u16 id, struct quic_conn_id *conn_id)
 
 static u8 *quic_frame_put_version_info(u8 *p, u16 id, u32 version)
 {
-	u32 *versions, i, len = 0;
+	u32 *versions, i, len = 4;
 
 	versions = quic_packet_compatible_versions(version);
 	if (!versions)
@@ -1741,6 +1741,7 @@ static u8 *quic_frame_put_version_info(u8 *p, u16 id, u32 version)
 		len += 4;
 	p = quic_put_var(p, id);
 	p = quic_put_var(p, len);
+	p = quic_put_int(p, version, 4);
 
 	for (i = 0; versions[i]; i++)
 		p = quic_put_int(p, versions[i], 4);

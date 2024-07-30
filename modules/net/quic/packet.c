@@ -17,10 +17,10 @@
 
 #define QUIC_VERSION_NUM	2
 
-static u32 quic_versions[QUIC_VERSION_NUM][2] = {
+static u32 quic_versions[QUIC_VERSION_NUM][3] = {
 	/* version,	compatible versions */
-	{ QUIC_VERSION_V1,	0 },
-	{ QUIC_VERSION_V2,	0 },
+	{ QUIC_VERSION_V1,	QUIC_VERSION_V2,	0 },
+	{ QUIC_VERSION_V2,	QUIC_VERSION_V1,	0 },
 };
 
 u32 *quic_packet_compatible_versions(u32 version)
@@ -42,15 +42,12 @@ int quic_packet_select_version(struct sock *sk, u32 *versions, u8 count)
 		for (j = 0; j < QUIC_VERSION_NUM; j++) {
 			if (versions[i] == quic_versions[j][0] && best < versions[i]) {
 				best = versions[i];
-				break;
+				quic_inq_set_version(quic_inq(sk), best);
+				return 0;
 			}
 		}
 	}
-	if (!best)
-		return -1;
-
-	quic_inq_set_version(quic_inq(sk), best);
-	return 0;
+	return -1;
 }
 
 static u8 quic_packet_version_get_type(u32 version, u8 type)
