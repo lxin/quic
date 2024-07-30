@@ -8,6 +8,8 @@
  *    Xin Long <lucien.xin@gmail.com>
  */
 
+#define QUIC_CLOSE_PHRASE_MAX_LEN	80
+
 enum {
 	QUIC_FRAME_PADDING = 0x00,
 	QUIC_FRAME_PING = 0x01,

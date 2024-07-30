@@ -534,7 +534,7 @@ static struct quic_frame *quic_frame_connection_close_create(struct sock *sk, vo
 
 	phrase = quic_outq_close_phrase(outq);
 	if (phrase)
-		phrase_len = strlen(phrase) + 1;
+		phrase_len = strlen(phrase);
 	p = quic_put_var(p, phrase_len);
 	p = quic_put_data(p, phrase, phrase_len);
 
@@ -1134,9 +1134,9 @@ static int quic_frame_connection_close_process(struct sock *sk, struct quic_fram
 
 	close = (void *)buf;
 	if (phrase_len) {
-		if ((phrase_len > 80 || *(p + phrase_len - 1) != 0))
+		if ((phrase_len > QUIC_CLOSE_PHRASE_MAX_LEN))
 			return -EINVAL;
-		strscpy(close->phrase, p, phrase_len);
+		memcpy(close->phrase, p, phrase_len);
 	}
 	close->errcode = err_code;
 	close->frame = ftype;

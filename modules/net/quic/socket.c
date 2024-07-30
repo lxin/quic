@@ -1602,7 +1602,7 @@ static int quic_sock_set_connection_close(struct sock *sk, struct quic_connectio
 		return -EINVAL;
 
 	len -= sizeof(*close);
-	if (len > 80)
+	if (len > QUIC_CLOSE_PHRASE_MAX_LEN + 1)
 		return -EINVAL;
 
 	if (len) {
