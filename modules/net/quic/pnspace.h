@@ -9,7 +9,6 @@
  */
 
 #define QUIC_PN_MAX_GABS	256
-#define QUIC_PN_MAP_BASE_PN	0
 #define QUIC_PN_MAP_MAX_PN	((1ULL << 62) - 1)
 
 #define QUIC_PN_MAP_INITIAL	BITS_PER_LONG
@@ -18,6 +17,7 @@
 #define QUIC_PN_MAP_LIMIT	(QUIC_PN_MAP_SIZE * 3 / 4)
 
 #define QUIC_PNSPACE_MAX	(QUIC_CRYPTO_MAX - 1)
+#define QUIC_PNSPACE_NEXT_PN	0
 
 struct quic_gap_ack_block {
 	u16 start;
@@ -150,6 +150,17 @@ static inline s64 quic_pnspace_base_pn(const struct quic_pnspace *space)
 	return space->base_pn;
 }
 
+static inline void quic_pnspace_set_base_pn(struct quic_pnspace *space, s64 pn)
+{
+	space->base_pn = pn;
+	space->max_pn_seen = space->base_pn - 1;
+	space->mid_pn_seen = space->max_pn_seen;
+	space->min_pn_seen = space->max_pn_seen;
+
+	space->max_pn_time = jiffies_to_usecs(jiffies);
+	space->mid_pn_time = space->max_pn_time;
+}
+
 static inline u32 quic_pnspace_max_pn_time(const struct quic_pnspace *space)
 {
 	return space->max_pn_time;
@@ -190,7 +201,7 @@ static inline bool quic_pnspace_has_ecn_count(struct quic_pnspace *space)
 	return space->ecn_count[0][0] || space->ecn_count[0][1] || space->ecn_count[0][2];
 }
 
-int quic_pnspace_check(const struct quic_pnspace *space, s64 pn);
+int quic_pnspace_check(struct quic_pnspace *space, s64 pn);
 int quic_pnspace_mark(struct quic_pnspace *space, s64 pn);
 u16 quic_pnspace_num_gabs(struct quic_pnspace *space);
 

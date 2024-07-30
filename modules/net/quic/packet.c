@@ -831,6 +831,11 @@ static int quic_packet_app_process(struct sock *sk, struct sk_buff *skb)
 
 	err = quic_pnspace_check(space, cb->number);
 	if (err) {
+		if (err > 0) { /* dup packet, send ack immediately */
+			packet->ack_eliciting = 1;
+			packet->ack_immediate = 1;
+			goto out;
+		}
 		packet->errcode = QUIC_TRANSPORT_ERROR_INTERNAL;
 		err = -EINVAL;
 		goto err;
@@ -856,6 +861,7 @@ static int quic_packet_app_process(struct sock *sk, struct sk_buff *skb)
 	if (err)
 		goto err;
 
+out:
 	return quic_packet_app_process_done(sk, skb);
 
 err:

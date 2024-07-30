@@ -52,15 +52,9 @@ int quic_pnspace_init(struct quic_pnspace *space)
 		bitmap_zero(space->pn_map, space->pn_map_len);
 	}
 
-	space->next_pn = QUIC_PN_MAP_BASE_PN;
-	space->base_pn = QUIC_PN_MAP_BASE_PN;
-	space->max_pn_seen = space->base_pn - 1;
-	space->mid_pn_seen = space->max_pn_seen;
-
 	/* set it to a large value so that the 1st packet can update it */
-	space->min_pn_seen = QUIC_PN_MAP_MAX_PN;
-	space->max_pn_time = jiffies_to_usecs(jiffies);
-	space->mid_pn_time = space->max_pn_time;
+	space->next_pn = QUIC_PNSPACE_NEXT_PN;
+	space->base_pn = -1;
 	return 0;
 }
 EXPORT_SYMBOL_GPL(quic_pnspace_init);
@@ -72,20 +66,21 @@ void quic_pnspace_free(struct quic_pnspace *space)
 }
 EXPORT_SYMBOL_GPL(quic_pnspace_free);
 
-int quic_pnspace_check(const struct quic_pnspace *space, s64 pn)
+int quic_pnspace_check(struct quic_pnspace *space, s64 pn)
 {
-	u16 gap;
+	if (space->base_pn == -1) {
+		quic_pnspace_set_base_pn(space, pn + 1);
+		return 0;
+	}
 
-	if (pn < space->base_pn)
-		return 1;
-
-	if (pn >= space->base_pn + QUIC_PN_MAP_SIZE)
+	if (pn < space->min_pn_seen || pn >= space->base_pn + QUIC_PN_MAP_SIZE)
 		return -1;
 
-	WARN_ON_ONCE(pn > QUIC_PN_MAP_MAX_PN);
-	gap = pn - space->base_pn;
+	if (pn < space->base_pn || (pn - space->base_pn < space->pn_map_len &&
+				    test_bit(pn - space->base_pn, space->pn_map)))
+		return 1;
 
-	return gap < space->pn_map_len && test_bit(gap, space->pn_map);
+	return 0;
 }
 EXPORT_SYMBOL_GPL(quic_pnspace_check);
 
@@ -115,12 +110,6 @@ int quic_pnspace_mark(struct quic_pnspace *space, s64 pn)
 	if (space->max_pn_seen < pn) {
 		space->max_pn_seen = pn;
 		space->max_pn_time = jiffies_to_usecs(jiffies);
-	}
-
-	if (space->min_pn_seen > pn) {
-		/* mid_pn_seen should NOT be less than min_pn_seen */
-		space->min_pn_seen = pn;
-		space->mid_pn_seen = pn;
 	}
 
 	if (space->base_pn == pn) {
