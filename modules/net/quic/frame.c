@@ -780,10 +780,10 @@ static int quic_frame_ack_process(struct sock *sk, struct quic_frame *frame, u8 
 static int quic_frame_new_conn_id_process(struct sock *sk, struct quic_frame *frame, u8 type)
 {
 	struct quic_conn_id_set *id_set = quic_dest(sk);
-	u64 seqno, prior, length, first, last;
-	struct quic_conn_id dcid;
+	u64 seqno, prior, length, first;
 	u8 *p = frame->data, *token;
 	struct quic_frame *nframe;
+	struct quic_conn_id dcid;
 	u32 len = frame->len;
 	int err;
 
@@ -797,11 +797,7 @@ static int quic_frame_new_conn_id_process(struct sock *sk, struct quic_frame *fr
 	dcid.len = length;
 	token = p + length;
 
-	last = quic_conn_id_last_number(id_set);
-	if (seqno < last + 1) /* already exists */
-		goto out;
-
-	if (seqno > last + 1 || prior > seqno)
+	if (prior > seqno)
 		return -EINVAL;
 
 	first = quic_conn_id_first_number(id_set);
@@ -824,7 +820,6 @@ static int quic_frame_new_conn_id_process(struct sock *sk, struct quic_frame *fr
 		quic_outq_ctrl_tail(sk, nframe, true);
 	}
 
-out:
 	len -= (length + 16);
 	return frame->len - len;
 }
@@ -1143,6 +1138,7 @@ static int quic_frame_connection_close_process(struct sock *sk, struct quic_fram
 	if (quic_inq_event_recv(sk, QUIC_EVENT_CONNECTION_CLOSE, close))
 		return -ENOMEM;
 	quic_set_state(sk, QUIC_SS_CLOSED);
+	pr_debug("[QUIC] %s phrase %d, frame %d\n", __func__, close->errcode, close->frame);
 
 	len -= phrase_len;
 	return frame->len - len;
@@ -1479,7 +1475,7 @@ struct quic_frame *quic_frame_create(struct sock *sk, u8 type, void *data)
 		pr_debug("[QUIC] frame create failed %x\n", type);
 		return NULL;
 	}
-	pr_debug("[QUIC] %s type: %u len: %u\n", __func__, type, frame->len);
+	pr_debug("[QUIC] %s type: %x len: %u\n", __func__, type, frame->len);
 	if (!frame->type)
 		frame->type = type;
 	return frame;
@@ -1703,9 +1699,10 @@ int quic_frame_set_transport_params_ext(struct sock *sk, struct quic_transport_p
 				return -1;
 			if (!addr.v4.sin_port)
 				break;
+			if (quic_conn_id_add(id_set, &conn_id, 1, token))
+				return -1;
 			quic_outq_set_pref_addr(outq, 1);
 			quic_path_addr_set(quic_dst(sk), &addr, 1);
-			quic_conn_id_add(id_set, &conn_id, 1, token);
 			break;
 		default:
 			/* Ignore unknown parameter */

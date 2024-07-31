@@ -49,20 +49,17 @@ struct quic_conn_id_set {
 	u8 pending;
 };
 
-static inline u32 quic_conn_id_last_number(struct quic_conn_id_set *id_set)
-{
-	struct quic_common_conn_id *common;
-
-	common = list_last_entry(&id_set->head, struct quic_common_conn_id, list);
-	return common->number;
-}
-
 static inline u32 quic_conn_id_first_number(struct quic_conn_id_set *id_set)
 {
 	struct quic_common_conn_id *common;
 
 	common = list_first_entry(&id_set->head, struct quic_common_conn_id, list);
 	return common->number;
+}
+
+static inline u32 quic_conn_id_last_number(struct quic_conn_id_set *id_set)
+{
+	return quic_conn_id_first_number(id_set) + id_set->count - 1;
 }
 
 static inline void quic_conn_id_generate(struct quic_conn_id *conn_id)

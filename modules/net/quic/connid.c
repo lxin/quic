@@ -91,12 +91,24 @@ static void quic_conn_id_del(struct quic_common_conn_id *common)
 int quic_conn_id_add(struct quic_conn_id_set *id_set,
 		     struct quic_conn_id *conn_id, u32 number, void *data)
 {
-	struct quic_common_conn_id *common, *last;
 	struct quic_source_conn_id *s_conn_id;
 	struct quic_dest_conn_id *d_conn_id;
+	struct quic_common_conn_id *common;
 	struct quic_hash_head *head;
 	struct list_head *list;
 
+	/* find the position */
+	list = &id_set->head;
+	list_for_each_entry(common, list, list) {
+		if (number == common->number)
+			return 0;
+		if (number < common->number) {
+			list = &common->list;
+			break;
+		}
+	}
+
+	/* create and insert the node */
 	if (conn_id->len > QUIC_CONN_ID_MAX_LEN)
 		return -EINVAL;
 	common = kzalloc(id_set->entry_size, GFP_ATOMIC);
@@ -104,35 +116,35 @@ int quic_conn_id_add(struct quic_conn_id_set *id_set,
 		return -ENOMEM;
 	common->id = *conn_id;
 	common->number = number;
-
-	list = &id_set->head;
-	if (!list_empty(list)) {
-		last = list_last_entry(list, struct quic_common_conn_id, list);
-		if (common->number != last->number + 1) {
-			kfree(common);
-			return -EINVAL;
-		}
-	}
-	list_add_tail(&common->list, list);
-	if (!id_set->active)
-		id_set->active = common;
-	id_set->count++;
-
 	if (id_set->entry_size == sizeof(struct quic_dest_conn_id)) {
 		if (data) {
 			d_conn_id = (struct quic_dest_conn_id *)common;
 			memcpy(d_conn_id->token, data, 16);
 		}
-		return 0;
-	}
+	} else {
+		common->hashed = 1;
+		s_conn_id = (struct quic_source_conn_id *)common;
+		s_conn_id->sk = data;
 
-	common->hashed = 1;
-	s_conn_id = (struct quic_source_conn_id *)common;
-	s_conn_id->sk = data;
-	head = quic_source_conn_id_head(sock_net(data), common->id.data);
-	spin_lock(&head->lock);
-	hlist_add_head(&s_conn_id->node, &head->head);
-	spin_unlock(&head->lock);
+		head = quic_source_conn_id_head(sock_net(s_conn_id->sk), common->id.data);
+		spin_lock(&head->lock);
+		hlist_add_head(&s_conn_id->node, &head->head);
+		spin_unlock(&head->lock);
+	}
+	list_add_tail(&common->list, list);
+
+	/* increase count with the out-of-order node considered */
+	if (number == quic_conn_id_last_number(id_set) + 1) {
+		if (!id_set->active)
+			id_set->active = common;
+		id_set->count++;
+
+		list_for_each_entry_continue(common, &id_set->head, list) {
+			if (common->number != ++number)
+				break;
+			id_set->count++;
+		}
+	}
 	return 0;
 }
 
@@ -142,9 +154,12 @@ void quic_conn_id_remove(struct quic_conn_id_set *id_set, u32 number)
 	struct list_head *list;
 
 	list = &id_set->head;
-	list_for_each_entry_safe(common, tmp, list, list)
-		if (common->number <= number)
+	list_for_each_entry_safe(common, tmp, list, list) {
+		if (common->number <= number) {
 			quic_conn_id_del(common);
+			id_set->count--;
+		}
+	}
 
 	id_set->active = list_first_entry(list, struct quic_common_conn_id, list);
 }
@@ -162,6 +177,7 @@ void quic_conn_id_set_free(struct quic_conn_id_set *id_set)
 
 	list_for_each_entry_safe(common, tmp, &id_set->head, list)
 		quic_conn_id_del(common);
+	id_set->count = 0;
 	id_set->active = NULL;
 }
 
