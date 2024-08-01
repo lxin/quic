@@ -38,6 +38,19 @@ struct quic_stream *quic_stream_find(struct quic_stream_table *streams, u64 stre
 	return stream;
 }
 
+static bool quic_stream_id_is_send(u64 stream_id, bool is_serv)
+{
+	u8 type = (stream_id & QUIC_STREAM_TYPE_MASK);
+
+	if (is_serv) {
+		if (type == QUIC_STREAM_TYPE_CLIENT_UNI)
+			return false;
+	} else if (type == QUIC_STREAM_TYPE_SERVER_UNI) {
+		return false;
+	}
+	return true;
+}
+
 static struct quic_stream *quic_stream_add(struct quic_stream_table *streams, u64 stream_id,
 					   u8 is_serv)
 {
@@ -47,13 +60,16 @@ static struct quic_stream *quic_stream_add(struct quic_stream_table *streams, u6
 	stream = kzalloc(sizeof(*stream), GFP_ATOMIC);
 	if (!stream)
 		return NULL;
+
 	stream->id = stream_id;
 	if (stream_id & QUIC_STREAM_TYPE_UNI_MASK) {
 		stream->send.window = streams->send.max_stream_data_uni;
 		stream->recv.window = streams->recv.max_stream_data_uni;
 		stream->send.max_bytes = stream->send.window;
 		stream->recv.max_bytes = stream->recv.window;
-		if (streams->send.streams_uni <= (stream_id >> 2))
+
+		if (quic_stream_id_is_send(stream_id, is_serv) &&
+		    streams->send.streams_uni <= (stream_id >> 2))
 			streams->send.streams_uni = (stream_id >> 2) + 1;
 		goto out;
 	}
@@ -130,19 +146,6 @@ void quic_stream_set_param(struct quic_stream_table *streams, struct quic_transp
 		streams->recv.max_streams_bidi = local->max_streams_bidi;
 		streams->recv.max_streams_uni = local->max_streams_uni;
 	}
-}
-
-static bool quic_stream_id_is_send(u64 stream_id, bool is_serv)
-{
-	u8 type = (stream_id & QUIC_STREAM_TYPE_MASK);
-
-	if (is_serv) {
-		if (type == QUIC_STREAM_TYPE_CLIENT_UNI)
-			return false;
-	} else if (type == QUIC_STREAM_TYPE_SERVER_UNI) {
-		return false;
-	}
-	return true;
 }
 
 static bool quic_stream_id_is_recv(u64 stream_id, bool is_serv)
