@@ -459,6 +459,8 @@ static void quic_unhash(struct sock *sk)
 
 out:
 	spin_lock(&head->lock);
+	if (rcu_access_pointer(sk->sk_reuseport_cb))
+		reuseport_detach_sock(sk);
 	__sk_del_node_init(sk);
 	spin_unlock(&head->lock);
 }
