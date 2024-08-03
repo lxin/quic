@@ -39,7 +39,7 @@ struct quic_inqueue {
 	u8 receive_session_ticket:1;
 	u8 validate_peer_address:1;
 	u8 grease_quic_bit:1;
-	u8 need_sack:1;
+	u8 need_sack:2;
 };
 
 static inline u32 quic_inq_max_idle_timeout(struct quic_inqueue *inq)

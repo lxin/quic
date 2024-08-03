@@ -642,6 +642,7 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb)
 {
 	struct quic_crypto_cb *cb = QUIC_CRYPTO_CB(skb);
 	struct quic_packet *packet = quic_packet(sk);
+	struct quic_inqueue *inq = quic_inq(sk);
 	struct quic_frame frame = {}, *nframe;
 	struct quic_conn_id *active;
 	struct quic_crypto *crypto;
@@ -707,8 +708,17 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb)
 				quic_conn_id_update(active, packet->scid.data, packet->scid.len);
 			}
 			nframe = quic_frame_create(sk, QUIC_FRAME_ACK, &packet->level);
-			if (nframe)
+			if (nframe) {
 				quic_outq_ctrl_tail(sk, nframe, true);
+				/* in case userspace doesn't send any packets, use SACK
+				 * timer to send these SACK frames out.
+				 */
+				if (!quic_inq_need_sack(inq)) {
+					quic_timer_reset(sk, QUIC_TIMER_SACK,
+							 quic_inq_max_ack_delay(inq));
+					quic_inq_set_need_sack(inq, 1);
+				}
+			}
 		}
 		cb->resume = 0;
 		skb_reset_transport_header(skb);
@@ -760,10 +770,9 @@ static int quic_packet_app_process_done(struct sock *sk, struct sk_buff *skb)
 
 	if (!packet->ack_immediate && !quic_pnspace_has_gap(space) &&
 	    packet->rcv_count++ < packet->max_rcv_count - 1) {
-		if (!quic_inq_need_sack(inq)) {
+		if (!quic_inq_need_sack(inq))
 			quic_timer_reset(sk, QUIC_TIMER_SACK, quic_inq_max_ack_delay(inq));
-			quic_inq_set_need_sack(inq, 1);
-		}
+		quic_inq_set_need_sack(inq, 2);
 		goto out;
 	}
 	packet->rcv_count = 0;

@@ -23,9 +23,12 @@ void quic_timer_sack_handler(struct sock *sk)
 
 	inq = quic_inq(sk);
 	if (quic_inq_need_sack(inq)) {
-		frame = quic_frame_create(sk, QUIC_FRAME_ACK, &level);
-		if (frame)
-			quic_outq_ctrl_tail(sk, frame, false);
+		if (quic_inq_need_sack(inq) == 2) {
+			frame = quic_frame_create(sk, QUIC_FRAME_ACK, &level);
+			if (frame)
+				quic_outq_ctrl_tail(sk, frame, true);
+		}
+		quic_outq_transmit(sk);
 		quic_inq_set_need_sack(inq, 0);
 		return;
 	}
