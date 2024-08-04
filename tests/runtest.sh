@@ -29,6 +29,7 @@ cleanup()
 	pkill alpn_test > /dev/null 2>&1
 	pkill ticket_test > /dev/null 2>&1
 	pkill sample_test > /dev/null 2>&1
+	pkill http3_test > /dev/null 2>&1
 	rmmod quic_sample_test > /dev/null 2>&1
 	rmmod quic > /dev/null 2>&1
 }
@@ -139,6 +140,40 @@ msquic_tests() {
 	daemon_stop "msquic_test"
 }
 
+http3_tests() {
+	[ -f /usr/local/include/nghttp3/nghttp3.h -o -f /usr/include/nghttp3/nghttp3.h ] || return 0
+
+	print_start "Http/3 Tests (http3_test -> Public Sebsites)"
+	make http3_test > /dev/null || return 1
+	echo "- https://pgjones.dev/"
+	./http3_test -c https://pgjones.dev/ > /dev/null || return 1 # aioquic
+	echo "- https://cloudflare-quic.com/"
+	./http3_test -c https://cloudflare-quic.com/ > /dev/null || return 1  # Cloudflare Quiche
+	echo "- https://h2o.examp1e.net/"
+	./http3_test -c https://h2o.examp1e.net/ > /dev/null || return 1 # h2o/quicly
+	echo "- https://quic.aiortc.org/"
+	./http3_test -c https://quic.aiortc.org/ > /dev/null || return 1  # aioquic
+	echo "- https://facebook.com/"
+	./http3_test -c https://facebook.com/ > /dev/null || return 1 # mvfst
+	echo "- https://nghttp2.org:4433/"
+	./http3_test -c https://nghttp2.org:4433/ > /dev/null || return 1 # ngtcp2
+	echo "- https://outlook.office.com/"
+	./http3_test -c https://outlook.office.com/ > /dev/null || return 1 # msquic
+	echo "- https://www.litespeedtech.com/"
+	./http3_test -c https://www.litespeedtech.com/ > /dev/null || return 1  # lsquic
+	echo "- https://www.google.com/"
+	./http3_test -c https://www.google.com/ > /dev/null || return 1 # Google quiche
+	echo "- https://quic.tech:8443/"
+	./http3_test -c https://quic.tech:8443/ > /dev/null || return 1 # Cloudflare Quiche
+	echo "- https://test.privateoctopus.com:4433"
+	./http3_test -c https://test.privateoctopus.com:4433/ > /dev/null || return 1 # picoquic
+
+	print_start "Http/3 Tests (http3_test client -> http3_test server)"
+	daemon_run ./http3_test -s 127.0.0.1:443 ./keys/server-key.pem ./keys/server-cert.pem
+	./http3_test -c https://localhost/ || return 1
+	daemon_stop "http3_test"
+}
+
 tlshd_tests()
 {
 	systemctl is-active --quiet tlshd || return 0
@@ -217,7 +252,7 @@ sample_tests()
 	daemon_stop
 }
 
-TESTS="func perf netem msquic tlshd sample"
+TESTS="func perf netem msquic http3 tlshd sample"
 trap cleanup EXIT
 
 [ "$1" = "" ] || TESTS=$1

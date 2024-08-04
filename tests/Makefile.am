@@ -17,10 +17,13 @@ alpn_test_SOURCE	= alpn_test.c
 
 msquic_test: msquic_test.c
 	$(CXX) $^ -o $@ -lmsquic -Wl,-rpath=/usr/local/lib -Wall
+http3_test: http3_test.c
+	$(LIBTOOL) --mode=link $(CC) $^  -o $@ -lnghttp3 \
+		$(LDADD) $(LIBGNUTLS_LIBS) $(AM_CPPFLAGS) $(AM_CFLAGS)
 
 check:
 	./runtest.sh $(tests)
 
-CLEANFILES		= msquic_test
+CLEANFILES		= msquic_test http3_test
 DISTCLEANFILES		= keys/*.pem keys/*.ext keys/*.txt
 MAINTAINERCLEANFILES	= Makefile.in
