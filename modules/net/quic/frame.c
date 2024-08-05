@@ -898,7 +898,11 @@ static int quic_frame_handshake_done_process(struct sock *sk, struct quic_frame 
 
 static int quic_frame_padding_process(struct sock *sk, struct quic_frame *frame, u8 type)
 {
-	return frame->len;
+	u8 *p = frame->data;
+
+	for (; !(*p) && p != frame->data + frame->len; p++)
+		;
+	return p - frame->data;
 }
 
 static int quic_frame_ping_process(struct sock *sk, struct quic_frame *frame, u8 type)
@@ -1437,9 +1441,6 @@ int quic_frame_process(struct sock *sk, struct quic_frame *frame)
 		} else if (quic_frame_level_check(level, type)) {
 			packet->errcode = QUIC_TRANSPORT_ERROR_PROTOCOL_VIOLATION;
 			return -EINVAL;
-		} else if (!type) { /* skip padding */
-			frame->len = 0;
-			return 0;
 		}
 		pr_debug("[QUIC] %s type: %x level: %d\n", __func__, type, level);
 		ret = quic_frame_ops[type].frame_process(sk, frame, type);
