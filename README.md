@@ -38,37 +38,37 @@ in [ktls-utils](https://github.com/oracle/ktls-utils) will handle the handshake 
 
 - Handshake Archtechiture:
 
-      +------+  +------+
-      | APP1 |  | APP2 | ...
-      +------+  +------+
+      +------+  +------+     Other
+      | APP1 |  | APP2 | ... Userspace
+      +------+  +------+     Applications
       +--------------------------------------------+
       |            libquic (gnutls)                |
       |  {quic_handshake_server/client/param()}    |
-      +--------------------------------------------+  +------------------+
-       {send/recvmsg()}       {set/getsockopt()}      |tlshd (ktls-utils)|
-       [CMSG handshake_info]  [SOCKOPT_CRYPTO_SECRET] +------------------+
+      +--------------------------------------------+        +------------------+
+       {send/recvmsg()}       {set/getsockopt()}            |tlshd (ktls-utils)|
+       [CMSG handshake_info]  [SOCKOPT_CRYPTO_SECRET]       +------------------+
                               [SOCKOPT_TRANSPORT_PARAM_EXT]
-                  | ^                    | ^                   | ^
-      Userspace   | |                    | |                   | |
-      ------------|-|--------------------|-|-------------------|-|------
-      Kernel      | |                    | |                   | |
-                  v |                    v |                   v |
-      +---------------------------------------------+    +-------------+
-      | socket (IPPRTOTO_QUIC) |      protocol      |<-+ | handshake   |
-      +---------------------------------------------+  | | netlink APIs|
-      | stream | connection_id | cong | path |timer |  | +-------------+
-      +---------------------------------------------+  |    |      |
-      |   packet  |   frame  |  crypto   |   pnmap  |  | +-----+ +-----+
-      +---------------------------------------------+  | |     | |     |
-      |         input        |       output         |  |-| SMB | | NFS |..
-      +---------------------------------------------+  | |     | |     |
-      |                UDP tunnels                  |  | +-----+ +--+--+
-      +---------------------------------------------+  +------------|
+                  | ^                    | ^                        | ^
+      Userspace   | |                    | |                        | |
+      ------------|-|--------------------|-|------------------------|-|---------
+      Kernel      | |                    | |                        | |
+                  v |                    v |                        v |
+      +---------------------------------------------+         +-------------+
+      | socket (IPPRTOTO_QUIC) |      protocol      |<---+    | handshake   |
+      +---------------------------------------------+    |    | netlink APIs|
+      |  stream |  connid |  cong |  path |  timer  |    |    +-------------+
+      +---------------------------------------------+    |       |      |
+      |  packet  |  frame  |  crypto   |   pnspace  |    |    +-----+ +-----+
+      +---------------------------------------------+    |    |     | |     |   Other
+      |         input        |       output         |    |----| SMB | | NFS |.. Kernel
+      +---------------------------------------------+    |    |     | |     |   Consumers
+      |                UDP tunnels                  |    |    +-----+ +--+--+
+      +---------------------------------------------+    +---------------|
 
 - Application Data Archtechiture:
 
       +------+  +------+
-      | APP1 |  | APP2 | ...
+      | APP1 |  | APP2 | ... Other Userspace Applications
       +------+  +------+
         {send/recvmsg()}         {set/getsockopt()}
         [CMSG stream_info]       [SOCKOPT_KEY_UPDATE]
@@ -81,32 +81,31 @@ in [ktls-utils](https://github.com/oracle/ktls-utils) will handle the handshake 
       Kernel    | |                    | |
                 v |                    v |
       +---------------------------------------------+
-      | socket (IPPRTOTO_QUIC) |      protocol      |<-+ {kernel_}
-      +---------------------------------------------+  | {send/recvmsg()}
-      | stream | connection_id | cong | path |timer |  | {set/getsockopt()}
-      +---------------------------------------------+  |
-      |   packet  |   frame  |  crypto   |   pnmap  |  | +-----+ +-----+
-      +---------------------------------------------+  | |     | |     |
-      |         input        |       output         |  |-| SMB | | NFS |..
-      +---------------------------------------------+  | |     | |     |
-      |                UDP tunnels                  |  | +-----+ +--+--+
-      +---------------------------------------------+  +------------|
+      | socket (IPPRTOTO_QUIC) |      protocol      |<---+    {kernel_}
+      +---------------------------------------------+    |    {send/recvmsg()}
+      |  stream |  connid |  cong |  path |  timer  |    |    {set/getsockopt()}
+      +---------------------------------------------+    |
+      |   packet  |   frame  |  crypto  |  pnspace  |    |    +-----+ +-----+
+      +---------------------------------------------+    |    |     | |     |   Other
+      |         input        |       output         |    |----| SMB | | NFS |.. Kernel
+      +---------------------------------------------+    |    |     | |     |   Consumers
+      |                UDP tunnels                  |    |    +-----+ +--+--+
+      +---------------------------------------------+    +---------------|
 
 ### Features
-- Fundamental support for the following RFCs
-  - RFC9000 - *QUIC: A UDP-Based Multiplexed and Secure Transport*
-  - RFC9001 - *Using TLS to Secure QUIC*
-  - RFC9002 - *QUIC Loss Detection and Congestion Control*
-  - RFC9221 - *An Unreliable Datagram Extension to QUIC*
-  - RFC9287 - *Greasing the QUIC Bit*
-  - RFC9368 - *Compatible Version Negotiation for QUIC*
-  - RFC9369 - *QUIC Version 2*
-  - Handshake APIs for tlshd Use - *NFS/SMB over QUIC*
+- RFC9000 - *QUIC: A UDP-Based Multiplexed and Secure Transport*
+- RFC9001 - *Using TLS to Secure QUIC*
+- RFC9002 - *QUIC Loss Detection and Congestion Control*
+- RFC9221 - *An Unreliable Datagram Extension to QUIC*
+- RFC9287 - *Greasing the QUIC Bit*
+- RFC9368 - *Compatible Version Negotiation for QUIC*
+- RFC9369 - *QUIC Version 2*
+- Handshake APIs for tlshd Use - *NFS/SMB over QUIC*
 
-- Next step
-  - Submit QUIC module to upstream kernel and libquic to gnutls library.
-  - Create an Internet Draft For QUIC Sockets API Extensions.
-  - Implement HW crypto offloading infrastructure.
+### Next Step
+- Submit QUIC module to upstream kernel and libquic to gnutls library.
+- Create an Internet Draft For QUIC Sockets API Extensions.
+- Implement HW crypto offloading infrastructure.
 
 ## INSTALL
 
@@ -141,7 +140,11 @@ above will skip QUIC modules building and use the one provided by kernel.
     CONFIG_IP_QUIC=m
     CONFIG_IP_QUIC_TEST=m
 
-### Build and Install tlshd (For Kernel Consumer):
+Also libquic is not necessary if you're able to use raw socket APIs and gnutls APIs to complete
+the QUIC handshake, see
+[Raw Socket APIs with more Control](https://github.com/lxin/quic#raw-socket-apis-with-more-control)
+
+### Kernel Consumer Test:
     Packages Required:
     - glib2-devel / glib-2.0-dev
     - libnl3-devel / libnl-genl-3-dev
@@ -177,7 +180,34 @@ above will skip QUIC modules building and use the one provided by kernel.
     # cd /home/lxin/quic
     # sudo make check tests=tlshd (optional, run some tests for tlshd)
 
-### Build and Install iperf (For performance tests):
+### HTTP/3 Interoperability Test:
+    # cd /home/lxin
+    # git clone https://github.com/ngtcp2/nghttp3.git
+    # cd nghttp3
+    # git submodule update --init
+    # autoreconf -i
+    # ./configure --prefix=/usr/
+    # make
+    # sudo make install
+
+    # cd /home/lxin/quic
+    # sudo make check tests=http3 (optional, run some tests for http3)
+
+The test can also be done with curl (Moritz Buhl has made curl http3 work over linux QUIC):
+
+    # git clone https://github.com/moritzbuhl/curl.git -b linux_curl
+    # ./configure --prefix=/usr/ --with-gnutls --with-linux-quic --with-nghttp3
+    # make -j$(nproc)
+    # sudo make install
+
+    # curl --http3-only --ipv4 https://cloudflare-quic.com/
+    # curl --http3-only --ipv4 https://facebook.com/
+    # curl --http3-only --ipv4 https://litespeedtech.com/
+    # curl --http3-only --ipv4 https://nghttp2.org:4433/
+    # curl --http3-only --ipv4 https://outlook.office.com/
+    # curl --http3-only --ipv4 https://www.google.com/
+
+### Performance Test:
     # git clone https://github.com/lxin/iperf.git
     # cd iperf/
     # ./bootstrap.sh
@@ -317,14 +347,23 @@ This section shows you the basic usage of QUIC, you can get more details via man
 
       # gcc perf_test.c -o perf_test -lquic -lgnutls
 
+### Raw Socket APIs with more Control
+
+quic_client/server_handshake() and quic_client/server_handshake_parms() in libquic are
+implemented with gnutls APIs and socket APIs such as send/recvmsg() and set/getsocket().
+
+For these who want more control or flexibility in the handshake, instead of using the APIs
+from libquic, they should use the raw socket APIs and gnutls APIs to implement their own
+QUIC handshake functions, and they may copy and reuse some code from libquic.
+
 ### Use in Kernel Space
 
 NOTE: tlshd service must be installed and started, see
-[build and install tlshd (For Kernel Consumer)](https://github.com/lxin/quic#build-and-install-tlshd-for-kernel-consumer)),
+[Kernel Consumer Test](https://github.com/lxin/quic#kernel-consumer-test)),
 as it receives and handles the kernel handshake request for kernel sockets.
 
 In kernel space, the use is pretty much like TCP sockets, except a extra handshake up-call.
-(See [modules/net/quic/sample_test.c](https://github.com/lxin/quic/blob/main/modules/net/quic/sample_test.c) for examples)
+(See [modules/net/quic/test/sample_test.c](https://github.com/lxin/quic/blob/main/modules/net/quic/test/sample_test.c) for examples)
 
        Client				    Server
     ---------------------------------------------------------------------------
