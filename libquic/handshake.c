@@ -67,35 +67,11 @@ static void quic_timer_handler(union sigval arg)
 	conn->errcode = ETIMEDOUT;
 }
 
-static int quic_set_nonblocking(int sockfd, uint8_t nonblocking)
-{
-	int flags = fcntl(sockfd, F_GETFL, 0);
-
-	if (flags == -1) {
-		quic_log_error("socket fcntl getfl error %d", errno);
-		return -1;
-	}
-
-	if (nonblocking)
-		flags |= O_NONBLOCK;
-	else
-		flags &= ~O_NONBLOCK;
-
-	if (fcntl(sockfd, F_SETFL, flags) == -1) {
-		quic_log_error("socket fcntl setfl error %d %d", errno, flags);
-		return -1;
-	}
-	return 0;
-}
-
 static int quic_conn_setup_timer(struct quic_conn *conn)
 {
 	uint64_t msec = conn->parms->timeout;
 	struct itimerspec its = {};
 	struct sigevent sev = {};
-
-	if (quic_set_nonblocking(conn->sockfd, 1))
-		return -1;
 
 	sev.sigev_notify = SIGEV_THREAD;
 	sev.sigev_notify_function = quic_timer_handler;
@@ -116,7 +92,6 @@ static int quic_conn_setup_timer(struct quic_conn *conn)
 
 static void quic_conn_delete_timer(struct quic_conn *conn)
 {
-	quic_set_nonblocking(conn->sockfd, 0);
 	timer_delete(conn->timer);
 }
 
@@ -431,7 +406,7 @@ static int quic_handshake_recvmsg(int sockfd, struct quic_msg *msg)
 	inmsg.msg_control = incmsg;
 	inmsg.msg_controllen = sizeof(incmsg);
 
-	ret = recvmsg(sockfd, &inmsg, 0);
+	ret = recvmsg(sockfd, &inmsg, MSG_DONTWAIT);
 	if (ret < 0)
 		return ret;
 	msg->len = ret;
@@ -592,12 +567,9 @@ int quic_conn_configure_session(struct quic_conn *conn)
 int quic_conn_start_handshake(struct quic_conn *conn)
 {
 	int ret, sockfd = conn->sockfd;
-	struct timeval tv = {1, 0};
 	struct quic_msg *msg;
+	struct timeval tv;
 	fd_set readfds;
-
-	FD_ZERO(&readfds);
-	FD_SET(sockfd, &readfds);
 
 	if (!conn->is_serv) {
 		ret = quic_handshake_crypto_data(conn, QUIC_CRYPTO_INITIAL, NULL, 0);
@@ -619,6 +591,11 @@ int quic_conn_start_handshake(struct quic_conn *conn)
 	}
 
 	while (!quic_handshake_completed(conn)) {
+		tv.tv_sec = 1;
+		tv.tv_usec = 0;
+		FD_ZERO(&readfds);
+		FD_SET(sockfd, &readfds);
+
 		ret = select(sockfd + 1, &readfds, NULL,  NULL, &tv);
 		if (ret < 0) {
 			quic_log_error("socket select error %d", errno);
@@ -906,7 +883,7 @@ ssize_t quic_recvmsg(int sockfd, void *msg, size_t len, uint64_t *sid, uint32_t 
 	inmsg.msg_control = incmsg;
 	inmsg.msg_controllen = sizeof(incmsg);
 
-	error = recvmsg(sockfd, &inmsg, 0);
+	error = recvmsg(sockfd, &inmsg, *flag);
 	if (error < 0)
 		return error;
 
