@@ -138,7 +138,7 @@ static inline void quic_stream_set_recv_max_bidi(struct quic_stream_table *strea
 }
 
 struct quic_stream *quic_stream_send_get(struct quic_stream_table *streams, u64 stream_id,
-					 u32 flag, bool is_serv);
+					 u32 flags, bool is_serv);
 struct quic_stream *quic_stream_recv_get(struct quic_stream_table *streams, u64 stream_id,
 					 bool is_serv);
 struct quic_stream *quic_stream_find(struct quic_stream_table *streams, u64 stream_id);

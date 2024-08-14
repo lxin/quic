@@ -468,12 +468,13 @@ out:
 static int quic_msghdr_parse(struct sock *sk, struct msghdr *msg, struct quic_handshake_info *hinfo,
 			     struct quic_stream_info *sinfo, bool *has_hinfo)
 {
-	struct quic_handshake_info *i = NULL;
+	struct quic_handshake_info *h = NULL;
 	struct quic_stream_info *s = NULL;
 	struct quic_stream_table *streams;
 	struct cmsghdr *cmsg;
 	u64 active;
 
+	sinfo->stream_id = -1;
 	for_each_cmsghdr(cmsg, msg) {
 		if (!CMSG_OK(msg, cmsg))
 			return -EINVAL;
@@ -483,39 +484,30 @@ static int quic_msghdr_parse(struct sock *sk, struct msghdr *msg, struct quic_ha
 
 		switch (cmsg->cmsg_type) {
 		case QUIC_HANDSHAKE_INFO:
-			if (cmsg->cmsg_len != CMSG_LEN(sizeof(*i)))
+			if (cmsg->cmsg_len != CMSG_LEN(sizeof(*h)))
 				return -EINVAL;
-			i = CMSG_DATA(cmsg);
-			hinfo->crypto_level = i->crypto_level;
-			*has_hinfo = true;
+			h = CMSG_DATA(cmsg);
+			hinfo->crypto_level = h->crypto_level;
 			break;
 		case QUIC_STREAM_INFO:
 			if (cmsg->cmsg_len != CMSG_LEN(sizeof(*s)))
 				return -EINVAL;
 			s = CMSG_DATA(cmsg);
 			sinfo->stream_id = s->stream_id;
-			sinfo->stream_flag = s->stream_flag;
+			sinfo->stream_flags = s->stream_flags;
 			break;
 		default:
 			return -EINVAL;
 		}
 	}
-	if (i)
-		return 0;
 
-	if (!s) { /* stream info is not set, try to use msg_flags*/
-		if (msg->msg_flags & MSG_SYN)
-			sinfo->stream_flag |= QUIC_STREAM_FLAG_NEW;
-		if (msg->msg_flags & MSG_FIN)
-			sinfo->stream_flag |= QUIC_STREAM_FLAG_FIN;
-		if (msg->msg_flags & MSG_STREAM_UNI)
-			sinfo->stream_flag |= QUIC_STREAM_FLAG_UNI;
-		if (msg->msg_flags & MSG_DONTWAIT)
-			sinfo->stream_flag |= QUIC_STREAM_FLAG_ASYNC;
-		if (msg->msg_flags & MSG_DATAGRAM)
-			sinfo->stream_flag |= QUIC_STREAM_FLAG_DATAGRAM;
-		sinfo->stream_id = -1;
+	if (h) {
+		*has_hinfo = true;
+		return 0;
 	}
+
+	if (!s) /* in case someone uses 'flags' argument to set stream_flags */
+		sinfo->stream_flags |= msg->msg_flags;
 
 	if (sinfo->stream_id != -1)
 		return 0;
@@ -527,7 +519,7 @@ static int quic_msghdr_parse(struct sock *sk, struct msghdr *msg, struct quic_ha
 		return 0;
 	}
 	sinfo->stream_id = (quic_stream_send_bidi(streams) << 2);
-	if (sinfo->stream_flag & QUIC_STREAM_FLAG_UNI) {
+	if (sinfo->stream_flags & MSG_STREAM_UNI) {
 		sinfo->stream_id = (quic_stream_send_uni(streams) << 2);
 		sinfo->stream_id |= QUIC_STREAM_TYPE_UNI_MASK;
 	}
@@ -592,7 +584,7 @@ static struct quic_stream *quic_sock_send_stream(struct sock *sk, struct quic_st
 	int err;
 
 	stream = quic_stream_send_get(streams, sinfo->stream_id,
-				      sinfo->stream_flag, quic_is_serv(sk));
+				      sinfo->stream_flags, quic_is_serv(sk));
 	if (!IS_ERR(stream)) {
 		if (stream->send.state >= QUIC_STREAM_SEND_STATE_SENT)
 			return ERR_PTR(-EINVAL);
@@ -613,13 +605,13 @@ static struct quic_stream *quic_sock_send_stream(struct sock *sk, struct quic_st
 		return ERR_PTR(-ENOMEM);
 	quic_outq_ctrl_tail(sk, frame, false);
 
-	timeo = sock_sndtimeo(sk, sinfo->stream_flag & QUIC_STREAM_FLAG_ASYNC);
+	timeo = sock_sndtimeo(sk, sinfo->stream_flags & MSG_STREAM_DONTWAIT);
 	err = quic_wait_for_send(sk, sinfo->stream_id, timeo, 0);
 	if (err)
 		return ERR_PTR(err);
 
 	return quic_stream_send_get(streams, sinfo->stream_id,
-				    sinfo->stream_flag, quic_is_serv(sk));
+				    sinfo->stream_flags, quic_is_serv(sk));
 }
 
 static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
@@ -671,7 +663,7 @@ static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 		goto out;
 	}
 
-	if (sinfo.stream_flag & QUIC_STREAM_FLAG_DATAGRAM) {
+	if (msg->msg_flags & MSG_DATAGRAM) {
 		if (!quic_outq_max_dgram(quic_outq(sk))) {
 			err = -EINVAL;
 			goto err;
@@ -703,7 +695,7 @@ static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 
 	msginfo.stream = stream;
 	msginfo.msg = &msg->msg_iter;
-	msginfo.flag = sinfo.stream_flag;
+	msginfo.flags = sinfo.stream_flags;
 
 	while (iov_iter_count(msginfo.msg) > 0) {
 		frame = quic_frame_create(sk, QUIC_FRAME_STREAM, &msginfo);
@@ -821,13 +813,15 @@ static int quic_recvmsg(struct sock *sk, struct msghdr *msg, size_t len, int non
 		stream = frame->stream;
 		if (event) {
 			msg->msg_flags |= MSG_NOTIFICATION;
-			sinfo.stream_flag |= QUIC_STREAM_FLAG_NOTIFICATION;
 		} else if (dgram) {
 			msg->msg_flags |= MSG_DATAGRAM;
-			sinfo.stream_flag |= QUIC_STREAM_FLAG_DATAGRAM;
 		} else if (!stream) {
 			hinfo.crypto_level = level;
 			put_cmsg(msg, IPPROTO_QUIC, QUIC_HANDSHAKE_INFO, sizeof(hinfo), &hinfo);
+			if (msg->msg_flags & MSG_CTRUNC) {
+				err = -EINVAL;
+				goto out;
+			}
 		}
 		if (flags & MSG_PEEK)
 			break;
@@ -835,6 +829,7 @@ static int quic_recvmsg(struct sock *sk, struct msghdr *msg, size_t len, int non
 			frame->offset += copy;
 			break;
 		}
+		msg->msg_flags |= MSG_EOR;
 		bytes += frame->len;
 		if (event) {
 			if (frame == quic_inq_last_event(inq))
@@ -842,14 +837,10 @@ static int quic_recvmsg(struct sock *sk, struct msghdr *msg, size_t len, int non
 			if (event == QUIC_EVENT_STREAM_UPDATE &&
 			    stream->recv.state == QUIC_STREAM_RECV_STATE_RESET_RECVD)
 				stream->recv.state = QUIC_STREAM_RECV_STATE_RESET_READ;
-			msg->msg_flags |= MSG_EOR;
-			sinfo.stream_flag |= QUIC_STREAM_FLAG_FIN;
 			list_del(&frame->list);
 			quic_frame_free(frame);
 			break;
 		} else if (dgram) {
-			msg->msg_flags |= MSG_EOR;
-			sinfo.stream_flag |= QUIC_STREAM_FLAG_FIN;
 			list_del(&frame->list);
 			quic_frame_free(frame);
 			break;
@@ -863,8 +854,7 @@ static int quic_recvmsg(struct sock *sk, struct msghdr *msg, size_t len, int non
 		quic_frame_free(frame);
 		if (fin) {
 			stream->recv.state = QUIC_STREAM_RECV_STATE_READ;
-			msg->msg_flags |= MSG_EOR;
-			sinfo.stream_flag |= QUIC_STREAM_FLAG_FIN;
+			sinfo.stream_flags |= MSG_STREAM_FIN;
 			break;
 		}
 
@@ -876,10 +866,12 @@ static int quic_recvmsg(struct sock *sk, struct msghdr *msg, size_t len, int non
 
 	if (!event && stream) {
 		sinfo.stream_id = stream->id;
+		put_cmsg(msg, IPPROTO_QUIC, QUIC_STREAM_INFO, sizeof(sinfo), &sinfo);
+		if (msg->msg_flags & MSG_CTRUNC)
+			msg->msg_flags |= sinfo.stream_flags;
+
 		quic_inq_flow_control(sk, stream, freed);
 	}
-	if (event || stream)
-		put_cmsg(msg, IPPROTO_QUIC, QUIC_STREAM_INFO, sizeof(sinfo), &sinfo);
 
 	quic_inq_rfree(bytes, sk);
 	err = copied;
@@ -1873,14 +1865,14 @@ static int quic_sock_stream_open(struct sock *sk, int len, char __user *optval, 
 
 	if (sinfo.stream_id == -1) {
 		sinfo.stream_id = (quic_stream_send_bidi(streams) << 2);
-		if (sinfo.stream_flag & QUIC_STREAM_FLAG_UNI) {
+		if (sinfo.stream_flags & MSG_STREAM_UNI) {
 			sinfo.stream_id = (quic_stream_send_uni(streams) << 2);
 			sinfo.stream_id |= QUIC_STREAM_TYPE_UNI_MASK;
 		}
 		sinfo.stream_id |= quic_is_serv(sk);
 	}
 
-	sinfo.stream_flag |= QUIC_STREAM_FLAG_NEW;
+	sinfo.stream_flags |= MSG_STREAM_NEW;
 	if (put_user(len, optlen) || copy_to_user(optval, &sinfo, len))
 		return -EFAULT;
 

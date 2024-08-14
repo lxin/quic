@@ -189,7 +189,7 @@ static struct quic_frame *quic_frame_stream_create(struct sock *sk, void *data, 
 
 	msg_len = iov_iter_count(info->msg);
 	if (msg_len <= max_frame_len - hlen) {
-		if (info->flag & QUIC_STREAM_FLAG_FIN)
+		if (info->flags & MSG_STREAM_FIN)
 			type |= QUIC_STREAM_BIT_FIN;
 	} else {
 		msg_len = max_frame_len - hlen;

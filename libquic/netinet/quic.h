@@ -45,8 +45,8 @@ int quic_server_handshake_parms(int sockfd, struct quic_handshake_parms *parms);
 int quic_client_handshake(int sockfd, char *pkey_file, char *cert_file);
 int quic_server_handshake(int sockfd, char *pkey_file, char *cert_file);
 
-ssize_t quic_sendmsg(int sockfd, const void *msg, size_t len, uint64_t sid, uint32_t flag);
-ssize_t quic_recvmsg(int sockfd, void *msg, size_t len, uint64_t *sid, uint32_t *flag);
+ssize_t quic_sendmsg(int sockfd, const void *msg, size_t len, int64_t sid, uint32_t flags);
+ssize_t quic_recvmsg(int sockfd, void *msg, size_t len, int64_t *sid, uint32_t *flags);
 
 void quic_set_log_level(int level);
 void quic_set_log_func(void (*func)(int level, const char *msg));

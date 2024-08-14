@@ -36,18 +36,15 @@ enum quic_cmsg_type {
 #define QUIC_STREAM_TYPE_MASK		0x03
 
 enum quic_msg_flags {
-	MSG_NOTIFICATION	= 0x8000,
+	/* flags for stream_flags */
+	MSG_STREAM_NEW		= MSG_SYN,
+	MSG_STREAM_FIN		= MSG_FIN,
 	MSG_STREAM_UNI		= 0x800,
-	MSG_DATAGRAM		= 0x10,
-};
+	MSG_STREAM_DONTWAIT	= 0x10000,
 
-enum {
-	QUIC_STREAM_FLAG_NEW		= MSG_SYN,
-	QUIC_STREAM_FLAG_FIN		= MSG_FIN,
-	QUIC_STREAM_FLAG_UNI		= MSG_STREAM_UNI,
-	QUIC_STREAM_FLAG_ASYNC		= MSG_DONTWAIT,
-	QUIC_STREAM_FLAG_NOTIFICATION	= MSG_NOTIFICATION,
-	QUIC_STREAM_FLAG_DATAGRAM	= MSG_DATAGRAM,
+	/* extented flags for msg_flags */
+	MSG_DATAGRAM		= 0x10,
+	MSG_NOTIFICATION	= 0x8000,
 };
 
 enum quic_crypto_level {
@@ -63,8 +60,8 @@ struct quic_handshake_info {
 };
 
 struct quic_stream_info {
-	uint64_t stream_id;
-	uint32_t stream_flag;
+	int64_t  stream_id;
+	uint32_t stream_flags;
 };
 
 /* Socket Options APIs */

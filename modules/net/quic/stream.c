@@ -200,7 +200,7 @@ static bool quic_stream_id_send_allowed(u64 stream_id, bool is_serv)
 }
 
 struct quic_stream *quic_stream_send_get(struct quic_stream_table *streams, u64 stream_id,
-					 u32 flag, bool is_serv)
+					 u32 flags, bool is_serv)
 {
 	struct quic_stream *stream;
 
@@ -209,12 +209,12 @@ struct quic_stream *quic_stream_send_get(struct quic_stream_table *streams, u64 
 
 	stream = quic_stream_find(streams, stream_id);
 	if (stream) {
-		if (flag & QUIC_STREAM_FLAG_NEW)
+		if (flags & MSG_STREAM_NEW)
 			return ERR_PTR(-EINVAL);
 		return stream;
 	}
 
-	if (!(flag & QUIC_STREAM_FLAG_NEW))
+	if (!(flags & MSG_STREAM_NEW))
 		return ERR_PTR(-EINVAL);
 
 	if (!quic_stream_id_send_allowed(stream_id, is_serv))

@@ -853,7 +853,7 @@ void quic_set_log_func(void (*func)(int level, const char *msg))
  * - On success, the number of bytes received is returned.
  * - On error, -1 is returned, and errno is set to indicate the error.
  */
-ssize_t quic_recvmsg(int sockfd, void *msg, size_t len, uint64_t *sid, uint32_t *flag)
+ssize_t quic_recvmsg(int sockfd, void *msg, size_t len, int64_t *sid, uint32_t *flags)
 {
 	char incmsg[CMSG_SPACE(sizeof(struct quic_stream_info))];
 	struct quic_stream_info info;
@@ -874,7 +874,7 @@ ssize_t quic_recvmsg(int sockfd, void *msg, size_t len, uint64_t *sid, uint32_t 
 	inmsg.msg_control = incmsg;
 	inmsg.msg_controllen = sizeof(incmsg);
 
-	error = recvmsg(sockfd, &inmsg, *flag);
+	error = recvmsg(sockfd, &inmsg, *flags);
 	if (error < 0)
 		return error;
 
@@ -884,10 +884,11 @@ ssize_t quic_recvmsg(int sockfd, void *msg, size_t len, uint64_t *sid, uint32_t 
 	for (cmsg = CMSG_FIRSTHDR(&inmsg); cmsg != NULL; cmsg = CMSG_NXTHDR(&inmsg, cmsg))
 		if (IPPROTO_QUIC == cmsg->cmsg_level && QUIC_STREAM_INFO == cmsg->cmsg_type)
 			break;
+	*flags = inmsg.msg_flags;
 	if (cmsg) {
 		memcpy(&info, CMSG_DATA(cmsg), sizeof(struct quic_stream_info));
 		*sid = info.stream_id;
-		*flag = info.stream_flag;
+		*flags |= info.stream_flags;
 	}
 	return error;
 }
@@ -904,7 +905,7 @@ ssize_t quic_recvmsg(int sockfd, void *msg, size_t len, uint64_t *sid, uint32_t 
  * - On success, the number of bytes sent is returned.
  * - On error, -1 is returned, and errno is set to indicate the error.
  */
-ssize_t quic_sendmsg(int sockfd, const void *msg, size_t len, uint64_t sid, uint32_t flag)
+ssize_t quic_sendmsg(int sockfd, const void *msg, size_t len, int64_t sid, uint32_t flags)
 {
 	char outcmsg[CMSG_SPACE(sizeof(struct quic_stream_info))];
 	struct quic_stream_info *info;
@@ -921,7 +922,6 @@ ssize_t quic_sendmsg(int sockfd, const void *msg, size_t len, uint64_t sid, uint
 
 	outmsg.msg_control = outcmsg;
 	outmsg.msg_controllen = sizeof(outcmsg);
-	outmsg.msg_flags = 0;
 
 	cmsg = CMSG_FIRSTHDR(&outmsg);
 	cmsg->cmsg_level = IPPROTO_QUIC;
@@ -931,7 +931,7 @@ ssize_t quic_sendmsg(int sockfd, const void *msg, size_t len, uint64_t sid, uint
 	outmsg.msg_controllen = cmsg->cmsg_len;
 	info = (struct quic_stream_info *)CMSG_DATA(cmsg);
 	info->stream_id = sid;
-	info->stream_flag = flag;
+	info->stream_flags = flags;
 
-	return sendmsg(sockfd, &outmsg, 0);
+	return sendmsg(sockfd, &outmsg, flags);
 }

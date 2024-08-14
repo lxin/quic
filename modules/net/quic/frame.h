@@ -94,8 +94,8 @@ enum {
 struct quic_msginfo {
 	struct quic_stream *stream;
 	struct iov_iter *msg;
+	u32 flags;
 	u8 level;
-	u32 flag;
 };
 
 struct quic_frame_ops {

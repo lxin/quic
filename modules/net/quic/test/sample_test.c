@@ -37,7 +37,7 @@ static int psk = 0;
 static char	snd_msg[SND_MSG_LEN];
 static char	rcv_msg[RCV_MSG_LEN];
 
-static int quic_test_recvmsg(struct socket *sock, void *msg, int len, u64 *sid, int *flag)
+static int quic_test_recvmsg(struct socket *sock, void *msg, int len, s64 *sid, int *flags)
 {
 	char incmsg[CMSG_SPACE(sizeof(struct quic_stream_info))];
 	struct quic_stream_info *rinfo = CMSG_DATA(incmsg);
@@ -52,7 +52,7 @@ static int quic_test_recvmsg(struct socket *sock, void *msg, int len, u64 *sid, 
 	inmsg.msg_control = incmsg;
 	inmsg.msg_controllen = sizeof(incmsg);
 
-	error = kernel_recvmsg(sock, &inmsg, &iov, 1, len, 0);
+	error = kernel_recvmsg(sock, &inmsg, &iov, 1, len, *flags);
 	if (error < 0)
 		return error;
 
@@ -60,11 +60,11 @@ static int quic_test_recvmsg(struct socket *sock, void *msg, int len, u64 *sid, 
 		return error;
 
 	*sid = rinfo->stream_id;
-	*flag = rinfo->stream_flag;
+	*flags = rinfo->stream_flags | inmsg.msg_flags;
 	return error;
 }
 
-static int quic_test_sendmsg(struct socket *sock, const void *msg, int len, u64 sid, int flag)
+static int quic_test_sendmsg(struct socket *sock, const void *msg, int len, s64 sid, int flags)
 {
 	char outcmsg[CMSG_SPACE(sizeof(struct quic_stream_info))];
 	struct quic_stream_info *sinfo;
@@ -78,6 +78,7 @@ static int quic_test_sendmsg(struct socket *sock, const void *msg, int len, u64 
 	memset(&outmsg, 0, sizeof(outmsg));
 	outmsg.msg_control = outcmsg;
 	outmsg.msg_controllen = sizeof(outcmsg);
+	outmsg.msg_flags = flags;
 
 	cmsg = CMSG_FIRSTHDR(&outmsg);
 	cmsg->cmsg_level = IPPROTO_QUIC;
@@ -88,7 +89,7 @@ static int quic_test_sendmsg(struct socket *sock, const void *msg, int len, u64 
 	sinfo = (struct quic_stream_info *)CMSG_DATA(cmsg);
 	memset(sinfo, 0, sizeof(struct quic_stream_info));
 	sinfo->stream_id = sid;
-	sinfo->stream_flag = flag;
+	sinfo->stream_flags = flags;
 
 	return kernel_sendmsg(sock, &outmsg, &iov, 1, len);
 }
@@ -178,7 +179,7 @@ static int quic_test_do_client(void)
 	struct sockaddr_in ra = {};
 	u64 len = 0, sid = 0, rate;
 	struct socket *sock;
-	int err, flag = 0;
+	int err, flags = 0;
 	u32 start, end;
 
 	err = __sock_create(&init_net, PF_INET, SOCK_DGRAM, IPPROTO_QUIC, &sock, 1);
@@ -204,36 +205,36 @@ static int quic_test_do_client(void)
 		goto free;
 
 	start = jiffies_to_msecs(jiffies);
-	flag = QUIC_STREAM_FLAG_NEW; /* open stream when send first msg */
-	err = quic_test_sendmsg(sock, snd_msg, SND_MSG_LEN, sid, flag);
+	flags = MSG_STREAM_NEW; /* open stream when send first msg */
+	err = quic_test_sendmsg(sock, snd_msg, SND_MSG_LEN, sid, flags);
 	if (err < 0) {
 		pr_info("send %d\n", err);
 		goto free;
 	}
 	len += err;
-	flag = 0;
+	flags = 0;
 	while (1) {
-		err = quic_test_sendmsg(sock, snd_msg, SND_MSG_LEN, sid, flag);
+		err = quic_test_sendmsg(sock, snd_msg, SND_MSG_LEN, sid, flags);
 		if (err < 0) {
 			pr_info("send %d\n", err);
 			goto free;
 		}
 		len += err;
 		if (!(len % (SND_MSG_LEN * 1024)))
-			pr_info("  send len: %lld, stream_id: %lld, flag: %d.\n", len, sid, flag);
+			pr_info("  send len: %lld, stream_id: %lld, flags: %d.\n", len, sid, flags);
 		if (len > TOT_LEN - SND_MSG_LEN)
 			break;
 	}
-	flag = QUIC_STREAM_FLAG_FIN; /* close stream when send last msg */
-	err = quic_test_sendmsg(sock, snd_msg, SND_MSG_LEN, sid, flag);
+	flags = MSG_STREAM_FIN; /* close stream when send last msg */
+	err = quic_test_sendmsg(sock, snd_msg, SND_MSG_LEN, sid, flags);
 	if (err < 0) {
 		pr_info("send %d\n", err);
 		goto free;
 	}
-	pr_info("SEND DONE: tot_len: %lld, stream_id: %lld, flag: %d.\n", len, sid, flag);
+	pr_info("SEND DONE: tot_len: %lld, stream_id: %lld, flags: %d.\n", len, sid, flags);
 
 	memset(rcv_msg, 0, sizeof(rcv_msg));
-	err = quic_test_recvmsg(sock, rcv_msg, RCV_MSG_LEN, &sid, &flag);
+	err = quic_test_recvmsg(sock, rcv_msg, RCV_MSG_LEN, &sid, &flags);
 	if (err < 0) {
 		pr_info("recv error %d\n", err);
 		goto free;
@@ -254,7 +255,7 @@ static int quic_test_do_server(void)
 	struct socket *sock, *newsock;
 	struct sockaddr_in la = {};
 	u64 len = 0, sid = 0;
-	int err, flag = 0;
+	int err, flags = 0;
 
 	err = __sock_create(&init_net, PF_INET, SOCK_DGRAM, IPPROTO_QUIC, &sock, 1);
 	if (err < 0)
@@ -293,23 +294,23 @@ static int quic_test_do_server(void)
 	pr_info("HANDSHAKE DONE\n");
 
 	while (1) {
-		err = quic_test_recvmsg(newsock, &rcv_msg, sizeof(rcv_msg), &sid, &flag);
+		err = quic_test_recvmsg(newsock, &rcv_msg, sizeof(rcv_msg), &sid, &flags);
 		if (err < 0) {
 			pr_info("recv error %d\n", err);
 			goto free_flip;
 		}
 		len += err;
 		usleep_range(20, 40);
-		if (flag & QUIC_STREAM_FLAG_FIN)
+		if (flags & MSG_STREAM_FIN)
 			break;
-		pr_info("  recv len: %lld, stream_id: %lld, flag: %d.\n", len, sid, flag);
+		pr_info("  recv len: %lld, stream_id: %lld, flags: %d.\n", len, sid, flags);
 	}
 
-	pr_info("RECV DONE: tot_len %lld, stream_id: %lld, flag: %d.\n", len, sid, flag);
+	pr_info("RECV DONE: tot_len %lld, stream_id: %lld, flags: %d.\n", len, sid, flags);
 
-	flag = QUIC_STREAM_FLAG_FIN;
+	flags = MSG_STREAM_FIN;
 	strscpy(snd_msg, "recv done", sizeof(snd_msg));
-	err = quic_test_sendmsg(newsock, snd_msg, strlen(snd_msg), sid, flag);
+	err = quic_test_sendmsg(newsock, snd_msg, strlen(snd_msg), sid, flags);
 	if (err < 0) {
 		pr_info("send %d\n", err);
 		goto free_flip;
