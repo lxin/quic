@@ -156,6 +156,11 @@ static inline bool quic_frame_non_probing(u8 type)
 	       type != QUIC_FRAME_PATH_RESPONSE && type != QUIC_FRAME_PATH_CHALLENGE;
 }
 
+static inline bool quic_frame_is_crypto(u8 type)
+{
+	return type == QUIC_FRAME_CRYPTO;
+}
+
 static inline bool quic_frame_is_dgram(u8 type)
 {
 	return type == QUIC_FRAME_DATAGRAM || type == QUIC_FRAME_DATAGRAM_LEN;

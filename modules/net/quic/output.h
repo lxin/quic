@@ -175,8 +175,8 @@ void quic_outq_ctrl_tail(struct sock *sk, struct quic_frame *frame, bool cork);
 void quic_outq_transmit_one(struct sock *sk, u8 level);
 int quic_outq_transmit(struct sock *sk);
 
-int quic_outq_transmitted_sack(struct sock *sk, u8 level, s64 largest,
-			       s64 smallest, s64 ack_largest, u32 ack_delay);
+void quic_outq_transmitted_sack(struct sock *sk, u8 level, s64 largest,
+				s64 smallest, s64 ack_largest, u32 ack_delay);
 void quic_outq_validate_path(struct sock *sk, struct quic_frame *frame,
 			     struct quic_path_addr *path);
 void quic_outq_transmitted_tail(struct sock *sk, struct quic_frame *frame);

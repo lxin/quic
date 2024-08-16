@@ -1062,7 +1062,9 @@ static u8 *quic_packet_pack_frames(struct sock *sk, struct sk_buff *skb, s64 num
 		tmp->last = 0;
 		tmp->first = !len;
 		len += frame->len;
-		bytes += frame->bytes;
+
+		if (!quic_frame_is_crypto(frame->type))
+			bytes += frame->bytes;
 
 		if (!packet->level && !ecn && packet->ecn_probes < 3) {
 			packet->ecn_probes++;

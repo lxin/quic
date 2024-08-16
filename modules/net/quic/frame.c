@@ -266,6 +266,7 @@ static struct quic_frame *quic_frame_crypto_create(struct sock *sk, void *data, 
 			return NULL;
 		}
 		p += msg_len;
+		frame->bytes = msg_len;
 		frame->len = p - frame->data;
 
 		return frame;
@@ -288,6 +289,7 @@ static struct quic_frame *quic_frame_crypto_create(struct sock *sk, void *data, 
 	frame->len = msg_len + hlen;
 	quic_crypto_inc_send_offset(crypto, msg_len);
 	frame->level = info->level;
+	frame->bytes = msg_len;
 	return frame;
 }
 
@@ -730,8 +732,8 @@ static int quic_frame_ack_process(struct sock *sk, struct quic_frame *frame, u8 
 	u64 largest, smallest, range, delay, count, gap, i, ecn_count[3];
 	u8 *p = frame->data, level = frame->level;
 	struct quic_cong *cong = quic_cong(sk);
-	u32 len = frame->len, bytes;
 	struct quic_pnspace *space;
+	u32 len = frame->len;
 
 	if (!quic_get_var(&p, &len, &largest) ||
 	    !quic_get_var(&p, &len, &delay) ||
@@ -748,7 +750,7 @@ static int quic_frame_ack_process(struct sock *sk, struct quic_frame *frame, u8 
 	quic_cong_set_time(cong, jiffies_to_usecs(jiffies));
 
 	smallest = largest - range;
-	bytes = quic_outq_transmitted_sack(sk, level, largest, smallest, largest, delay);
+	quic_outq_transmitted_sack(sk, level, largest, smallest, largest, delay);
 
 	for (i = 0; i < count; i++) {
 		if (!quic_get_var(&p, &len, &gap) ||
@@ -756,7 +758,7 @@ static int quic_frame_ack_process(struct sock *sk, struct quic_frame *frame, u8 
 			return -EINVAL;
 		largest = smallest - gap - 2;
 		smallest = largest - range;
-		bytes += quic_outq_transmitted_sack(sk, level, largest, smallest, 0, 0);
+		quic_outq_transmitted_sack(sk, level, largest, smallest, 0, 0);
 	}
 
 	if (type == QUIC_FRAME_ACK_ECN) {
@@ -770,9 +772,7 @@ static int quic_frame_ack_process(struct sock *sk, struct quic_frame *frame, u8 
 		}
 	}
 
-	quic_outq_wfree(bytes, sk);
 	quic_outq_retransmit_mark(sk, level, 0);
-	quic_cong_on_ack_recv(cong, bytes, READ_ONCE(sk->sk_max_pacing_rate));
 
 	return frame->len - len;
 }

@@ -29,8 +29,10 @@ static void quic_outq_transmit_ctrl(struct sock *sk)
 				continue;
 			break;
 		}
-		if (quic_packet_tail(sk, frame, 0))
+		if (quic_packet_tail(sk, frame, 0)) {
+			outq->data_inflight += frame->bytes;
 			continue; /* packed and conintue with the next frame */
+		}
 		quic_packet_create(sk); /* build and xmit the packed frames */
 		tmp = frame; /* go back but still pack the current frame */
 	}
@@ -327,12 +329,12 @@ void quic_outq_transmit_app_close(struct sock *sk)
 	}
 }
 
-int quic_outq_transmitted_sack(struct sock *sk, u8 level, s64 largest, s64 smallest,
-			       s64 ack_largest, u32 ack_delay)
+void quic_outq_transmitted_sack(struct sock *sk, u8 level, s64 largest, s64 smallest,
+				s64 ack_largest, u32 ack_delay)
 {
-	struct quic_crypto *crypto = quic_crypto(sk, level);
 	struct quic_pnspace *space = quic_pnspace(sk, level);
-	u32 pathmtu, rto, acked_bytes = 0, bytes = 0;
+	struct quic_crypto *crypto = quic_crypto(sk, level);
+	u32 pathmtu, rto, acked = 0, bytes = 0, pbytes = 0;
 	struct quic_path_addr *path = quic_dst(sk);
 	struct quic_outqueue *outq = quic_outq(sk);
 	struct quic_inqueue *inq = quic_inq(sk);
@@ -374,6 +376,8 @@ int quic_outq_transmitted_sack(struct sock *sk, u8 level, s64 largest, s64 small
 				}
 				stream->send.state = update.state;
 			}
+			if (!quic_frame_is_crypto(frame->type))
+				pbytes += frame->bytes;
 		} else if (frame->type == QUIC_FRAME_RESET_STREAM) {
 			update.id = stream->id;
 			update.state = QUIC_STREAM_SEND_STATE_RESET_RECVD;
@@ -394,7 +398,7 @@ int quic_outq_transmitted_sack(struct sock *sk, u8 level, s64 largest, s64 small
 		quic_pnspace_dec_inflight(space, frame->len);
 		outq->data_inflight -= frame->bytes;
 		list_del(&frame->list);
-		bytes += frame->bytes;
+		acked += frame->bytes;
 
 		if (frame->first) {
 			if (frame->number == ack_largest) {
@@ -403,12 +407,12 @@ int quic_outq_transmitted_sack(struct sock *sk, u8 level, s64 largest, s64 small
 				quic_pnspace_set_max_time_limit(space, rto * 2);
 				quic_crypto_set_key_update_time(crypto, rto * 2);
 			}
-			if (bytes) {
-				quic_cong_on_packet_acked(cong, frame->sent_time, bytes,
+			if (pbytes) {
+				bytes += pbytes;
+				quic_cong_on_packet_acked(cong, frame->sent_time, pbytes,
 							  frame->number);
 				quic_outq_sync_window(sk);
-				acked_bytes += bytes;
-				bytes = 0;
+				pbytes = 0;
 			}
 		}
 
@@ -416,7 +420,8 @@ int quic_outq_transmitted_sack(struct sock *sk, u8 level, s64 largest, s64 small
 	}
 
 	outq->rtx_count = 0;
-	return acked_bytes;
+	quic_outq_wfree(acked, sk);
+	quic_cong_on_ack_recv(cong, bytes, READ_ONCE(sk->sk_max_pacing_rate));
 }
 
 void quic_outq_update_loss_timer(struct sock *sk, u8 level)
@@ -466,7 +471,7 @@ static void quic_outq_retransmit_one(struct sock *sk, struct quic_frame *frame)
 	struct list_head *head;
 
 	head = &outq->control_list;
-	if (frame->bytes) {
+	if (frame->bytes && !quic_frame_is_crypto(frame->type)) {
 		head = &outq->stream_list;
 		frame->stream->send.frags--;
 		frame->stream->send.bytes -= frame->bytes;
