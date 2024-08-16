@@ -221,8 +221,6 @@ static int quic_tp_send_func(gnutls_session_t session, gnutls_buffer_t extdata)
 	return 0;
 }
 
-#define QUIC_MAX_FRAG_LEN	1200
-
 static int quic_read_func(gnutls_session_t session, gnutls_record_encryption_level_t level,
 			  gnutls_handshake_description_t htype, const void *data, size_t datalen)
 {
@@ -233,28 +231,21 @@ static int quic_read_func(gnutls_session_t session, gnutls_record_encryption_lev
 	if (htype == GNUTLS_HANDSHAKE_KEY_UPDATE)
 		return 0;
 
-	while (len > 0) {
-		msg = malloc(sizeof(*msg));
-		if (!msg) {
-			quic_log_error("msg malloc error %d", ENOMEM);
-			return -1;
-		}
-		memset(msg, 0, sizeof(*msg));
-		msg->len = len;
-		if (len > QUIC_MAX_FRAG_LEN)
-			msg->len = QUIC_MAX_FRAG_LEN;
-		memcpy(msg->data, data, msg->len);
-
-		msg->level = quic_get_crypto_level(level);
-		if (!conn->send_list)
-			conn->send_list = msg;
-		else
-			conn->send_last->next = msg;
-		conn->send_last = msg;
-
-		len -= msg->len;
-		data += msg->len;
+	msg = malloc(sizeof(*msg));
+	if (!msg) {
+		quic_log_error("msg malloc error %d", ENOMEM);
+		return -1;
 	}
+	memset(msg, 0, sizeof(*msg));
+	msg->len = len;
+	memcpy(msg->data, data, msg->len);
+
+	msg->level = quic_get_crypto_level(level);
+	if (!conn->send_list)
+		conn->send_list = msg;
+	else
+		conn->send_last->next = msg;
+	conn->send_last = msg;
 
 	quic_log_debug("  Read func: %u %u %u", level, htype, datalen);
 	return 0;
