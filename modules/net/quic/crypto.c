@@ -541,6 +541,8 @@ int quic_crypto_decrypt(struct quic_crypto *crypto, struct sk_buff *skb)
 	}
 
 	if (cb->key_phase != crypto->key_phase && !crypto->key_pending) {
+		if (!crypto->send_ready) /* not ready for key update */
+			return -EINVAL;
 		err = quic_crypto_key_update(crypto);
 		if (err) {
 			cb->errcode = QUIC_TRANSPORT_ERROR_KEY_UPDATE;
