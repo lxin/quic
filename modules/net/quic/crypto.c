@@ -573,8 +573,8 @@ EXPORT_SYMBOL_GPL(quic_crypto_decrypt);
 int quic_crypto_set_secret(struct quic_crypto *crypto, struct quic_crypto_secret *srt,
 			   u32 version, u8 flag)
 {
+	int err = -EINVAL, secretlen;
 	struct quic_cipher *cipher;
-	int err, secretlen;
 	void *tfm;
 
 	if (!crypto->cipher) {
@@ -601,6 +601,8 @@ int quic_crypto_set_secret(struct quic_crypto *crypto, struct quic_crypto_secret
 	cipher = crypto->cipher;
 	secretlen = cipher->secretlen;
 	if (!srt->send) {
+		if (crypto->recv_ready)
+			goto err;
 		memcpy(crypto->rx_secret, srt->secret, secretlen);
 		tfm = crypto_alloc_aead(cipher->aead, 0, flag);
 		if (IS_ERR(tfm)) {
@@ -628,6 +630,8 @@ int quic_crypto_set_secret(struct quic_crypto *crypto, struct quic_crypto_secret
 		return 0;
 	}
 
+	if (crypto->send_ready)
+		goto err;
 	memcpy(crypto->tx_secret, srt->secret, secretlen);
 	tfm = crypto_alloc_aead(cipher->aead, 0, flag);
 	if (IS_ERR(tfm)) {

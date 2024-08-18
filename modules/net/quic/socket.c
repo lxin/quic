@@ -632,7 +632,7 @@ static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 		goto err;
 
 	if (has_hinfo) {
-		if (hinfo.crypto_level >= QUIC_CRYPTO_MAX) {
+		if (hinfo.crypto_level >= QUIC_CRYPTO_EARLY) {
 			err = -EINVAL;
 			goto err;
 		}
@@ -1380,6 +1380,7 @@ static int quic_sock_set_crypto_secret(struct sock *sk, struct quic_crypto_secre
 	struct quic_outqueue *outq = quic_outq(sk);
 	struct quic_inqueue *inq = quic_inq(sk);
 	struct quic_frame *frame, *tmp;
+	struct quic_crypto *crypto;
 	struct sk_buff_head tmpq;
 	struct list_head list;
 	struct sk_buff *skb;
@@ -1387,17 +1388,54 @@ static int quic_sock_set_crypto_secret(struct sock *sk, struct quic_crypto_secre
 	int err, seqno;
 	u64 prior = 1;
 
-	if (len != sizeof(*secret) || !quic_is_establishing(sk))
+	if (len != sizeof(*secret))
 		return -EINVAL;
 
-	err = quic_crypto_set_secret(quic_crypto(sk, secret->level), secret,
-				     quic_inq_version(inq), 0);
+	if (secret->level != QUIC_CRYPTO_APP &&
+	    secret->level != QUIC_CRYPTO_EARLY &&
+	    secret->level != QUIC_CRYPTO_HANDSHAKE)
+		return -EINVAL;
+
+	crypto = quic_crypto(sk, secret->level);
+	err = quic_crypto_set_secret(crypto, secret, quic_inq_version(inq), 0);
 	if (err)
 		return err;
 
+	if (secret->level != QUIC_CRYPTO_APP) {
+		if (!secret->send) { /* 0rtt or handshake recv key is ready */
+			__skb_queue_head_init(&tmpq);
+			skb_queue_splice_init(quic_inq_backlog_list(inq), &tmpq);
+			skb = __skb_dequeue(&tmpq);
+			while (skb) {
+				quic_packet_process(sk, skb);
+				skb = __skb_dequeue(&tmpq);
+			}
+			return 0;
+		}
+		/* 0rtt send key is ready */
+		if (secret->level == QUIC_CRYPTO_EARLY)
+			quic_outq_set_data_level(outq, QUIC_CRYPTO_EARLY);
+		return 0;
+
+	}
+
 	INIT_LIST_HEAD(&list);
-	if (!secret->send) { /* recv key is ready */
-		if (!secret->level && quic_is_serv(sk)) {
+	if (!secret->send) { /* app recv key is ready */
+		__skb_queue_head_init(&tmpq);
+		skb_queue_splice_init(quic_inq_backlog_list(inq), &tmpq);
+		skb = __skb_dequeue(&tmpq);
+		while (skb) {
+			quic_packet_process(sk, skb);
+			skb = __skb_dequeue(&tmpq);
+		}
+		if (quic_is_serv(sk)) {
+			/* some implementations don't send ACKs to handshake packets
+			 * so ACK them manually.
+			 */
+			quic_outq_transmitted_sack(sk, QUIC_CRYPTO_INITIAL,
+						   QUIC_PN_MAP_MAX_PN, 0, 0, 0);
+			quic_outq_transmitted_sack(sk, QUIC_CRYPTO_HANDSHAKE,
+						   QUIC_PN_MAP_MAX_PN, 0, 0, 0);
 			if (quic_outq_pref_addr(outq)) {
 				err = quic_path_set_bind_port(sk, path, 1);
 				if (err)
@@ -1416,42 +1454,18 @@ static int quic_sock_set_crypto_secret(struct sock *sk, struct quic_crypto_secre
 				return -ENOMEM;
 			}
 			list_add_tail(&frame->list, &list);
-		}
-		__skb_queue_head_init(&tmpq);
-		skb_queue_splice_init(quic_inq_backlog_list(inq), &tmpq);
-		skb = __skb_dequeue(&tmpq);
-		while (skb) {
-			quic_packet_process(sk, skb);
-			skb = __skb_dequeue(&tmpq);
-		}
-		if (secret->level)
-			return 0;
-		/* app recv key is ready */
-		if (quic_is_serv(sk)) {
-			/* some implementations don't send ACKs to handshake packets
-			 * so ACK them manually.
-			 */
-			quic_outq_transmitted_sack(sk, QUIC_CRYPTO_INITIAL,
-						   QUIC_PN_MAP_MAX_PN, 0, 0, 0);
-			quic_outq_transmitted_sack(sk, QUIC_CRYPTO_HANDSHAKE,
-						   QUIC_PN_MAP_MAX_PN, 0, 0, 0);
 			list_for_each_entry_safe(frame, tmp, &list, list) {
 				list_del(&frame->list);
 				quic_outq_ctrl_tail(sk, frame, true);
 			}
 			quic_outq_transmit(sk);
 		}
-		quic_set_state(sk, QUIC_SS_ESTABLISHED);
-		/* PATH CHALLENGE timer is reused as PLPMTUD probe timer */
-		quic_timer_reset(sk, QUIC_TIMER_PATH, quic_inq_probe_timeout(inq));
-		return 0;
-	}
 
-	/* send key is ready */
-	if (secret->level) {
-		/* 0rtt send key is ready */
-		if (secret->level == QUIC_CRYPTO_EARLY)
-			quic_outq_set_data_level(outq, QUIC_CRYPTO_EARLY);
+		/* enter established only when both send and recv keys are ready */
+		if (quic_crypto_send_ready(crypto)) {
+			quic_set_state(sk, QUIC_SS_ESTABLISHED);
+			quic_timer_reset(sk, QUIC_TIMER_PATH, quic_inq_probe_timeout(inq));
+		}
 		return 0;
 	}
 
@@ -1472,11 +1486,17 @@ static int quic_sock_set_crypto_secret(struct sock *sk, struct quic_crypto_secre
 		list_del(&frame->list);
 		quic_outq_ctrl_tail(sk, frame, true);
 	}
+
 	mss = quic_packet_mss(quic_packet(sk));
 	window = max_t(u32, mss * 2, 14720);
 	window = min_t(u32, mss * 10, window);
 	quic_cong_set_window(quic_cong(sk), window);
 	quic_outq_sync_window(sk);
+
+	if (quic_crypto_recv_ready(crypto)) {
+		quic_set_state(sk, QUIC_SS_ESTABLISHED);
+		quic_timer_reset(sk, QUIC_TIMER_PATH, quic_inq_probe_timeout(inq));
+	}
 	return 0;
 }
 
