@@ -23,30 +23,33 @@
 #define IPPROTO_QUIC		261
 #endif
 
-struct quic_handshake_parms {
-	uint32_t		timeout;	/* handshake timeout in milliseconds */
+#define QUIC_PRIORITY \
+	"NORMAL:-VERS-ALL:+VERS-TLS1.3:+PSK:-CIPHER-ALL:+AES-128-GCM:+AES-256-GCM:" \
+	"+CHACHA20-POLY1305:+AES-128-CCM:-GROUP-ALL:+GROUP-SECP256R1:" \
+	"+GROUP-X25519:+GROUP-SECP384R1:+GROUP-SECP521R1:" \
+	"%DISABLE_TLS13_COMPAT_MODE"
 
-	gnutls_privkey_t	privkey;	/* private key for x509 handshake */
-	gnutls_pcert_st		*cert;		/* certificate for x509 handshake */
-	char			*cafile;	/* system ca is used if not set */
-	char			*peername;	/* - server name for client side x509 handshake or,
-						 * - psk identity name chosen during PSK handshake
-						 */
-	char			*names[10];	/* psk identifies in PSK handshake */
-	gnutls_datum_t		keys[10];	/* - psk keys in PSK handshake, or,
-						 * - certificates received in x509 handshake
-						 */
-	uint32_t		num_keys;	/* keys total numbers */
-};
+int quic_client_handshake(int sockfd, const char *pkey_file,
+			  const char *hostname, const char *alpns);
+int quic_server_handshake(int sockfd, const char *pkey_file,
+			  const char *cert_file, const char *alpns);
 
-int quic_client_handshake_parms(int sockfd, struct quic_handshake_parms *parms);
-int quic_server_handshake_parms(int sockfd, struct quic_handshake_parms *parms);
+int quic_handshake(gnutls_session_t session);
 
-int quic_client_handshake(int sockfd, char *pkey_file, char *cert_file);
-int quic_server_handshake(int sockfd, char *pkey_file, char *cert_file);
+int quic_session_get_data(gnutls_session_t session,
+			  void *data, size_t *size);
+int quic_session_set_data(gnutls_session_t session,
+			  const void *data, size_t size);
 
-ssize_t quic_sendmsg(int sockfd, const void *msg, size_t len, int64_t sid, uint32_t flags);
-ssize_t quic_recvmsg(int sockfd, void *msg, size_t len, int64_t *sid, uint32_t *flags);
+int quic_session_get_alpn(gnutls_session_t session,
+			  void *data, size_t *size);
+int quic_session_set_alpn(gnutls_session_t session,
+			  const void *data, size_t size);
 
-void quic_set_log_level(int level);
+ssize_t quic_sendmsg(int sockfd, const void *msg, size_t len,
+		     int64_t sid, uint32_t flags);
+ssize_t quic_recvmsg(int sockfd, void *msg, size_t len,
+		     int64_t *sid, uint32_t *flags);
+
 void quic_set_log_func(void (*func)(int level, const char *msg));
+void quic_set_log_level(int level);

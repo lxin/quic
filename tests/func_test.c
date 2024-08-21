@@ -1843,12 +1843,12 @@ reset:
 static int do_client(int argc, char *argv[])
 {
 	struct quic_transport_param param = {};
-	char *pkey = NULL, *cert = NULL;
         struct sockaddr_in ra = {};
+	char *pkey = NULL;
 	int sockfd;
 
 	if (argc < 3) {
-		printf("%s client <PEER ADDR> <PEER PORT> <PSK_FILE> | <PRIVATE_KEY_FILE> <CERTIFICATE_FILE> | NONE\n", argv[0]);
+		printf("%s client <PEER ADDR> <PEER PORT> [PSK_FILE]\n", argv[0]);
 		return 0;
 	}
 
@@ -1868,20 +1868,14 @@ static int do_client(int argc, char *argv[])
 	}
 
 	param.max_datagram_frame_size = 1400;
-	param.payload_cipher_type = TLS_CIPHER_AES_GCM_256;
 	if (argc < 5)
 		goto start;
 	pkey = argv[4];
-	if (argc == 5) {
-		param.payload_cipher_type = TLS_CIPHER_AES_CCM_128;
-		goto start;
-	}
-	cert = argv[5];
 start:
 	if (setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_TRANSPORT_PARAM, &param, sizeof(param)))
 		return -1;
 
-	if (quic_client_handshake(sockfd, pkey, cert))
+	if (quic_client_handshake(sockfd, pkey, NULL, NULL))
 		return -1;
 	printf("HANDSHAKE DONE\n");
 	return do_client_test(sockfd);
@@ -1925,18 +1919,13 @@ static int do_server(int argc, char *argv[])
 	}
 
 	param.max_datagram_frame_size = 1400;
-	param.payload_cipher_type = TLS_CIPHER_AES_GCM_256;
 	pkey = argv[4];
-	if (argc == 5) {
-		param.payload_cipher_type = TLS_CIPHER_AES_CCM_128;
-		goto start;
-	}
 	cert = argv[5];
-start:
+
 	if (setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_TRANSPORT_PARAM, &param, sizeof(param)))
 		return -1;
 
-	if (quic_server_handshake(sockfd, pkey, cert))
+	if (quic_server_handshake(sockfd, pkey, cert, NULL))
 		return -1;
 	printf("HANDSHAKE DONE\n");
 	return do_server_test(sockfd);

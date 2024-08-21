@@ -30,13 +30,7 @@ static int do_client_alpn(char *ip, int port, char *alpn, int preferred_port)
 		return -1;
 	}
 
-	len = strlen(alpn);
-	if (setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_ALPN, alpn, len)) {
-		printf("socket setsockopt alpn failed %d\n", len);
-		return -1;
-	}
-
-	if (quic_client_handshake(sockfd, NULL, NULL))
+	if (quic_client_handshake(sockfd, NULL, NULL, alpn))
 		return -1;
 
 	strcpy(msg, "hello quic server!");
@@ -93,9 +87,59 @@ static int do_client(int argc, char *argv[])
 	return 0;
 }
 
+static int server_handshake(int sockfd, const char *pkey, const char *cert,
+			    const char *alpns, char *alpn, size_t *alpn_len)
+{
+	gnutls_certificate_credentials_t cred;
+	gnutls_session_t session;
+	int ret;
+
+	ret = gnutls_certificate_allocate_credentials(&cred);
+	if (ret)
+		goto err;
+	ret = gnutls_certificate_set_x509_system_trust(cred);
+	if (ret < 0)
+		goto err_cred;
+	ret = gnutls_certificate_set_x509_key_file(cred, cert, pkey, GNUTLS_X509_FMT_PEM);
+	if (ret)
+		goto err_cred;
+	ret = gnutls_init(&session, GNUTLS_SERVER | GNUTLS_NO_AUTO_SEND_TICKET);
+	if (ret)
+		goto err_cred;
+	ret = gnutls_credentials_set(session, GNUTLS_CRD_CERTIFICATE, cred);
+	if (ret)
+		goto err_session;
+
+	ret = gnutls_priority_set_direct(session, QUIC_PRIORITY, NULL);
+	if (ret)
+		goto err_session;
+
+	if (alpns) {
+		ret = quic_session_set_alpn(session, alpns, strlen(alpns));
+		if (ret)
+			goto err_session;
+	}
+
+	gnutls_transport_set_int(session, sockfd);
+
+	ret = quic_handshake(session);
+	if (ret)
+		goto err_session;
+
+	if (alpns)
+		ret = quic_session_get_alpn(session, alpn, alpn_len);
+
+err_session:
+	gnutls_deinit(session);
+err_cred:
+	gnutls_certificate_free_credentials(cred);
+err:
+	return ret;
+}
+
 static int do_server(int argc, char *argv[])
 {
-	char alpn[20] = "smbd, h3, ksmbd";
+	char alpns[20] = "smbd, h3, ksmbd";
 	int listenfd, sockfd, ret, i = 0;
 	struct sockaddr_in sa = {};
 	unsigned int addrlen, len;
@@ -115,8 +159,8 @@ static int do_server(int argc, char *argv[])
 		printf("socket create failed\n");
 		return -1;
 	}
-	len = strlen(alpn);
-	if (setsockopt(listenfd, SOL_QUIC, QUIC_SOCKOPT_ALPN, alpn, len)) {
+	len = strlen(alpns);
+	if (setsockopt(listenfd, SOL_QUIC, QUIC_SOCKOPT_ALPN, alpns, len)) {
 		printf("socket setsockopt alpn failed %d\n", len);
 		return -1;
 	}
@@ -130,6 +174,9 @@ static int do_server(int argc, char *argv[])
 		return -1;
 	}
 	while (i++ < 3) {
+		char alpn[20] = {};
+		size_t alpn_len;
+
 		addrlen = sizeof(sa);
 		sockfd = accept(listenfd, (struct sockaddr *)&sa, &addrlen);
 		if (sockfd < 0) {
@@ -153,15 +200,10 @@ static int do_server(int argc, char *argv[])
 			return -1;
 		}
 
-		if (quic_server_handshake(sockfd, argv[4], argv[5]))
+		alpn_len = sizeof(alpn) - 1;
+		if (server_handshake(sockfd, argv[4], argv[5], alpns, alpn, &alpn_len))
 			return -1;
 
-		len = sizeof(alpn);
-		memset(alpn, 0, len);
-		if (getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_ALPN, alpn, &len)) {
-			printf("socket getsockopt alpn failed %u\n", len);
-			return -1;
-		}
 		printf("ALPN: %s\n", alpn);
 
 		memset(msg, 0, sizeof(msg));

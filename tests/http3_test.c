@@ -234,7 +234,6 @@ static int http_parse_url(const char *url, struct http_request *req)
 
 static int http_client_setup_socket(char *host, char *port)
 {
-	struct quic_handshake_parms parms = {};
 	struct quic_transport_param param = {};
 	struct addrinfo *rp, *res;
 	char *alpn = "h3, h3-29";
@@ -262,7 +261,6 @@ static int http_client_setup_socket(char *host, char *port)
 	}
 
 	param.grease_quic_bit = 1;
-	param.certificate_request = 3;
 	if (setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_TRANSPORT_PARAM, &param, sizeof(param))) {
 		http_log_error("socket setsockopt transport_param failed\n");
 		goto err_close;
@@ -273,17 +271,10 @@ static int http_client_setup_socket(char *host, char *port)
 		goto err_close;
 	}
 
-	if (setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_ALPN, alpn, strlen(alpn))) {
-		http_log_error("socket setsockopt failed\n");
-		goto err_close;
-	}
-
-	parms.timeout = 15000;
-	parms.peername = host;
-	if (quic_client_handshake_parms(sockfd, &parms))
+	if (quic_client_handshake(sockfd, NULL, host, alpn))
 		goto err_close;
 
-	http_log_debug("HANDSHAKE DONE: received cert number: '%d'.\n", parms.num_keys);
+	http_log_debug("HANDSHAKE DONE\n");
 	freeaddrinfo(res);
 	return sockfd;
 
@@ -520,69 +511,6 @@ out:
 	return ret;
 }
 
-static int read_datum(const char *file, gnutls_datum_t *data)
-{
-	struct stat statbuf;
-	unsigned int size;
-	int ret = -1;
-	void *buf;
-	int fd;
-
-	fd = open(file, O_RDONLY);
-	if (fd == -1)
-		return -1;
-	if (fstat(fd, &statbuf))
-		goto out;
-	if (statbuf.st_size < 0 || statbuf.st_size > INT_MAX)
-		goto out;
-	size = (unsigned int)statbuf.st_size;
-	buf = malloc(size);
-	if (!buf)
-		goto out;
-	if (read(fd, buf, size) == -1) {
-		free(buf);
-		goto out;
-	}
-	data->data = buf;
-	data->size = size;
-	ret = 0;
-out:
-	close(fd);
-	return ret;
-}
-
-static int read_pkey_file(const char *file, gnutls_privkey_t *privkey)
-{
-	gnutls_datum_t data;
-	int ret;
-
-	if (read_datum(file, &data))
-		return -1;
-
-	ret = gnutls_privkey_init(privkey);
-	if (ret)
-		goto out;
-
-	ret = gnutls_privkey_import_x509_raw(*privkey, &data, GNUTLS_X509_FMT_PEM, NULL, 0);
-out:
-	free(data.data);
-	return ret;
-}
-
-static int read_cert_file(const char *file, gnutls_pcert_st **cert)
-{
-	gnutls_datum_t data;
-	int ret;
-
-	if (read_datum(file, &data))
-		return -1;
-
-	ret = gnutls_pcert_import_x509_raw(*cert, &data, GNUTLS_X509_FMT_PEM, 0);
-
-	free(data.data);
-	return ret;
-}
-
 static int http_server_setup_socket(char *host, char *port)
 {
 	struct quic_transport_param param = {};
@@ -616,7 +544,6 @@ static int http_server_setup_socket(char *host, char *port)
 	}
 
 	param.grease_quic_bit = 1;
-	param.certificate_request = 0;
 	if (setsockopt(listenfd, SOL_QUIC, QUIC_SOCKOPT_TRANSPORT_PARAM, &param, sizeof(param))) {
 		http_log_error("socket setsockopt transport_param failed\n");
 		goto err_close;
@@ -642,18 +569,72 @@ err_free:
 	return -1;
 }
 
+static int server_handshake(int sockfd, const char *pkey, const char *cert, const char *alpns,
+			    uint8_t *key, unsigned int keylen)
+{
+	gnutls_certificate_credentials_t cred;
+	gnutls_datum_t skey = {key, keylen};
+	gnutls_session_t session;
+	size_t alpn_len;
+	char alpn[64];
+	int ret;
+
+	ret = gnutls_certificate_allocate_credentials(&cred);
+	if (ret)
+		goto err;
+	ret = gnutls_certificate_set_x509_system_trust(cred);
+	if (ret < 0)
+		goto err_cred;
+	ret = gnutls_certificate_set_x509_key_file(cred, cert, pkey, GNUTLS_X509_FMT_PEM);
+	if (ret)
+		goto err_cred;
+	ret = gnutls_init(&session, GNUTLS_SERVER | GNUTLS_NO_AUTO_SEND_TICKET |
+				    GNUTLS_ENABLE_EARLY_DATA | GNUTLS_NO_END_OF_EARLY_DATA);
+	if (ret)
+		goto err_cred;
+	ret = gnutls_credentials_set(session, GNUTLS_CRD_CERTIFICATE, cred);
+	if (ret)
+		goto err_session;
+
+	ret = gnutls_session_ticket_enable_server(session, &skey);
+	if (ret)
+		goto err_session;
+
+	ret = gnutls_priority_set_direct(session, QUIC_PRIORITY, NULL);
+	if (ret)
+		goto err_session;
+
+	if (alpns) {
+		ret = quic_session_set_alpn(session, alpns, strlen(alpns));
+		if (ret)
+			goto err_session;
+	}
+
+	gnutls_transport_set_int(session, sockfd);
+
+	ret = quic_handshake(session);
+	if (ret)
+		goto err_session;
+
+	if (alpns) {
+		alpn_len = sizeof(alpn);
+		ret = quic_session_get_alpn(session, alpn, &alpn_len);
+	}
+
+err_session:
+	gnutls_deinit(session);
+err_cred:
+	gnutls_certificate_free_credentials(cred);
+err:
+	return ret;
+}
+
 static int http_server_accept_socket(int listenfd, const char *pkey_file, const char *cert_file)
 {
-	struct quic_handshake_parms parms = {};
-	gnutls_pcert_st gcert;
+	char *alpn = "h3, h3-29";
+	unsigned int keylen;
+	uint8_t key[64];
 	int sockfd;
-
-	parms.cert = &gcert;
-	if (read_pkey_file(pkey_file, &parms.privkey) ||
-	    read_cert_file(cert_file, &parms.cert)) {
-		http_log_error("parse prikey or cert files failed\n");
-		return -1;
-	}
 
 	sockfd = accept(listenfd, NULL, NULL);
 	if (sockfd < 0) {
@@ -661,10 +642,16 @@ static int http_server_accept_socket(int listenfd, const char *pkey_file, const 
 		return -1;
 	}
 
-	if (quic_server_handshake_parms(sockfd, &parms))
+	keylen = sizeof(key);
+	if (getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_SESSION_TICKET, key, &keylen)) {
+		printf("socket getsockopt session ticket error %d", errno);
+		return -1;
+	}
+
+	if (server_handshake(sockfd, pkey_file, cert_file, alpn, key, keylen))
 		return -1;
 
-	http_log_debug("HANDSHAKE DONE: received cert number: '%d'\n", parms.num_keys);
+	http_log_debug("HANDSHAKE DONE\n");
 	return sockfd;
 }
 

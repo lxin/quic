@@ -11,8 +11,8 @@
 static int do_client(int argc, char *argv[])
 {
 	struct sockaddr_in ra = {};
-	char msg[50], *alpn;
 	int ret, sockfd;
+	char msg[50];
 
 	if (argc < 4) {
 		printf("%s client <PEER ADDR> <PEER PORT> [ALPN]\n", argv[0]);
@@ -25,12 +25,6 @@ static int do_client(int argc, char *argv[])
 		return -1;
 	}
 
-	alpn = argv[4];
-	if (alpn && setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_ALPN, alpn, strlen(alpn))) {
-		printf("socket setsockopt alpn failed\n");
-		return -1;
-	}
-
 	ra.sin_family = AF_INET;
 	ra.sin_port = htons(atoi(argv[3]));
 	inet_pton(AF_INET, argv[2], &ra.sin_addr.s_addr);
@@ -40,7 +34,7 @@ static int do_client(int argc, char *argv[])
 		return -1;
 	}
 
-	if (quic_client_handshake(sockfd, NULL, NULL))
+	if (quic_client_handshake(sockfd, NULL, NULL, argv[4]))
 		return -1;
 
 	/* NOTE: quic_send/recvmsg() allows get/setting stream id and flags,
@@ -94,7 +88,7 @@ static int do_server(int argc, char *argv[])
 		printf("socket bind failed\n");
 		return -1;
 	}
-	alpn = argv[6];
+	alpn = argv[6]; /* For kernel ALPN match */
 	if (alpn && setsockopt(listenfd, SOL_QUIC, QUIC_SOCKOPT_ALPN, alpn, strlen(alpn))) {
 		printf("socket setsockopt alpn failed\n");
 		return -1;
@@ -110,7 +104,7 @@ static int do_server(int argc, char *argv[])
 		return -1;
 	}
 
-	if (quic_server_handshake(sockfd, argv[4], argv[5]))
+	if (quic_server_handshake(sockfd, argv[4], argv[5], argv[6]))
 		return -1;
 
 	memset(msg, 0, sizeof(msg));

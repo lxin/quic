@@ -20,124 +20,6 @@ char snd_msg[SND_MSG_LEN];
 char rcv_msg[RCV_MSG_LEN];
 char alpn[ALPN_LEN] = "sample";
 
-static int read_psk_file(char *psk, char *identity[], gnutls_datum_t *pkey)
-{
-	unsigned char *end, *key, *buf;
-	int fd, err = -1, i = 0;
-	struct stat statbuf;
-	gnutls_datum_t gkey;
-	unsigned int size;
-
-	fd = open(psk, O_RDONLY);
-	if (fd == -1)
-		return -1;
-	if (fstat(fd, &statbuf))
-		goto out;
-
-	size = (unsigned int)statbuf.st_size;
-	buf = malloc(size);
-	if (!buf)
-		goto out;
-	if (read(fd, buf, size) == -1) {
-		free(buf);
-		goto out;
-	}
-
-	end = buf + size - 1;
-	do {
-		key = (unsigned char *)strchr((char *)buf, ':');
-		if (!key)
-			goto out;
-		*key = '\0';
-		identity[i] = (char *)buf;
-
-		key++;
-		gkey.data = key;
-
-		buf = (unsigned char *)strchr((char *)key, '\n');
-		if (!buf) {
-			gkey.size = end - gkey.data;
-			buf = end;
-			goto decode;
-		}
-		*buf = '\0';
-		buf++;
-		gkey.size = strlen((char *)gkey.data);
-decode:
-		if (gnutls_hex_decode2(&gkey, &pkey[i]))
-			goto out;
-		i++;
-	} while (buf < end);
-
-	err = i;
-out:
-	close(fd);
-	return err;
-}
-
-static int read_datum(const char *file, gnutls_datum_t *data)
-{
-	struct stat statbuf;
-	unsigned int size;
-	int ret = -1;
-	void *buf;
-	int fd;
-
-	fd = open(file, O_RDONLY);
-	if (fd == -1)
-		return -1;
-	if (fstat(fd, &statbuf))
-		goto out;
-	if (statbuf.st_size < 0 || statbuf.st_size > INT_MAX)
-		goto out;
-	size = (unsigned int)statbuf.st_size;
-	buf = malloc(size);
-	if (!buf)
-		goto out;
-	if (read(fd, buf, size) == -1) {
-		free(buf);
-		goto out;
-	}
-	data->data = buf;
-	data->size = size;
-	ret = 0;
-out:
-	close(fd);
-	return ret;
-}
-
-static int read_pkey_file(char *file, gnutls_privkey_t *privkey)
-{
-	gnutls_datum_t data;
-	int ret;
-
-	if (read_datum(file, &data))
-		return -1;
-
-	ret = gnutls_privkey_init(privkey);
-	if (ret)
-		goto out;
-
-	ret = gnutls_privkey_import_x509_raw(*privkey, &data, GNUTLS_X509_FMT_PEM, NULL, 0);
-out:
-        free(data.data);
-	return ret;
-}
-
-static int read_cert_file(char *file, gnutls_pcert_st **cert)
-{
-	gnutls_datum_t data;
-	int ret;
-
-	if (read_datum(file, &data))
-		return -1;
-
-	ret = gnutls_pcert_import_x509_raw(*cert, &data, GNUTLS_X509_FMT_PEM, 0);
-	free(data.data);
-
-	return ret;
-}
-
 struct options {
 	char *pkey;
 	char *cert;
@@ -208,8 +90,6 @@ static int parse_options(int argc, char *argv[], struct options *opts)
 			opts->ca = optarg;
 			break;
 		case 'i':
-			opts->psk = optarg;
-			break;
 		case 'k':
 			opts->pkey = optarg;
 			break;
@@ -234,21 +114,19 @@ static int parse_options(int argc, char *argv[], struct options *opts)
 		}
 	}
 
-	if (opts->is_serv && !opts->psk && (!opts->cert || !opts->pkey))
+	if (opts->is_serv && (!opts->cert && !opts->pkey))
 		return -1;
 	return 0;
 }
 
 static int do_server(struct options *opts)
 {
-	struct quic_handshake_parms parms = {};
 	struct quic_transport_param param = {};
 	struct sockaddr_storage ra = {};
 	uint32_t flags = 0, addrlen;
 	struct sockaddr_in la = {};
 	int ret, sockfd, listenfd;
 	int64_t len = 0, sid = 0;
-	gnutls_pcert_st gcert;
 	struct addrinfo *rp;
 
 	if (getaddrinfo(opts->addr, opts->port, NULL, &rp)) {
@@ -290,7 +168,6 @@ static int do_server(struct options *opts)
 listen:
 	param.validate_peer_address = 1; /* trigger retry packet sending */
 	param.grease_quic_bit = 1;
-	param.certificate_request = 1;
 	param.stateless_reset = 1;
 	param.disable_1rtt_encryption = opts->no_crypt;
 	if (setsockopt(listenfd, SOL_QUIC, QUIC_SOCKOPT_TRANSPORT_PARAM, &param, sizeof(param)))
@@ -314,31 +191,11 @@ loop:
 	}
 
 	printf("accept %d\n", sockfd);
-	parms.timeout = 15000;
-	if (opts->psk) {
-		ret = read_psk_file(opts->psk, parms.names, parms.keys);
-		if (ret <= 0) {
-			printf("parse pre-shared key failed\n");
-			return -1;
-		}
-		parms.num_keys = ret;
-		goto do_handshake;
-	}
 
-	/* start doing handshake with tlshd API */
-	parms.cert = &gcert;
-	if (read_pkey_file(opts->pkey, &parms.privkey) ||
-	    read_cert_file(opts->cert, &parms.cert)) {
-		printf("parse prikey or cert files failed\n");
-		return -1;
-	}
-	parms.cafile = opts->ca;
-
-do_handshake:
-	if (quic_server_handshake_parms(sockfd, &parms))
+	if (quic_server_handshake(sockfd, opts->pkey, opts->cert, alpn))
 		return -1;
 
-	printf("HANDSHAKE DONE: received cert number: '%d'\n", parms.num_keys);
+	printf("HANDSHAKE DONE\n");
 
 	while (1) {
 		ret = quic_recvmsg(sockfd, &rcv_msg, opts->msg_len * 16, &sid, &flags);
@@ -380,10 +237,8 @@ static uint64_t get_now_time()
 
 static int do_client(struct options *opts)
 {
-	struct quic_handshake_parms parms = {};
 	struct sockaddr_in ra = {};
 	int64_t len = 0, sid = 0;
-	gnutls_pcert_st gcert;
 	struct addrinfo *rp;
 	uint64_t start, end;
 	int ret, sockfd;
@@ -410,8 +265,6 @@ static int do_client(struct options *opts)
 		inet_pton(AF_INET6, opts->addr, &ra.sin6_addr);
 
 		param.version = 5; /* invalid version to trigger version negotiation */
-		param.receive_session_ticket = 1;
-		param.payload_cipher_type = TLS_CIPHER_CHACHA20_POLY1305;
 		param.disable_1rtt_encryption = opts->no_crypt;
 		if (setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_TRANSPORT_PARAM,
 			       &param, sizeof(param)))
@@ -440,36 +293,10 @@ static int do_client(struct options *opts)
 	}
 
 handshake:
-	if (setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_ALPN, alpn, strlen(alpn)))
+	if (quic_client_handshake(sockfd, opts->pkey, NULL, alpn))
 		return -1;
 
-	parms.timeout = 15000;
-	if (opts->psk) {
-		ret = read_psk_file(opts->psk, parms.names, parms.keys);
-		if (ret <= 0) {
-			printf("parse pre-shared key failed\n");
-			return -1;
-		}
-		parms.num_keys = ret;
-		goto do_handshake;
-	}
-
-	/* start doing handshake with tlshd API */
-	if (opts->pkey && opts->cert) {
-		parms.cert = &gcert;
-		if (read_pkey_file(opts->pkey, &parms.privkey) ||
-		    read_cert_file(opts->cert, &parms.cert)) {
-			printf("parse prikey or cert files failed\n");
-			return -1;
-		}
-	}
-	parms.cafile = opts->ca;
-
-do_handshake:
-	if (quic_client_handshake_parms(sockfd, &parms))
-		return -1;
-
-	printf("HANDSHAKE DONE: received cert number: '%d'.\n", parms.num_keys);
+	printf("HANDSHAKE DONE.\n");
 
 	start = get_now_time();
 	flags = MSG_STREAM_NEW; /* open stream when send first msg */

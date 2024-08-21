@@ -94,7 +94,7 @@ perf_tests()
 	./perf_test --addr ::1 --no_crypt || return 1
 	daemon_stop "perf_test"
 
-	print_start "Performance Tests (IPv6, CHACHA20_POLY1305)"
+	print_start "Performance Tests (IPv6)"
 	daemon_run ./perf_test -l --pkey ./keys/server-key.pem --cert ./keys/server-cert.pem
 	./perf_test --addr ::1 || return 1
 	daemon_stop "perf_test"

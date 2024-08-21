@@ -11,11 +11,87 @@
 static uint8_t ticket[4096];
 static uint8_t token[256];
 
+static int client_handshake(int sockfd, const char *alpns, const char *host,
+			    const uint8_t *ticket_in, size_t ticket_in_len,
+			    uint8_t *ticket_out, size_t *ticket_out_len)
+{
+	gnutls_certificate_credentials_t cred;
+	gnutls_session_t session;
+	size_t alpn_len;
+	char alpn[64];
+	int ret;
+
+	ret = gnutls_certificate_allocate_credentials(&cred);
+	if (ret)
+		goto err;
+	ret = gnutls_certificate_set_x509_system_trust(cred);
+	if (ret < 0)
+		goto err_cred;
+
+	ret = gnutls_init(&session, GNUTLS_CLIENT |
+				    GNUTLS_ENABLE_EARLY_DATA | GNUTLS_NO_END_OF_EARLY_DATA);
+	if (ret)
+		goto err_cred;
+	ret = gnutls_credentials_set(session, GNUTLS_CRD_CERTIFICATE, cred);
+	if (ret)
+		goto err_session;
+
+	ret = gnutls_priority_set_direct(session, QUIC_PRIORITY, NULL);
+	if (ret)
+		goto err_session;
+
+	if (alpns) {
+		ret = quic_session_set_alpn(session, alpns, strlen(alpns));
+		if (ret)
+			goto err_session;
+	}
+
+	if (host) {
+		ret = gnutls_server_name_set(session, GNUTLS_NAME_DNS, host, strlen(host));
+		if (ret)
+			goto err_session;
+	}
+
+	gnutls_transport_set_int(session, sockfd);
+
+	if (ticket_in) {
+		ret = quic_session_set_data(session, ticket_in, ticket_in_len);
+		if (ret)
+			goto err_session;
+	}
+
+	ret = quic_handshake(session);
+	if (ret)
+		goto err_session;
+
+	if (alpns) {
+		alpn_len = sizeof(alpn);
+		ret = quic_session_get_alpn(session, alpn, &alpn_len);
+		if (ret)
+			goto err_session;
+	}
+
+	if (ticket_out) {
+		sleep(1);
+		ret = quic_session_get_data(session, ticket_out, ticket_out_len);
+		if (ret)
+			goto err_session;
+	}
+
+err_session:
+	gnutls_deinit(session);
+err_cred:
+	gnutls_certificate_free_credentials(cred);
+err:
+	return ret;
+}
+
 static int do_client(int argc, char *argv[])
 {
-	unsigned int ticket_len, param_len, token_len, addr_len;
+	unsigned int param_len, token_len, addr_len;
 	struct quic_transport_param param = {};
 	struct sockaddr_in ra = {}, la = {};
+	size_t ticket_len;
 	int ret, sockfd;
 	char msg[50];
 
@@ -39,22 +115,10 @@ static int do_client(int argc, char *argv[])
 		return -1;
 	}
 
-	param.receive_session_ticket = 1;
-	param_len = sizeof(param);
-	ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_TRANSPORT_PARAM, &param, param_len);
-	if (ret == -1)
-		return -1;
-
-	if (quic_client_handshake(sockfd, NULL, NULL))
-		return -1;
-
-	/* get ticket and param after handshake (you can save it somewhere) */
+	/* get session ticket, remote tranaport param, token for session resumption */
 	ticket_len = sizeof(ticket);
-	ret = getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_SESSION_TICKET, ticket, &ticket_len);
-	if (ret == -1 || !ticket_len) {
-		printf("socket getsockopt session ticket\n");
+	if (client_handshake(sockfd, NULL, NULL, NULL, 0, ticket, &ticket_len))
 		return -1;
-	}
 
 	param_len = sizeof(param);
 	param.remote = 1;
@@ -64,7 +128,6 @@ static int do_client(int argc, char *argv[])
 		return -1;
 	}
 
-	/* get token and local address (needed when peer validate_address is set) */
 	token_len = sizeof(token);
 	ret = getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_TOKEN, &token, &token_len);
 	if (ret == -1) {
@@ -79,7 +142,7 @@ static int do_client(int argc, char *argv[])
 		return -1;
 	}
 
-	printf("get the session ticket %d and transport param %d and token %d, save it\n",
+	printf("get the session ticket %lu and transport param %d and token %d, save it\n",
 	       ticket_len, param_len, token_len);
 
 	strcpy(msg, "hello quic server!");
@@ -114,11 +177,6 @@ static int do_client(int argc, char *argv[])
 		printf("socket bind failed\n");
 		return -1;
 	}
-	ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_TOKEN, token, token_len);
-	if (ret == -1) {
-		printf("socket setsockopt token\n");
-		return -1;
-	}
 
 	ra.sin_family = AF_INET;
 	ra.sin_port = htons(atoi(argv[3]));
@@ -129,17 +187,20 @@ static int do_client(int argc, char *argv[])
 		return -1;
 	}
 
-	/* set the ticket and remote param and early data into the socket for handshake */
-	ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_SESSION_TICKET, ticket, ticket_len);
+	/* set session ticket, remote tranaport param, token for session resumption */
+	ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_TOKEN, token, token_len);
 	if (ret == -1) {
-		printf("socket setsockopt session ticket\n");
+		printf("socket setsockopt token\n");
 		return -1;
 	}
+
 	ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_TRANSPORT_PARAM, &param, param_len);
 	if (ret == -1) {
 		printf("socket setsockopt remote transport param\n");
 		return -1;
 	}
+
+	/* send early data before handshake */
 	strcpy(msg, "hello quic server, I'm back!");
 	ret = send(sockfd, msg, strlen(msg), MSG_SYN | MSG_FIN);
 	if (ret == -1) {
@@ -148,7 +209,7 @@ static int do_client(int argc, char *argv[])
 	}
 	printf("send %d\n", ret);
 
-	if (quic_client_handshake(sockfd, NULL, NULL))
+	if (client_handshake(sockfd, NULL, NULL, ticket, ticket_len, NULL, NULL))
 		return -1;
 
 	memset(msg, 0, sizeof(msg));
@@ -163,12 +224,73 @@ static int do_client(int argc, char *argv[])
 	return 0;
 }
 
+static int server_handshake(int sockfd, const char *pkey, const char *cert, const char *alpns,
+			    uint8_t *key, unsigned int keylen)
+{
+	gnutls_certificate_credentials_t cred;
+	gnutls_datum_t skey = {key, keylen};
+	gnutls_session_t session;
+	size_t alpn_len;
+	char alpn[64];
+	int ret;
+
+	ret = gnutls_certificate_allocate_credentials(&cred);
+	if (ret)
+		goto err;
+	ret = gnutls_certificate_set_x509_system_trust(cred);
+	if (ret < 0)
+		goto err_cred;
+	ret = gnutls_certificate_set_x509_key_file(cred, cert, pkey, GNUTLS_X509_FMT_PEM);
+	if (ret)
+		goto err_cred;
+	ret = gnutls_init(&session, GNUTLS_SERVER | GNUTLS_NO_AUTO_SEND_TICKET |
+				    GNUTLS_ENABLE_EARLY_DATA | GNUTLS_NO_END_OF_EARLY_DATA);
+	if (ret)
+		goto err_cred;
+	ret = gnutls_credentials_set(session, GNUTLS_CRD_CERTIFICATE, cred);
+	if (ret)
+		goto err_session;
+
+	ret = gnutls_session_ticket_enable_server(session, &skey);
+	if (ret)
+		goto err_session;
+
+	ret = gnutls_priority_set_direct(session, QUIC_PRIORITY, NULL);
+	if (ret)
+		goto err_session;
+
+	if (alpns) {
+		ret = quic_session_set_alpn(session, alpns, strlen(alpns));
+		if (ret)
+			goto err_session;
+	}
+
+	gnutls_transport_set_int(session, sockfd);
+
+	ret = quic_handshake(session);
+	if (ret)
+		goto err_session;
+
+	if (alpns) {
+		alpn_len = sizeof(alpn);
+		ret = quic_session_get_alpn(session, alpn, &alpn_len);
+	}
+
+err_session:
+	gnutls_deinit(session);
+err_cred:
+	gnutls_certificate_free_credentials(cred);
+err:
+	return ret;
+}
+
 static int do_server(int argc, char *argv[])
 {
 	struct quic_transport_param param = {};
+	unsigned int addrlen, keylen;
 	struct sockaddr_in sa = {};
 	int listenfd, sockfd, ret;
-	unsigned int addrlen;
+	uint8_t key[64];
 	char msg[50];
 
 	if (argc < 5) {
@@ -202,7 +324,13 @@ static int do_server(int argc, char *argv[])
 		return -1;
 	}
 
-	if (quic_server_handshake(sockfd, argv[4], argv[5]))
+	keylen = sizeof(key);
+	if (getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_SESSION_TICKET, key, &keylen)) {
+		printf("socket getsockopt session ticket error %d", errno);
+		return -1;
+	}
+
+	if (server_handshake(sockfd, argv[4], argv[5], NULL, key, keylen))
 		return -1;
 
 	memset(msg, 0, sizeof(msg));
@@ -232,7 +360,7 @@ static int do_server(int argc, char *argv[])
 		return -1;
 	}
 
-	if (quic_server_handshake(sockfd, argv[4], argv[5]))
+	if (server_handshake(sockfd, argv[4], argv[5], NULL, key, keylen))
 		return -1;
 
 	memset(msg, 0, sizeof(msg));
