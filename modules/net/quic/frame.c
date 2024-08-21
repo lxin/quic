@@ -313,8 +313,7 @@ static struct quic_frame *quic_frame_retire_conn_id_create(struct sock *sk, void
 	return frame;
 }
 
-static struct quic_frame *quic_frame_new_conn_id_create(struct sock *sk,
-							      void *data, u8 type)
+static struct quic_frame *quic_frame_new_conn_id_create(struct sock *sk, void *data, u8 type)
 {
 	struct quic_crypto *crypto = quic_crypto(sk, QUIC_CRYPTO_INITIAL);
 	struct quic_conn_id scid = {};

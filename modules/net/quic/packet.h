@@ -14,7 +14,7 @@ struct quic_packet {
 	struct sk_buff *head;
 	union quic_addr *da;
 	union quic_addr *sa;
-	u16 max_snd_count; /* the max count of packets to send when filter is set */
+	u16 max_snd_count; /* the max count of packets to send */
 	u16 snd_count;
 	u16 mss[2];
 
@@ -24,7 +24,6 @@ struct quic_packet {
 	u8 path_alt:2;
 	u8 padding:1;
 	u8 taglen[2];
-	u8 filter:1;
 
 	/* send or recv */
 	u8 ack_eliciting:1;
@@ -63,6 +62,11 @@ struct quic_packet {
 #define QUIC_VERSION_LEN		4
 
 struct quic_request_sock;
+
+static inline void quic_packet_set_max_snd_count(struct quic_packet *packet, u16 count)
+{
+	packet->max_snd_count = count;
+}
 
 static inline u32 quic_packet_taglen(struct quic_packet *packet)
 {
@@ -111,7 +115,6 @@ int quic_packet_xmit(struct sock *sk, struct sk_buff *skb);
 int quic_packet_flush(struct sock *sk);
 int quic_packet_route(struct sock *sk);
 
-void quic_packet_set_filter(struct sock *sk, u8 level, u16 count);
 void quic_packet_mss_update(struct sock *sk, int mss);
 void quic_packet_create(struct sock *sk);
 void quic_packet_init(struct sock *sk);

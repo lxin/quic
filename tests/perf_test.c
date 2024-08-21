@@ -362,6 +362,7 @@ do_handshake:
 		printf("send %d %d\n", ret, errno);
 		return -1;
 	}
+	sleep(1);
 	close(sockfd);
 	printf("CLOSE DONE\n");
 

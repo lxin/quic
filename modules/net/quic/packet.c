@@ -1283,15 +1283,6 @@ static struct sk_buff *quic_packet_app_create(struct sock *sk)
 	return skb;
 }
 
-void quic_packet_set_filter(struct sock *sk, u8 level, u16 count)
-{
-	struct quic_packet *packet = quic_packet(sk);
-
-	packet->filter = 1;
-	packet->level = level;
-	packet->max_snd_count = count;
-}
-
 void quic_packet_mss_update(struct sock *sk, int mss)
 {
 	struct quic_packet *packet = quic_packet(sk);
@@ -1343,14 +1334,10 @@ int quic_packet_config(struct sock *sk, u8 level, u8 path_alt)
 	struct quic_inqueue *inq = quic_inq(sk);
 	int hlen = sizeof(struct quichdr);
 
-	if (packet->filter) {
-		if (packet->snd_count >= packet->max_snd_count)
-			return -1;
-		if (packet->level > level)
-			return -1;
-		if (packet->level < level)
-			return 1;
-	}
+	if (packet->max_snd_count &&
+	    packet->snd_count >= packet->max_snd_count)
+		return -1;
+
 	if (!list_empty(&packet->frame_list))
 		return 0;
 
@@ -1489,8 +1476,8 @@ int quic_packet_flush(struct sock *sk)
 	}
 	count = packet->snd_count;
 
+	packet->max_snd_count = 0;
 	packet->snd_count = 0;
-	packet->filter = 0;
 	return count;
 }
 

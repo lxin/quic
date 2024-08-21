@@ -17,18 +17,13 @@ static void quic_outq_transmit_ctrl(struct sock *sk)
 	struct quic_outqueue *outq = quic_outq(sk);
 	struct quic_frame *frame, *tmp;
 	struct list_head *head;
-	int ret;
 
 	head =  &outq->control_list;
 	list_for_each_entry_safe(frame, tmp, head, list) {
 		if (!quic_crypto_send_ready(quic_crypto(sk, frame->level)))
 			break;
-		ret = quic_packet_config(sk, frame->level, frame->path_alt);
-		if (ret) { /* filtered out this frame */
-			if (ret > 0)
-				continue;
+		if (quic_packet_config(sk, frame->level, frame->path_alt))
 			break;
-		}
 		if (quic_packet_tail(sk, frame, 0)) {
 			outq->data_inflight += frame->bytes;
 			continue; /* packed and conintue with the next frame */
@@ -55,7 +50,6 @@ static void quic_outq_transmit_dgram(struct sock *sk)
 	struct quic_frame *frame, *tmp;
 	u8 level = outq->data_level;
 	struct list_head *head;
-	int ret;
 
 	if (!quic_crypto_send_ready(quic_crypto(sk, level)))
 		return;
@@ -66,12 +60,8 @@ static void quic_outq_transmit_dgram(struct sock *sk)
 			break;
 		if (quic_outq_pacing_check(sk, frame->bytes))
 			break;
-		ret = quic_packet_config(sk, level, frame->path_alt);
-		if (ret) {
-			if (ret > 0)
-				continue;
+		if (quic_packet_config(sk, level, frame->path_alt))
 			break;
-		}
 		if (quic_packet_tail(sk, frame, 1)) {
 			outq->data_inflight += frame->bytes;
 			continue;
@@ -128,7 +118,6 @@ static void quic_outq_transmit_stream(struct sock *sk)
 	struct quic_frame *frame, *tmp;
 	u8 level = outq->data_level;
 	struct list_head *head;
-	int ret;
 
 	if (!quic_crypto_send_ready(quic_crypto(sk, level)))
 		return;
@@ -139,12 +128,8 @@ static void quic_outq_transmit_stream(struct sock *sk)
 			break;
 		if (quic_outq_pacing_check(sk, frame->bytes))
 			break;
-		ret = quic_packet_config(sk, level, frame->path_alt);
-		if (ret) {
-			if (ret > 0)
-				continue;
+		if (quic_packet_config(sk, level, frame->path_alt))
 			break;
-		}
 		if (quic_packet_tail(sk, frame, 0)) {
 			frame->stream->send.frags++;
 			frame->stream->send.bytes += frame->bytes;
@@ -562,16 +547,17 @@ void quic_outq_retransmit_list(struct sock *sk, struct list_head *head)
 
 void quic_outq_transmit_one(struct sock *sk, u8 level)
 {
+	struct quic_packet *packet = quic_packet(sk);
 	struct quic_outqueue *outq = quic_outq(sk);
 	u32 probe_size = QUIC_MIN_UDP_PAYLOAD;
 	struct quic_frame *frame;
 
-	quic_packet_set_filter(sk, level, 1);
+	quic_packet_set_max_snd_count(packet, 1);
 	if (quic_outq_transmit(sk))
 		goto out;
 
 	if (quic_outq_retransmit_mark(sk, level, 0)) {
-		quic_packet_set_filter(sk, level, 1);
+		quic_packet_set_max_snd_count(packet, 1);
 		if (quic_outq_transmit(sk))
 			goto out;
 	}
