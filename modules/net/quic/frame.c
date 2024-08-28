@@ -630,7 +630,7 @@ static struct quic_frame *quic_frame_streams_blocked_bidi_create(struct sock *sk
 
 static int quic_frame_crypto_process(struct sock *sk, struct quic_frame *frame, u8 type)
 {
-	struct quic_inqueue *inq = quic_inq(sk);
+	struct quic_data *ticket = quic_ticket(sk);
 	struct quic_frame *nframe;
 	u32 len = frame->len;
 	u8 *p = frame->data;
@@ -643,9 +643,11 @@ static int quic_frame_crypto_process(struct sock *sk, struct quic_frame *frame, 
 		return -EINVAL;
 
 	if (!frame->level) {
-		if (!quic_inq_receive_session_ticket(inq))
-			goto out;
-		quic_inq_set_receive_session_ticket(inq, 0);
+		if (quic_data_dup(ticket, p, length))
+			return -ENOMEM;
+		if (quic_inq_event_recv(sk, QUIC_EVENT_NEW_SESSION_TICKET, ticket))
+			return -ENOMEM;
+		goto out;
 	}
 
 	nframe = quic_frame_alloc(length, p, GFP_ATOMIC);
@@ -656,7 +658,7 @@ static int quic_frame_crypto_process(struct sock *sk, struct quic_frame *frame, 
 	nframe->offset = offset;
 	nframe->level = frame->level;
 
-	err = quic_inq_handshake_tail(sk, nframe);
+	err = quic_inq_handshake_recv(sk, nframe);
 	if (err) {
 		frame->errcode = nframe->errcode;
 		quic_inq_rfree(nframe->len, sk);
@@ -671,7 +673,6 @@ out:
 static int quic_frame_stream_process(struct sock *sk, struct quic_frame *frame, u8 type)
 {
 	struct quic_stream_table *streams = quic_streams(sk);
-	struct quic_inqueue *inq = quic_inq(sk);
 	u64 stream_id, payload_len, offset = 0;
 	struct quic_stream *stream;
 	struct quic_frame *nframe;
@@ -679,8 +680,6 @@ static int quic_frame_stream_process(struct sock *sk, struct quic_frame *frame, 
 	u8 *p = frame->data;
 	int err;
 
-	if (quic_inq_receive_session_ticket(inq))
-		return -EINVAL;
 	if (!quic_get_var(&p, &len, &stream_id))
 		return -EINVAL;
 	if (type & QUIC_STREAM_BIT_OFF) {
@@ -713,8 +712,9 @@ static int quic_frame_stream_process(struct sock *sk, struct quic_frame *frame, 
 	nframe->stream = stream;
 	nframe->stream_fin = (type & QUIC_STREAM_BIT_FIN);
 	nframe->offset = offset;
+	nframe->level = frame->level;
 
-	err = quic_inq_reasm_tail(sk, nframe);
+	err = quic_inq_stream_recv(sk, nframe);
 	if (err) {
 		frame->errcode = nframe->errcode;
 		quic_inq_rfree(nframe->len, sk);
@@ -1332,9 +1332,6 @@ static int quic_frame_datagram_process(struct sock *sk, struct quic_frame *frame
 	u64 payload_len;
 	int err;
 
-	if (quic_inq_receive_session_ticket(inq))
-		return -EINVAL;
-
 	payload_len = frame->len;
 	if (type == QUIC_FRAME_DATAGRAM_LEN) {
 		if (!quic_get_var(&p, &len, &payload_len) || payload_len > len)
@@ -1351,7 +1348,7 @@ static int quic_frame_datagram_process(struct sock *sk, struct quic_frame *frame
 		return -ENOMEM;
 	nframe->skb = skb_get(frame->skb);
 
-	err = quic_inq_dgram_tail(sk, nframe);
+	err = quic_inq_dgram_recv(sk, nframe);
 	if (err) {
 		quic_inq_rfree(nframe->len, sk);
 		quic_frame_free(nframe);

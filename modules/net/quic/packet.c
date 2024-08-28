@@ -617,7 +617,7 @@ static int quic_packet_handshake_header_process(struct sock *sk, struct sk_buff 
 		packet->level = QUIC_CRYPTO_HANDSHAKE;
 		break;
 	case QUIC_PACKET_0RTT:
-		if (!quic_crypto_recv_ready(quic_crypto(sk, QUIC_CRYPTO_APP))) {
+		if (!quic_crypto_recv_ready(quic_crypto(sk, QUIC_CRYPTO_EARLY))) {
 			quic_inq_backlog_tail(sk, skb);
 			return 0;
 		}
@@ -647,8 +647,8 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb)
 	struct quic_conn_id *active;
 	struct quic_crypto *crypto;
 	struct quic_pnspace *space;
+	int err = -EINVAL, level;
 	struct quichshdr *hshdr;
-	int err = -EINVAL;
 
 	WARN_ON(!skb_set_owner_sk_safe(skb, sk));
 
@@ -665,8 +665,8 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb)
 
 		/* Do decryption */
 		crypto = quic_crypto(sk, packet->level);
-		packet->level %= QUIC_CRYPTO_EARLY;
-		space = quic_pnspace(sk, packet->level);
+		level = (packet->level % QUIC_CRYPTO_EARLY);
+		space = quic_pnspace(sk, level);
 
 		cb->number_max = quic_pnspace_max_pn_seen(space);
 		cb->crypto_done = quic_packet_decrypt_done;
@@ -707,7 +707,7 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb)
 				active = quic_conn_id_active(quic_dest(sk));
 				quic_conn_id_update(active, packet->scid.data, packet->scid.len);
 			}
-			nframe = quic_frame_create(sk, QUIC_FRAME_ACK, &packet->level);
+			nframe = quic_frame_create(sk, QUIC_FRAME_ACK, &level);
 			if (nframe) {
 				quic_outq_ctrl_tail(sk, nframe, true);
 				/* in case userspace doesn't send any packets, use SACK

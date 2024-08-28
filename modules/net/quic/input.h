@@ -16,9 +16,10 @@
 
 struct quic_inqueue {
 	struct sk_buff_head backlog_list;
-	struct list_head reassemble_list;
 	struct list_head handshake_list;
 	struct list_head stream_list;
+	struct list_head early_list;
+	struct list_head recv_list;
 	struct work_struct work;
 	u64 max_bytes;
 	u64 highest;
@@ -36,7 +37,6 @@ struct quic_inqueue {
 	u32 events;
 
 	u8 disable_1rtt_encryption:1;
-	u8 receive_session_ticket:1;
 	u8 validate_peer_address:1;
 	u8 grease_quic_bit:1;
 	u8 need_sack:2;
@@ -122,16 +122,6 @@ static inline void quic_inq_set_version(struct quic_inqueue *inq, u32 version)
 	inq->version = version;
 }
 
-static inline u8 quic_inq_receive_session_ticket(struct quic_inqueue *inq)
-{
-	return inq->receive_session_ticket;
-}
-
-static inline void quic_inq_set_receive_session_ticket(struct quic_inqueue *inq, u8 rcv)
-{
-	inq->receive_session_ticket = rcv;
-}
-
 static inline u8 quic_inq_validate_peer_address(struct quic_inqueue *inq)
 {
 	return inq->validate_peer_address;
@@ -140,6 +130,16 @@ static inline u8 quic_inq_validate_peer_address(struct quic_inqueue *inq)
 static inline struct sk_buff_head *quic_inq_backlog_list(struct quic_inqueue *inq)
 {
 	return &inq->backlog_list;
+}
+
+static inline struct list_head *quic_inq_early_list(struct quic_inqueue *inq)
+{
+	return &inq->early_list;
+}
+
+static inline struct list_head *quic_inq_recv_list(struct quic_inqueue *inq)
+{
+	return &inq->recv_list;
 }
 
 static inline u8 quic_inq_disable_1rtt_encryption(struct quic_inqueue *inq)
@@ -161,9 +161,9 @@ void quic_rcv_err_icmp(struct sock *sk);
 int quic_rcv_err(struct sk_buff *skb);
 int quic_rcv(struct sk_buff *skb);
 
-int quic_inq_handshake_tail(struct sock *sk, struct quic_frame *frame);
-int quic_inq_reasm_tail(struct sock *sk, struct quic_frame *frame);
-int quic_inq_dgram_tail(struct sock *sk, struct quic_frame *frame);
+int quic_inq_handshake_recv(struct sock *sk, struct quic_frame *frame);
+int quic_inq_stream_recv(struct sock *sk, struct quic_frame *frame);
+int quic_inq_dgram_recv(struct sock *sk, struct quic_frame *frame);
 int quic_inq_event_recv(struct sock *sk, u8 event, void *args);
 
 void quic_inq_flow_control(struct sock *sk, struct quic_stream *stream, int len);

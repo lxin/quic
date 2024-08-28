@@ -493,6 +493,7 @@ static int quic_inet_getname(struct socket *sock, struct sockaddr *uaddr, int pe
 static __poll_t quic_inet_poll(struct file *file, struct socket *sock, poll_table *wait)
 {
 	struct sock *sk = sock->sk;
+	struct list_head *head;
 	__poll_t mask;
 
 	poll_wait(file, sk_sleep(sk), wait);
@@ -507,7 +508,8 @@ static __poll_t quic_inet_poll(struct file *file, struct socket *sock, poll_tabl
 	if (sk->sk_err || !skb_queue_empty_lockless(&sk->sk_error_queue))
 		mask |= EPOLLERR | (sock_flag(sk, SOCK_SELECT_ERR_QUEUE) ? EPOLLPRI : 0);
 
-	if (!list_empty(&quic_inq(sk)->stream_list))
+	head = quic_inq_recv_list(quic_inq(sk));
+	if (!list_empty(head))
 		mask |= EPOLLIN | EPOLLRDNORM;
 
 	if (quic_is_closed(sk))

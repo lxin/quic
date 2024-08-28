@@ -139,9 +139,10 @@ out:
 	return ret;
 }
 
-static void quic_inq_recv_tail(struct sock *sk, struct quic_stream *stream,
-			       struct quic_frame *frame)
+static void quic_inq_stream_tail(struct sock *sk, struct quic_stream *stream,
+				 struct quic_frame *frame)
 {
+	struct quic_inqueue *inq = quic_inq(sk);
 	struct quic_stream_update update = {};
 	u64 overlap;
 
@@ -162,8 +163,14 @@ static void quic_inq_recv_tail(struct sock *sk, struct quic_stream *stream,
 		stream->recv.state = update.state;
 	}
 	stream->recv.offset += frame->len;
+
 	frame->offset = 0;
-	list_add_tail(&frame->list, &quic_inq(sk)->stream_list);
+	if (frame->level) {
+		frame->level = 0;
+		list_add_tail(&frame->list, &inq->early_list);
+		return;
+	}
+	list_add_tail(&frame->list, &inq->recv_list);
 	sk->sk_data_ready(sk);
 }
 
@@ -214,7 +221,7 @@ static bool quic_sk_rmem_schedule(struct sock *sk, int size)
 	return delta <= 0 || __sk_mem_schedule(sk, delta, SK_MEM_RECV);
 }
 
-int quic_inq_reasm_tail(struct sock *sk, struct quic_frame *frame)
+int quic_inq_stream_recv(struct sock *sk, struct quic_frame *frame)
 {
 	u64 offset = frame->offset, off, highest = 0;
 	struct quic_stream *stream = frame->stream;
@@ -252,7 +259,7 @@ int quic_inq_reasm_tail(struct sock *sk, struct quic_frame *frame)
 		if (quic_inq_event_recv(sk, QUIC_EVENT_STREAM_UPDATE, &update))
 			return -ENOMEM;
 	}
-	head = &inq->reassemble_list;
+	head = &inq->stream_list;
 	if (stream->recv.offset < offset) {
 		list_for_each_entry(pos, head, list) {
 			if (pos->stream->id < stream_id)
@@ -295,7 +302,7 @@ int quic_inq_reasm_tail(struct sock *sk, struct quic_frame *frame)
 	/* fast path: stream->recv.offset == offset */
 	inq->highest += highest;
 	stream->recv.highest += highest;
-	quic_inq_recv_tail(sk, stream, frame);
+	quic_inq_stream_tail(sk, stream, frame);
 	if (!stream->recv.frags)
 		return 0;
 
@@ -313,14 +320,14 @@ int quic_inq_reasm_tail(struct sock *sk, struct quic_frame *frame)
 			quic_frame_free(frame);
 			continue;
 		}
-		quic_inq_recv_tail(sk, stream, frame);
+		quic_inq_stream_tail(sk, stream, frame);
 	}
 	return 0;
 }
 
 void quic_inq_stream_purge(struct sock *sk, struct quic_stream *stream)
 {
-	struct list_head *head = &quic_inq(sk)->reassemble_list;
+	struct list_head *head = &quic_inq(sk)->stream_list;
 	struct quic_frame *frame, *next;
 	int bytes = 0;
 
@@ -347,7 +354,28 @@ static void quic_inq_list_purge(struct sock *sk, struct list_head *head)
 	quic_inq_rfree(bytes, sk);
 }
 
-int quic_inq_handshake_tail(struct sock *sk, struct quic_frame *frame)
+static void quic_inq_handshake_tail(struct sock *sk, struct quic_frame *frame)
+{
+	struct quic_inqueue *inq = quic_inq(sk);
+	struct list_head *head;
+	struct quic_frame *pos;
+
+	head = &inq->recv_list;
+
+	/* always put handshake msg ahead of data and event */
+	list_for_each_entry(pos, head, list) {
+		if (!pos->level) {
+			head = &pos->list;
+			break;
+		}
+	}
+
+	frame->offset = 0;
+	list_add_tail(&frame->list, head);
+	sk->sk_data_ready(sk);
+}
+
+int quic_inq_handshake_recv(struct sock *sk, struct quic_frame *frame)
 {
 	u64 offset = frame->offset, crypto_offset;
 	struct quic_inqueue *inq = quic_inq(sk);
@@ -392,9 +420,7 @@ int quic_inq_handshake_tail(struct sock *sk, struct quic_frame *frame)
 		return 0;
 	}
 
-	frame->offset = 0;
-	list_add_tail(&frame->list, &inq->stream_list);
-	sk->sk_data_ready(sk);
+	quic_inq_handshake_tail(sk, frame);
 	quic_crypto_inc_recv_offset(crypto, frame->len);
 
 	list_for_each_entry_safe(frame, pos, head, list) {
@@ -404,9 +430,9 @@ int quic_inq_handshake_tail(struct sock *sk, struct quic_frame *frame)
 			break;
 		if (frame->offset > quic_crypto_recv_offset(crypto))
 			break;
-		frame->offset = 0;
-		list_move_tail(&frame->list, &inq->stream_list);
-		sk->sk_data_ready(sk);
+		list_del(&frame->list);
+
+		quic_inq_handshake_tail(sk, frame);
 		quic_crypto_inc_recv_offset(crypto, frame->len);
 	}
 	return 0;
@@ -430,15 +456,14 @@ void quic_inq_set_param(struct sock *sk, struct quic_transport_param *p)
 	inq->probe_timeout = p->plpmtud_probe_timeout;
 	inq->version = p->version;
 	inq->validate_peer_address = p->validate_peer_address;
-	inq->receive_session_ticket = p->receive_session_ticket;
 	inq->disable_1rtt_encryption = p->disable_1rtt_encryption;
 }
 
 int quic_inq_event_recv(struct sock *sk, u8 event, void *args)
 {
-	struct list_head *head = &quic_inq(sk)->stream_list;
+	struct list_head *head = &quic_inq(sk)->recv_list;
 	struct quic_stream *stream = NULL;
-	struct quic_frame *frame;
+	struct quic_frame *frame, *pos;
 	int args_len = 0;
 	u8 *p;
 
@@ -459,6 +484,7 @@ int quic_inq_event_recv(struct sock *sk, u8 event, void *args)
 	case QUIC_EVENT_STREAM_MAX_STREAM:
 		args_len = sizeof(u64);
 		break;
+	case QUIC_EVENT_NEW_SESSION_TICKET:
 	case QUIC_EVENT_NEW_TOKEN:
 		args_len = ((struct quic_data *)args)->len;
 		args = ((struct quic_data *)args)->data;
@@ -487,23 +513,27 @@ int quic_inq_event_recv(struct sock *sk, u8 event, void *args)
 	frame->stream = stream;
 
 	/* always put event ahead of data */
-	if (quic_inq(sk)->last_event)
-		head = &quic_inq(sk)->last_event->list;
+	list_for_each_entry(pos, head, list) {
+		if (!pos->level && !pos->event) {
+			head = &pos->list;
+			break;
+		}
+	}
 	quic_inq_set_owner_r(frame->len, sk);
-	list_add(&frame->list, head);
+	list_add_tail(&frame->list, head);
 	quic_inq(sk)->last_event = frame;
 	sk->sk_data_ready(sk);
 	return 0;
 }
 
-int quic_inq_dgram_tail(struct sock *sk, struct quic_frame *frame)
+int quic_inq_dgram_recv(struct sock *sk, struct quic_frame *frame)
 {
 	quic_inq_set_owner_r(frame->len, sk);
 	if (sk_rmem_alloc_get(sk) > sk->sk_rcvbuf || !quic_sk_rmem_schedule(sk, frame->len))
 		return -ENOBUFS;
 
 	frame->dgram = 1;
-	list_add_tail(&frame->list, &quic_inq(sk)->stream_list);
+	list_add_tail(&frame->list, &quic_inq(sk)->recv_list);
 	sk->sk_data_ready(sk);
 	return 0;
 }
@@ -554,9 +584,10 @@ void quic_inq_init(struct sock *sk)
 	struct quic_inqueue *inq = quic_inq(sk);
 
 	skb_queue_head_init(&inq->backlog_list);
-	INIT_LIST_HEAD(&inq->reassemble_list);
 	INIT_LIST_HEAD(&inq->handshake_list);
 	INIT_LIST_HEAD(&inq->stream_list);
+	INIT_LIST_HEAD(&inq->early_list);
+	INIT_LIST_HEAD(&inq->recv_list);
 	INIT_WORK(&inq->work, quic_inq_decrypted_work);
 }
 
@@ -566,7 +597,8 @@ void quic_inq_free(struct sock *sk)
 
 	__skb_queue_purge(&sk->sk_receive_queue);
 	__skb_queue_purge(&inq->backlog_list);
-	quic_inq_list_purge(sk, &inq->reassemble_list);
 	quic_inq_list_purge(sk, &inq->handshake_list);
 	quic_inq_list_purge(sk, &inq->stream_list);
+	quic_inq_list_purge(sk, &inq->early_list);
+	quic_inq_list_purge(sk, &inq->recv_list);
 }

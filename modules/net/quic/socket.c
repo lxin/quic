@@ -727,7 +727,7 @@ err:
 
 static int quic_wait_for_packet(struct sock *sk, long timeo)
 {
-	struct list_head *head = &quic_inq(sk)->stream_list;
+	struct list_head *head = quic_inq_recv_list(quic_inq(sk));
 
 	for (;;) {
 		int err = 0, exit = 1;
@@ -794,7 +794,7 @@ static int quic_recvmsg(struct sock *sk, struct msghdr *msg, size_t len, int non
 	if (err)
 		goto out;
 
-	head = &quic_inq(sk)->stream_list;
+	head = quic_inq_recv_list(quic_inq(sk));
 	list_for_each_entry_safe(frame, next, head, list) {
 		off = frame->offset;
 		copy = min_t(int, frame->len - off, len - copied);
@@ -814,15 +814,15 @@ static int quic_recvmsg(struct sock *sk, struct msghdr *msg, size_t len, int non
 		stream = frame->stream;
 		if (event) {
 			msg->msg_flags |= MSG_NOTIFICATION;
-		} else if (dgram) {
-			msg->msg_flags |= MSG_DATAGRAM;
-		} else if (!stream) {
+		} else if (level) {
 			hinfo.crypto_level = level;
 			put_cmsg(msg, IPPROTO_QUIC, QUIC_HANDSHAKE_INFO, sizeof(hinfo), &hinfo);
 			if (msg->msg_flags & MSG_CTRUNC) {
 				err = -EINVAL;
 				goto out;
 			}
+		} else if (dgram) {
+			msg->msg_flags |= MSG_DATAGRAM;
 		}
 		if (flags & MSG_PEEK)
 			break;
@@ -841,11 +841,11 @@ static int quic_recvmsg(struct sock *sk, struct msghdr *msg, size_t len, int non
 			list_del(&frame->list);
 			quic_frame_free(frame);
 			break;
-		} else if (dgram) {
+		} else if (level) {
 			list_del(&frame->list);
 			quic_frame_free(frame);
 			break;
-		} else if (!stream) {
+		} else if (dgram) {
 			list_del(&frame->list);
 			quic_frame_free(frame);
 			break;
@@ -1386,9 +1386,9 @@ static int quic_sock_set_crypto_secret(struct sock *sk, struct quic_crypto_secre
 	struct quic_outqueue *outq = quic_outq(sk);
 	struct quic_inqueue *inq = quic_inq(sk);
 	struct quic_frame *frame, *tmp;
+	struct list_head list, *head;
 	struct quic_crypto *crypto;
 	struct sk_buff_head tmpq;
-	struct list_head list;
 	struct sk_buff *skb;
 	u32 window, mss;
 	int err, seqno;
@@ -1427,6 +1427,11 @@ static int quic_sock_set_crypto_secret(struct sock *sk, struct quic_crypto_secre
 
 	INIT_LIST_HEAD(&list);
 	if (!secret->send) { /* app recv key is ready */
+		head = quic_inq_early_list(inq);
+		if (!list_empty(head)) {
+			list_splice_init(head, quic_inq_recv_list(inq));
+			sk->sk_data_ready(sk);
+		}
 		__skb_queue_head_init(&tmpq);
 		skb_queue_splice_init(quic_inq_backlog_list(inq), &tmpq);
 		skb = __skb_dequeue(&tmpq);
