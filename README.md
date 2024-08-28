@@ -196,6 +196,7 @@ the QUIC handshake, see
 The test can also be done with curl (Moritz Buhl has made curl http3 work over linux QUIC):
 
     # git clone https://github.com/moritzbuhl/curl.git -b linux_curl
+    # autoreconf -i
     # ./configure --prefix=/usr/ --with-gnutls --with-linux-quic --with-nghttp3
     # make -j$(nproc)
     # sudo make install
@@ -291,22 +292,15 @@ This section shows you the basic usage of QUIC, you can get more details via man
 
 - these APIs are provided (see [tests/sample_test.c](https://github.com/lxin/quic/blob/main/tests/sample_test.c) for how APIs are used):
 
-      /* PSK mode:
-       * - pkey_file is psk file
-       * - cert_file is null
-       *
-       * Certificate mode:
-       * - pkey_file is private key file, can be null for client
-       * - cert_file is certificate file, can be null for client
-       */
-      int quic_client_handshake(int sockfd, char *pkey_file, char *cert_file);
-      int quic_server_handshake(int sockfd, char *pkey_file, char *cert_file);
+      int quic_client_handshake(int sockfd, const char *pkey_file,
+                                const char *hostname, const char *alpns);
+      int quic_server_handshake(int sockfd, const char *pkey_file,
+                                const char *cert_file, const char *alpns);
 
-      /* quic_sendmsg() and quic_recvmsg() allow you to send and recv messages with
-       * stream_id and stream_flags, they wrap sendmsg() and recvmsg().
-       */
-      ssize_t quic_sendmsg(int sockfd, const void *msg, size_t len, uint64_t sid, uint32_t flag);
-      ssize_t quic_recvmsg(int sockfd, void *msg, size_t len, uint64_t *sid, uint32_t *flag);
+      ssize_t quic_sendmsg(int sockfd, const void *msg, size_t len,
+                           int64_t sid, uint32_t flags);
+      ssize_t quic_recvmsg(int sockfd, void *msg, size_t len,
+                           int64_t *sid, uint32_t *flags);
 
 - include the header file in c file like sample_test.c:
 
@@ -318,39 +312,32 @@ This section shows you the basic usage of QUIC, you can get more details via man
 
 ### Advanced APIs with more TLS Handshake Parameters
 
-- these APIs are provided (see [tests/perf_test.c](https://github.com/lxin/quic/blob/main/tests/perf_test.c#L349) for how APIs are used):
+- these APIs are provided (see [tests/ticket_test.c](https://github.com/lxin/quic/blob/main/tests/ticket_test.c) for how APIs are used):
 
-      struct quic_handshake_parms {
-          uint32_t           timeout;    /* handshake timeout in milliseconds */
+      int quic_handshake(gnutls_session_t session);
 
-          gnutls_privkey_t   privkey;    /* private key for x509 handshake */
-          gnutls_pcert_st    *cert;      /* certificate for x509 handshake */
-          char               *cafile;    /* system ca is used if not set */
-          char               *peername;  /* - server name for client side x509 handshake or,
-                                          * - psk identity name chosen during PSK handshake
-                                          */
-          char               *names[10]; /* psk identifies in PSK handshake */
-          gnutls_datum_t     keys[10];   /* - psk keys in PSK handshake, or,
-                                          * - certificates received in x509 handshake
-                                          */
-          uint32_t           num_keys;   /* keys total numbers */
-      };
+      int quic_session_get_data(gnutls_session_t session,
+                                void *data, size_t *size);
+      int quic_session_set_data(gnutls_session_t session,
+                                const void *data, size_t size);
 
-      int quic_client_handshake_parms(int sockfd, struct quic_handshake_parms *parms);
-      int quic_server_handshake_parms(int sockfd, struct quic_handshake_parms *parms);
+      int quic_session_get_alpn(gnutls_session_t session,
+                                void *data, size_t *size);
+      int quic_session_set_alpn(gnutls_session_t session,
+                                const void *data, size_t size);
 
-- include the header file in c file like perf_test.c:
+- include the header file in c file like ticket_test.c:
 
       #include <netinet/quic.h>
 
 - then build it by:
 
-      # gcc perf_test.c -o perf_test -lquic -lgnutls
+      # gcc ticket_test.c -o ticket_test -lquic -lgnutls
 
 ### Raw Socket APIs with more Control
 
-quic_client/server_handshake() and quic_client/server_handshake_parms() in libquic are
-implemented with gnutls APIs and socket APIs such as send/recvmsg() and set/getsocket().
+quic_client/server_handshake() and quic_handshake() in libquic are implemented with gnutls
+APIs and socket APIs such as send/recvmsg() and set/getsocket().
 
 For these who want more control or flexibility in the handshake, instead of using the APIs
 from libquic, they should use the raw socket APIs and gnutls APIs to implement their own
