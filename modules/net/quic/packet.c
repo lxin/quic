@@ -723,6 +723,10 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb)
 		cb->resume = 0;
 		skb_reset_transport_header(skb);
 	}
+
+	if (!quic_inq_need_sack(inq)) /* delay sack timer is reused as idle timer */
+		quic_timer_reset(sk, QUIC_TIMER_SACK, quic_inq_max_idle_timeout(inq));
+
 	consume_skb(skb);
 	return 0;
 err:

@@ -30,6 +30,9 @@ void quic_timer_sack_handler(struct sock *sk)
 		}
 		quic_outq_transmit(sk);
 		quic_inq_set_need_sack(inq, 0);
+
+		timeout = quic_inq_max_idle_timeout(inq);
+		quic_timer_start(sk, QUIC_TIMER_SACK, timeout);
 		return;
 	}
 

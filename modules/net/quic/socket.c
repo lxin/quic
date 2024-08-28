@@ -366,6 +366,7 @@ static int quic_connect(struct sock *sk, struct sockaddr *addr, int addr_len)
 	if (err)
 		goto free;
 
+	quic_timer_start(sk, QUIC_TIMER_SACK, quic_inq_max_idle_timeout(inq));
 	quic_set_state(sk, QUIC_SS_ESTABLISHING);
 out:
 	release_sock(sk);
@@ -1133,13 +1134,18 @@ static int quic_accept_sock_init(struct sock *sk, struct quic_request_sock *req)
 	if (err)
 		goto out;
 
+	err = sk->sk_prot->hash(sk);
+	if (err)
+		goto out;
+
 	quic_outq_set_orig_dcid(outq, &req->orig_dcid);
 	if (req->retry) {
 		quic_outq_set_retry(outq, 1);
 		quic_outq_set_retry_dcid(outq, &req->dcid);
 	}
+
+	quic_timer_start(sk, QUIC_TIMER_SACK, quic_inq_max_idle_timeout(inq));
 	quic_set_state(sk, QUIC_SS_ESTABLISHING);
-	err = sk->sk_prot->hash(sk);
 
 	__skb_queue_head_init(&tmpq);
 	skb_queue_splice_init(quic_inq_backlog_list(inq), &tmpq);
