@@ -201,7 +201,7 @@ out:
  * @sockfd: IPPROTO_QUIC type socket
  * @psk_file: pre-shared key file for PSK mode
  * @hostname: server name for Certificate mode
- * @alpns: ALPNs supporteda and split by ','
+ * @alpns: ALPNs supported and split by ','
  *
  * Return values:
  * - On success, 0 is returned.

@@ -133,7 +133,7 @@ err:
  * @sockfd: IPPROTO_QUIC type socket
  * @pkey_file: private key file for Certificate mode or pre-shared key file for PSK mode
  * @cert_file: certificate file for Certificate mode or null for PSK mode
- * @alpns: ALPNs supporteda and split by ','
+ * @alpns: ALPNs supported and split by ','
  *
  * Return values:
  * - On success, 0 is returned.

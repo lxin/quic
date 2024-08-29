@@ -207,13 +207,21 @@ static void quic_transport_param_init(struct sock *sk)
 	param->max_stream_data_uni = QUIC_PATH_MAX_PMTU * 4;
 	param->max_streams_bidi = QUIC_DEF_STREAMS;
 	param->max_streams_uni = QUIC_DEF_STREAMS;
-	param->initial_smoothed_rtt = QUIC_RTT_INIT;
-	param->version = QUIC_VERSION_V1;
 
 	quic_inq_set_param(sk, param);
 	quic_cong_set_param(quic_cong(sk), param);
 	quic_conn_id_set_param(quic_dest(sk), param);
 	quic_stream_set_param(quic_streams(sk), param, NULL);
+}
+
+static void quic_config_init(struct sock *sk)
+{
+	struct quic_config *config = quic_config(sk);
+
+	config->initial_smoothed_rtt = QUIC_RTT_INIT;
+	config->version = QUIC_VERSION_V1;
+
+	quic_cong_set_config(quic_cong(sk), config);
 }
 
 static int quic_init_sock(struct sock *sk)
@@ -233,6 +241,7 @@ static int quic_init_sock(struct sock *sk)
 	quic_path_addr_init(quic_dst(sk), len, 0);
 
 	quic_transport_param_init(sk);
+	quic_config_init(sk);
 
 	quic_outq_init(sk);
 	quic_inq_init(sk);
@@ -362,7 +371,7 @@ static int quic_connect(struct sock *sk, struct sockaddr *addr, int addr_len)
 	if (err)
 		goto free;
 	active = quic_conn_id_active(dest);
-	err = quic_crypto_initial_keys_install(crypto, active, quic_inq_version(inq), 0, 0);
+	err = quic_crypto_initial_keys_install(crypto, active, quic_config(sk)->version, 0, 0);
 	if (err)
 		goto free;
 
@@ -984,44 +993,15 @@ static int quic_param_check_and_copy(struct quic_transport_param *p,
 			return -EINVAL;
 		param->max_streams_uni = p->max_streams_uni;
 	}
-	if (p->initial_smoothed_rtt) {
-		if (p->initial_smoothed_rtt < QUIC_RTO_MIN ||
-		    p->initial_smoothed_rtt > QUIC_RTO_MAX)
-			return -EINVAL;
-		param->initial_smoothed_rtt = p->initial_smoothed_rtt;
-	}
-	if (p->plpmtud_probe_timeout) {
-		if (p->plpmtud_probe_timeout < QUIC_MIN_PROBE_TIMEOUT)
-			return -EINVAL;
-		param->plpmtud_probe_timeout = p->plpmtud_probe_timeout;
-	}
 	if (p->disable_active_migration)
 		param->disable_active_migration = p->disable_active_migration;
 	if (p->disable_1rtt_encryption)
 		param->disable_1rtt_encryption = p->disable_1rtt_encryption;
-	if (p->validate_peer_address)
-		param->validate_peer_address = p->validate_peer_address;
 	if (p->grease_quic_bit)
 		param->grease_quic_bit = p->grease_quic_bit;
 	if (p->stateless_reset)
 		param->stateless_reset = p->stateless_reset;
-	if (p->receive_session_ticket)
-		param->receive_session_ticket = p->receive_session_ticket;
-	if (p->certificate_request) {
-		if (p->certificate_request > 3)
-			return -EINVAL;
-		param->certificate_request = p->certificate_request;
-	}
-	if (p->payload_cipher_type) {
-		if (p->payload_cipher_type != TLS_CIPHER_AES_GCM_128 &&
-		    p->payload_cipher_type != TLS_CIPHER_AES_GCM_256 &&
-		    p->payload_cipher_type != TLS_CIPHER_AES_CCM_128 &&
-		    p->payload_cipher_type != TLS_CIPHER_CHACHA20_POLY1305)
-			return -EINVAL;
-		param->payload_cipher_type = p->payload_cipher_type;
-	}
-	if (p->version)
-		param->version = p->version;
+
 	return 0;
 }
 
@@ -1358,6 +1338,48 @@ static int quic_sock_set_session_ticket(struct sock *sk, u8 *data, u32 len)
 	return quic_data_dup(quic_ticket(sk), data, len);
 }
 
+static int quic_sock_set_config(struct sock *sk, struct quic_config *c, u32 len)
+{
+	struct quic_config *config = quic_config(sk);
+
+	if (len < sizeof(*config) || quic_is_established(sk))
+		return -EINVAL;
+
+	if (c->validate_peer_address)
+		config->validate_peer_address = c->validate_peer_address;
+	if (c->receive_session_ticket)
+		config->receive_session_ticket = c->receive_session_ticket;
+	if (c->certificate_request) {
+		if (c->certificate_request > 3)
+			return -EINVAL;
+		config->certificate_request = c->certificate_request;
+	}
+	if (c->initial_smoothed_rtt) {
+		if (c->initial_smoothed_rtt < QUIC_RTO_MIN ||
+		    c->initial_smoothed_rtt > QUIC_RTO_MAX)
+			return -EINVAL;
+		config->initial_smoothed_rtt = c->initial_smoothed_rtt;
+	}
+	if (c->plpmtud_probe_interval) {
+		if (c->plpmtud_probe_interval < QUIC_MIN_PROBE_TIMEOUT)
+			return -EINVAL;
+		config->plpmtud_probe_interval = c->plpmtud_probe_interval;
+	}
+	if (c->payload_cipher_type) {
+		if (c->payload_cipher_type != TLS_CIPHER_AES_GCM_128 &&
+		    c->payload_cipher_type != TLS_CIPHER_AES_GCM_256 &&
+		    c->payload_cipher_type != TLS_CIPHER_AES_CCM_128 &&
+		    c->payload_cipher_type != TLS_CIPHER_CHACHA20_POLY1305)
+			return -EINVAL;
+		config->payload_cipher_type = c->payload_cipher_type;
+	}
+	if (c->version)
+		config->version = c->version;
+
+	quic_cong_set_config(quic_cong(sk), config);
+	return 0;
+}
+
 static int quic_sock_set_transport_params_ext(struct sock *sk, u8 *p, u32 len)
 {
 	struct quic_transport_param *param = quic_remote(sk);
@@ -1385,6 +1407,7 @@ static int quic_sock_set_crypto_secret(struct sock *sk, struct quic_crypto_secre
 	struct quic_path_addr *path = quic_src(sk);
 	struct quic_outqueue *outq = quic_outq(sk);
 	struct quic_inqueue *inq = quic_inq(sk);
+	struct quic_config *c = quic_config(sk);
 	struct quic_frame *frame, *tmp;
 	struct list_head list, *head;
 	struct quic_crypto *crypto;
@@ -1403,7 +1426,7 @@ static int quic_sock_set_crypto_secret(struct sock *sk, struct quic_crypto_secre
 		return -EINVAL;
 
 	crypto = quic_crypto(sk, secret->level);
-	err = quic_crypto_set_secret(crypto, secret, quic_inq_version(inq), 0);
+	err = quic_crypto_set_secret(crypto, secret, c->version, 0);
 	if (err)
 		return err;
 
@@ -1475,7 +1498,7 @@ static int quic_sock_set_crypto_secret(struct sock *sk, struct quic_crypto_secre
 		/* enter established only when both send and recv keys are ready */
 		if (quic_crypto_send_ready(crypto)) {
 			quic_set_state(sk, QUIC_SS_ESTABLISHED);
-			quic_timer_reset(sk, QUIC_TIMER_PATH, quic_inq_probe_timeout(inq));
+			quic_timer_reset(sk, QUIC_TIMER_PATH, c->plpmtud_probe_interval);
 		}
 		return 0;
 	}
@@ -1506,7 +1529,7 @@ static int quic_sock_set_crypto_secret(struct sock *sk, struct quic_crypto_secre
 
 	if (quic_crypto_recv_ready(crypto)) {
 		quic_set_state(sk, QUIC_SS_ESTABLISHED);
-		quic_timer_reset(sk, QUIC_TIMER_PATH, quic_inq_probe_timeout(inq));
+		quic_timer_reset(sk, QUIC_TIMER_PATH, c->plpmtud_probe_interval);
 	}
 	return 0;
 }
@@ -1709,6 +1732,9 @@ static int quic_setsockopt(struct sock *sk, int level, int optname,
 	case QUIC_SOCKOPT_TRANSPORT_PARAM:
 		retval = quic_sock_set_transport_param(sk, kopt, optlen);
 		break;
+	case QUIC_SOCKOPT_CONFIG:
+		retval = quic_sock_set_config(sk, kopt, optlen);
+		break;
 	case QUIC_SOCKOPT_TRANSPORT_PARAM_EXT:
 		retval = quic_sock_set_transport_params_ext(sk, kopt, optlen);
 		break;
@@ -1730,9 +1756,8 @@ static int quic_sock_get_token(struct sock *sk, int len, char __user *optval, in
 
 	if (quic_is_serv(sk) || len < token->len)
 		return -EINVAL;
-	if (put_user(token->len, optlen))
-		return -EFAULT;
-	if (copy_to_user(optval, token->data, token->len))
+
+	if (put_user(token->len, optlen) || copy_to_user(optval, token->data, token->len))
 		return -EFAULT;
 	return 0;
 }
@@ -1761,9 +1786,8 @@ static int quic_sock_get_session_ticket(struct sock *sk, int len,
 out:
 	if (len < ticket_len)
 		return -EINVAL;
-	if (put_user(ticket_len, optlen))
-		return -EFAULT;
-	if (copy_to_user(optval, ticket, ticket_len))
+
+	if (put_user(ticket_len, optlen) || copy_to_user(optval, ticket, ticket_len))
 		return -EFAULT;
 	return 0;
 }
@@ -1775,7 +1799,6 @@ static int quic_sock_get_transport_param(struct sock *sk, int len,
 
 	if (len < sizeof(param))
 		return -EINVAL;
-
 	len = sizeof(param);
 	if (copy_from_user(&param, optval, len))
 		return -EFAULT;
@@ -1783,12 +1806,20 @@ static int quic_sock_get_transport_param(struct sock *sk, int len,
 	if (param.remote)
 		p = quic_remote(sk);
 
-	if (len < sizeof(*p))
-		return -EINVAL;
-	len = sizeof(*p);
-	if (put_user(len, optlen))
+	if (put_user(len, optlen) || copy_to_user(optval, p, len))
 		return -EFAULT;
-	if (copy_to_user(optval, p, len))
+	return 0;
+}
+
+static int quic_sock_get_config(struct sock *sk, int len, char __user *optval, int __user *optlen)
+{
+	struct quic_config config, *c = quic_config(sk);
+
+	if (len < sizeof(config))
+		return -EINVAL;
+	len = sizeof(config);
+
+	if (put_user(len, optlen) || copy_to_user(optval, c, len))
 		return -EFAULT;
 	return 0;
 }
@@ -1805,9 +1836,8 @@ static int quic_sock_get_transport_params_ext(struct sock *sk, int len,
 	if (len < datalen)
 		return -EINVAL;
 	len = datalen;
-	if (put_user(len, optlen))
-		return -EFAULT;
-	if (copy_to_user(optval, data, len))
+
+	if (put_user(len, optlen) || copy_to_user(optval, data, len))
 		return -EFAULT;
 	return 0;
 }
@@ -1825,9 +1855,8 @@ static int quic_sock_get_crypto_secret(struct sock *sk, int len,
 
 	if (quic_crypto_get_secret(quic_crypto(sk, secret.level), &secret))
 		return -EINVAL;
-	if (put_user(len, optlen))
-		return -EFAULT;
-	if (copy_to_user(optval, &secret, len))
+
+	if (put_user(len, optlen) || copy_to_user(optval, &secret, len))
 		return -EFAULT;
 	return 0;
 }
@@ -1851,11 +1880,8 @@ static int quic_sock_get_active_conn_id(struct sock *sk, int len,
 	active = quic_conn_id_active(id_set);
 	info.dest = quic_conn_id_number(active);
 
-	if (put_user(len, optlen))
+	if (put_user(len, optlen) || copy_to_user(optval, &info, len))
 		return -EFAULT;
-	if (copy_to_user(optval, &info, len))
-		return -EFAULT;
-
 	return 0;
 }
 
@@ -1874,9 +1900,7 @@ static int quic_sock_get_alpn(struct sock *sk, int len, char __user *optval, int
 	quic_data_to_string(data, &len, alpns);
 
 out:
-	if (put_user(len, optlen))
-		return -EFAULT;
-	if (copy_to_user(optval, data, len))
+	if (put_user(len, optlen) || copy_to_user(optval, data, len))
 		return -EFAULT;
 	return 0;
 }
@@ -1889,7 +1913,6 @@ static int quic_sock_stream_open(struct sock *sk, int len, char __user *optval, 
 
 	if (len < sizeof(sinfo))
 		return -EINVAL;
-
 	len = sizeof(sinfo);
 	if (copy_from_user(&sinfo, optval, len))
 		return -EFAULT;
@@ -1902,8 +1925,8 @@ static int quic_sock_stream_open(struct sock *sk, int len, char __user *optval, 
 		}
 		sinfo.stream_id |= quic_is_serv(sk);
 	}
-
 	sinfo.stream_flags |= MSG_STREAM_NEW;
+
 	if (put_user(len, optlen) || copy_to_user(optval, &sinfo, len))
 		return -EFAULT;
 
@@ -1921,15 +1944,14 @@ static int quic_sock_get_event(struct sock *sk, int len, char __user *optval, in
 
 	if (len < sizeof(event))
 		return -EINVAL;
-
 	len = sizeof(event);
 	if (copy_from_user(&event, optval, len))
 		return -EFAULT;
 
 	if (!event.type || event.type > QUIC_EVENT_MAX)
 		return -EINVAL;
-
 	event.on = quic_inq_events(inq) & (1 << event.type);
+
 	if (put_user(len, optlen) || copy_to_user(optval, &event, len))
 		return -EFAULT;
 
@@ -2003,6 +2025,9 @@ static int quic_getsockopt(struct sock *sk, int level, int optname,
 		break;
 	case QUIC_SOCKOPT_TRANSPORT_PARAM:
 		retval = quic_sock_get_transport_param(sk, len, optval, optlen);
+		break;
+	case QUIC_SOCKOPT_CONFIG:
+		retval = quic_sock_get_config(sk, len, optval, optlen);
 		break;
 	case QUIC_SOCKOPT_TRANSPORT_PARAM_EXT:
 		retval = quic_sock_get_transport_params_ext(sk, len, optval, optlen);

@@ -464,7 +464,7 @@ static int quic_inet_listen(struct socket *sock, int backlog)
 	quic_outq_set_serv(outq);
 
 	inq = quic_inq(sk);
-	err = quic_crypto_initial_keys_install(crypto, active, quic_inq_version(inq), flag, 1);
+	err = quic_crypto_initial_keys_install(crypto, active, quic_config(sk)->version, flag, 1);
 	if (err)
 		goto free;
 	quic_set_state(sk, QUIC_SS_LISTENING);

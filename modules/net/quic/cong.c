@@ -520,25 +520,30 @@ static void quic_cong_rto_update(struct quic_cong *cong)
 	pr_debug("[QUIC] update rto %u duration %u\n", rto, duration);
 }
 
-void quic_cong_set_param(struct quic_cong *cong, struct quic_transport_param *p)
+void quic_cong_set_config(struct quic_cong *cong, struct quic_config *c)
 {
-	u8 alg = QUIC_CONG_ALG_RENO;
+	u8 algo = QUIC_CONG_ALG_RENO;
 
-	if (p->congestion_control_alg < QUIC_CONG_ALG_MAX)
-		alg = p->congestion_control_alg;
+	if (c->congestion_control_algo < QUIC_CONG_ALG_MAX)
+		algo = c->congestion_control_algo;
 
-	cong->max_window = p->max_data;
-	cong->max_ack_delay = p->max_ack_delay;
-	cong->ack_delay_exponent = p->ack_delay_exponent;
-	cong->latest_rtt = p->initial_smoothed_rtt;
+	cong->latest_rtt = c->initial_smoothed_rtt;
 	cong->smoothed_rtt = cong->latest_rtt;
 	cong->rttvar = cong->smoothed_rtt / 2;
 	quic_cong_rto_update(cong);
 
 	cong->state = QUIC_CONG_SLOW_START;
 	cong->ssthresh = U32_MAX;
-	cong->ops = &quic_congs[alg];
+	cong->ops = &quic_congs[algo];
 	cong->ops->on_init(cong);
+}
+EXPORT_SYMBOL_GPL(quic_cong_set_config);
+
+void quic_cong_set_param(struct quic_cong *cong, struct quic_transport_param *p)
+{
+	cong->max_window = p->max_data;
+	cong->max_ack_delay = p->max_ack_delay;
+	cong->ack_delay_exponent = p->ack_delay_exponent;
 }
 EXPORT_SYMBOL_GPL(quic_cong_set_param);
 

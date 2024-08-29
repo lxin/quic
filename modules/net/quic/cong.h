@@ -106,9 +106,11 @@ static inline u64 quic_cong_pacing_time(struct quic_cong *cong)
 	return cong->pacing_time;
 }
 
+void quic_cong_set_param(struct quic_cong *cong, struct quic_transport_param *p);
+void quic_cong_set_config(struct quic_cong *cong, struct quic_config *c);
+
 void quic_cong_on_packet_acked(struct quic_cong *cong, u32 time, u32 bytes, s64 number);
 void quic_cong_on_packet_lost(struct quic_cong *cong, u32 time, u32 bytes, s64 number);
-void quic_cong_set_param(struct quic_cong *cong, struct quic_transport_param *p);
 void quic_cong_on_process_ecn(struct quic_cong *cong);
 
 void quic_cong_on_packet_sent(struct quic_cong *cong, u32 time, u32 bytes, s64 number);

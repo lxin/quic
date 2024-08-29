@@ -500,12 +500,15 @@ static void quic_cong_test1(struct kunit *test)
 {
 	struct quic_transport_param p = {};
 	struct quic_cong cong = {};
+	struct quic_config c = {};
 	u32 time, ack_delay;
 
 	p.max_ack_delay = 25000;
 	p.ack_delay_exponent = 3;
-	p.initial_smoothed_rtt = 333000;
 	quic_cong_set_param(&cong, &p);
+
+	c.initial_smoothed_rtt = 333000;
+	quic_cong_set_config(&cong, &c);
 	KUNIT_EXPECT_EQ(test, cong.rttvar, 166500);
 	KUNIT_EXPECT_EQ(test, cong.rto, 499500);
 
@@ -725,16 +728,21 @@ static void quic_cong_test2(struct kunit *test)
 {
 	struct quic_transport_param p = {};
 	struct quic_cong cong = {};
+	struct quic_config c = {};
 	u32 time, bytes;
 
 	p.max_data = 106496;
 	p.max_ack_delay = 25000;
 	p.ack_delay_exponent = 3;
-	p.initial_smoothed_rtt = 333000;
-	p.congestion_control_alg = QUIC_CONG_ALG_RENO;
-	quic_cong_set_mss(&cong, 1400);
 	quic_cong_set_param(&cong, &p);
+
+	quic_cong_set_mss(&cong, 1400);
 	quic_cong_set_window(&cong, 14720);
+
+	c.congestion_control_algo = QUIC_CONG_ALG_RENO;
+	c.initial_smoothed_rtt = 333000;
+	quic_cong_set_config(&cong, &c);
+
 	KUNIT_EXPECT_EQ(test, cong.mss, 1400);
 	KUNIT_EXPECT_EQ(test, cong.window, 14720);
 	KUNIT_EXPECT_EQ(test, cong.max_window, 106496);
@@ -878,17 +886,22 @@ static void quic_cong_test3(struct kunit *test)
 {
 	struct quic_transport_param p = {};
 	struct quic_cong cong = {};
+	struct quic_config c = {};
 	u32 time, bytes;
 	u64 number;
 
 	p.max_data = 106496;
 	p.max_ack_delay = 25000;
 	p.ack_delay_exponent = 3;
-	p.initial_smoothed_rtt = 333000;
-	p.congestion_control_alg = QUIC_CONG_ALG_CUBIC;
-	quic_cong_set_mss(&cong, 1400);
 	quic_cong_set_param(&cong, &p);
+
+	quic_cong_set_mss(&cong, 1400);
 	quic_cong_set_window(&cong, 14720);
+
+	c.congestion_control_algo = QUIC_CONG_ALG_CUBIC;
+	c.initial_smoothed_rtt = 333000;
+	quic_cong_set_config(&cong, &c);
+
 	KUNIT_EXPECT_EQ(test, cong.mss, 1400);
 	KUNIT_EXPECT_EQ(test, cong.window, 14720);
 	KUNIT_EXPECT_EQ(test, cong.max_window, 106496);

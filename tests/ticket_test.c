@@ -286,7 +286,7 @@ err:
 
 static int do_server(int argc, char *argv[])
 {
-	struct quic_transport_param param = {};
+	struct quic_config config = {};
 	unsigned int addrlen, keylen;
 	struct sockaddr_in sa = {};
 	int listenfd, sockfd, ret;
@@ -314,8 +314,8 @@ static int do_server(int argc, char *argv[])
 		printf("socket listen failed\n");
 		return -1;
 	}
-	param.validate_peer_address = 1;
-	if (setsockopt(listenfd, SOL_QUIC, QUIC_SOCKOPT_TRANSPORT_PARAM, &param, sizeof(param)))
+	config.validate_peer_address = 1; /* trigger retry packet sending */
+	if (setsockopt(listenfd, SOL_QUIC, QUIC_SOCKOPT_CONFIG, &config, sizeof(config)))
 		return -1;
 	addrlen = sizeof(sa);
 	sockfd = accept(listenfd, (struct sockaddr *)&sa, &addrlen);

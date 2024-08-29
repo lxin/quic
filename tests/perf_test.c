@@ -123,6 +123,7 @@ static int do_server(struct options *opts)
 {
 	struct quic_transport_param param = {};
 	struct sockaddr_storage ra = {};
+	struct quic_config config = {};
 	uint32_t flags = 0, addrlen;
 	struct sockaddr_in la = {};
 	int ret, sockfd, listenfd;
@@ -166,11 +167,13 @@ static int do_server(struct options *opts)
 	}
 
 listen:
-	param.validate_peer_address = 1; /* trigger retry packet sending */
 	param.grease_quic_bit = 1;
 	param.stateless_reset = 1;
 	param.disable_1rtt_encryption = opts->no_crypt;
 	if (setsockopt(listenfd, SOL_QUIC, QUIC_SOCKOPT_TRANSPORT_PARAM, &param, sizeof(param)))
+		return -1;
+	config.validate_peer_address = 1; /* trigger retry packet sending */
+	if (setsockopt(listenfd, SOL_QUIC, QUIC_SOCKOPT_CONFIG, &config, sizeof(config)))
 		return -1;
 
 	if (setsockopt(listenfd, SOL_QUIC, QUIC_SOCKOPT_ALPN, alpn, strlen(alpn)))
@@ -252,6 +255,7 @@ static int do_client(struct options *opts)
 
 	if (rp->ai_family == AF_INET6) {
 		struct quic_transport_param param = {};
+		struct quic_config config = {};
 		struct sockaddr_in6 ra = {};
 
 		sockfd = socket(AF_INET6, SOCK_DGRAM, IPPROTO_QUIC);
@@ -264,10 +268,13 @@ static int do_client(struct options *opts)
 		ra.sin6_port = htons(atoi(opts->port));
 		inet_pton(AF_INET6, opts->addr, &ra.sin6_addr);
 
-		param.version = 5; /* invalid version to trigger version negotiation */
 		param.disable_1rtt_encryption = opts->no_crypt;
 		if (setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_TRANSPORT_PARAM,
 			       &param, sizeof(param)))
+			return -1;
+		config.version = 5; /* invalid version to trigger version negotiation */
+		if (setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_CONFIG,
+			       &config, sizeof(config)))
 			return -1;
 
 		if (connect(sockfd, (struct sockaddr *)&ra, sizeof(ra))) {

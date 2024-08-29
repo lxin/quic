@@ -32,12 +32,9 @@ struct quic_inqueue {
 	u32 ack_delay_exponent;
 	u32 max_idle_timeout;
 	u32 max_ack_delay;
-	u32 probe_timeout;
-	u32 version;
 	u32 events;
 
 	u8 disable_1rtt_encryption:1;
-	u8 validate_peer_address:1;
 	u8 grease_quic_bit:1;
 	u8 need_sack:2;
 };
@@ -82,11 +79,6 @@ static inline void quic_inq_set_max_bytes(struct quic_inqueue *inq, u64 bytes)
 	inq->max_bytes = bytes;
 }
 
-static inline u32 quic_inq_probe_timeout(struct quic_inqueue *inq)
-{
-	return inq->probe_timeout;
-}
-
 static inline u8 quic_inq_grease_quic_bit(struct quic_inqueue *inq)
 {
 	return inq->grease_quic_bit;
@@ -110,21 +102,6 @@ static inline u32 quic_inq_events(struct quic_inqueue *inq)
 static inline void quic_inq_set_events(struct quic_inqueue *inq, u32 events)
 {
 	inq->events = events;
-}
-
-static inline u32 quic_inq_version(struct quic_inqueue *inq)
-{
-	return inq->version;
-}
-
-static inline void quic_inq_set_version(struct quic_inqueue *inq, u32 version)
-{
-	inq->version = version;
-}
-
-static inline u8 quic_inq_validate_peer_address(struct quic_inqueue *inq)
-{
-	return inq->validate_peer_address;
 }
 
 static inline struct sk_buff_head *quic_inq_backlog_list(struct quic_inqueue *inq)

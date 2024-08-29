@@ -82,21 +82,21 @@ err:
 void quic_rcv_err_icmp(struct sock *sk)
 {
 	u8 taglen = quic_packet_taglen(quic_packet(sk));
-	struct quic_inqueue *inq = quic_inq(sk);
+	struct quic_config *c = quic_config(sk);
 	struct quic_path_addr *s = quic_src(sk);
 	struct quic_path_addr *d = quic_dst(sk);
 	u32 pathmtu, info;
 	bool reset_timer;
 
 	info = min_t(u32, quic_path_mtu_info(d), QUIC_PATH_MAX_PMTU);
-	if (!inq->probe_timeout || quic_path_sent_cnt(s) || quic_path_sent_cnt(d)) {
+	if (!c->plpmtud_probe_interval || quic_path_sent_cnt(s) || quic_path_sent_cnt(d)) {
 		quic_packet_mss_update(sk, info - quic_encap_len(sk));
 		return;
 	}
 	info = info - quic_encap_len(sk) - taglen;
 	pathmtu = quic_path_pl_toobig(d, info, &reset_timer);
 	if (reset_timer)
-		quic_timer_reset(sk, QUIC_TIMER_PATH, inq->probe_timeout);
+		quic_timer_reset(sk, QUIC_TIMER_PATH, c->plpmtud_probe_interval);
 	if (pathmtu)
 		quic_packet_mss_update(sk, pathmtu + taglen);
 }
@@ -452,10 +452,6 @@ void quic_inq_set_param(struct sock *sk, struct quic_transport_param *p)
 
 	inq->max_bytes = p->max_data;
 	sk->sk_rcvbuf = p->max_data * 2;
-
-	inq->probe_timeout = p->plpmtud_probe_timeout;
-	inq->version = p->version;
-	inq->validate_peer_address = p->validate_peer_address;
 	inq->disable_1rtt_encryption = p->disable_1rtt_encryption;
 }
 

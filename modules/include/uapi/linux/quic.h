@@ -73,13 +73,14 @@ struct quic_stream_info {
 #define QUIC_SOCKOPT_CONNECTION_MIGRATION		5
 #define QUIC_SOCKOPT_KEY_UPDATE				6
 #define QUIC_SOCKOPT_TRANSPORT_PARAM			7
-#define QUIC_SOCKOPT_TOKEN				8
-#define QUIC_SOCKOPT_ALPN				9
-#define QUIC_SOCKOPT_SESSION_TICKET			10
-#define QUIC_SOCKOPT_CRYPTO_SECRET			11
-#define QUIC_SOCKOPT_TRANSPORT_PARAM_EXT		12
-#define QUIC_SOCKOPT_RETIRE_CONNECTION_ID		13
-#define QUIC_SOCKOPT_ACTIVE_CONNECTION_ID		14
+#define QUIC_SOCKOPT_CONFIG				8
+#define QUIC_SOCKOPT_TOKEN				9
+#define QUIC_SOCKOPT_ALPN				10
+#define QUIC_SOCKOPT_SESSION_TICKET			11
+#define QUIC_SOCKOPT_CRYPTO_SECRET			12
+#define QUIC_SOCKOPT_TRANSPORT_PARAM_EXT		13
+#define QUIC_SOCKOPT_RETIRE_CONNECTION_ID		14
+#define QUIC_SOCKOPT_ACTIVE_CONNECTION_ID		15
 
 #define QUIC_VERSION_V1			0x1
 #define QUIC_VERSION_V2			0x6b3343cf
@@ -103,19 +104,22 @@ struct quic_transport_param {
 	uint64_t	max_stream_data_uni;
 	uint64_t	max_streams_bidi;
 	uint64_t	max_streams_uni;
+};
+
+struct quic_config {
+	uint32_t	version;
+	uint32_t	plpmtud_probe_interval;
 	uint64_t	initial_smoothed_rtt;
-	uint32_t	plpmtud_probe_timeout;
+	uint8_t		congestion_control_algo;
 	uint8_t		validate_peer_address;
+	uint32_t	payload_cipher_type;
 	uint8_t		receive_session_ticket;
 	uint8_t		certificate_request;
-	uint8_t		congestion_control_alg;
-	uint32_t	payload_cipher_type;
-	uint32_t	version;
 };
 
 struct quic_crypto_secret {
+	uint8_t send;  /* send or recv */
 	uint8_t level; /* crypto level */
-	uint16_t send; /* send or recv */
 	uint32_t type; /* TLS_CIPHER_* */
 	uint8_t secret[48];
 };

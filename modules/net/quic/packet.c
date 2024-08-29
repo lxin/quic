@@ -111,7 +111,7 @@ int quic_packet_version_change(struct sock *sk, struct quic_conn_id *conn_id, u3
 	quic_crypto_destroy(crypto);
 	if (quic_crypto_initial_keys_install(crypto, conn_id, version, flag, quic_is_serv(sk)))
 		return -EINVAL;
-	quic_inq_set_version(quic_inq(sk), version);
+	quic_config(sk)->version = version;
 	return 0;
 }
 
@@ -130,7 +130,7 @@ int quic_packet_select_version(struct sock *sk, u32 *versions, u8 count)
 	}
 	return -1;
 found:
-	if (best == quic_inq_version(quic_inq(sk)))
+	if (best == quic_config(sk)->version)
 		return 0;
 	return quic_packet_version_change(sk, quic_outq_orig_dcid(quic_outq(sk)), best, 0);
 }
@@ -383,7 +383,6 @@ static int quic_packet_refuse_close_transmit(struct sock *sk, u32 errcode)
 static int quic_packet_listen_process(struct sock *sk, struct sk_buff *skb)
 {
 	struct quic_packet *packet = quic_packet(sk);
-	struct quic_inqueue *inq = quic_inq(sk);
 	int err = 0, errcode, len = skb->len;
 	u8 *p = skb->data, type, retry = 0;
 	struct quic_crypto *crypto;
@@ -436,7 +435,7 @@ static int quic_packet_listen_process(struct sock *sk, struct sk_buff *skb)
 		goto out;
 	}
 	quic_conn_id_update(&odcid, packet->dcid.data, packet->dcid.len);
-	if (quic_inq_validate_peer_address(inq)) {
+	if (quic_config(sk)->validate_peer_address) {
 		if (!token.len) {
 			err = quic_packet_retry_transmit(sk);
 			consume_skb(skb);
@@ -505,12 +504,11 @@ static int quic_packet_handshake_retry_process(struct sock *sk, struct sk_buff *
 	struct quic_outqueue *outq = quic_outq(sk);
 	u32 len = skb->len - packet->len, version;
 	u8 *p = skb->data + packet->len, tag[16];
-	struct quic_inqueue *inq = quic_inq(sk);
 	struct quic_conn_id *active;
 
 	if (len < 16)
 		goto err;
-	version = quic_inq_version(inq);
+	version = quic_config(sk)->version;
 	if (quic_crypto_get_retry_tag(crypto, skb, quic_outq_orig_dcid(outq), version, tag) ||
 	    memcmp(tag, p + len - 16, 16))
 		goto err;
@@ -592,7 +590,7 @@ static int quic_packet_handshake_header_process(struct sock *sk, struct sk_buff 
 		return 0;
 	}
 	type = quic_packet_version_get_type(version, type);
-	if (version != quic_inq_version(quic_inq(sk))) {
+	if (version != quic_config(sk)->version) {
 		if (type != QUIC_PACKET_INITIAL || !quic_packet_compatible_versions(version))
 			return -EINVAL;
 		/* change to this compatible version */
@@ -1149,7 +1147,7 @@ static struct sk_buff *quic_packet_handshake_create(struct sock *sk)
 		type = QUIC_PACKET_0RTT;
 		level = QUIC_CRYPTO_APP; /* space level */
 	}
-	version = quic_inq_version(quic_inq(sk));
+	version = quic_config(sk)->version;
 
 	len = packet->len;
 	if (level == QUIC_CRYPTO_INITIAL && !quic_is_serv(sk) &&
@@ -1310,9 +1308,9 @@ void quic_packet_mss_update(struct sock *sk, int mss)
 int quic_packet_route(struct sock *sk)
 {
 	struct quic_packet *packet = quic_packet(sk);
-	struct quic_inqueue *inq = quic_inq(sk);
 	struct quic_path_addr *s = quic_src(sk);
 	struct quic_path_addr *d = quic_dst(sk);
+	struct quic_config *c = quic_config(sk);
 	int err, pmtu;
 
 	packet->sa = quic_path_addr(s, packet->path_alt & QUIC_PATH_ALT_SRC);
@@ -1326,7 +1324,7 @@ int quic_packet_route(struct sock *sk)
 
 	if (!quic_path_sent_cnt(s) && !quic_path_sent_cnt(d)) {
 		quic_path_pl_reset(d);
-		quic_timer_reset(sk, QUIC_TIMER_PATH, quic_inq_probe_timeout(inq));
+		quic_timer_reset(sk, QUIC_TIMER_PATH, c->plpmtud_probe_interval);
 	}
 	return 0;
 }
@@ -1335,7 +1333,7 @@ int quic_packet_config(struct sock *sk, u8 level, u8 path_alt)
 {
 	struct quic_conn_id_set *id_set = quic_dest(sk);
 	struct quic_packet *packet = quic_packet(sk);
-	struct quic_inqueue *inq = quic_inq(sk);
+	struct quic_config *c = quic_config(sk);
 	int hlen = sizeof(struct quichdr);
 
 	if (packet->max_snd_count &&
@@ -1358,7 +1356,7 @@ int quic_packet_config(struct sock *sk, u8 level, u8 path_alt)
 			hlen += quic_var_len(quic_token(sk)->len) + quic_token(sk)->len;
 		hlen += QUIC_VERSION_LEN; /* version */
 		hlen += QUIC_PACKET_LENGTH_LEN; /* length */
-		packet->ipfragok = !!quic_inq_probe_timeout(inq);
+		packet->ipfragok = !!c->plpmtud_probe_interval;
 	}
 	packet->len = hlen;
 	packet->overhead = hlen;

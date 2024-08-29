@@ -98,6 +98,7 @@ struct quic_sock {
 
 	struct quic_transport_param	local;
 	struct quic_transport_param	remote;
+	struct quic_config		config;
 	struct quic_data		token;
 	struct quic_data		ticket;
 	struct quic_data		alpn;
@@ -181,6 +182,11 @@ static inline void *quic_timer(const struct sock *sk, u8 type)
 static inline struct list_head *quic_reqs(const struct sock *sk)
 {
 	return &quic_sk(sk)->reqs;
+}
+
+static inline struct quic_config *quic_config(const struct sock *sk)
+{
+	return &quic_sk(sk)->config;
 }
 
 static inline struct quic_data *quic_token(const struct sock *sk)

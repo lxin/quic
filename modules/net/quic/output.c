@@ -243,7 +243,7 @@ void quic_outq_transmit_probe(struct sock *sk)
 	struct quic_path_dst *d = (struct quic_path_dst *)quic_dst(sk);
 	struct quic_pnspace *space = quic_pnspace(sk, QUIC_CRYPTO_APP);
 	u8 taglen = quic_packet_taglen(quic_packet(sk));
-	struct quic_inqueue *inq = quic_inq(sk);
+	struct quic_config *c = quic_config(sk);
 	struct quic_frame *frame;
 	u32 pathmtu;
 	s64 number;
@@ -261,7 +261,7 @@ void quic_outq_transmit_probe(struct sock *sk)
 			quic_packet_mss_update(sk, pathmtu + taglen);
 	}
 
-	quic_timer_reset(sk, QUIC_TIMER_PATH, quic_inq_probe_timeout(inq));
+	quic_timer_reset(sk, QUIC_TIMER_PATH, c->plpmtud_probe_interval);
 }
 
 void quic_outq_transmit_close(struct sock *sk, u8 type, u32 errcode, u8 level)
@@ -322,7 +322,7 @@ void quic_outq_transmitted_sack(struct sock *sk, u8 level, s64 largest, s64 smal
 	u32 pathmtu, rto, acked = 0, bytes = 0, pbytes = 0;
 	struct quic_path_addr *path = quic_dst(sk);
 	struct quic_outqueue *outq = quic_outq(sk);
-	struct quic_inqueue *inq = quic_inq(sk);
+	struct quic_config *c = quic_config(sk);
 	struct quic_cong *cong = quic_cong(sk);
 	struct quic_stream_update update;
 	struct quic_frame *frame, *tmp;
@@ -338,7 +338,7 @@ void quic_outq_transmitted_sack(struct sock *sk, u8 level, s64 largest, s64 smal
 		if (!complete)
 			quic_outq_transmit_probe(sk);
 		if (raise_timer) /* reuse probe timer as raise timer */
-			quic_timer_reset(sk, QUIC_TIMER_PATH, quic_inq_probe_timeout(inq) * 30);
+			quic_timer_reset(sk, QUIC_TIMER_PATH, c->plpmtud_probe_interval * 30);
 	}
 
 	head = &outq->transmitted_list;
@@ -577,7 +577,7 @@ void quic_outq_validate_path(struct sock *sk, struct quic_frame *frame,
 {
 	u8 local = quic_path_udp_bind(path), path_alt = QUIC_PATH_ALT_DST;
 	struct quic_outqueue *outq = quic_outq(sk);
-	struct quic_inqueue *inq = quic_inq(sk);
+	struct quic_config *c = quic_config(sk);
 	struct quic_frame *pos;
 	struct list_head *head;
 
@@ -592,7 +592,7 @@ void quic_outq_validate_path(struct sock *sk, struct quic_frame *frame,
 	quic_set_sk_addr(sk, quic_path_addr(path, 0), local);
 	quic_path_set_sent_cnt(path, 0);
 	quic_timer_stop(sk, QUIC_TIMER_PATH);
-	quic_timer_reset(sk, QUIC_TIMER_PATH, quic_inq_probe_timeout(inq));
+	quic_timer_reset(sk, QUIC_TIMER_PATH, c->plpmtud_probe_interval);
 
 	head = &outq->control_list;
 	list_for_each_entry(pos, head, list)
