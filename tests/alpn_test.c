@@ -147,7 +147,8 @@ static int do_server(int argc, char *argv[])
 	char msg[50] = {};
 
 	if (argc < 5) {
-		printf("%s server <LOCAL ADDR> <LOCAL PORT> <PRIVATE_KEY_FILE> <CERTIFICATE_FILE>\n", argv[0]);
+		printf("%s server <LOCAL ADDR> <LOCAL PORT> <PRIVATE_KEY_FILE> "
+		       "<CERTIFICATE_FILE>\n", argv[0]);
 		return 0;
 	}
 
