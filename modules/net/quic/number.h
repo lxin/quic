@@ -216,6 +216,13 @@ static inline struct quic_data *quic_data(struct quic_data *d, u8 *data, u32 len
 	return d;
 }
 
+static inline void quic_data_free(struct quic_data *d)
+{
+	kfree(d->data);
+	d->data = NULL;
+	d->len = 0;
+}
+
 static inline int quic_data_dup(struct quic_data *to, u8 *data, u32 len)
 {
 	if (!len)

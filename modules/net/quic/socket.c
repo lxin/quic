@@ -279,9 +279,9 @@ static void quic_destroy_sock(struct sock *sk)
 	quic_timer_free(sk);
 	quic_stream_free(quic_streams(sk));
 
-	kfree(quic_token(sk)->data);
-	kfree(quic_ticket(sk)->data);
-	kfree(quic_alpn(sk)->data);
+	quic_data_free(quic_ticket(sk));
+	quic_data_free(quic_token(sk));
+	quic_data_free(quic_alpn(sk));
 
 	local_bh_disable();
 	sk_sockets_allocated_dec(sk);
@@ -1450,6 +1450,7 @@ static int quic_sock_set_crypto_secret(struct sock *sk, struct quic_crypto_secre
 
 	INIT_LIST_HEAD(&list);
 	if (!secret->send) { /* app recv key is ready */
+		quic_data_free(quic_ticket(sk)); /* clean it to receive new session ticket msg */
 		head = quic_inq_early_list(inq);
 		if (!list_empty(head)) {
 			list_splice_init(head, quic_inq_recv_list(inq));
