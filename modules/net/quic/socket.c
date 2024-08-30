@@ -1451,6 +1451,7 @@ static int quic_sock_set_crypto_secret(struct sock *sk, struct quic_crypto_secre
 	INIT_LIST_HEAD(&list);
 	if (!secret->send) { /* app recv key is ready */
 		quic_data_free(quic_ticket(sk)); /* clean it to receive new session ticket msg */
+		quic_data_free(quic_token(sk)); /* clean it to receive new token */
 		head = quic_inq_early_list(inq);
 		if (!list_empty(head)) {
 			list_splice_init(head, quic_inq_recv_list(inq));
@@ -1751,6 +1752,36 @@ static int quic_setsockopt(struct sock *sk, int level, int optname,
 	return retval;
 }
 
+#define quic_get_user(x, ptr)						\
+({									\
+	int __ret = 0;							\
+	access_ok(ptr, 0) ? (__ret = get_user(x, ptr)) : (x = *ptr);	\
+	__ret;								\
+})
+
+#define quic_put_user(x, ptr)						\
+({									\
+	int __ret = 0;							\
+	access_ok(ptr, 0) ? (__ret = put_user(x, ptr)) : (*ptr = x);	\
+	__ret;								\
+})
+
+static int quic_copy_from_user(void *to, const void __user *from, unsigned long n)
+{
+	if (access_ok(from, 0))
+		return copy_from_user(to, from, n);
+	memcpy(to, from, n);
+	return 0;
+}
+
+static int quic_copy_to_user(void __user *to, const void *from, unsigned long n)
+{
+	if (access_ok(from, 0))
+		return copy_to_user(to, from, n);
+	memcpy(to, from, n);
+	return 0;
+}
+
 static int quic_sock_get_token(struct sock *sk, int len, char __user *optval, int __user *optlen)
 {
 	struct quic_data *token = quic_token(sk);
@@ -1758,7 +1789,7 @@ static int quic_sock_get_token(struct sock *sk, int len, char __user *optval, in
 	if (quic_is_serv(sk) || len < token->len)
 		return -EINVAL;
 
-	if (put_user(token->len, optlen) || copy_to_user(optval, token->data, token->len))
+	if (quic_put_user(token->len, optlen) || quic_copy_to_user(optval, token->data, token->len))
 		return -EFAULT;
 	return 0;
 }
@@ -1788,7 +1819,7 @@ out:
 	if (len < ticket_len)
 		return -EINVAL;
 
-	if (put_user(ticket_len, optlen) || copy_to_user(optval, ticket, ticket_len))
+	if (quic_put_user(ticket_len, optlen) || quic_copy_to_user(optval, ticket, ticket_len))
 		return -EFAULT;
 	return 0;
 }
@@ -1801,13 +1832,13 @@ static int quic_sock_get_transport_param(struct sock *sk, int len,
 	if (len < sizeof(param))
 		return -EINVAL;
 	len = sizeof(param);
-	if (copy_from_user(&param, optval, len))
+	if (quic_copy_from_user(&param, optval, len))
 		return -EFAULT;
 
 	if (param.remote)
 		p = quic_remote(sk);
 
-	if (put_user(len, optlen) || copy_to_user(optval, p, len))
+	if (quic_put_user(len, optlen) || quic_copy_to_user(optval, p, len))
 		return -EFAULT;
 	return 0;
 }
@@ -1820,7 +1851,7 @@ static int quic_sock_get_config(struct sock *sk, int len, char __user *optval, i
 		return -EINVAL;
 	len = sizeof(config);
 
-	if (put_user(len, optlen) || copy_to_user(optval, c, len))
+	if (quic_put_user(len, optlen) || quic_copy_to_user(optval, c, len))
 		return -EFAULT;
 	return 0;
 }
@@ -1838,7 +1869,7 @@ static int quic_sock_get_transport_params_ext(struct sock *sk, int len,
 		return -EINVAL;
 	len = datalen;
 
-	if (put_user(len, optlen) || copy_to_user(optval, data, len))
+	if (quic_put_user(len, optlen) || quic_copy_to_user(optval, data, len))
 		return -EFAULT;
 	return 0;
 }
@@ -1851,13 +1882,13 @@ static int quic_sock_get_crypto_secret(struct sock *sk, int len,
 	if (len < sizeof(secret))
 		return -EINVAL;
 	len = sizeof(secret);
-	if (copy_from_user(&secret, optval, len))
+	if (quic_copy_from_user(&secret, optval, len))
 		return -EFAULT;
 
 	if (quic_crypto_get_secret(quic_crypto(sk, secret.level), &secret))
 		return -EINVAL;
 
-	if (put_user(len, optlen) || copy_to_user(optval, &secret, len))
+	if (quic_put_user(len, optlen) || quic_copy_to_user(optval, &secret, len))
 		return -EFAULT;
 	return 0;
 }
@@ -1881,7 +1912,7 @@ static int quic_sock_get_active_conn_id(struct sock *sk, int len,
 	active = quic_conn_id_active(id_set);
 	info.dest = quic_conn_id_number(active);
 
-	if (put_user(len, optlen) || copy_to_user(optval, &info, len))
+	if (quic_put_user(len, optlen) || quic_copy_to_user(optval, &info, len))
 		return -EFAULT;
 	return 0;
 }
@@ -1901,7 +1932,7 @@ static int quic_sock_get_alpn(struct sock *sk, int len, char __user *optval, int
 	quic_data_to_string(data, &len, alpns);
 
 out:
-	if (put_user(len, optlen) || copy_to_user(optval, data, len))
+	if (quic_put_user(len, optlen) || quic_copy_to_user(optval, data, len))
 		return -EFAULT;
 	return 0;
 }
@@ -1915,7 +1946,7 @@ static int quic_sock_stream_open(struct sock *sk, int len, char __user *optval, 
 	if (len < sizeof(sinfo))
 		return -EINVAL;
 	len = sizeof(sinfo);
-	if (copy_from_user(&sinfo, optval, len))
+	if (quic_copy_from_user(&sinfo, optval, len))
 		return -EFAULT;
 
 	if (sinfo.stream_id == -1) {
@@ -1928,7 +1959,7 @@ static int quic_sock_stream_open(struct sock *sk, int len, char __user *optval, 
 	}
 	sinfo.stream_flags |= MSG_STREAM_NEW;
 
-	if (put_user(len, optlen) || copy_to_user(optval, &sinfo, len))
+	if (quic_put_user(len, optlen) || quic_copy_to_user(optval, &sinfo, len))
 		return -EFAULT;
 
 	stream = quic_sock_send_stream(sk, &sinfo);
@@ -1946,14 +1977,14 @@ static int quic_sock_get_event(struct sock *sk, int len, char __user *optval, in
 	if (len < sizeof(event))
 		return -EINVAL;
 	len = sizeof(event);
-	if (copy_from_user(&event, optval, len))
+	if (quic_copy_from_user(&event, optval, len))
 		return -EFAULT;
 
 	if (!event.type || event.type > QUIC_EVENT_MAX)
 		return -EINVAL;
 	event.on = quic_inq_events(inq) & (1 << event.type);
 
-	if (put_user(len, optlen) || copy_to_user(optval, &event, len))
+	if (quic_put_user(len, optlen) || quic_copy_to_user(optval, &event, len))
 		return -EFAULT;
 
 	return 0;
@@ -1981,7 +2012,7 @@ static int quic_sock_get_connection_close(struct sock *sk, int len, char __user 
 	if (phrase_len)
 		strscpy(close->phrase, phrase, phrase_len);
 
-	if (put_user(len, optlen) || copy_to_user(optval, close, len))
+	if (quic_put_user(len, optlen) || quic_copy_to_user(optval, close, len))
 		return -EFAULT;
 	return 0;
 }
@@ -1995,7 +2026,7 @@ static int quic_getsockopt(struct sock *sk, int level, int optname,
 	if (level != SOL_QUIC)
 		return quic_af_ops(sk)->getsockopt(sk, level, optname, optval, optlen);
 
-	if (get_user(len, optlen))
+	if (quic_get_user(len, optlen))
 		return -EFAULT;
 
 	if (len < 0)
