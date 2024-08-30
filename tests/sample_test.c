@@ -11,11 +11,14 @@
 static int do_client(int argc, char *argv[])
 {
 	struct sockaddr_in ra = {};
+	char msg[50], *psk, *host;
+	unsigned int flags;
 	int ret, sockfd;
-	char msg[50];
+	int64_t sid;
 
-	if (argc < 4) {
-		printf("%s client <PEER ADDR> <PEER PORT> [ALPN]\n", argv[0]);
+	if (argc < 6) {
+		printf("%s client <PEER ADDR> <PEER PORT> <PSK_FILE | 'none'> "
+		       "<HOSTNAME | 'none'> [ALPN]\n", argv[0]);
 		return 0;
 	}
 
@@ -34,31 +37,33 @@ static int do_client(int argc, char *argv[])
 		return -1;
 	}
 
-	if (quic_client_handshake(sockfd, NULL, NULL, argv[4]))
+	psk  = strcmp(argv[4], "none") ? argv[4] : NULL;
+	host = strcmp(argv[5], "none") ? argv[5] : NULL;
+	if (quic_client_handshake(sockfd, psk, host, argv[6]))
 		return -1;
 
-	/* NOTE: quic_send/recvmsg() allows get/setting stream id and flags,
-	 * comparing to send/recv():
-	 * sid = 0;
-	 * flag = QUIC_STREAM_FLAG_NEW | QUIC_STREAM_FLAG_FIN;
-	 * quic_sendmsg(sockfd, msg, strlen(msg), sid, flag);
-	 * quic_recvmsg(sockfd, msg, sizeof(msg), &sid, &flag);
+	/* set MSG_STREAM_NEW flag to open a stream while sending first data
+	 * or call getsockopt(QUIC_SOCKOPT_STREAM_OPEN) to open a stream.
+	 * set MSG_STREAM_FIN to mark the last data on this stream.
 	 */
 	strcpy(msg, "hello quic server!");
-	ret = send(sockfd, msg, strlen(msg), MSG_SYN | MSG_FIN);
+	sid = (0 | QUIC_STREAM_TYPE_UNI_MASK);
+	flags = MSG_STREAM_NEW | MSG_STREAM_FIN;
+	ret = quic_sendmsg(sockfd, msg, strlen(msg), sid, flags);
 	if (ret == -1) {
 		printf("send error %d %d\n", ret, errno);
 		return -1;
 	}
-	printf("send %d\n", ret);
+	printf("send '%s' on stream %ld\n", msg, sid);
 
 	memset(msg, 0, sizeof(msg));
-	ret = recv(sockfd, msg, sizeof(msg), 0);
+	flags = 0;
+	ret = quic_recvmsg(sockfd, msg, sizeof(msg) - 1, &sid, &flags);
 	if (ret == -1) {
 		printf("recv error %d %d\n", ret, errno);
 		return 1;
 	}
-	printf("recv: \"%s\", len: %d\n", msg, ret);
+	printf("recv '%s' on stream %ld\n", msg, sid);
 
 	close(sockfd);
 	return 0;
@@ -66,13 +71,15 @@ static int do_client(int argc, char *argv[])
 
 static int do_server(int argc, char *argv[])
 {
+	unsigned int addrlen, flags;
 	struct sockaddr_in sa = {};
+	char msg[50], *alpn, *cert;
 	int listenfd, sockfd, ret;
-	unsigned int addrlen;
-	char msg[50], *alpn;
+	int64_t sid;
 
 	if (argc < 6) {
-		printf("%s server <LOCAL ADDR> <LOCAL PORT> <PRIVATE_KEY_FILE> <CERTIFICATE_FILE> [ALPN]\n", argv[0]);
+		printf("%s server <LOCAL ADDR> <LOCAL PORT> <PRIVATE_KEY_FILE | PSK_FILE> "
+		       "<CERTIFICATE_FILE | 'none'> [ALPN]\n", argv[0]);
 		return 0;
 	}
 
@@ -104,24 +111,28 @@ static int do_server(int argc, char *argv[])
 		return -1;
 	}
 
-	if (quic_server_handshake(sockfd, argv[4], argv[5], argv[6]))
+	cert = strcmp(argv[5], "none") ? argv[5] : NULL;
+	if (quic_server_handshake(sockfd, argv[4], cert, argv[6]))
 		return -1;
 
 	memset(msg, 0, sizeof(msg));
-	ret = recv(sockfd, msg, sizeof(msg), 0);
+	flags = 0;
+	ret = quic_recvmsg(sockfd, msg, sizeof(msg) - 1, &sid, &flags);
 	if (ret == -1) {
 		printf("recv error %d %d\n", ret, errno);
 		return 1;
 	}
-	printf("recv: \"%s\", len: %d\n", msg, ret);
+	printf("recv '%s' on stream %ld\n", msg, sid);
 
 	strcpy(msg, "hello quic client!");
-	ret = send(sockfd, msg, strlen(msg), MSG_SYN | MSG_FIN);
+	sid = (0 | QUIC_STREAM_TYPE_SERVER_MASK);
+	flags = MSG_STREAM_NEW | MSG_STREAM_FIN;
+	ret = quic_sendmsg(sockfd, msg, strlen(msg), sid, flags);
 	if (ret == -1) {
 		printf("send error %d %d\n", ret, errno);
 		return -1;
 	}
-	printf("send %d\n", ret);
+	printf("send '%s' on stream %ld\n", msg, sid);
 
 	close(sockfd);
 	close(listenfd);

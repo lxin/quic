@@ -178,72 +178,100 @@ tlshd_tests()
 {
 	systemctl is-active --quiet tlshd || return 0
 
-	print_start "Kernel Tests (kernel -> lkquic, Certificate)"
+	print_start "Kernel Tests (kernel -> lkquic, Certificate, Sample)"
 	if [ -f ../modules/net/quic/quic_sample_test.ko ]; then
-		daemon_run ./perf_test -l --pkey ./keys/server-key.pem \
-					  --cert ./keys/server-cert.pem --ca ./keys/ca-cert.pem
+		daemon_run ./sample_test server 0.0.0.0 1234 ./keys/server-key.pem \
+							     ./keys/server-cert.pem sample
 		insmod ../modules/net/quic/quic_sample_test.ko || return 1
 	else
 		modprobe -n quic_sample_test || return 0
-		daemon_run ./perf_test -l --pkey ./keys/server-key.pem \
-					  --cert ./keys/server-cert.pem --ca ./keys/ca-cert.pem
+		daemon_run ./sample_test server 0.0.0.0 1234 ./keys/server-key.pem \
+							     ./keys/server-cert.pem sample
 		modprobe quic_sample_test || return 1
 	fi
 	rmmod quic_sample_test
 	dmesg | tail -n 5
-	daemon_stop "perf_test"
+	daemon_stop "sample_test"
 
-	print_start "Kernel Tests (lkquic -> kernel, Certificate)"
+	print_start "Kernel Tests (lkquic -> kernel, Certificate, Sample)"
 	if [ -f ../modules/net/quic/quic_sample_test.ko ]; then
-		daemon_run ./perf_test --addr 127.0.0.1 --ca ./keys/ca-cert.pem
+		daemon_run ./sample_test client 127.0.0.1 1234 none none sample
 		insmod ../modules/net/quic/quic_sample_test.ko role=server || return 1
 	else
 		modprobe -n quic_sample_test || return 0
-		daemon_run ./perf_test --addr 127.0.0.1 --ca ./keys/ca-cert.pem
+		daemon_run ./sample_test client 127.0.0.1 1234 none none sample
 		modprobe quic_sample_test role=server || return 1
 	fi
 	rmmod quic_sample_test
 	dmesg | tail -n 5
-	daemon_stop "perf_test"
+	daemon_stop "sample_test"
 
-	print_start "Kernel Tests (kernel -> lkquic, PSK)"
+	print_start "Kernel Tests (kernel -> lkquic, PSK, Sample)"
 	PSK=`keyctl show @u |grep test1 |awk '{print $1}'`
 	if [ -f ../modules/net/quic/quic_sample_test.ko ]; then
-		daemon_run ./perf_test -l --psk ./keys/server-psk.txt
+		daemon_run ./sample_test server 0.0.0.0 1234 ./keys/server-psk.txt none sample
 		insmod ../modules/net/quic/quic_sample_test.ko psk=$PSK || return 1
 	else
 		modprobe -n quic_sample_test || return 0
-		daemon_run ./perf_test -l --psk ./keys/server-psk.txt
+		daemon_run ./sample_test server 0.0.0.0 1234 ./keys/server-psk.txt none sample
 		modprobe quic_sample_test psk=$PSK || return 1
 	fi
 	rmmod quic_sample_test
 	dmesg | tail -n 5
-	daemon_stop "perf_test"
+	daemon_stop "sample_test"
 
-	print_start "Kernel Tests (lkquic -> kernel, PSK)"
+	print_start "Kernel Tests (lkquic -> kernel, PSK, Sample)"
 	if [ -f ../modules/net/quic/quic_sample_test.ko ]; then
-		daemon_run ./perf_test --addr 127.0.0.1 --psk ./keys/client-psk.txt
+		daemon_run ./sample_test client 127.0.0.1 1234 ./keys/client-psk.txt none sample
 		insmod ../modules/net/quic/quic_sample_test.ko role=server psk=1 || return 1
 	else
 		modprobe -n quic_sample_test || return 0
-		daemon_run ./perf_test --addr 127.0.0.1 --psk ./keys/client-psk.txt
+		daemon_run ./sample_test client 127.0.0.1 1234 ./keys/client-psk.txt none sample
 		modprobe quic_sample_test role=server psk=1 || return 1
 	fi
 	rmmod quic_sample_test
 	dmesg | tail -n 5
-	daemon_stop "perf_test"
+	daemon_stop "sample_test"
+
+	print_start "Kernel Tests (kernel -> lkquic, Certificate, Session Resumption)"
+	if [ -f ../modules/net/quic/quic_sample_test.ko ]; then
+		daemon_run ./ticket_test server 0.0.0.0 1234 ./keys/server-key.pem \
+							     ./keys/server-cert.pem ticket
+		insmod ../modules/net/quic/quic_sample_test.ko alpn=ticket || return 1
+	else
+		modprobe -n quic_sample_test || return 0
+		daemon_run ./ticket_test server 0.0.0.0 1234 ./keys/server-key.pem \
+							     ./keys/server-cert.pem ticket
+		modprobe quic_sample_test alpn=ticket || return 1
+	fi
+	rmmod quic_sample_test
+	dmesg | tail -n 5
+	daemon_stop "ticket_test"
+
+	print_start "Kernel Tests (lkquic -> kernel, Certificate, Session Resumption)"
+	if [ -f ../modules/net/quic/quic_sample_test.ko ]; then
+		daemon_run ./ticket_test client 127.0.0.1 1234 ticket
+		insmod ../modules/net/quic/quic_sample_test.ko role=server alpn=ticket || return 1
+	else
+		modprobe -n quic_sample_test || return 0
+		daemon_run ./ticket_test client 127.0.0.1 1234 ticket
+		modprobe quic_sample_test role=server alpn=ticket || return 1
+	fi
+	rmmod quic_sample_test
+	dmesg | tail -n 5
+	daemon_stop "ticket_test"
 }
 
 sample_tests()
 {
-	print_start "Session Ticket Tests"
+	print_start "Session Resumption Tests"
 	daemon_run ./ticket_test server 0.0.0.0 1234 ./keys/server-key.pem ./keys/server-cert.pem
 	./ticket_test client 127.0.0.1 1234 || return 1
 	daemon_stop
 
 	print_start "Sample Tests"
 	daemon_run ./sample_test server 0.0.0.0 1234 ./keys/server-key.pem ./keys/server-cert.pem
-	./sample_test client 127.0.0.1 1234 || return 1
+	./sample_test client 127.0.0.1 1234 none none || return 1
 	daemon_stop
 
 	print_start "ALPN and Preferred Address Tests"

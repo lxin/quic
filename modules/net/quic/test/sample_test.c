@@ -30,12 +30,8 @@ static char ip[IP_LEN] = "127.0.0.1";
 static int port = 1234;
 static int psk = 0;
 
-#define SND_MSG_LEN	4096
-#define RCV_MSG_LEN	(4096 * 16)
-#define TOT_LEN		(1 * 1024 * 1024 * 1024)
-
-static char	snd_msg[SND_MSG_LEN];
-static char	rcv_msg[RCV_MSG_LEN];
+static u8 session_data[4096];
+static u8 token[256];
 
 static int quic_test_recvmsg(struct socket *sock, void *msg, int len, s64 *sid, int *flags)
 {
@@ -173,14 +169,175 @@ wait:
 	return priv->status;
 }
 
-static int quic_test_do_client(void)
+static int quic_test_do_ticket_client(void)
+{
+	unsigned int param_len, token_len, ticket_len;
+	struct quic_transport_param param = {};
+	struct sockaddr_in ra = {}, la = {};
+	struct quic_test_priv priv = {};
+	struct quic_config config = {};
+	struct socket *sock;
+	int err, flags = 0;
+	char msg[64];
+	s64 sid;
+
+	err = __sock_create(&init_net, PF_INET, SOCK_DGRAM, IPPROTO_QUIC, &sock, 1);
+	if (err < 0)
+		return err;
+	priv.filp = sock_alloc_file(sock, 0, NULL);
+	if (IS_ERR(priv.filp))
+		return PTR_ERR(priv.filp);
+	err = sock_common_setsockopt(sock, SOL_QUIC, QUIC_SOCKOPT_ALPN,
+				     KERNEL_SOCKPTR(alpn), strlen(alpn));
+	if (err)
+		goto free;
+
+	config.receive_session_ticket = 1;
+	err = sock_common_setsockopt(sock, SOL_QUIC, QUIC_SOCKOPT_CONFIG,
+				     KERNEL_SOCKPTR(&config), sizeof(config));
+	if (err)
+		goto free;
+
+	ra.sin_family = AF_INET;
+	ra.sin_port = htons((u16)port);
+	if (!in4_pton(ip, strlen(ip), (u8 *)&ra.sin_addr.s_addr, -1, NULL))
+		goto free;
+	err = kernel_connect(sock, (struct sockaddr *)&ra, sizeof(ra), 0);
+	if (err < 0)
+		goto free;
+
+	err = quic_test_client_handshake(sock, &priv);
+	if (err < 0)
+		goto free;
+
+	pr_info("HANDSHAKE DONE\n");
+
+	ticket_len = sizeof(session_data);
+	err = sock_common_getsockopt(sock, SOL_QUIC, QUIC_SOCKOPT_SESSION_TICKET,
+				     session_data, &ticket_len);
+	if (err < 0)
+		goto free;
+
+	param_len = sizeof(param);
+	param.remote = 1;
+	err = sock_common_getsockopt(sock, SOL_QUIC, QUIC_SOCKOPT_TRANSPORT_PARAM,
+				     (char *)&param, &param_len);
+	if (err < 0)
+		goto free;
+
+	token_len = sizeof(token);
+	err = sock_common_getsockopt(sock, SOL_QUIC, QUIC_SOCKOPT_TOKEN,
+				     token, &token_len);
+	if (err < 0)
+		goto free;
+
+	err = kernel_getsockname(sock, (struct sockaddr *)&la);
+	if (err < 0)
+		goto free;
+
+	pr_info("get the session ticket %d and transport param %d and token %d, save it\n",
+		ticket_len, param_len, token_len);
+
+	strcpy(msg, "hello quic server!");
+	sid = (0 | QUIC_STREAM_TYPE_UNI_MASK);
+	flags = MSG_STREAM_NEW | MSG_STREAM_FIN;
+	err = quic_test_sendmsg(sock, msg, strlen(msg), sid, flags);
+	if (err < 0) {
+		pr_info("send %d\n", err);
+		goto free;
+	}
+	pr_info("send '%s' on stream %lld\n", msg, sid);
+
+	memset(msg, 0, sizeof(msg));
+	flags = 0;
+	err = quic_test_recvmsg(sock, msg, sizeof(msg) - 1, &sid, &flags);
+	if (err < 0) {
+		pr_info("recv error %d\n", err);
+		goto free;
+	}
+	pr_info("recv '%s' on stream %lld\n", msg, sid);
+
+	__fput_sync(priv.filp);
+	msleep(100);
+
+	err = __sock_create(&init_net, PF_INET, SOCK_DGRAM, IPPROTO_QUIC, &sock, 1);
+	if (err < 0)
+		return err;
+	priv.filp = sock_alloc_file(sock, 0, NULL);
+	if (IS_ERR(priv.filp))
+		return PTR_ERR(priv.filp);
+	err = sock_common_setsockopt(sock, SOL_QUIC, QUIC_SOCKOPT_ALPN,
+				     KERNEL_SOCKPTR(alpn), strlen(alpn));
+	if (err)
+		goto free;
+
+	err = kernel_bind(sock, (struct sockaddr *)&la, sizeof(la));
+	if (err)
+		goto free;
+
+	ra.sin_family = AF_INET;
+	ra.sin_port = htons((u16)port);
+	if (!in4_pton(ip, strlen(ip), (u8 *)&ra.sin_addr.s_addr, -1, NULL))
+		goto free;
+	err = kernel_connect(sock, (struct sockaddr *)&ra, sizeof(ra), 0);
+	if (err < 0)
+		goto free;
+
+	err = sock_common_setsockopt(sock, SOL_QUIC, QUIC_SOCKOPT_TOKEN,
+				     KERNEL_SOCKPTR(token), token_len);
+	if (err)
+		goto free;
+
+	err = sock_common_setsockopt(sock, SOL_QUIC, QUIC_SOCKOPT_SESSION_TICKET,
+				     KERNEL_SOCKPTR(session_data), ticket_len);
+	if (err)
+		goto free;
+
+	err = sock_common_setsockopt(sock, SOL_QUIC, QUIC_SOCKOPT_TRANSPORT_PARAM,
+				     KERNEL_SOCKPTR(&param), param_len);
+	if (err)
+		goto free;
+
+	/* send early data before handshake */
+	strcpy(msg, "hello quic server! I'm back!");
+	sid = (0 | QUIC_STREAM_TYPE_UNI_MASK);
+	flags = MSG_STREAM_NEW | MSG_STREAM_FIN;
+	err = quic_test_sendmsg(sock, msg, strlen(msg), sid, flags);
+	if (err < 0) {
+		pr_info("send %d\n", err);
+		goto free;
+	}
+	pr_info("send '%s' on stream %lld\n", msg, sid);
+
+	err = quic_test_client_handshake(sock, &priv);
+	if (err < 0)
+		goto free;
+
+	pr_info("HANDSHAKE DONE\n");
+
+	memset(msg, 0, sizeof(msg));
+	flags = 0;
+	err = quic_test_recvmsg(sock, msg, sizeof(msg) - 1, &sid, &flags);
+	if (err < 0) {
+		pr_info("recv error %d\n", err);
+		goto free;
+	}
+	pr_info("recv '%s' on stream %lld\n", msg, sid);
+
+	err = 0;
+free:
+	__fput_sync(priv.filp);
+	return err;
+}
+
+static int quic_test_do_sample_client(void)
 {
 	struct quic_test_priv priv = {};
 	struct sockaddr_in ra = {};
-	u64 len = 0, sid = 0, rate;
 	struct socket *sock;
 	int err, flags = 0;
-	u32 start, end;
+	char msg[64];
+	s64 sid;
 
 	err = __sock_create(&init_net, PF_INET, SOCK_DGRAM, IPPROTO_QUIC, &sock, 1);
 	if (err < 0)
@@ -204,58 +361,163 @@ static int quic_test_do_client(void)
 	if (err < 0)
 		goto free;
 
-	start = jiffies_to_msecs(jiffies);
-	flags = MSG_STREAM_NEW; /* open stream when send first msg */
-	err = quic_test_sendmsg(sock, snd_msg, SND_MSG_LEN, sid, flags);
+	/* set MSG_STREAM_NEW flag to open a stream while sending first data
+	 * or call getsockopt(QUIC_SOCKOPT_STREAM_OPEN) to open a stream.
+	 * set MSG_STREAM_FIN to mark the last data on this stream.
+	 */
+	strcpy(msg, "hello quic server!");
+	sid = (0 | QUIC_STREAM_TYPE_UNI_MASK);
+	flags = MSG_STREAM_NEW | MSG_STREAM_FIN;
+	err = quic_test_sendmsg(sock, msg, strlen(msg), sid, flags);
 	if (err < 0) {
 		pr_info("send %d\n", err);
 		goto free;
 	}
-	len += err;
-	flags = 0;
-	while (1) {
-		err = quic_test_sendmsg(sock, snd_msg, SND_MSG_LEN, sid, flags);
-		if (err < 0) {
-			pr_info("send %d\n", err);
-			goto free;
-		}
-		len += err;
-		if (!(len % (SND_MSG_LEN * 1024)))
-			pr_info("  send len: %lld, stream_id: %lld, flags: %d.\n", len, sid, flags);
-		if (len > TOT_LEN - SND_MSG_LEN)
-			break;
-	}
-	flags = MSG_STREAM_FIN; /* close stream when send last msg */
-	err = quic_test_sendmsg(sock, snd_msg, SND_MSG_LEN, sid, flags);
-	if (err < 0) {
-		pr_info("send %d\n", err);
-		goto free;
-	}
-	pr_info("SEND DONE: tot_len: %lld, stream_id: %lld, flags: %d.\n", len, sid, flags);
+	pr_info("send '%s' on stream %lld\n", msg, sid);
 
-	memset(rcv_msg, 0, sizeof(rcv_msg));
-	err = quic_test_recvmsg(sock, rcv_msg, RCV_MSG_LEN, &sid, &flags);
+	memset(msg, 0, sizeof(msg));
+	flags = 0;
+	err = quic_test_recvmsg(sock, msg, sizeof(msg) - 1, &sid, &flags);
 	if (err < 0) {
 		pr_info("recv error %d\n", err);
 		goto free;
 	}
-	end = jiffies_to_msecs(jiffies);
-	start = (end - start);
-	rate = ((u64)TOT_LEN * 8 * 1000) / 1024 / 1024 / start;
-	pr_info("ALL RECVD: %llu Mbits/sec\n", rate);
+	pr_info("recv '%s' on stream %lld\n", msg, sid);
+
 	err = 0;
 free:
 	fput(priv.filp);
 	return err;
 }
 
-static int quic_test_do_server(void)
+static int quic_test_do_ticket_server(void)
+{
+	struct quic_test_priv priv = {};
+	struct quic_config config = {};
+	struct socket *sock, *newsock;
+	struct sockaddr_in la = {};
+	int err, flags = 0;
+	char msg[64];
+	s64 sid;
+
+	err = __sock_create(&init_net, PF_INET, SOCK_DGRAM, IPPROTO_QUIC, &sock, 1);
+	if (err < 0)
+		return err;
+
+	la.sin_family = AF_INET;
+	la.sin_port = htons((u16)port);
+	if (!in4_pton(ip, strlen(ip), (u8 *)&la.sin_addr.s_addr, -1, NULL))
+		goto free;
+	err = kernel_bind(sock, (struct sockaddr *)&la, sizeof(la));
+	if (err < 0)
+		goto free;
+	err = sock_common_setsockopt(sock, SOL_QUIC, QUIC_SOCKOPT_ALPN,
+				     KERNEL_SOCKPTR(alpn), strlen(alpn));
+	if (err)
+		goto free;
+	err = kernel_listen(sock, 1);
+	if (err < 0)
+		goto free;
+	config.validate_peer_address = 1;
+	err = sock_common_setsockopt(sock, SOL_QUIC, QUIC_SOCKOPT_CONFIG,
+				     KERNEL_SOCKPTR(&config), sizeof(config));
+	if (err)
+		goto free;
+
+	err = kernel_accept(sock, &newsock, 0);
+	if (err < 0)
+		goto free;
+
+	/* attach a file for user space to operate */
+	priv.filp = sock_alloc_file(newsock, 0, NULL);
+	if (IS_ERR(priv.filp)) {
+		err = PTR_ERR(priv.filp);
+		goto free;
+	}
+
+	/* do handshake with net/handshake APIs */
+	err = quic_test_server_handshake(newsock, &priv);
+	if (err < 0)
+		goto free_flip;
+
+	pr_info("HANDSHAKE DONE\n");
+
+	memset(msg, 0, sizeof(msg));
+	flags = 0;
+	err = quic_test_recvmsg(newsock, msg, sizeof(msg) - 1, &sid, &flags);
+	if (err < 0) {
+		pr_info("recv error %d\n", err);
+		goto free_flip;
+	}
+	pr_info("recv '%s' on stream %lld\n", msg, sid);
+
+	strcpy(msg, "hello quic client!");
+	sid = (0 | QUIC_STREAM_TYPE_SERVER_MASK);
+	flags = MSG_STREAM_NEW | MSG_STREAM_FIN;
+	err = quic_test_sendmsg(newsock, msg, strlen(msg), sid, flags);
+	if (err < 0) {
+		pr_info("send %d\n", err);
+		goto free_flip;
+	}
+	pr_info("send '%s' on stream %lld\n", msg, sid);
+
+	__fput_sync(priv.filp);
+
+	pr_info("wait for the client next connection...\n");
+
+	err = kernel_accept(sock, &newsock, 0);
+	if (err < 0)
+		goto free;
+
+	/* attach a file for user space to operate */
+	priv.filp = sock_alloc_file(newsock, 0, NULL);
+	if (IS_ERR(priv.filp)) {
+		err = PTR_ERR(priv.filp);
+		goto free;
+	}
+
+	/* do handshake with net/handshake APIs */
+	err = quic_test_server_handshake(newsock, &priv);
+	if (err < 0)
+		goto free_flip;
+
+	pr_info("HANDSHAKE DONE\n");
+
+	memset(msg, 0, sizeof(msg));
+	flags = 0;
+	err = quic_test_recvmsg(newsock, msg, sizeof(msg) - 1, &sid, &flags);
+	if (err < 0) {
+		pr_info("recv error %d\n", err);
+		goto free_flip;
+	}
+	pr_info("recv '%s' on stream %lld\n", msg, sid);
+
+	strcpy(msg, "hello quic client! welcome back!");
+	sid = (0 | QUIC_STREAM_TYPE_SERVER_MASK);
+	flags = MSG_STREAM_NEW | MSG_STREAM_FIN;
+	err = quic_test_sendmsg(newsock, msg, strlen(msg), sid, flags);
+	if (err < 0) {
+		pr_info("send %d\n", err);
+		goto free_flip;
+	}
+	pr_info("send '%s' on stream %lld\n", msg, sid);
+
+	err = 0;
+free_flip:
+	__fput_sync(priv.filp);
+free:
+	sock_release(sock);
+	return err;
+}
+
+static int quic_test_do_sample_server(void)
 {
 	struct quic_test_priv priv = {};
 	struct socket *sock, *newsock;
 	struct sockaddr_in la = {};
-	u64 len = 0, sid = 0;
 	int err, flags = 0;
+	char msg[64];
+	s64 sid;
 
 	err = __sock_create(&init_net, PF_INET, SOCK_DGRAM, IPPROTO_QUIC, &sock, 1);
 	if (err < 0)
@@ -293,29 +555,25 @@ static int quic_test_do_server(void)
 
 	pr_info("HANDSHAKE DONE\n");
 
-	while (1) {
-		err = quic_test_recvmsg(newsock, &rcv_msg, sizeof(rcv_msg), &sid, &flags);
-		if (err < 0) {
-			pr_info("recv error %d\n", err);
-			goto free_flip;
-		}
-		len += err;
-		usleep_range(20, 40);
-		if (flags & MSG_STREAM_FIN)
-			break;
-		pr_info("  recv len: %lld, stream_id: %lld, flags: %d.\n", len, sid, flags);
+	memset(msg, 0, sizeof(msg));
+	flags = 0;
+	err = quic_test_recvmsg(newsock, msg, sizeof(msg) - 1, &sid, &flags);
+	if (err < 0) {
+		pr_info("recv error %d\n", err);
+		goto free_flip;
 	}
+	pr_info("recv '%s' on stream %lld\n", msg, sid);
 
-	pr_info("RECV DONE: tot_len %lld, stream_id: %lld, flags: %d.\n", len, sid, flags);
-
-	flags = MSG_STREAM_FIN;
-	strscpy(snd_msg, "recv done", sizeof(snd_msg));
-	err = quic_test_sendmsg(newsock, snd_msg, strlen(snd_msg), sid, flags);
+	strcpy(msg, "hello quic client!");
+	sid = (0 | QUIC_STREAM_TYPE_SERVER_MASK);
+	flags = MSG_STREAM_NEW | MSG_STREAM_FIN;
+	err = quic_test_sendmsg(newsock, msg, strlen(msg), sid, flags);
 	if (err < 0) {
 		pr_info("send %d\n", err);
 		goto free_flip;
 	}
-	msleep(100);
+	pr_info("send '%s' on stream %lld\n", msg, sid);
+
 	err = 0;
 free_flip:
 	fput(priv.filp);
@@ -327,10 +585,16 @@ free:
 static int quic_test_init(void)
 {
 	pr_info("[QUIC_TEST] Quic Test Start\n");
-	if (!strcmp(role, "client"))
-		return quic_test_do_client();
-	if (!strcmp(role, "server"))
-		return quic_test_do_server();
+	if (!strcmp(role, "client")) {
+		if (!strcmp(alpn, "ticket"))
+			return quic_test_do_ticket_client();
+		return quic_test_do_sample_client();
+	}
+	if (!strcmp(role, "server")) {
+		if (!strcmp(alpn, "ticket"))
+			return quic_test_do_ticket_server();
+		return quic_test_do_sample_server();
+	}
 	return -EINVAL;
 }
 

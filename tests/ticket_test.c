@@ -88,15 +88,16 @@ err:
 
 static int do_client(int argc, char *argv[])
 {
-	unsigned int param_len, token_len, addr_len;
+	unsigned int param_len, token_len, addr_len, flags;
 	struct quic_transport_param param = {};
 	struct sockaddr_in ra = {}, la = {};
+	char msg[50], *alpn;
 	size_t ticket_len;
 	int ret, sockfd;
-	char msg[50];
+	int64_t sid;
 
 	if (argc < 3) {
-		printf("%s client <PEER ADDR> <PEER PORT>\n", argv[0]);
+		printf("%s client <PEER ADDR> <PEER PORT> [ALPN]\n", argv[0]);
 		return 0;
 	}
 
@@ -116,8 +117,9 @@ static int do_client(int argc, char *argv[])
 	}
 
 	/* get session ticket, remote tranaport param, token for session resumption */
+	alpn = argv[4];
 	ticket_len = sizeof(ticket);
-	if (client_handshake(sockfd, NULL, NULL, NULL, 0, ticket, &ticket_len))
+	if (client_handshake(sockfd, alpn, NULL, NULL, 0, ticket, &ticket_len))
 		return -1;
 
 	param_len = sizeof(param);
@@ -146,20 +148,23 @@ static int do_client(int argc, char *argv[])
 	       ticket_len, param_len, token_len);
 
 	strcpy(msg, "hello quic server!");
-	ret = send(sockfd, msg, strlen(msg), MSG_SYN | MSG_FIN);
+	sid = (0 | QUIC_STREAM_TYPE_UNI_MASK);
+	flags = MSG_STREAM_NEW | MSG_STREAM_FIN;
+	ret = quic_sendmsg(sockfd, msg, strlen(msg), sid, flags);
 	if (ret == -1) {
 		printf("send error %d %d\n", ret, errno);
 		return -1;
 	}
-	printf("send %d\n", ret);
+	printf("send '%s' on stream %ld\n", msg, sid);
 
 	memset(msg, 0, sizeof(msg));
-	ret = recv(sockfd, msg, sizeof(msg), 0);
+	flags = 0;
+	ret = quic_recvmsg(sockfd, msg, sizeof(msg) - 1, &sid, &flags);
 	if (ret == -1) {
 		printf("recv error %d %d\n", ret, errno);
 		return 1;
 	}
-	printf("recv: \"%s\", len: %d\n", msg, ret);
+	printf("recv '%s' on stream %ld\n", msg, sid);
 
 	close(sockfd);
 
@@ -202,23 +207,26 @@ static int do_client(int argc, char *argv[])
 
 	/* send early data before handshake */
 	strcpy(msg, "hello quic server, I'm back!");
-	ret = send(sockfd, msg, strlen(msg), MSG_SYN | MSG_FIN);
+	sid = (0 | QUIC_STREAM_TYPE_UNI_MASK);
+	flags = MSG_STREAM_NEW | MSG_STREAM_FIN;
+	ret = quic_sendmsg(sockfd, msg, strlen(msg), sid, flags);
 	if (ret == -1) {
 		printf("send error %d %d\n", ret, errno);
 		return -1;
 	}
-	printf("send %d\n", ret);
+	printf("send '%s' on stream %ld\n", msg, sid);
 
-	if (client_handshake(sockfd, NULL, NULL, ticket, ticket_len, NULL, NULL))
+	if (client_handshake(sockfd, alpn, NULL, ticket, ticket_len, NULL, NULL))
 		return -1;
 
 	memset(msg, 0, sizeof(msg));
-	ret = recv(sockfd, msg, sizeof(msg), 0);
+	flags = 0;
+	ret = quic_recvmsg(sockfd, msg, sizeof(msg) - 1, &sid, &flags);
 	if (ret == -1) {
 		printf("recv error %d %d\n", ret, errno);
 		return 1;
 	}
-	printf("recv: \"%s\", len: %d\n", msg, ret);
+	printf("recv '%s' on stream %ld\n", msg, sid);
 
 	close(sockfd);
 	return 0;
@@ -286,15 +294,17 @@ err:
 
 static int do_server(int argc, char *argv[])
 {
+	unsigned int addrlen, keylen, flags;
 	struct quic_config config = {};
-	unsigned int addrlen, keylen;
 	struct sockaddr_in sa = {};
 	int listenfd, sockfd, ret;
+	char msg[50], *alpn;
 	uint8_t key[64];
-	char msg[50];
+	int64_t sid;
 
 	if (argc < 5) {
-		printf("%s server <LOCAL ADDR> <LOCAL PORT> <PRIVATE_KEY_FILE> <CERTIFICATE_FILE>\n", argv[0]);
+		printf("%s server <LOCAL ADDR> <LOCAL PORT> <PRIVATE_KEY_FILE> "
+		       "<CERTIFICATE_FILE>\n", argv[0]);
 		return 0;
 	}
 
@@ -310,6 +320,12 @@ static int do_server(int argc, char *argv[])
 		printf("socket bind failed\n");
 		return -1;
 	}
+	alpn = argv[6];
+	if (alpn && setsockopt(listenfd, SOL_QUIC, QUIC_SOCKOPT_ALPN, alpn, strlen(alpn))) {
+		printf("socket setsockopt alpn failed\n");
+		return -1;
+	}
+
 	if (listen(listenfd, 1)) {
 		printf("socket listen failed\n");
 		return -1;
@@ -317,6 +333,7 @@ static int do_server(int argc, char *argv[])
 	config.validate_peer_address = 1; /* trigger retry packet sending */
 	if (setsockopt(listenfd, SOL_QUIC, QUIC_SOCKOPT_CONFIG, &config, sizeof(config)))
 		return -1;
+
 	addrlen = sizeof(sa);
 	sockfd = accept(listenfd, (struct sockaddr *)&sa, &addrlen);
 	if (sockfd < 0) {
@@ -330,24 +347,27 @@ static int do_server(int argc, char *argv[])
 		return -1;
 	}
 
-	if (server_handshake(sockfd, argv[4], argv[5], NULL, key, keylen))
+	if (server_handshake(sockfd, argv[4], argv[5], alpn, key, keylen))
 		return -1;
 
 	memset(msg, 0, sizeof(msg));
-	ret = recv(sockfd, msg, sizeof(msg), 0);
+	flags = 0;
+	ret = quic_recvmsg(sockfd, msg, sizeof(msg) - 1, &sid, &flags);
 	if (ret == -1) {
 		printf("recv error %d %d\n", ret, errno);
 		return 1;
 	}
-	printf("recv: \"%s\", len: %d\n", msg, ret);
+	printf("recv '%s' on stream %ld\n", msg, sid);
 
 	strcpy(msg, "hello quic client!");
-	ret = send(sockfd, msg, strlen(msg), MSG_SYN | MSG_FIN);
+	sid = (0 | QUIC_STREAM_TYPE_SERVER_MASK);
+	flags = MSG_STREAM_NEW | MSG_STREAM_FIN;
+	ret = quic_sendmsg(sockfd, msg, strlen(msg), sid, flags);
 	if (ret == -1) {
 		printf("send error %d %d\n", ret, errno);
 		return -1;
 	}
-	printf("send %d\n", ret);
+	printf("send '%s' on stream %ld\n", msg, sid);
 
 	close(sockfd);
 
@@ -360,24 +380,27 @@ static int do_server(int argc, char *argv[])
 		return -1;
 	}
 
-	if (server_handshake(sockfd, argv[4], argv[5], NULL, key, keylen))
+	if (server_handshake(sockfd, argv[4], argv[5], alpn, key, keylen))
 		return -1;
 
 	memset(msg, 0, sizeof(msg));
-	ret = recv(sockfd, msg, sizeof(msg), 0);
+	flags = 0;
+	ret = quic_recvmsg(sockfd, msg, sizeof(msg) - 1, &sid, &flags);
 	if (ret == -1) {
 		printf("recv error %d %d\n", ret, errno);
 		return 1;
 	}
-	printf("recv: \"%s\", len: %d\n", msg, ret);
+	printf("recv '%s' on stream %ld\n", msg, sid);
 
 	strcpy(msg, "hello quic client! welcome back!");
-	ret = send(sockfd, msg, strlen(msg), MSG_SYN | MSG_FIN);
+	sid = (0 | QUIC_STREAM_TYPE_SERVER_MASK);
+	flags = MSG_STREAM_NEW | MSG_STREAM_FIN;
+	ret = quic_sendmsg(sockfd, msg, strlen(msg), sid, flags);
 	if (ret == -1) {
 		printf("send error %d %d\n", ret, errno);
 		return -1;
 	}
-	printf("send %d\n", ret);
+	printf("send '%s' on stream %ld\n", msg, sid);
 
 	close(sockfd);
 	close(listenfd);
