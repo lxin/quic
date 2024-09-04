@@ -28,7 +28,7 @@ static char role[ROLE_LEN] = "client";
 static char alpn[ALPN_LEN] = "sample";
 static char ip[IP_LEN] = "127.0.0.1";
 static int port = 1234;
-static int psk = 0;
+static int psk;
 
 static u8 session_data[4096];
 static u8 token[256];
@@ -238,7 +238,7 @@ static int quic_test_do_ticket_client(void)
 	pr_info("get the session ticket %d and transport param %d and token %d, save it\n",
 		ticket_len, param_len, token_len);
 
-	strcpy(msg, "hello quic server!");
+	strscpy(msg, "hello quic server!", sizeof(msg));
 	sid = (0 | QUIC_STREAM_TYPE_UNI_MASK);
 	flags = MSG_STREAM_NEW | MSG_STREAM_FIN;
 	err = quic_test_sendmsg(sock, msg, strlen(msg), sid, flags);
@@ -299,7 +299,7 @@ static int quic_test_do_ticket_client(void)
 		goto free;
 
 	/* send early data before handshake */
-	strcpy(msg, "hello quic server! I'm back!");
+	strscpy(msg, "hello quic server! I'm back!", sizeof(msg));
 	sid = (0 | QUIC_STREAM_TYPE_UNI_MASK);
 	flags = MSG_STREAM_NEW | MSG_STREAM_FIN;
 	err = quic_test_sendmsg(sock, msg, strlen(msg), sid, flags);
@@ -365,7 +365,7 @@ static int quic_test_do_sample_client(void)
 	 * or call getsockopt(QUIC_SOCKOPT_STREAM_OPEN) to open a stream.
 	 * set MSG_STREAM_FIN to mark the last data on this stream.
 	 */
-	strcpy(msg, "hello quic server!");
+	strscpy(msg, "hello quic server!", sizeof(msg));
 	sid = (0 | QUIC_STREAM_TYPE_UNI_MASK);
 	flags = MSG_STREAM_NEW | MSG_STREAM_FIN;
 	err = quic_test_sendmsg(sock, msg, strlen(msg), sid, flags);
@@ -451,7 +451,7 @@ static int quic_test_do_ticket_server(void)
 	}
 	pr_info("recv '%s' on stream %lld\n", msg, sid);
 
-	strcpy(msg, "hello quic client!");
+	strscpy(msg, "hello quic client!", sizeof(msg));
 	sid = (0 | QUIC_STREAM_TYPE_SERVER_MASK);
 	flags = MSG_STREAM_NEW | MSG_STREAM_FIN;
 	err = quic_test_sendmsg(newsock, msg, strlen(msg), sid, flags);
@@ -492,7 +492,7 @@ static int quic_test_do_ticket_server(void)
 	}
 	pr_info("recv '%s' on stream %lld\n", msg, sid);
 
-	strcpy(msg, "hello quic client! welcome back!");
+	strscpy(msg, "hello quic client! welcome back!", sizeof(msg));
 	sid = (0 | QUIC_STREAM_TYPE_SERVER_MASK);
 	flags = MSG_STREAM_NEW | MSG_STREAM_FIN;
 	err = quic_test_sendmsg(newsock, msg, strlen(msg), sid, flags);
@@ -564,7 +564,7 @@ static int quic_test_do_sample_server(void)
 	}
 	pr_info("recv '%s' on stream %lld\n", msg, sid);
 
-	strcpy(msg, "hello quic client!");
+	strscpy(msg, "hello quic client!", sizeof(msg));
 	sid = (0 | QUIC_STREAM_TYPE_SERVER_MASK);
 	flags = MSG_STREAM_NEW | MSG_STREAM_FIN;
 	err = quic_test_sendmsg(newsock, msg, strlen(msg), sid, flags);

@@ -196,6 +196,7 @@ the QUIC handshake, see
 The test can also be done with curl (Moritz Buhl has made curl http3 work over linux QUIC):
 
     # git clone https://github.com/moritzbuhl/curl.git -b linux_curl
+    # cd curl
     # autoreconf -i
     # ./configure --prefix=/usr/ --with-gnutls --with-linux-quic --with-nghttp3
     # make -j$(nproc)

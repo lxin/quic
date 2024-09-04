@@ -1445,7 +1445,6 @@ static int quic_sock_set_crypto_secret(struct sock *sk, struct quic_crypto_secre
 		if (secret->level == QUIC_CRYPTO_EARLY)
 			quic_outq_set_data_level(outq, QUIC_CRYPTO_EARLY);
 		return 0;
-
 	}
 
 	INIT_LIST_HEAD(&list);
@@ -2077,6 +2076,7 @@ static int quic_getsockopt(struct sock *sk, int level, int optname,
 
 static void quic_release_cb(struct sock *sk)
 {
+	/* similar to tcp_release_cb */
 	unsigned long nflags, flags = smp_load_acquire(&sk->sk_tsq_flags);
 
 	do {

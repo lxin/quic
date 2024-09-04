@@ -184,7 +184,6 @@ void quic_timer_path_handler(struct sock *sk)
 
 	if (probe)
 		quic_outq_transmit_probe(sk);
-
 }
 
 static void quic_timer_path_timeout(struct timer_list *t)

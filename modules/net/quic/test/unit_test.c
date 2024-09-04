@@ -793,7 +793,7 @@ static void quic_cong_test2(struct kunit *test)
 	KUNIT_EXPECT_EQ(test, cong.window, 53248);
 
 	/* recovery -> cong_avoid: go to cong_avoid after SACK if recovery_time < time */
-	msleep(1);
+	msleep(20);
 	quic_cong_set_time(&cong, jiffies_to_usecs(jiffies));
 	time = quic_cong_time(&cong);
 	bytes = 1400;

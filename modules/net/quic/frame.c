@@ -1132,7 +1132,7 @@ static int quic_frame_connection_close_process(struct sock *sk, struct quic_fram
 
 	close = (void *)buf;
 	if (phrase_len) {
-		if ((phrase_len > QUIC_CLOSE_PHRASE_MAX_LEN))
+		if (phrase_len > QUIC_CLOSE_PHRASE_MAX_LEN)
 			return -EINVAL;
 		memcpy(close->phrase, p, phrase_len);
 	}
