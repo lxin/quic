@@ -386,7 +386,7 @@ int quic_inq_handshake_recv(struct sock *sk, struct quic_frame *frame)
 
 	crypto = quic_crypto(sk, level);
 	crypto_offset = quic_crypto_recv_offset(crypto);
-	pr_debug("[QUIC] %s recv_offset: %llu offset: %llu level: %u len: %u\n",
+	pr_debug("%s: recv_offset: %llu, offset: %llu, level: %u, len: %u\n",
 		 __func__, crypto_offset, offset, level, frame->len);
 	if (offset < crypto_offset) { /* dup */
 		quic_frame_free(frame);

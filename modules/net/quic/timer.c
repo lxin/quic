@@ -43,7 +43,7 @@ void quic_timer_sack_handler(struct sock *sk)
 		return;
 	}
 	quic_set_state(sk, QUIC_SS_CLOSED);
-	pr_debug("[QUIC] IDLE TIMEOUT\n");
+	pr_debug("%s: idle timeout\n", __func__);
 }
 
 static void quic_timer_sack_timeout(struct timer_list *t)

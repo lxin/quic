@@ -96,7 +96,7 @@ static void quic_v4_lower_xmit(struct sock *sk, struct sk_buff *skb, union quic_
 	struct dst_entry *dst;
 	__be16 df = 0;
 
-	pr_debug("[QUIC] %s: skb: %p len: %d num: %llu | path: %pI4:%d -> %pI4:%d\n", __func__,
+	pr_debug("%s: skb: %p, len: %d, num: %llu, %pI4:%d -> %pI4:%d\n", __func__,
 		 skb, skb->len, cb->number, &sa->v4.sin_addr.s_addr, ntohs(sa->v4.sin_port),
 		 &da->v4.sin_addr.s_addr, ntohs(da->v4.sin_port));
 
@@ -124,7 +124,7 @@ static void quic_v6_lower_xmit(struct sock *sk, struct sk_buff *skb, union quic_
 		kfree_skb(skb);
 		return;
 	}
-	pr_debug("[QUIC] %s: skb: %p len: %d num: %llu | path: %pI6c:%d -> %pI6c:%d\n", __func__,
+	pr_debug("%s: skb: %p, len: %d, num: %llu, %pI6c:%d -> %pI6c:%d\n", __func__,
 		 skb, skb->len, cb->number, &sa->v6.sin6_addr, ntohs(sa->v6.sin6_port),
 		 &da->v6.sin6_addr, ntohs(da->v6.sin6_port));
 
@@ -935,7 +935,7 @@ static __init int quic_init(void)
 	quic_sysctl_register();
 
 	get_random_bytes(quic_random_data, 32);
-	pr_info("[QUIC] init\n");
+	pr_info("quic: init\n");
 	return 0;
 
 err_def_ops:
@@ -949,7 +949,6 @@ err_wq:
 err_cachep:
 	quic_hash_tables_destroy();
 err:
-	pr_err("[QUIC] init error\n");
 	return err;
 }
 
@@ -961,7 +960,7 @@ static __exit void quic_exit(void)
 	percpu_counter_destroy(&quic_sockets_allocated);
 	destroy_workqueue(quic_wq);
 	quic_hash_tables_destroy();
-	pr_info("[QUIC] exit\n");
+	pr_info("quic: exit\n");
 }
 
 module_init(quic_init);

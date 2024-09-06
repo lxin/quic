@@ -210,7 +210,7 @@ static int quic_test_do_ticket_client(void)
 	if (err < 0)
 		goto free;
 
-	pr_info("HANDSHAKE DONE\n");
+	pr_info("quic_test: handshake completed\n");
 
 	ticket_len = sizeof(session_data);
 	err = sock_common_getsockopt(sock, SOL_QUIC, QUIC_SOCKOPT_SESSION_TICKET,
@@ -235,7 +235,7 @@ static int quic_test_do_ticket_client(void)
 	if (err < 0)
 		goto free;
 
-	pr_info("get the session ticket %d and transport param %d and token %d, save it\n",
+	pr_info("quic_test: save session ticket: %d, transport param %d, token %d for session resumption\n",
 		ticket_len, param_len, token_len);
 
 	strscpy(msg, "hello quic server!", sizeof(msg));
@@ -243,19 +243,19 @@ static int quic_test_do_ticket_client(void)
 	flags = MSG_STREAM_NEW | MSG_STREAM_FIN;
 	err = quic_test_sendmsg(sock, msg, strlen(msg), sid, flags);
 	if (err < 0) {
-		pr_info("send %d\n", err);
+		pr_info("quic_test: send err: %d\n", err);
 		goto free;
 	}
-	pr_info("send '%s' on stream %lld\n", msg, sid);
+	pr_info("quic_test: send '%s' on stream %lld\n", msg, sid);
 
 	memset(msg, 0, sizeof(msg));
 	flags = 0;
 	err = quic_test_recvmsg(sock, msg, sizeof(msg) - 1, &sid, &flags);
 	if (err < 0) {
-		pr_info("recv error %d\n", err);
+		pr_info("quic_test: recv err: %d\n", err);
 		goto free;
 	}
-	pr_info("recv '%s' on stream %lld\n", msg, sid);
+	pr_info("quic_test: recv '%s' on stream %lld\n", msg, sid);
 
 	__fput_sync(priv.filp);
 	msleep(100);
@@ -304,25 +304,25 @@ static int quic_test_do_ticket_client(void)
 	flags = MSG_STREAM_NEW | MSG_STREAM_FIN;
 	err = quic_test_sendmsg(sock, msg, strlen(msg), sid, flags);
 	if (err < 0) {
-		pr_info("send %d\n", err);
+		pr_info("quic_test: send err: %d\n", err);
 		goto free;
 	}
-	pr_info("send '%s' on stream %lld\n", msg, sid);
+	pr_info("quic_test: send '%s' on stream %lld\n", msg, sid);
 
 	err = quic_test_client_handshake(sock, &priv);
 	if (err < 0)
 		goto free;
 
-	pr_info("HANDSHAKE DONE\n");
+	pr_info("quic_test: handshake completed\n");
 
 	memset(msg, 0, sizeof(msg));
 	flags = 0;
 	err = quic_test_recvmsg(sock, msg, sizeof(msg) - 1, &sid, &flags);
 	if (err < 0) {
-		pr_info("recv error %d\n", err);
+		pr_info("quic_test: recv err: %d\n", err);
 		goto free;
 	}
-	pr_info("recv '%s' on stream %lld\n", msg, sid);
+	pr_info("quic_test: recv '%s' on stream %lld\n", msg, sid);
 
 	err = 0;
 free:
@@ -361,6 +361,8 @@ static int quic_test_do_sample_client(void)
 	if (err < 0)
 		goto free;
 
+	pr_info("quic_test: handshake completed\n");
+
 	/* set MSG_STREAM_NEW flag to open a stream while sending first data
 	 * or call getsockopt(QUIC_SOCKOPT_STREAM_OPEN) to open a stream.
 	 * set MSG_STREAM_FIN to mark the last data on this stream.
@@ -370,19 +372,19 @@ static int quic_test_do_sample_client(void)
 	flags = MSG_STREAM_NEW | MSG_STREAM_FIN;
 	err = quic_test_sendmsg(sock, msg, strlen(msg), sid, flags);
 	if (err < 0) {
-		pr_info("send %d\n", err);
+		pr_info("quic_test: send err: %d\n", err);
 		goto free;
 	}
-	pr_info("send '%s' on stream %lld\n", msg, sid);
+	pr_info("quic_test: send '%s' on stream %lld\n", msg, sid);
 
 	memset(msg, 0, sizeof(msg));
 	flags = 0;
 	err = quic_test_recvmsg(sock, msg, sizeof(msg) - 1, &sid, &flags);
 	if (err < 0) {
-		pr_info("recv error %d\n", err);
+		pr_info("quic_test: recv err: %d\n", err);
 		goto free;
 	}
-	pr_info("recv '%s' on stream %lld\n", msg, sid);
+	pr_info("quic_test: recv '%s' on stream %lld\n", msg, sid);
 
 	err = 0;
 free:
@@ -440,30 +442,30 @@ static int quic_test_do_ticket_server(void)
 	if (err < 0)
 		goto free_flip;
 
-	pr_info("HANDSHAKE DONE\n");
+	pr_info("quic_test: handshake completed\n");
 
 	memset(msg, 0, sizeof(msg));
 	flags = 0;
 	err = quic_test_recvmsg(newsock, msg, sizeof(msg) - 1, &sid, &flags);
 	if (err < 0) {
-		pr_info("recv error %d\n", err);
+		pr_info("quic_test: recv err: %d\n", err);
 		goto free_flip;
 	}
-	pr_info("recv '%s' on stream %lld\n", msg, sid);
+	pr_info("quic_test: recv '%s' on stream %lld\n", msg, sid);
 
 	strscpy(msg, "hello quic client!", sizeof(msg));
 	sid = (0 | QUIC_STREAM_TYPE_SERVER_MASK);
 	flags = MSG_STREAM_NEW | MSG_STREAM_FIN;
 	err = quic_test_sendmsg(newsock, msg, strlen(msg), sid, flags);
 	if (err < 0) {
-		pr_info("send %d\n", err);
+		pr_info("quic_test: send err: %d\n", err);
 		goto free_flip;
 	}
-	pr_info("send '%s' on stream %lld\n", msg, sid);
+	pr_info("quic_test: send '%s' on stream %lld\n", msg, sid);
 
 	__fput_sync(priv.filp);
 
-	pr_info("wait for the client next connection...\n");
+	pr_info("quic_test: wait for next connection from client...\n");
 
 	err = kernel_accept(sock, &newsock, 0);
 	if (err < 0)
@@ -481,26 +483,26 @@ static int quic_test_do_ticket_server(void)
 	if (err < 0)
 		goto free_flip;
 
-	pr_info("HANDSHAKE DONE\n");
+	pr_info("quic_test: handshake completed\n");
 
 	memset(msg, 0, sizeof(msg));
 	flags = 0;
 	err = quic_test_recvmsg(newsock, msg, sizeof(msg) - 1, &sid, &flags);
 	if (err < 0) {
-		pr_info("recv error %d\n", err);
+		pr_info("quic_test: recv err: %d\n", err);
 		goto free_flip;
 	}
-	pr_info("recv '%s' on stream %lld\n", msg, sid);
+	pr_info("quic_test: recv '%s' on stream %lld\n", msg, sid);
 
 	strscpy(msg, "hello quic client! welcome back!", sizeof(msg));
 	sid = (0 | QUIC_STREAM_TYPE_SERVER_MASK);
 	flags = MSG_STREAM_NEW | MSG_STREAM_FIN;
 	err = quic_test_sendmsg(newsock, msg, strlen(msg), sid, flags);
 	if (err < 0) {
-		pr_info("send %d\n", err);
+		pr_info("quic_test: send err: %d\n", err);
 		goto free_flip;
 	}
-	pr_info("send '%s' on stream %lld\n", msg, sid);
+	pr_info("quic_test: send '%s' on stream %lld\n", msg, sid);
 
 	err = 0;
 free_flip:
@@ -553,26 +555,26 @@ static int quic_test_do_sample_server(void)
 	if (err < 0)
 		goto free_flip;
 
-	pr_info("HANDSHAKE DONE\n");
+	pr_info("quic_test: handshake completed\n");
 
 	memset(msg, 0, sizeof(msg));
 	flags = 0;
 	err = quic_test_recvmsg(newsock, msg, sizeof(msg) - 1, &sid, &flags);
 	if (err < 0) {
-		pr_info("recv error %d\n", err);
+		pr_info("quic_test: recv err %d\n", err);
 		goto free_flip;
 	}
-	pr_info("recv '%s' on stream %lld\n", msg, sid);
+	pr_info("quic_test: recv '%s' on stream %lld\n", msg, sid);
 
 	strscpy(msg, "hello quic client!", sizeof(msg));
 	sid = (0 | QUIC_STREAM_TYPE_SERVER_MASK);
 	flags = MSG_STREAM_NEW | MSG_STREAM_FIN;
 	err = quic_test_sendmsg(newsock, msg, strlen(msg), sid, flags);
 	if (err < 0) {
-		pr_info("send %d\n", err);
+		pr_info("quic_test: send err: %d\n", err);
 		goto free_flip;
 	}
-	pr_info("send '%s' on stream %lld\n", msg, sid);
+	pr_info("quic_test: send '%s' on stream %lld\n", msg, sid);
 
 	err = 0;
 free_flip:
@@ -584,7 +586,7 @@ free:
 
 static int quic_test_init(void)
 {
-	pr_info("[QUIC_TEST] Quic Test Start\n");
+	pr_info("quic_test: init\n");
 	if (!strcmp(role, "client")) {
 		if (!strcmp(alpn, "ticket"))
 			return quic_test_do_ticket_client();
@@ -600,7 +602,7 @@ static int quic_test_init(void)
 
 static void quic_test_exit(void)
 {
-	pr_info("[QUIC_TEST] Quic Test Exit\n");
+	pr_info("quic_test: exit\n");
 }
 
 module_init(quic_test_init);

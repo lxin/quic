@@ -550,7 +550,7 @@ static int quic_wait_for_send(struct sock *sk, u64 stream_id, long timeo, u32 ms
 		}
 		if (sk->sk_err) {
 			err = -EPIPE;
-			pr_warn("wait sndbuf sk_err %d\n", sk->sk_err);
+			pr_debug("%s: sk_err: %d\n", __func__, sk->sk_err);
 			goto out;
 		}
 		if (signal_pending(current)) {
@@ -559,7 +559,7 @@ static int quic_wait_for_send(struct sock *sk, u64 stream_id, long timeo, u32 ms
 		}
 		if (quic_is_closed(sk)) {
 			err = -EPIPE;
-			pr_warn("wait sndbuf closed %d\n", err);
+			pr_debug("%s: sk closed\n", __func__);
 			goto out;
 		}
 
@@ -749,7 +749,7 @@ static int quic_wait_for_packet(struct sock *sk, long timeo)
 
 		err = sk->sk_err;
 		if (err) {
-			pr_warn("wait rcv pkt sk_err %d\n", err);
+			pr_debug("%s: sk_err: %d\n", __func__, err);
 			goto out;
 		}
 

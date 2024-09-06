@@ -1141,7 +1141,7 @@ static int quic_frame_connection_close_process(struct sock *sk, struct quic_fram
 	if (quic_inq_event_recv(sk, QUIC_EVENT_CONNECTION_CLOSE, close))
 		return -ENOMEM;
 	quic_set_state(sk, QUIC_SS_CLOSED);
-	pr_debug("[QUIC] %s phrase %d, frame %d\n", __func__, close->errcode, close->frame);
+	pr_debug("%s: phrase: %d, frame: %d\n", __func__, close->errcode, close->frame);
 
 	len -= phrase_len;
 	return frame->len - len;
@@ -1431,22 +1431,25 @@ int quic_frame_process(struct sock *sk, struct quic_frame *frame)
 		frame->len--;
 
 		if (type > QUIC_FRAME_MAX) {
-			pr_err_once("[QUIC] %s unsupported frame %x\n", __func__, type);
+			pr_debug("%s: unsupported frame, type: %x, level: %d\n",
+				 __func__, type, level);
 			packet->errcode = QUIC_TRANSPORT_ERROR_FRAME_ENCODING;
 			return -EPROTONOSUPPORT;
 		} else if (quic_frame_level_check(level, type)) {
+			pr_debug("%s: invalid frame, type: %x, level: %d\n",
+				 __func__, type, level);
 			packet->errcode = QUIC_TRANSPORT_ERROR_PROTOCOL_VIOLATION;
 			return -EINVAL;
 		}
-		pr_debug("[QUIC] %s type: %x level: %d\n", __func__, type, level);
 		ret = quic_frame_ops[type].frame_process(sk, frame, type);
 		if (ret < 0) {
-			pr_warn("[QUIC] %s type: %x level: %d err: %d\n", __func__,
-				type, level, ret);
+			pr_debug("%s: failed, type: %x, level: %d, err: %d\n",
+				 __func__, type, level, ret);
 			frame->type = type;
 			packet->errcode = frame->errcode;
 			return ret;
 		}
+		pr_debug("%s: done, type: %x, level: %d\n", __func__, type, level);
 		if (quic_frame_ack_eliciting(type)) {
 			packet->ack_eliciting = 1;
 			if (quic_frame_ack_immediate(type))
@@ -1469,10 +1472,10 @@ struct quic_frame *quic_frame_create(struct sock *sk, u8 type, void *data)
 		return NULL;
 	frame = quic_frame_ops[type].frame_create(sk, data, type);
 	if (!frame) {
-		pr_debug("[QUIC] frame create failed %x\n", type);
+		pr_debug("%s: failed, type: %x\n", __func__, type);
 		return NULL;
 	}
-	pr_debug("[QUIC] %s type: %x len: %u\n", __func__, type, frame->len);
+	pr_debug("%s: done, type: %x, len: %u\n", __func__, type, frame->len);
 	if (!frame->type)
 		frame->type = type;
 	return frame;

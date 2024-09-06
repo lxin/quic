@@ -330,7 +330,7 @@ void quic_outq_transmitted_sack(struct sock *sk, u8 level, s64 largest, s64 smal
 	bool raise_timer, complete;
 	struct list_head *head;
 
-	pr_debug("[QUIC] %s largest: %llu, smallest: %llu\n", __func__, largest, smallest);
+	pr_debug("%s: largest: %llu, smallest: %llu\n", __func__, largest, smallest);
 	if (quic_path_pl_confirm(path, largest, smallest)) {
 		pathmtu = quic_path_pl_recv(path, &raise_timer, &complete);
 		if (pathmtu)

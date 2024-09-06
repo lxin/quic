@@ -75,7 +75,7 @@ static struct quic_udp_sock *quic_udp_sock_create(struct sock *sk, union quic_ad
 
 	quic_udp_conf_init(sk, &udp_conf, a);
 	if (udp_sock_create(net, &udp_conf, &sock)) {
-		pr_err("[QUIC] Failed to create UDP sock for QUIC\n");
+		pr_debug("%s: failed to create udp sock\n", __func__);
 		kfree(us);
 		return NULL;
 	}
@@ -296,7 +296,7 @@ int quic_path_pl_send(struct quic_path_addr *a, s64 number)
 	}
 
 out:
-	pr_debug("%s: PLPMTUD: dst: %p, state: %d, pmtu: %d, size: %d, high: %d\n",
+	pr_debug("%s: dst: %p, state: %d, pmtu: %d, size: %d, high: %d\n",
 		 __func__, d, d->pl.state, d->pl.pmtu, d->pl.probe_size, d->pl.probe_high);
 	d->pl.probe_count++;
 	return pathmtu;
@@ -307,7 +307,7 @@ int quic_path_pl_recv(struct quic_path_addr *a, bool *raise_timer, bool *complet
 	struct quic_path_dst *d = (struct quic_path_dst *)a;
 	int pathmtu = 0;
 
-	pr_debug("%s: PLPMTUD: dst: %p, state: %d, pmtu: %d, size: %d, high: %d\n",
+	pr_debug("%s: dst: %p, state: %d, pmtu: %d, size: %d, high: %d\n",
 		 __func__, d, d->pl.state, d->pl.pmtu, d->pl.probe_size, d->pl.probe_high);
 
 	*raise_timer = false;
@@ -359,7 +359,7 @@ int quic_path_pl_toobig(struct quic_path_addr *a, u32 pmtu, bool *reset_timer)
 	struct quic_path_dst *d = (struct quic_path_dst *)a;
 	int pathmtu = 0;
 
-	pr_debug("%s: PLPMTUD: dst: %p, state: %d, pmtu: %d, size: %d, ptb: %d\n",
+	pr_debug("%s: dst: %p, state: %d, pmtu: %d, size: %d, ptb: %d\n",
 		 __func__, d, d->pl.state, d->pl.pmtu, d->pl.probe_size, pmtu);
 
 	*reset_timer = false;

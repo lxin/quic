@@ -564,7 +564,7 @@ static void quic_packet_decrypt_done(struct sk_buff *skb, int err)
 {
 	if (err) {
 		kfree_skb(skb);
-		pr_warn_once("%s: err %d\n", __func__, err);
+		pr_debug("%s: err: %d\n", __func__, err);
 		return;
 	}
 
@@ -680,8 +680,8 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb)
 			goto err;
 		}
 
-		pr_debug("[QUIC] %s number: %llu level: %d len: %d\n", __func__,
-			 cb->number, packet->level, skb->len);
+		pr_debug("%s: recvd, num: %llu, level: %d, len: %d\n",
+			 __func__, cb->number, packet->level, skb->len);
 
 		err = quic_pnspace_check(space, cb->number);
 		if (err) {
@@ -728,8 +728,8 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb)
 	consume_skb(skb);
 	return 0;
 err:
-	pr_warn("[QUIC] %s number: %llu level: %d err: %d\n", __func__,
-		cb->number, packet->level, err);
+	pr_debug("%s: failed, num: %llu, level: %d, err: %d\n",
+		 __func__, cb->number, packet->level, err);
 	quic_outq_transmit_close(sk, frame.type, packet->errcode, packet->level);
 	kfree_skb(skb);
 	return err;
@@ -838,7 +838,7 @@ static int quic_packet_app_process(struct sock *sk, struct sk_buff *skb)
 		goto err;
 	}
 
-	pr_debug("[QUIC] %s number: %llu len: %d\n", __func__, cb->number, skb->len);
+	pr_debug("%s: recvd, num: %llu, len: %d\n", __func__, cb->number, skb->len);
 
 	err = quic_pnspace_check(space, cb->number);
 	if (err) {
@@ -876,7 +876,8 @@ out:
 	return quic_packet_app_process_done(sk, skb);
 
 err:
-	pr_warn("[QUIC] %s number: %llu len: %d err: %d\n", __func__, cb->number, skb->len, err);
+	pr_debug("%s: failed, num: %llu, len: %d, err: %d\n",
+		 __func__, cb->number, skb->len, err);
 	quic_outq_transmit_close(sk, frame.type, packet->errcode, 0);
 	kfree_skb(skb);
 	return err;
@@ -958,7 +959,7 @@ static int quic_packet_get_alpn(struct quic_data *alpn, u8 *p, u32 len)
 		len -= length;
 		p += length;
 	}
-	pr_debug("[QUIC] %s alpn len %d\n", __func__, alpn->len);
+	pr_debug("%s: alpn_len: %d\n", __func__, alpn->len);
 	return alpn->len;
 }
 
@@ -1054,7 +1055,7 @@ static u8 *quic_packet_pack_frames(struct sock *sk, struct sk_buff *skb, s64 num
 	list_for_each_entry_safe(frame, next, head, list) {
 		list_del(&frame->list);
 		p = quic_put_data(p, frame->data, frame->len);
-		pr_debug("[QUIC] %s number: %llu type: %u packet_len: %u frame_len: %u level: %u\n",
+		pr_debug("%s: num: %llu, type: %u, packet_len: %u, frame_len: %u, level: %u\n",
 			 __func__, number, frame->type, skb->len, frame->len, packet->level);
 		if (!quic_frame_retransmittable(frame->type)) {
 			quic_frame_free(frame);
@@ -1370,7 +1371,7 @@ static void quic_packet_encrypt_done(struct sk_buff *skb, int err)
 {
 	if (err) {
 		kfree_skb(skb);
-		pr_warn_once("%s: err %d\n", __func__, err);
+		pr_debug("%s: err: %d\n", __func__, err);
 		return;
 	}
 
@@ -1461,7 +1462,7 @@ void quic_packet_create(struct sock *sk)
 		goto err;
 	return;
 err:
-	pr_warn("[QUIC] %s %d\n", __func__, err);
+	pr_debug("%s: err: %d\n", __func__, err);
 }
 
 int quic_packet_flush(struct sock *sk)

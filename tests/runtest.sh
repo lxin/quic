@@ -143,7 +143,7 @@ msquic_tests() {
 http3_tests() {
 	[ -f /usr/local/include/nghttp3/nghttp3.h -o -f /usr/include/nghttp3/nghttp3.h ] || return 0
 
-	print_start "Http/3 Tests (http3_test -> Public Sebsites)"
+	print_start "Http/3 Tests (http3_test -> Public Websites)"
 	make http3_test > /dev/null || return 1
 	echo "- https://pgjones.dev/"
 	./http3_test -c https://pgjones.dev/ > /dev/null || return 1 # aioquic

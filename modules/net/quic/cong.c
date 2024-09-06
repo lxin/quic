@@ -92,7 +92,7 @@ static void cubic_slow_start(struct quic_cong *cong, u32 bytes, s64 number)
 		else if (eta > QUIC_HS_MAX_ETA)
 			eta = QUIC_HS_MAX_ETA;
 
-		pr_debug("[QUIC] %s current_round_min_rtt %u last_round_min_rtt %u eta %u\n",
+		pr_debug("%s: current_round_min_rtt: %u, last_round_min_rtt: %u, eta: %u\n",
 			 __func__, cubic->current_round_min_rtt, cubic->last_round_min_rtt, eta);
 
 		/* delay increase triggers slow start exit and enter CSS */
@@ -159,7 +159,7 @@ static void cubic_cong_avoid(struct quic_cong *cong, u32 bytes)
 	 *  cubic
 	 */
 	cwnd_thres = (target * (((t + cong->smoothed_rtt) << 10) / USEC_PER_SEC)) >> 10;
-	pr_debug("[QUIC] %s TARGET %llu THRES %llu DELTA %llu t %llu srtt %u tx %llu kx %llu\n",
+	pr_debug("%s: target: %llu, thres: %llu, delta: %llu, t: %llu, srtt: %u, tx: %llu, kx: %llu\n",
 		 __func__, target, cwnd_thres, delta, t, cong->smoothed_rtt, tx, kx);
 	/*
 	 *          ⎧
@@ -192,7 +192,7 @@ static void cubic_cong_avoid(struct quic_cong *cong, u32 bytes)
 		cubic->pending_add = m % (100 * cong->window);
 	}
 
-	pr_debug("%s target %llu window %u target_add %u\n",
+	pr_debug("%s: target: %llu, window: %u, target_add: %u\n",
 		 __func__, target, cong->window, target_add);
 
 	/*
@@ -207,7 +207,7 @@ static void cubic_cong_avoid(struct quic_cong *cong, u32 bytes)
 	if (cubic->w_tcp > cong->window)
 		tcp_add = cong->mss * (cubic->w_tcp - cong->window) / cong->window;
 
-	pr_debug("%s w_tcp %u window %u tcp_add %u\n",
+	pr_debug("%s: w_tcp: %u, window: %u, tcp_add: %u\n",
 		 __func__, cubic->w_tcp, cong->window, tcp_add);
 
 	/* W_cubic(_t_) or _W_est_, whichever is bigger */
@@ -241,7 +241,7 @@ static void quic_cubic_on_packet_lost(struct quic_cong *cong, u32 time, u32 byte
 	time_ssthresh = (time_ssthresh + cong->max_ack_delay) * 3;
 	if (cong->time - time > time_ssthresh) {
 		/* persistent congestion: cong_avoid -> slow_start or recovery -> slow_start */
-		pr_debug("[QUIC] %s permanent congestion, cwnd: %u ssthresh: %u\n",
+		pr_debug("%s: permanent congestion, cwnd: %u, ssthresh: %u\n",
 			 __func__, cong->window, cong->ssthresh);
 		cong->window = cong->mss * 2;
 		cong->state = QUIC_CONG_SLOW_START;
@@ -250,17 +250,17 @@ static void quic_cubic_on_packet_lost(struct quic_cong *cong, u32 time, u32 byte
 
 	switch (cong->state) {
 	case QUIC_CONG_SLOW_START:
-		pr_debug("[QUIC] %s slow_start -> recovery, cwnd: %u ssthresh: %u\n",
+		pr_debug("%s: slow_start -> recovery, cwnd: %u, ssthresh: %u\n",
 			 __func__, cong->window, cong->ssthresh);
 		break;
 	case QUIC_CONG_RECOVERY_PERIOD:
 		return;
 	case QUIC_CONG_CONGESTION_AVOIDANCE:
-		pr_debug("[QUIC] %s cong_avoid -> recovery, cwnd: %u ssthresh: %u\n",
+		pr_debug("%s: cong_avoid -> recovery, cwnd: %u, ssthresh: %u\n",
 			 __func__, cong->window, cong->ssthresh);
 		break;
 	default:
-		pr_warn_once("[QUIC] %s wrong congestion state: %d", __func__, cong->state);
+		pr_debug("%s: wrong congestion state: %d\n", __func__, cong->state);
 		return;
 	}
 
@@ -275,14 +275,14 @@ static void quic_cubic_on_packet_acked(struct quic_cong *cong, u32 time, u32 byt
 		cubic_slow_start(cong, bytes, number);
 		if (cong->window >= cong->ssthresh) {
 			cong->state = QUIC_CONG_CONGESTION_AVOIDANCE;
-			pr_debug("[QUIC] %s slow_start -> cong_avoid, cwnd: %u ssthresh: %u\n",
+			pr_debug("%s: slow_start -> cong_avoid, cwnd: %u, ssthresh: %u\n",
 				 __func__, cong->window, cong->ssthresh);
 		}
 		break;
 	case QUIC_CONG_RECOVERY_PERIOD:
 		if (cong->recovery_time < time) {
 			cong->state = QUIC_CONG_CONGESTION_AVOIDANCE;
-			pr_debug("[QUIC] %s recovery -> cong_avoid, cwnd: %u ssthresh: %u\n",
+			pr_debug("%s: recovery -> cong_avoid, cwnd: %u, ssthresh: %u\n",
 				 __func__, cong->window, cong->ssthresh);
 		}
 		break;
@@ -290,7 +290,7 @@ static void quic_cubic_on_packet_acked(struct quic_cong *cong, u32 time, u32 byt
 		cubic_cong_avoid(cong, bytes);
 		break;
 	default:
-		pr_warn_once("[QUIC] %s wrong congestion state: %d", __func__, cong->state);
+		pr_debug("%s: wrong congestion state: %d\n", __func__, cong->state);
 		return;
 	}
 }
@@ -299,17 +299,17 @@ static void quic_cubic_on_process_ecn(struct quic_cong *cong)
 {
 	switch (cong->state) {
 	case QUIC_CONG_SLOW_START:
-		pr_debug("[QUIC] %s slow_start -> recovery, cwnd: %u ssthresh: %u\n",
+		pr_debug("%s: slow_start -> recovery, cwnd: %u, ssthresh: %u\n",
 			 __func__, cong->window, cong->ssthresh);
 		break;
 	case QUIC_CONG_RECOVERY_PERIOD:
 		return;
 	case QUIC_CONG_CONGESTION_AVOIDANCE:
-		pr_debug("[QUIC] %s cong_avoid -> recovery, cwnd: %u ssthresh: %u\n",
+		pr_debug("%s: cong_avoid -> recovery, cwnd: %u, ssthresh: %u\n",
 			 __func__, cong->window, cong->ssthresh);
 		break;
 	default:
-		pr_warn_once("[QUIC] %s wrong congestion state: %d", __func__, cong->state);
+		pr_debug("%s: wrong congestion state: %d\n", __func__, cong->state);
 		return;
 	}
 
@@ -347,7 +347,7 @@ static void quic_cubic_on_packet_sent(struct quic_cong *cong, u32 time, u32 byte
 	cubic->current_round_min_rtt = U32_MAX;
 	cubic->rtt_sample_count = 0;
 
-	pr_debug("[QUIC] %s last_round_min_rtt %u\n", __func__, cubic->last_round_min_rtt);
+	pr_debug("%s: last_round_min_rtt: %u\n", __func__, cubic->last_round_min_rtt);
 }
 
 static void quic_cubic_on_rtt_update(struct quic_cong *cong)
@@ -357,7 +357,7 @@ static void quic_cubic_on_rtt_update(struct quic_cong *cong)
 	if (cubic->window_end == -1)
 		return;
 
-	pr_debug("[QUIC] %s current_round_min_rtt %u latest_rtt %u\n",
+	pr_debug("%s: current_round_min_rtt: %u, latest_rtt: %u\n",
 		 __func__, cubic->current_round_min_rtt, cong->latest_rtt);
 
 	if (cubic->current_round_min_rtt > cong->latest_rtt) {
@@ -379,7 +379,7 @@ static void quic_reno_on_packet_lost(struct quic_cong *cong, u32 time, u32 bytes
 	time_ssthresh = (time_ssthresh + cong->max_ack_delay) * 3;
 	if (cong->time - time > time_ssthresh) {
 		/* persistent congestion: cong_avoid -> slow_start or recovery -> slow_start */
-		pr_debug("[QUIC] %s permanent congestion, cwnd: %u ssthresh: %u\n",
+		pr_debug("%s: permanent congestion, cwnd: %u, ssthresh: %u\n",
 			 __func__, cong->window, cong->ssthresh);
 		cong->window = cong->mss * 2;
 		cong->state = QUIC_CONG_SLOW_START;
@@ -388,17 +388,17 @@ static void quic_reno_on_packet_lost(struct quic_cong *cong, u32 time, u32 bytes
 
 	switch (cong->state) {
 	case QUIC_CONG_SLOW_START:
-		pr_debug("[QUIC] %s slow_start -> recovery, cwnd: %u ssthresh: %u\n",
+		pr_debug("%s: slow_start -> recovery, cwnd: %u, ssthresh: %u\n",
 			 __func__, cong->window, cong->ssthresh);
 		break;
 	case QUIC_CONG_RECOVERY_PERIOD:
 		return;
 	case QUIC_CONG_CONGESTION_AVOIDANCE:
-		pr_debug("[QUIC] %s cong_avoid -> recovery, cwnd: %u ssthresh: %u\n",
+		pr_debug("%s: cong_avoid -> recovery, cwnd: %u, ssthresh: %u\n",
 			 __func__, cong->window, cong->ssthresh);
 		break;
 	default:
-		pr_warn_once("[QUIC] %s wrong congestion state: %d", __func__, cong->state);
+		pr_debug("%s: wrong congestion state: %d\n", __func__, cong->state);
 		return;
 	}
 
@@ -415,14 +415,14 @@ static void quic_reno_on_packet_acked(struct quic_cong *cong, u32 time, u32 byte
 		cong->window = min_t(u32, cong->window + bytes, cong->max_window);
 		if (cong->window >= cong->ssthresh) {
 			cong->state = QUIC_CONG_CONGESTION_AVOIDANCE;
-			pr_debug("[QUIC] %s slow_start -> cong_avoid, cwnd: %u ssthresh: %u\n",
+			pr_debug("%s: slow_start -> cong_avoid, cwnd: %u, ssthresh: %u\n",
 				 __func__, cong->window, cong->ssthresh);
 		}
 		break;
 	case QUIC_CONG_RECOVERY_PERIOD:
 		if (cong->recovery_time < time) {
 			cong->state = QUIC_CONG_CONGESTION_AVOIDANCE;
-			pr_debug("[QUIC] %s recovery -> cong_avoid, cwnd: %u ssthresh: %u\n",
+			pr_debug("%s: recovery -> cong_avoid, cwnd: %u, ssthresh: %u\n",
 				 __func__, cong->window, cong->ssthresh);
 		}
 		break;
@@ -430,7 +430,7 @@ static void quic_reno_on_packet_acked(struct quic_cong *cong, u32 time, u32 byte
 		cong->window += cong->mss * bytes / cong->window;
 		break;
 	default:
-		pr_warn_once("[QUIC] %s wrong congestion state: %d", __func__, cong->state);
+		pr_debug("%s: wrong congestion state: %d\n", __func__, cong->state);
 		return;
 	}
 }
@@ -439,17 +439,17 @@ static void quic_reno_on_process_ecn(struct quic_cong *cong)
 {
 	switch (cong->state) {
 	case QUIC_CONG_SLOW_START:
-		pr_debug("[QUIC] %s slow_start -> recovery, cwnd: %u ssthresh: %u\n",
+		pr_debug("%s: slow_start -> recovery, cwnd: %u, ssthresh: %u\n",
 			 __func__, cong->window, cong->ssthresh);
 		break;
 	case QUIC_CONG_RECOVERY_PERIOD:
 		return;
 	case QUIC_CONG_CONGESTION_AVOIDANCE:
-		pr_debug("[QUIC] %s cong_avoid -> recovery, cwnd: %u ssthresh: %u\n",
+		pr_debug("%s: cong_avoid -> recovery, cwnd: %u, ssthresh: %u\n",
 			 __func__, cong->window, cong->ssthresh);
 		break;
 	default:
-		pr_warn_once("[QUIC] %s wrong congestion state: %d", __func__, cong->state);
+		pr_debug("%s: wrong congestion state: %d\n", __func__, cong->state);
 		return;
 	}
 
@@ -517,7 +517,7 @@ static void quic_cong_rto_update(struct quic_cong *cong)
 	duration += cong->smoothed_rtt;
 	cong->duration = duration;
 
-	pr_debug("[QUIC] update rto %u duration %u\n", rto, duration);
+	pr_debug("%s: update rto: %u, duration: %u\n", __func__, rto, duration);
 }
 
 void quic_cong_set_config(struct quic_cong *cong, struct quic_config *c)
@@ -575,8 +575,8 @@ static void quic_cong_pace_update(struct quic_cong *cong, u32 bytes, u32 max_rat
 		do_div(rate, cong->smoothed_rtt);
 
 	WRITE_ONCE(cong->pacing_rate, min_t(u64, rate, max_rate));
-	pr_debug("[QUIC] update pacing rate %u max rate %u srtt %u\n",
-		 cong->pacing_rate, max_rate, cong->smoothed_rtt);
+	pr_debug("%s: update pacing rate: %u, max rate: %u, srtt: %u\n",
+		 __func__, cong->pacing_rate, max_rate, cong->smoothed_rtt);
 }
 
 void quic_cong_on_packet_sent(struct quic_cong *cong, u32 time, u32 bytes, s64 number)

@@ -164,7 +164,7 @@ static int quic_crypto_tx_keys_derive_and_install(struct quic_crypto *crypto)
 		if (err)
 			return err;
 	}
-	pr_debug("[QUIC] tx keys: %16phN, %12phN, %16phN\n", k.data, iv.data, hp_k.data);
+	pr_debug("%s: k: %16phN, iv: %12phN, hp_k:%16phN\n", __func__, k.data, iv.data, hp_k.data);
 	return 0;
 }
 
@@ -195,7 +195,7 @@ static int quic_crypto_rx_keys_derive_and_install(struct quic_crypto *crypto)
 		if (err)
 			return err;
 	}
-	pr_debug("[QUIC] rx keys: %16phN, %12phN, %16phN\n", k.data, iv.data, hp_k.data);
+	pr_debug("%s: k: %16phN, iv: %12phN, hp_k:%16phN\n", __func__, k.data, iv.data, hp_k.data);
 	return 0;
 }
 
@@ -536,7 +536,7 @@ int quic_crypto_decrypt(struct quic_crypto *crypto, struct sk_buff *skb)
 	cha = quic_crypto_is_cipher_chacha(crypto);
 	err = quic_crypto_header_decrypt(crypto->rx_hp_tfm, skb, cha);
 	if (err) {
-		pr_warn("[QUIC] hd decrypt err %d\n", err);
+		pr_debug("%s: hd decrypt err %d\n", __func__, err);
 		return err;
 	}
 
