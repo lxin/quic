@@ -1775,7 +1775,7 @@ static int quic_copy_from_user(void *to, const void __user *from, unsigned long 
 
 static int quic_copy_to_user(void __user *to, const void *from, unsigned long n)
 {
-	if (access_ok(from, 0))
+	if (access_ok(to, 0))
 		return copy_to_user(to, from, n);
 	memcpy(to, from, n);
 	return 0;
@@ -1837,7 +1837,8 @@ static int quic_sock_get_transport_param(struct sock *sk, int len,
 	if (param.remote)
 		p = quic_remote(sk);
 
-	if (quic_put_user(len, optlen) || quic_copy_to_user(optval, p, len))
+	param = *p;
+	if (quic_put_user(len, optlen) || quic_copy_to_user(optval, &param, len))
 		return -EFAULT;
 	return 0;
 }
@@ -1850,7 +1851,8 @@ static int quic_sock_get_config(struct sock *sk, int len, char __user *optval, i
 		return -EINVAL;
 	len = sizeof(config);
 
-	if (quic_put_user(len, optlen) || quic_copy_to_user(optval, c, len))
+	config = *c;
+	if (quic_put_user(len, optlen) || quic_copy_to_user(optval, &config, len))
 		return -EFAULT;
 	return 0;
 }
