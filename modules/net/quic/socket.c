@@ -1886,6 +1886,8 @@ static int quic_sock_get_crypto_secret(struct sock *sk, int len,
 	if (quic_copy_from_user(&secret, optval, len))
 		return -EFAULT;
 
+	if (secret.level >= QUIC_CRYPTO_MAX)
+		return -EINVAL;
 	if (quic_crypto_get_secret(quic_crypto(sk, secret.level), &secret))
 		return -EINVAL;
 
