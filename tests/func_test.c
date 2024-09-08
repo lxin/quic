@@ -1740,7 +1740,7 @@ static int do_server_test(int sockfd)
 {
 	struct quic_errinfo errinfo = {};
 	struct sockaddr_in addr = {};
-	unsigned int optlen, flags;
+	unsigned int optlen, flags = 0;
 	int64_t len = 0, sid = 0;
 	int ret;
 
