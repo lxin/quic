@@ -3,7 +3,7 @@ EXTRA_DIST		= keys runtest.sh msquic_test.c
 noinst_PROGRAMS		= func_test perf_test sample_test ticket_test alpn_test
 
 AM_CPPFLAGS		= -I$(top_builddir)/libquic/ -I$(top_builddir)/modules/include/uapi/
-AM_CFLAGS		= -Werror -Wall $(LIBGNUTLS_CFLAGS)
+AM_CFLAGS		= -Werror -Wall -Wformat-signedness $(LIBGNUTLS_CFLAGS)
 LDADD			= $(top_builddir)/libquic/libquic.la $(LIBGNUTLS_LIBS)
 
 func_test_SOURCE	= func_test.c
