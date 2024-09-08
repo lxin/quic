@@ -645,8 +645,9 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb)
 	struct quic_conn_id *active;
 	struct quic_crypto *crypto;
 	struct quic_pnspace *space;
-	int err = -EINVAL, level;
 	struct quichshdr *hshdr;
+	int err = -EINVAL;
+	u8 level;
 
 	WARN_ON(!skb_set_owner_sk_safe(skb, sk));
 

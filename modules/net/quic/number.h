@@ -10,10 +10,6 @@
 
 union quic_num {
 	u8	u8;
-	u16	u16;
-	u32	u32;
-	u64	u64;
-	u8	n[8];
 	__be16	be16;
 	__be32	be32;
 	__be64	be64;
@@ -49,17 +45,17 @@ static inline u8 quic_get_var(u8 **pp, u32 *plen, u64 *val)
 		break;
 	case 2:
 		memcpy(&n.be16, p, 2);
-		n.n[0] &= 0x3f;
+		n.u8 &= 0x3f;
 		v = ntohs(n.be16);
 		break;
 	case 4:
 		memcpy(&n.be32, p, 4);
-		n.n[0] &= 0x3f;
+		n.u8 &= 0x3f;
 		v = ntohl(n.be32);
 		break;
 	case 8:
 		memcpy(&n.be64, p, 8);
-		n.n[0] &= 0x3f;
+		n.u8 &= 0x3f;
 		v = be64_to_cpu(n.be64);
 		break;
 	}
@@ -111,25 +107,24 @@ static inline u8 *quic_put_var(u8 *p, u64 num)
 {
 	union quic_num n;
 
-	n.u64 = num;
 	if (num < 64) {
-		*p++ = n.u8;
+		*p++ = (u8)num;
 		return p;
 	}
 	if (num < 16384) {
-		n.be16 = htons(n.u16);
-		memcpy(p, &n.be16, 2);
+		n.be16 = htons((u16)num);
+		*((__be16 *)p) = n.be16;
 		*p |= 0x40;
 		return p + 2;
 	}
 	if (num < 1073741824) {
-		n.be32 = htonl(n.u32);
-		memcpy(p, &n.be32, 4);
+		n.be32 = htonl((u32)num);
+		*((__be32 *)p) = n.be32;
 		*p |= 0x80;
 		return p + 4;
 	}
-	n.be64 = cpu_to_be64(n.u64);
-	memcpy(p, &n.be64, 8);
+	n.be64 = cpu_to_be64(num);
+	*((__be64 *)p) = n.be64;
 	*p |= 0xc0;
 	return p + 8;
 }
@@ -138,19 +133,17 @@ static inline u8 *quic_put_int(u8 *p, u64 num, u8 len)
 {
 	union quic_num n;
 
-	n.u64 = num;
-
 	switch (len) {
 	case 1:
-		*p++ = n.u8;
+		*p++ = (u8)num;
 		return p;
 	case 2:
-		n.be16 = htons(n.u16);
-		memcpy(p, &n.be16, 2);
+		n.be16 = htons((u16)num);
+		*((__be16 *)p) = n.be16;
 		return p + 2;
 	case 4:
-		n.be32 = htonl(n.u32);
-		memcpy(p, &n.be32, 4);
+		n.be32 = htonl((u32)num);
+		*((__be32 *)p) = n.be32;
 		return p + 4;
 	default:
 		return NULL;

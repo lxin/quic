@@ -100,7 +100,7 @@ static struct quic_frame *quic_frame_ping_create(struct sock *sk, void *data, u8
 {
 	struct quic_packet *packet = quic_packet(sk);
 	struct quic_frame *frame;
-	u16 *probe_size = data;
+	u32 *probe_size = data;
 	u32 frame_len;
 
 	if (quic_packet_config(sk, 0, 0))
@@ -296,12 +296,12 @@ static struct quic_frame *quic_frame_crypto_create(struct sock *sk, void *data, 
 static struct quic_frame *quic_frame_retire_conn_id_create(struct sock *sk, void *data, u8 type)
 {
 	struct quic_frame *frame;
-	u64 *number = data;
+	u64 *seqno = data;
 	u8 *p, buf[10];
 	u32 frame_len;
 
 	p = quic_put_var(buf, type);
-	p = quic_put_var(p, *number);
+	p = quic_put_var(p, *seqno);
 	frame_len = (u32)(p - buf);
 
 	frame = quic_frame_alloc(frame_len, NULL, GFP_ATOMIC);
@@ -309,7 +309,7 @@ static struct quic_frame *quic_frame_retire_conn_id_create(struct sock *sk, void
 		return NULL;
 	quic_put_data(frame->data, buf, frame_len);
 
-	quic_conn_id_remove(quic_dest(sk), *number);
+	quic_conn_id_remove(quic_dest(sk), *seqno);
 	return frame;
 }
 
@@ -593,9 +593,10 @@ static struct quic_frame *quic_frame_stream_data_blocked_create(struct sock *sk,
 static struct quic_frame *quic_frame_streams_blocked_uni_create(struct sock *sk,
 								void *data, u8 type)
 {
-	u32 *max = data, frame_len;
 	struct quic_frame *frame;
+	u64 *max = data;
 	u8 *p, buf[10];
+	u32 frame_len;
 
 	p = quic_put_var(buf, type);
 	p = quic_put_var(p, (*max >> 2) + 1);
@@ -612,9 +613,10 @@ static struct quic_frame *quic_frame_streams_blocked_uni_create(struct sock *sk,
 static struct quic_frame *quic_frame_streams_blocked_bidi_create(struct sock *sk,
 								 void *data, u8 type)
 {
-	u32 *max = data, frame_len;
 	struct quic_frame *frame;
+	u64 *max = data;
 	u8 *p, buf[10];
+	u32 frame_len;
 
 	p = quic_put_var(buf, type);
 	p = quic_put_var(p, (*max >> 2) + 1);
@@ -826,10 +828,10 @@ static int quic_frame_new_conn_id_process(struct sock *sk, struct quic_frame *fr
 static int quic_frame_retire_conn_id_process(struct sock *sk, struct quic_frame *frame, u8 type)
 {
 	struct quic_conn_id_set *id_set = quic_source(sk);
-	u32 len = frame->len, last, first;
 	struct quic_frame *nframe;
+	u64 seqno, last, first;
+	u32 len = frame->len;
 	u8 *p = frame->data;
-	u64 seqno;
 
 	if (!quic_get_var(&p, &len, &seqno))
 		return -EINVAL;
