@@ -47,7 +47,7 @@ static int do_client(int argc, char *argv[])
 	 * set MSG_STREAM_FIN to mark the last data on this stream.
 	 */
 	strcpy(msg, "hello quic server!");
-	sid = (0 | QUIC_STREAM_TYPE_UNI_MASK);
+	sid = QUIC_STREAM_TYPE_UNI_MASK;
 	flags = MSG_STREAM_NEW | MSG_STREAM_FIN;
 	ret = quic_sendmsg(sockfd, msg, strlen(msg), sid, flags);
 	if (ret == -1) {
@@ -125,7 +125,7 @@ static int do_server(int argc, char *argv[])
 	printf("recv '%s' on stream %ld\n", msg, sid);
 
 	strcpy(msg, "hello quic client!");
-	sid = (0 | QUIC_STREAM_TYPE_SERVER_MASK);
+	sid = QUIC_STREAM_TYPE_SERVER_MASK;
 	flags = MSG_STREAM_NEW | MSG_STREAM_FIN;
 	ret = quic_sendmsg(sockfd, msg, strlen(msg), sid, flags);
 	if (ret == -1) {
