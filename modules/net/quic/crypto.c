@@ -841,10 +841,10 @@ int quic_crypto_get_retry_tag(struct quic_crypto *crypto, struct sk_buff *skb,
 	aead_request_set_ad(req, plen);
 	aead_request_set_crypt(req, sg, sg, 0, iv);
 	err = crypto_aead_encrypt(req);
-
-	memcpy(tag, pseudo_retry + plen, 16);
+	if (!err)
+		memcpy(tag, pseudo_retry + plen, 16);
 	kfree(pseudo_retry);
-	return 0;
+	return err;
 }
 EXPORT_SYMBOL_GPL(quic_crypto_get_retry_tag);
 
@@ -886,9 +886,10 @@ int quic_crypto_generate_token(struct quic_crypto *crypto, void *addr, u32 addrl
 	aead_request_set_ad(req, addrlen);
 	aead_request_set_crypt(req, sg, sg, len - addrlen - QUIC_TAG_LEN, iv);
 	err = crypto_aead_encrypt(req);
-
-	memcpy(token, retry_token, len);
-	*tokenlen = len + 1;
+	if (!err) {
+		memcpy(token, retry_token, len);
+		*tokenlen = len + 1;
+	}
 	kfree(retry_token);
 	return err;
 }
