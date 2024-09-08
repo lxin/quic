@@ -1739,8 +1739,8 @@ static int do_client_test(int sockfd)
 static int do_server_test(int sockfd)
 {
 	struct quic_errinfo errinfo = {};
+	unsigned int optlen, flags = 0;
 	struct sockaddr_in addr = {};
-	unsigned int optlen, flags;
 	int64_t len = 0, sid = 0;
 	int ret;
 
