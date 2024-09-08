@@ -436,7 +436,6 @@ static int quic_inet_listen(struct socket *sock, int backlog)
 	struct quic_crypto *crypto;
 	struct quic_outqueue *outq;
 	struct sock *sk = sock->sk;
-	struct quic_inqueue *inq;
 	int err = 0, flag;
 
 	lock_sock(sk);
@@ -463,7 +462,6 @@ static int quic_inet_listen(struct socket *sock, int backlog)
 	outq = quic_outq(sk);
 	quic_outq_set_serv(outq);
 
-	inq = quic_inq(sk);
 	err = quic_crypto_initial_keys_install(crypto, active, quic_config(sk)->version, flag, 1);
 	if (err)
 		goto free;
