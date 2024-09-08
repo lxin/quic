@@ -144,7 +144,7 @@ static int do_client(int argc, char *argv[])
 		return -1;
 	}
 
-	printf("get the session ticket %lu and transport param %d and token %d, save it\n",
+	printf("get the session ticket %lu and transport param %u and token %u, save it\n",
 	       ticket_len, param_len, token_len);
 
 	strcpy(msg, "hello quic server!");

@@ -210,10 +210,10 @@ loop:
 		usleep(20);
 		if (flags & MSG_STREAM_FIN)
 			break;
-		printf("  recv len: %lu, stream_id: %lu, flags: %u.\n", len, sid, flags);
+		printf("  recv len: %ld, stream_id: %ld, flags: %u.\n", len, sid, flags);
 	}
 
-	printf("RECV DONE: tot_len %lu, stream_id: %lu, flags: %u.\n", len, sid, flags);
+	printf("RECV DONE: tot_len %ld, stream_id: %ld, flags: %u.\n", len, sid, flags);
 
 	flags = MSG_STREAM_FIN;
 	strcpy(snd_msg, "recv done");
@@ -322,7 +322,7 @@ handshake:
 		}
 		len += ret;
 		if (!(len % (opts->msg_len * 1024)))
-			printf("  send len: %lu, stream_id: %lu, flags: %u.\n", len, sid, flags);
+			printf("  send len: %ld, stream_id: %ld, flags: %u.\n", len, sid, flags);
 		if (len > opts->tot_len - opts->msg_len)
 			break;
 	}
@@ -333,7 +333,7 @@ handshake:
 		return -1;
 	}
 	len += ret;
-	printf("SEND DONE: tot_len: %lu, stream_id: %lu, flags: %u.\n", len, sid, flags);
+	printf("SEND DONE: tot_len: %ld, stream_id: %ld, flags: %u.\n", len, sid, flags);
 
 	memset(rcv_msg, 0, sizeof(rcv_msg));
 	ret = quic_recvmsg(sockfd, rcv_msg, opts->msg_len * 16, &sid, &flags);

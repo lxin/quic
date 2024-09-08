@@ -47,12 +47,12 @@ static int do_client_notification_test(int sockfd)
 		return -1;
 	}
 	if (!(flags & MSG_NOTIFICATION) || msg[0] != QUIC_EVENT_STREAM_UPDATE) {
-		printf("test2: FAIL flags %d, event %d\n", flags, msg[0]);
+		printf("test2: FAIL flags %u, event %d\n", flags, msg[0]);
 		return -1;
 	}
 	ev = (union quic_event *)&msg[1];
 	if (ev->update.state != QUIC_STREAM_SEND_STATE_RECVD) {
-		printf("test2: FAIL state %d\n", ev->update.state);
+		printf("test2: FAIL state %u\n", ev->update.state);
 		return -1;
 	}
 	printf("test2: PASS (QUIC_EVENT_STREAM_UPDATE/QUIC_STREAM_SEND_STATE_RECVD event)\n");
@@ -63,13 +63,13 @@ static int do_client_notification_test(int sockfd)
 		return -1;
 	}
 	if (!(flags & MSG_NOTIFICATION) || msg[0] != QUIC_EVENT_STREAM_UPDATE) {
-		printf("test3: FAIL flags %d, event %d\n", flags, msg[0]);
+		printf("test3: FAIL flags %u, event %d\n", flags, msg[0]);
 		return -1;
 	}
 	ev = (union quic_event *)&msg[1];
 	if (ev->update.state != QUIC_STREAM_RECV_STATE_RECVD ||
 	    ev->update.errcode != strlen("quic event test2")) {
-		printf("test3: FAIL state %d\n", ev->update.state);
+		printf("test3: FAIL state %u\n", ev->update.state);
 		return -1;
 	}
 	printf("test3: PASS (QUIC_EVENT_STREAM_UPDATE/QUIC_STREAM_RECV_STATE_RECVD event)\n");
@@ -80,7 +80,7 @@ static int do_client_notification_test(int sockfd)
 		return -1;
 	}
 	if (strcmp(msg, "quic event test2") || sid != 100) {
-		printf("test4: FAIL msg %s, sid %lu\n", msg, sid);
+		printf("test4: FAIL msg %s, sid %ld\n", msg, sid);
 		return -1;
 	}
 	printf("test4: PASS (receive msg after events)\n");
@@ -107,12 +107,12 @@ static int do_client_notification_test(int sockfd)
 		return -1;
 	}
 	if (!(flags & MSG_NOTIFICATION) || msg[0] != QUIC_EVENT_STREAM_UPDATE) {
-		printf("test5: FAIL flags %d, event %d\n", flags, msg[0]);
+		printf("test5: FAIL flags %u, event %d\n", flags, msg[0]);
 		return -1;
 	}
 	ev = (union quic_event *)&msg[1];
 	if (ev->update.state != QUIC_STREAM_SEND_STATE_RESET_RECVD || ev->update.errcode != 1) {
-		printf("test5: FAIL state %d\n", ev->update.state);
+		printf("test5: FAIL state %u\n", ev->update.state);
 		return -1;
 	}
 	printf("test5: PASS (QUIC_EVENT_STREAM_UPDATE/QUIC_STREAM_SEND_STATE_RESET_RECVD event)\n");
@@ -132,12 +132,12 @@ static int do_client_notification_test(int sockfd)
 		return -1;
 	}
 	if (!(flags & MSG_NOTIFICATION) || msg[0] != QUIC_EVENT_STREAM_UPDATE) {
-		printf("test6: FAIL flags %d event %d\n", flags, msg[0]);
+		printf("test6: FAIL flags %u event %d\n", flags, msg[0]);
 		return -1;
 	}
 	ev = (union quic_event *)&msg[1];
 	if (ev->update.state != QUIC_STREAM_SEND_STATE_RESET_SENT || ev->update.errcode != 1) {
-		printf("test6: FAIL state %d\n", ev->update.state);
+		printf("test6: FAIL state %u\n", ev->update.state);
 		return -1;
 	}
 	printf("test6: PASS (QUIC_EVENT_STREAM_UPDATE/QUIC_STREAM_SEND_STATE_RESET_SENT event)\n");
@@ -148,12 +148,12 @@ static int do_client_notification_test(int sockfd)
 		return -1;
 	}
 	if (!(flags & MSG_NOTIFICATION) || msg[0] != QUIC_EVENT_STREAM_UPDATE) {
-		printf("test7: FAIL flags %d, event %d\n", flags, msg[0]);
+		printf("test7: FAIL flags %u, event %d\n", flags, msg[0]);
 		return -1;
 	}
 	ev = (union quic_event *)&msg[1];
 	if (ev->update.state != QUIC_STREAM_SEND_STATE_RESET_RECVD || ev->update.errcode != 1) {
-		printf("test7: FAIL state %d\n", ev->update.state);
+		printf("test7: FAIL state %u\n", ev->update.state);
 		return -1;
 	}
 	printf("test7: PASS (QUIC_EVENT_STREAM_UPDATE/QUIC_STREAM_SEND_STATE_RESET_RECVD "
@@ -179,12 +179,12 @@ static int do_client_notification_test(int sockfd)
 		return -1;
 	}
 	if (!(flags & MSG_NOTIFICATION) || msg[0] != QUIC_EVENT_STREAM_UPDATE) {
-		printf("test8: FAIL flags %d, event %d\n", flags, msg[0]);
+		printf("test8: FAIL flags %u, event %d\n", flags, msg[0]);
 		return -1;
 	}
 	ev = (union quic_event *)&msg[1];
 	if (ev->update.state != QUIC_STREAM_RECV_STATE_RECV || ev->update.id != 107) {
-		printf("test8: FAIL state %d\n", ev->update.state);
+		printf("test8: FAIL state %u\n", ev->update.state);
 		return -1;
 	}
 	printf("test8: PASS (QUIC_EVENT_STREAM_UPDATE/QUIC_STREAM_RECV_STATE_RECV event)\n");
@@ -196,12 +196,12 @@ static int do_client_notification_test(int sockfd)
 		return -1;
 	}
 	if (!(flags & MSG_NOTIFICATION) || msg[0] != QUIC_EVENT_STREAM_UPDATE) {
-		printf("test9: FAIL flags %d, event %d\n", flags, msg[0]);
+		printf("test9: FAIL flags %u, event %d\n", flags, msg[0]);
 		return -1;
 	}
 	ev = (union quic_event *)&msg[1];
 	if (ev->update.state != QUIC_STREAM_RECV_STATE_RESET_RECVD || ev->update.id != 107) {
-		printf("test9: FAIL state %d\n", ev->update.state);
+		printf("test9: FAIL state %u\n", ev->update.state);
 		return -1;
 	}
 	printf("test9: PASS (QUIC_EVENT_STREAM_UPDATE/QUIC_STREAM_RECV_STATE_RESET_RECVD event)\n");
@@ -212,7 +212,7 @@ static int do_client_notification_test(int sockfd)
 		return -1;
 	}
 	if (strcmp(msg, "client reset") || sid != 107) {
-		printf("test10: FAIL msg %s, sid %lu\n", msg, sid);
+		printf("test10: FAIL msg %s, sid %ld\n", msg, sid);
 		return -1;
 	}
 	printf("test10: PASS (receive the old msg after stream reset events)\n");
@@ -250,7 +250,7 @@ static int do_client_notification_test(int sockfd)
 		return -1;
 	}
 	if (!(flags & MSG_NOTIFICATION) || msg[0] != QUIC_EVENT_STREAM_MAX_STREAM) {
-		printf("test13: FAIL flags %d, event %d\n", flags, msg[0]);
+		printf("test13: FAIL flags %u, event %d\n", flags, msg[0]);
 		return -1;
 	}
 	ev = (union quic_event *)&msg[1];
@@ -276,7 +276,7 @@ static int do_client_notification_test(int sockfd)
 		return -1;
 	}
 	if (!(flags & MSG_NOTIFICATION) || msg[0] != QUIC_EVENT_STREAM_MAX_STREAM) {
-		printf("test14: FAIL flags %d, event %d\n", flags, msg[0]);
+		printf("test14: FAIL flags %u, event %d\n", flags, msg[0]);
 		return -1;
 	}
 	ev = (union quic_event *)&msg[1];
@@ -331,7 +331,7 @@ static int do_client_notification_test(int sockfd)
 		return -1;
 	}
 	if (!(flags & MSG_NOTIFICATION) || msg[0] != QUIC_EVENT_CONNECTION_MIGRATION) {
-		printf("test17: FAIL flags %d, event %d\n", flags, msg[0]);
+		printf("test17: FAIL flags %u, event %d\n", flags, msg[0]);
 		return -1;
 	}
 	ev = (union quic_event *)&msg[1];
@@ -345,7 +345,7 @@ static int do_client_notification_test(int sockfd)
 		return -1;
 	}
 	if (strcmp(msg, "quic event test17") || sid != 108) {
-		printf("test17: FAIL msg %s, sid %lu\n", msg, sid);
+		printf("test17: FAIL msg %s, sid %ld\n", msg, sid);
 		return -1;
 	}
 	printf("test17: PASS (QUIC_EVENT_CONNECTION_MIGRATION event for local migration)\n");
@@ -365,7 +365,7 @@ static int do_client_notification_test(int sockfd)
 		return -1;
 	}
 	if (!(flags & MSG_NOTIFICATION) || msg[0] != QUIC_EVENT_CONNECTION_MIGRATION) {
-		printf("test18: FAIL flags %d, event %d\n", flags, msg[0]);
+		printf("test18: FAIL flags %u, event %d\n", flags, msg[0]);
 		return -1;
 	}
 	ev = (union quic_event *)&msg[1];
@@ -421,7 +421,7 @@ static int do_client_notification_test(int sockfd)
 		return -1;
 	}
 	if (strcmp(msg, "quic event test21") || sid != 112) {
-		printf("test21: FAIL msg %s, sid %lu\n", msg, sid);
+		printf("test21: FAIL msg %s, sid %ld\n", msg, sid);
 		return -1;
 	}
 	sleep(1);
@@ -439,7 +439,7 @@ static int do_client_notification_test(int sockfd)
 		return -1;
 	}
 	if (!(flags & MSG_NOTIFICATION) || msg[0] != QUIC_EVENT_KEY_UPDATE) {
-		printf("test21: FAIL flags %d, event %d\n", flags, msg[0]);
+		printf("test21: FAIL flags %u, event %d\n", flags, msg[0]);
 		return -1;
 	}
 	ev = (union quic_event *)&msg[1];
@@ -453,7 +453,7 @@ static int do_client_notification_test(int sockfd)
 		return -1;
 	}
 	if (strcmp(msg, "quic event test21") || sid != 115) {
-		printf("test21: FAIL msg %s, sid %lu\n", msg, sid);
+		printf("test21: FAIL msg %s, sid %ld\n", msg, sid);
 		return -1;
 	}
 	printf("test21: PASS (QUIC_EVENT_KEY_UPDATE event for local key_update)\n");
@@ -472,7 +472,7 @@ static int do_client_notification_test(int sockfd)
 		return -1;
 	}
 	if (strcmp(msg, "client key_update") || sid != 116) {
-		printf("test22: FAIL msg %s, sid %lu\n", msg, sid);
+		printf("test22: FAIL msg %s, sid %ld\n", msg, sid);
 		return -1;
 	}
 	sleep(1);
@@ -490,7 +490,7 @@ static int do_client_notification_test(int sockfd)
 		return -1;
 	}
 	if (!(flags & MSG_NOTIFICATION) || msg[0] != QUIC_EVENT_KEY_UPDATE) {
-		printf("test22: FAIL flags %d, event %d\n", flags, msg[0]);
+		printf("test22: FAIL flags %u, event %d\n", flags, msg[0]);
 		return -1;
 	}
 	ev = (union quic_event *)&msg[1];
@@ -504,7 +504,7 @@ static int do_client_notification_test(int sockfd)
 		return -1;
 	}
 	if (strcmp(msg, "quic event test22") || sid != 119) {
-		printf("test22: FAIL msg %s, sid %lu\n", msg, sid);
+		printf("test22: FAIL msg %s, sid %ld\n", msg, sid);
 		return -1;
 	}
 	printf("test22: PASS (QUIC_EVENT_KEY_UPDATE event for peer key_update)\n");
@@ -541,7 +541,7 @@ static int do_client_notification_test(int sockfd)
 		return -1;
 	}
 	if (!(flags & MSG_NOTIFICATION) || msg[0] != QUIC_EVENT_NEW_TOKEN) {
-		printf("test25: FAIL flags %d, event %d\n", flags, msg[0]);
+		printf("test25: FAIL flags %u, event %d\n", flags, msg[0]);
 		return -1;
 	}
 	memset(msg, 0, sizeof(msg));
@@ -551,7 +551,7 @@ static int do_client_notification_test(int sockfd)
 		return -1;
 	}
 	if (strcmp(msg, "client new_token") || sid != 120) {
-		printf("test25: FAIL msg %s, sid %lu\n", msg, sid);
+		printf("test25: FAIL msg %s, sid %ld\n", msg, sid);
 		return -1;
 	}
 	printf("test25: PASS (QUIC_EVENT_NEW_TOKEN event)\n");
@@ -602,7 +602,7 @@ static int do_client_close_test(int sockfd)
 	optlen = sizeof(opt);
 	ret = getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_CONNECTION_CLOSE, opt, &optlen);
 	if (ret == -1 || optlen != sizeof(*info)) {
-		printf("test3: FAIL ret %d, optlen %d\n", ret, optlen);
+		printf("test3: FAIL ret %d, optlen %u\n", ret, optlen);
 		return -1;
 	}
 	printf("test3: PASS (get non-setup close info from socket)\n");
@@ -621,7 +621,7 @@ static int do_client_close_test(int sockfd)
 	ret = getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_CONNECTION_CLOSE, opt, &optlen);
 	if (ret == -1 || info->errcode != 10 || info->frame != 0 ||
 	    strcmp((char *)info->phrase, "this is app err")) {
-		printf("test4: FAIL ret %d, errcode %d, frame %d, phrase %s\n",
+		printf("test4: FAIL ret %d, errcode %u, frame %d, phrase %s\n",
 		       ret, info->errcode, info->frame, info->phrase);
 		return -1;
 	}
@@ -650,7 +650,7 @@ static int do_client_close_test(int sockfd)
 		return -1;
 	}
 	if (strcmp(msg, "client close") || sid != 64) {
-		printf("test6: FAIL msg %s, sid %lu\n", msg, sid);
+		printf("test6: FAIL msg %s, sid %ld\n", msg, sid);
 		return -1;
 	}
 	printf("test6: PASS (set peer close info)\n");
@@ -661,13 +661,13 @@ static int do_client_close_test(int sockfd)
 		return -1;
 	}
 	if (!(flags & MSG_NOTIFICATION) || msg[0] != QUIC_EVENT_CONNECTION_CLOSE) {
-		printf("test7: FAIL flags %d, event %d\n", flags, msg[0]);
+		printf("test7: FAIL flags %u, event %d\n", flags, msg[0]);
 		return -1;
 	}
 	info = (struct quic_connection_close *)&msg[1];
 	if (info->errcode != 10 || info->frame != 0 ||
 	    strcmp((char *)info->phrase, "this is app err")) {
-		printf("test7: FAIL errcode %d, frame %d, phrase %s\n",
+		printf("test7: FAIL errcode %u, frame %d, phrase %s\n",
 		       info->errcode, info->frame, info->phrase);
 		return -1;
 	}
@@ -698,7 +698,7 @@ static int do_client_connection_test(int sockfd)
 	sleep(1);
 	ret = getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_ACTIVE_CONNECTION_ID, &info, &optlen);
 	if (ret == -1 || info.source != 2) {
-		printf("test1: FAIL ret %d, source %d\n", ret, info.source);
+		printf("test1: FAIL ret %d, source %u\n", ret, info.source);
 		return -1;
 	}
 	printf("test1: PASS (retire source connection id 0)\n");
@@ -714,7 +714,7 @@ static int do_client_connection_test(int sockfd)
 	sleep(1);
 	ret = getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_ACTIVE_CONNECTION_ID, &info, &optlen);
 	if (ret == -1 || info.source != 3) {
-		printf("test2: FAIL ret %d, source %d\n", ret, info.source);
+		printf("test2: FAIL ret %d, source %u\n", ret, info.source);
 		return -1;
 	}
 	printf("test2: PASS (retire source connection id 1)\n");
@@ -748,7 +748,7 @@ static int do_client_connection_test(int sockfd)
 	sleep(1);
 	ret = getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_ACTIVE_CONNECTION_ID, &info, &optlen);
 	if (ret == -1 || info.source != 5) {
-		printf("test5: FAIL ret %d, source %d\n", ret, info.source);
+		printf("test5: FAIL ret %d, source %u\n", ret, info.source);
 		return -1;
 	}
 	printf("test5: PASS (retire multiple source connection id)\n");
@@ -764,7 +764,7 @@ static int do_client_connection_test(int sockfd)
 	sleep(1);
 	ret = getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_ACTIVE_CONNECTION_ID, &info, &optlen);
 	if (ret == -1 || info.source != 11) {
-		printf("test6: FAIL ret %d, source %d\n", ret, info.source);
+		printf("test6: FAIL ret %d, source %u\n", ret, info.source);
 		return -1;
 	}
 	printf("test6: PASS (retire max_count - 1 source connection id)\n");
@@ -781,7 +781,7 @@ static int do_client_connection_test(int sockfd)
 	sleep(1);
 	ret = getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_ACTIVE_CONNECTION_ID, &info, &optlen);
 	if (ret == -1 || info.dest != 2) {
-		printf("test7: FAIL ret %d, dest %d\n", ret, info.dest);
+		printf("test7: FAIL ret %d, dest %u\n", ret, info.dest);
 		return -1;
 	}
 	printf("test7: PASS (retire dest connection id 0)\n");
@@ -798,7 +798,7 @@ static int do_client_connection_test(int sockfd)
 	sleep(1);
 	ret = getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_ACTIVE_CONNECTION_ID, &info, &optlen);
 	if (ret == -1 || info.dest != 3) {
-		printf("test8: FAIL ret %d, dest %d\n", ret, info.dest);
+		printf("test8: FAIL ret %d, dest %u\n", ret, info.dest);
 		return -1;
 	}
 	printf("test8: PASS (retire dest connection id 1)\n");
@@ -835,7 +835,7 @@ static int do_client_connection_test(int sockfd)
 	sleep(1);
 	ret = getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_ACTIVE_CONNECTION_ID, &info, &optlen);
 	if (ret == -1 || info.dest != 5) {
-		printf("test11: FAIL ret %d, dest %d\n", ret, info.dest);
+		printf("test11: FAIL ret %d, dest %u\n", ret, info.dest);
 		return -1;
 	}
 	printf("test11: PASS (retire multiple dest connection id)\n");
@@ -852,7 +852,7 @@ static int do_client_connection_test(int sockfd)
 	sleep(1);
 	ret = getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_ACTIVE_CONNECTION_ID, &info, &optlen);
 	if (ret == -1 || info.dest != 11) {
-		printf("test12: FAIL ret %d, dest %d\n", ret, info.dest);
+		printf("test12: FAIL ret %d, dest %u\n", ret, info.dest);
 		return -1;
 	}
 	printf("test12: PASS (retire max_count - 1 dest connection id)\n");
@@ -901,7 +901,7 @@ static int do_client_connection_test(int sockfd)
 	optlen = sizeof(info);
 	ret = getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_ACTIVE_CONNECTION_ID, &info, &optlen);
 	if (ret == -1 || info.dest != 11 || info.source != 12) {
-		printf("teset16: FAIL ret %d, dest %d, source %d\n", ret, info.dest, info.source);
+		printf("teset16: FAIL ret %d, dest %u, source %u\n", ret, info.dest, info.source);
 		return -1;
 	}
 	printf("test16: PASS (retire source & dest connection id when doing migration)\n");
@@ -943,7 +943,7 @@ static int do_client_connection_test(int sockfd)
 	optlen = sizeof(info);
 	ret = getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_ACTIVE_CONNECTION_ID, &info, &optlen);
 	if (ret == -1 || info.dest != 12 || info.source != 12) {
-		printf("teset20: FAIL ret %d, dest %d, source %d\n", ret, info.dest, info.source);
+		printf("teset20: FAIL ret %d, dest %u, source %u\n", ret, info.dest, info.source);
 		return -1;
 	}
 	printf("test19: PASS (retire source & dest connection id when doing migration)\n");
@@ -1076,7 +1076,7 @@ static int do_client_connection_test(int sockfd)
 		return -1;
 	}
 	if (!(flags & MSG_DATAGRAM)) {
-		printf("test26: FAIL flags %d\n", flags);
+		printf("test26: FAIL flags %u\n", flags);
 		return -1;
 	}
 	printf("test26: PASS (send and recv datagram)\n");
@@ -1224,7 +1224,7 @@ static int do_client_stream_test(int sockfd)
 		return 1;
 	}
 	if (strcmp(msg, "quic test7") || info.stream_id != 8) {
-		printf("test7: FAIL msg %s, sid %lu\n", msg, info.stream_id);
+		printf("test7: FAIL msg %s, sid %ld\n", msg, info.stream_id);
 		return -1;
 	}
 	printf("test7: PASS (use getsockopt(QUIC_SOCKOPT_STREAM_OPEN) to open next bidi stream)\n");
@@ -1250,7 +1250,7 @@ static int do_client_stream_test(int sockfd)
 		return 1;
 	}
 	if (strcmp(msg, "quic test8") || info.stream_id != 10) {
-		printf("test8: FAIL msg %s, sid %lu\n", msg, info.stream_id);
+		printf("test8: FAIL msg %s, sid %ld\n", msg, info.stream_id);
 		return -1;
 	}
 	printf("test8: PASS (use getsockopt(QUIC_SOCKOPT_STREAM_OPEN) to open next uni stream)\n");
@@ -1296,7 +1296,7 @@ static int do_client_stream_test(int sockfd)
 		return -1;
 	}
 	if (strcmp(msg, "quic test11") || sid != 12) {
-		printf("test11: FAIL msg %s, sid %lu\n", msg, sid);
+		printf("test11: FAIL msg %s, sid %ld\n", msg, sid);
 		return -1;
 	}
 	printf("test11: PASS (sendmsg with a specific stream normally)\n");
@@ -1331,7 +1331,7 @@ static int do_client_stream_test(int sockfd)
 		return -1;
 	}
 	if (strcmp(msg, "quic test13") || sid != 15) {
-		printf("test13: FAIL msg %s, sid %lu\n", msg, sid);
+		printf("test13: FAIL msg %s, sid %ld\n", msg, sid);
 		return -1;
 	}
 	printf("test13: PASS (open next uni stream with sendmsg(sid == -1))\n");
@@ -1350,7 +1350,7 @@ static int do_client_stream_test(int sockfd)
 		return -1;
 	}
 	if (strcmp(msg, "quic test14") || sid != 16) {
-		printf("test14: FAIL msg %s, sid %lu\n", msg, sid);
+		printf("test14: FAIL msg %s, sid %ld\n", msg, sid);
 		return -1;
 	}
 	printf("test14: PASS (open next bidi stream with sendmsg(sid == -1))\n");
@@ -1385,7 +1385,7 @@ static int do_client_stream_test(int sockfd)
 		return -1;
 	}
 	if (strcmp(msg, "quic test15") || sid != 19) {
-		printf("test15: FAIL msg %s, sid %lu\n", msg, sid);
+		printf("test15: FAIL msg %s, sid %ld\n", msg, sid);
 		return -1;
 	}
 	printf("test15: PASS (open multiple stream and send on 1st one)\n");
@@ -1404,7 +1404,7 @@ static int do_client_stream_test(int sockfd)
 		return -1;
 	}
 	if (strcmp(msg, "quic test16") || sid != 20) {
-		printf("test16: FAIL msg %s, sid %lu\n", msg, sid);
+		printf("test16: FAIL msg %s, sid %ld\n", msg, sid);
 		return -1;
 	}
 	printf("test16: PASS (open multiple stream and send on 2nd one)\n");
@@ -1433,7 +1433,7 @@ static int do_client_stream_test(int sockfd)
 		return -1;
 	}
 	if (strcmp(msg, "quic test18") || sid != 400) {
-		printf("test18: FAIL msg %s, sid %lu\n", msg, sid);
+		printf("test18: FAIL msg %s, sid %ld\n", msg, sid);
 		return -1;
 	}
 	printf("test18: PASS (sendmsg with sid > max_streams_bidi in blocked mode)\n");
@@ -1452,7 +1452,7 @@ static int do_client_stream_test(int sockfd)
 		return -1;
 	}
 	if (strcmp(msg, "quic test19") || sid != 403) {
-		printf("test19: FAIL msg %s, sid %lu\n", msg, sid);
+		printf("test19: FAIL msg %s, sid %ld\n", msg, sid);
 		return -1;
 	}
 	printf("test19: PASS (sendmsg with sid > max_streams_uni in blocked mode)\n");
@@ -1482,7 +1482,7 @@ static int do_client_stream_test(int sockfd)
 		return -1;
 	}
 	if (strcmp(msg, "quic test21") || sid != 404) {
-		printf("test21: FAIL msg %s, sid %lu\n", msg, sid);
+		printf("test21: FAIL msg %s, sid %ld\n", msg, sid);
 		return -1;
 	}
 	printf("test21: PASS (sendmsg with sid > max_streams_bidi in non-blocked mode)\n");
@@ -1512,7 +1512,7 @@ static int do_client_stream_test(int sockfd)
 		return -1;
 	}
 	if (strcmp(msg, "quic test23") || sid != 407) {
-		printf("test23: FAIL msg %s, sid %lu\n", msg, sid);
+		printf("test23: FAIL msg %s, sid %ld\n", msg, sid);
 		return -1;
 	}
 	printf("test23: PASS (sendmsg with sid > max_streams_uni in non-blocked mode)\n");
@@ -1539,7 +1539,7 @@ static int do_client_stream_test(int sockfd)
 		return -1;
 	}
 	if (strcmp(msg, "quic test24") || sid != 408) {
-		printf("test24: FAIL msg %s, sid %lu\n", msg, sid);
+		printf("test24: FAIL msg %s, sid %ld\n", msg, sid);
 		return -1;
 	}
 	printf("test24: PASS (getsockopt(QUIC_SOCKOPT_STREAM_OPEN) with sid > max_streams_bidi "
@@ -1567,7 +1567,7 @@ static int do_client_stream_test(int sockfd)
 		return -1;
 	}
 	if (strcmp(msg, "quic test25") || sid != 411) {
-		printf("test25: FAIL msg %s, sid %lu\n", msg, sid);
+		printf("test25: FAIL msg %s, sid %ld\n", msg, sid);
 		return -1;
 	}
 	printf("test25: PASS (getsockopt(QUIC_SOCKOPT_STREAM_OPEN) with sid > max_streams_uni "
@@ -1599,7 +1599,7 @@ static int do_client_stream_test(int sockfd)
 		return -1;
 	}
 	if (strcmp(msg, "quic test27") || sid != 412) {
-		printf("test27: FAIL msg %s, sid %lu\n", msg, sid);
+		printf("test27: FAIL msg %s, sid %ld\n", msg, sid);
 		return -1;
 	}
 	printf("test27: PASS (getsockopt(QUIC_SOCKOPT_STREAM_OPEN) with sid > max_streams_bidi "
@@ -1631,7 +1631,7 @@ static int do_client_stream_test(int sockfd)
 		return -1;
 	}
 	if (strcmp(msg, "quic test29") || sid != 415) {
-		printf("test29: FAIL msg %s, sid %lu\n", msg, sid);
+		printf("test29: FAIL msg %s, sid %ld\n", msg, sid);
 		return -1;
 	}
 	printf("test29: PASS (sendmsg with sid > max_streams_uni in non-blocked mode)\n");

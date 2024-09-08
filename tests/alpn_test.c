@@ -162,7 +162,7 @@ static int do_server(int argc, char *argv[])
 	}
 	len = strlen(alpns);
 	if (setsockopt(listenfd, SOL_QUIC, QUIC_SOCKOPT_ALPN, alpns, len)) {
-		printf("socket setsockopt alpn failed %d\n", len);
+		printf("socket setsockopt alpn failed %u\n", len);
 		return -1;
 	}
 
