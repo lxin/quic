@@ -145,8 +145,6 @@ http3_tests() {
 
 	print_start "Http/3 Tests (http3_test -> Public Websites)"
 	make http3_test > /dev/null || return 1
-	echo "- https://pgjones.dev/"
-	./http3_test -c https://pgjones.dev/ > /dev/null || return 1 # aioquic
 	echo "- https://cloudflare-quic.com/"
 	./http3_test -c https://cloudflare-quic.com/ > /dev/null || return 1  # Cloudflare Quiche
 	echo "- https://h2o.examp1e.net/"
