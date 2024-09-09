@@ -724,14 +724,22 @@ EXPORT_SYMBOL_GPL(quic_crypto_key_update);
 
 void quic_crypto_destroy(struct quic_crypto *crypto)
 {
-	crypto_free_aead(crypto->tag_tfm);
-	crypto_free_aead(crypto->rx_tfm[0]);
-	crypto_free_aead(crypto->rx_tfm[1]);
-	crypto_free_aead(crypto->tx_tfm[0]);
-	crypto_free_aead(crypto->tx_tfm[1]);
-	crypto_free_shash(crypto->secret_tfm);
-	crypto_free_skcipher(crypto->rx_hp_tfm);
-	crypto_free_skcipher(crypto->tx_hp_tfm);
+	if (crypto->tag_tfm)
+		crypto_free_aead(crypto->tag_tfm);
+	if (crypto->rx_tfm[0])
+		crypto_free_aead(crypto->rx_tfm[0]);
+	if (crypto->rx_tfm[1])
+		crypto_free_aead(crypto->rx_tfm[1]);
+	if (crypto->tx_tfm[0])
+		crypto_free_aead(crypto->tx_tfm[0]);
+	if (crypto->tx_tfm[1])
+		crypto_free_aead(crypto->tx_tfm[1]);
+	if (crypto->secret_tfm)
+		crypto_free_shash(crypto->secret_tfm);
+	if (crypto->rx_hp_tfm)
+		crypto_free_skcipher(crypto->rx_hp_tfm);
+	if (crypto->tx_hp_tfm)
+		crypto_free_skcipher(crypto->tx_hp_tfm);
 
 	memset(crypto, 0, sizeof(*crypto));
 }
