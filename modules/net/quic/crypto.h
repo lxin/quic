@@ -139,7 +139,7 @@ int quic_crypto_key_update(struct quic_crypto *crypto);
 void quic_crypto_destroy(struct quic_crypto *crypto);
 
 int quic_crypto_initial_keys_install(struct quic_crypto *crypto, struct quic_conn_id *conn_id,
-				     u32 version, u8 flag, bool is_serv);
+				     u32 version, bool is_serv);
 int quic_crypto_generate_session_ticket_key(struct quic_crypto *crypto, void *data,
 					    u32 len, u8 *key, u32 key_len);
 int quic_crypto_generate_stateless_reset_token(struct quic_crypto *crypto, void *data,

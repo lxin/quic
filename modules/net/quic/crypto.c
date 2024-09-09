@@ -743,7 +743,7 @@ EXPORT_SYMBOL_GPL(quic_crypto_destroy);
 	"\x0d\xed\xe3\xde\xf7\x00\xa6\xdb\x81\x93\x81\xbe\x6e\x26\x9d\xcb\xf9\xbd\x2e\xd9"
 
 int quic_crypto_initial_keys_install(struct quic_crypto *crypto, struct quic_conn_id *conn_id,
-				     u32 version, u8 flag, bool is_serv)
+				     u32 version, bool is_serv)
 {
 	struct quic_data salt, s, k, l, dcid, z = {};
 	struct quic_crypto_secret srt = {};
@@ -780,7 +780,7 @@ int quic_crypto_initial_keys_install(struct quic_crypto *crypto, struct quic_con
 	err = quic_crypto_hkdf_expand(tfm, &s, &l, &z, &k);
 	if (err)
 		goto out;
-	err = quic_crypto_set_secret(crypto, &srt, version, flag);
+	err = quic_crypto_set_secret(crypto, &srt, version, CRYPTO_ALG_ASYNC);
 	if (err)
 		goto out;
 
@@ -791,7 +791,7 @@ int quic_crypto_initial_keys_install(struct quic_crypto *crypto, struct quic_con
 	err = quic_crypto_hkdf_expand(tfm, &s, &l, &z, &k);
 	if (err)
 		goto out;
-	err = quic_crypto_set_secret(crypto, &srt, version, flag);
+	err = quic_crypto_set_secret(crypto, &srt, version, CRYPTO_ALG_ASYNC);
 out:
 	crypto_free_shash(tfm);
 	return err;

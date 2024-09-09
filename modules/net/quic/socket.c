@@ -371,7 +371,7 @@ static int quic_connect(struct sock *sk, struct sockaddr *addr, int addr_len)
 	if (err)
 		goto free;
 	active = quic_conn_id_active(dest);
-	err = quic_crypto_initial_keys_install(crypto, active, quic_config(sk)->version, 0, 0);
+	err = quic_crypto_initial_keys_install(crypto, active, quic_config(sk)->version, 0);
 	if (err)
 		goto free;
 
@@ -1110,7 +1110,7 @@ static int quic_accept_sock_init(struct sock *sk, struct quic_request_sock *req)
 		goto out;
 
 	quic_outq_set_serv(outq);
-	err = quic_packet_version_change(sk, &req->dcid, req->version, 0);
+	err = quic_packet_version_change(sk, &req->dcid, req->version);
 	if (err)
 		goto out;
 
