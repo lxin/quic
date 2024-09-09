@@ -20,8 +20,8 @@ struct quic_crypto_cb {
 	u16 errcode;
 	u16 length;
 
+	u16 udph_offset;
 	u8 number_offset;
-	u8 udph_offset;
 	u8 number_len;
 	u8 level;
 
