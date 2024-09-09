@@ -523,23 +523,6 @@ static __poll_t quic_inet_poll(struct file *file, struct socket *sock, poll_tabl
 	return mask;
 }
 
-static int quic_inet_getsockopt(struct socket *sock, int level, int optname,
-				char __user *optval, int __user *optlen)
-{
-	int len;
-
-	if (get_user(len, optlen) || !access_ok(optval, len))
-		return -EFAULT;
-
-	return sock_common_getsockopt(sock, level, optname, optval, optlen);
-}
-
-static int quic_inet_setsockopt(struct socket *sock, int level, int optname,
-				sockptr_t optval, unsigned int optlen)
-{
-	return sock_common_setsockopt(sock, level, optname, optval, optlen);
-}
-
 int quic_encap_len(struct sock *sk)
 {
 	return sizeof(struct udphdr) + quic_af_ops(sk)->iph_len;
@@ -728,8 +711,8 @@ static const struct proto_ops quic_proto_ops = {
 	.gettstamp	   = sock_gettstamp,
 	.listen		   = quic_inet_listen,
 	.shutdown	   = inet_shutdown,
-	.setsockopt	   = quic_inet_setsockopt,
-	.getsockopt	   = quic_inet_getsockopt,
+	.setsockopt	   = sock_common_setsockopt,
+	.getsockopt	   = sock_common_getsockopt,
 	.sendmsg	   = inet_sendmsg,
 	.recvmsg	   = inet_recvmsg,
 	.mmap		   = sock_no_mmap,
@@ -763,8 +746,8 @@ static const struct proto_ops quicv6_proto_ops = {
 	.gettstamp	   = sock_gettstamp,
 	.listen		   = quic_inet_listen,
 	.shutdown	   = inet_shutdown,
-	.setsockopt	   = quic_inet_setsockopt,
-	.getsockopt	   = quic_inet_getsockopt,
+	.setsockopt	   = sock_common_setsockopt,
+	.getsockopt	   = sock_common_getsockopt,
 	.sendmsg	   = inet_sendmsg,
 	.recvmsg	   = inet_recvmsg,
 	.mmap		   = sock_no_mmap,

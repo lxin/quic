@@ -1683,14 +1683,10 @@ static int quic_sock_set_connection_close(struct sock *sk, struct quic_connectio
 	return 0;
 }
 
-static int quic_setsockopt(struct sock *sk, int level, int optname,
-			   sockptr_t optval, unsigned int optlen)
+static int quic_do_setsockopt(struct sock *sk, int optname, sockptr_t optval, unsigned int optlen)
 {
 	void *kopt = NULL;
 	int retval = 0;
-
-	if (level != SOL_QUIC)
-		return quic_af_ops(sk)->setsockopt(sk, level, optname, optval, optlen);
 
 	if (optlen > 0) {
 		kopt = memdup_sockptr(optval, optlen);
@@ -1751,50 +1747,36 @@ static int quic_setsockopt(struct sock *sk, int level, int optname,
 	return retval;
 }
 
-#define quic_get_user(x, ptr)						\
-({									\
-	int __ret = 0;							\
-	access_ok(ptr, 0) ? (__ret = get_user(x, ptr)) : (x = *ptr);	\
-	__ret;								\
-})
-
-#define quic_put_user(x, ptr)						\
-({									\
-	int __ret = 0;							\
-	access_ok(ptr, 0) ? (__ret = put_user(x, ptr)) : (*ptr = x);	\
-	__ret;								\
-})
-
-static int quic_copy_from_user(void *to, const void __user *from, unsigned long n)
+static int quic_setsockopt(struct sock *sk, int level, int optname,
+			   sockptr_t optval, unsigned int optlen)
 {
-	if (access_ok(from, 0))
-		return copy_from_user(to, from, n);
-	memcpy(to, from, n);
-	return 0;
+	if (level != SOL_QUIC)
+		return quic_af_ops(sk)->setsockopt(sk, level, optname, optval, optlen);
+
+	return quic_do_setsockopt(sk, optname, optval, optlen);
 }
 
-static int quic_copy_to_user(void __user *to, const void *from, unsigned long n)
+int quic_sock_setopt(struct sock *sk, int optname, void *optval, unsigned int optlen)
 {
-	if (access_ok(to, 0))
-		return copy_to_user(to, from, n);
-	memcpy(to, from, n);
-	return 0;
+	return quic_do_setsockopt(sk, optname, KERNEL_SOCKPTR(optval), optlen);
 }
+EXPORT_SYMBOL_GPL(quic_sock_setopt);
 
-static int quic_sock_get_token(struct sock *sk, int len, char __user *optval, int __user *optlen)
+static int quic_sock_get_token(struct sock *sk, int len, sockptr_t optval, sockptr_t optlen)
 {
 	struct quic_data *token = quic_token(sk);
 
 	if (quic_is_serv(sk) || len < token->len)
 		return -EINVAL;
+	len = token->len;
 
-	if (quic_put_user(token->len, optlen) || quic_copy_to_user(optval, token->data, token->len))
+	if (copy_to_sockptr(optlen, &len, sizeof(len)) || copy_to_sockptr(optval, token->data, len))
 		return -EFAULT;
 	return 0;
 }
 
 static int quic_sock_get_session_ticket(struct sock *sk, int len,
-					char __user *optval, int __user *optlen)
+					sockptr_t optval, sockptr_t optlen)
 {
 	struct quic_crypto *crypto;
 	u32 ticket_len, addr_len;
@@ -1817,33 +1799,34 @@ static int quic_sock_get_session_ticket(struct sock *sk, int len,
 out:
 	if (len < ticket_len)
 		return -EINVAL;
+	len = ticket_len;
 
-	if (quic_put_user(ticket_len, optlen) || quic_copy_to_user(optval, ticket, ticket_len))
+	if (copy_to_sockptr(optlen, &len, sizeof(len)) || copy_to_sockptr(optval, ticket, len))
 		return -EFAULT;
 	return 0;
 }
 
 static int quic_sock_get_transport_param(struct sock *sk, int len,
-					 char __user *optval, int __user *optlen)
+					 sockptr_t optval, sockptr_t optlen)
 {
 	struct quic_transport_param param, *p = quic_local(sk);
 
 	if (len < sizeof(param))
 		return -EINVAL;
 	len = sizeof(param);
-	if (quic_copy_from_user(&param, optval, len))
+	if (copy_from_sockptr(&param, optval, len))
 		return -EFAULT;
 
 	if (param.remote)
 		p = quic_remote(sk);
 
 	param = *p;
-	if (quic_put_user(len, optlen) || quic_copy_to_user(optval, &param, len))
+	if (copy_to_sockptr(optlen, &len, sizeof(len)) || copy_to_sockptr(optval, &param, len))
 		return -EFAULT;
 	return 0;
 }
 
-static int quic_sock_get_config(struct sock *sk, int len, char __user *optval, int __user *optlen)
+static int quic_sock_get_config(struct sock *sk, int len, sockptr_t optval, sockptr_t optlen)
 {
 	struct quic_config config, *c = quic_config(sk);
 
@@ -1852,13 +1835,13 @@ static int quic_sock_get_config(struct sock *sk, int len, char __user *optval, i
 	len = sizeof(config);
 
 	config = *c;
-	if (quic_put_user(len, optlen) || quic_copy_to_user(optval, &config, len))
+	if (copy_to_sockptr(optlen, &len, sizeof(len)) || copy_to_sockptr(optval, &config, len))
 		return -EFAULT;
 	return 0;
 }
 
 static int quic_sock_get_transport_params_ext(struct sock *sk, int len,
-					      char __user *optval, int __user *optlen)
+					      sockptr_t optval, sockptr_t optlen)
 {
 	struct quic_transport_param *param = quic_local(sk);
 	u8 data[256];
@@ -1870,20 +1853,20 @@ static int quic_sock_get_transport_params_ext(struct sock *sk, int len,
 		return -EINVAL;
 	len = datalen;
 
-	if (quic_put_user(len, optlen) || quic_copy_to_user(optval, data, len))
+	if (copy_to_sockptr(optlen, &len, sizeof(len)) || copy_to_sockptr(optval, data, len))
 		return -EFAULT;
 	return 0;
 }
 
 static int quic_sock_get_crypto_secret(struct sock *sk, int len,
-				       char __user *optval, int __user *optlen)
+				       sockptr_t optval, sockptr_t optlen)
 {
 	struct quic_crypto_secret secret = {};
 
 	if (len < sizeof(secret))
 		return -EINVAL;
 	len = sizeof(secret);
-	if (quic_copy_from_user(&secret, optval, len))
+	if (copy_from_sockptr(&secret, optval, len))
 		return -EFAULT;
 
 	if (secret.level >= QUIC_CRYPTO_MAX)
@@ -1891,13 +1874,13 @@ static int quic_sock_get_crypto_secret(struct sock *sk, int len,
 	if (quic_crypto_get_secret(quic_crypto(sk, secret.level), &secret))
 		return -EINVAL;
 
-	if (quic_put_user(len, optlen) || quic_copy_to_user(optval, &secret, len))
+	if (copy_to_sockptr(optlen, &len, sizeof(len)) || copy_to_sockptr(optval, &secret, len))
 		return -EFAULT;
 	return 0;
 }
 
 static int quic_sock_get_active_conn_id(struct sock *sk, int len,
-					char __user *optval, int __user *optlen)
+					sockptr_t optval, sockptr_t optlen)
 {
 	struct quic_connection_id_info info;
 	struct quic_conn_id_set *id_set;
@@ -1915,12 +1898,12 @@ static int quic_sock_get_active_conn_id(struct sock *sk, int len,
 	active = quic_conn_id_active(id_set);
 	info.dest = quic_conn_id_number(active);
 
-	if (quic_put_user(len, optlen) || quic_copy_to_user(optval, &info, len))
+	if (copy_to_sockptr(optlen, &len, sizeof(len)) || copy_to_sockptr(optval, &info, len))
 		return -EFAULT;
 	return 0;
 }
 
-static int quic_sock_get_alpn(struct sock *sk, int len, char __user *optval, int __user *optlen)
+static int quic_sock_get_alpn(struct sock *sk, int len, sockptr_t optval, sockptr_t optlen)
 {
 	struct quic_data *alpns = quic_alpn(sk);
 	u8 data[128];
@@ -1935,12 +1918,12 @@ static int quic_sock_get_alpn(struct sock *sk, int len, char __user *optval, int
 	quic_data_to_string(data, &len, alpns);
 
 out:
-	if (quic_put_user(len, optlen) || quic_copy_to_user(optval, data, len))
+	if (copy_to_sockptr(optlen, &len, sizeof(len)) || copy_to_sockptr(optval, data, len))
 		return -EFAULT;
 	return 0;
 }
 
-static int quic_sock_stream_open(struct sock *sk, int len, char __user *optval, int __user *optlen)
+static int quic_sock_stream_open(struct sock *sk, int len, sockptr_t optval, sockptr_t optlen)
 {
 	struct quic_stream_table *streams = quic_streams(sk);
 	struct quic_stream_info sinfo;
@@ -1949,7 +1932,7 @@ static int quic_sock_stream_open(struct sock *sk, int len, char __user *optval, 
 	if (len < sizeof(sinfo))
 		return -EINVAL;
 	len = sizeof(sinfo);
-	if (quic_copy_from_user(&sinfo, optval, len))
+	if (copy_from_sockptr(&sinfo, optval, len))
 		return -EFAULT;
 
 	if (sinfo.stream_id == -1) {
@@ -1962,7 +1945,7 @@ static int quic_sock_stream_open(struct sock *sk, int len, char __user *optval, 
 	}
 	sinfo.stream_flags |= MSG_STREAM_NEW;
 
-	if (quic_put_user(len, optlen) || quic_copy_to_user(optval, &sinfo, len))
+	if (copy_to_sockptr(optlen, &len, sizeof(len)) || copy_to_sockptr(optval, &sinfo, len))
 		return -EFAULT;
 
 	stream = quic_sock_send_stream(sk, &sinfo);
@@ -1972,7 +1955,7 @@ static int quic_sock_stream_open(struct sock *sk, int len, char __user *optval, 
 	return 0;
 }
 
-static int quic_sock_get_event(struct sock *sk, int len, char __user *optval, int __user *optlen)
+static int quic_sock_get_event(struct sock *sk, int len, sockptr_t optval, sockptr_t optlen)
 {
 	struct quic_inqueue *inq = quic_inq(sk);
 	struct quic_event_option event;
@@ -1980,21 +1963,21 @@ static int quic_sock_get_event(struct sock *sk, int len, char __user *optval, in
 	if (len < sizeof(event))
 		return -EINVAL;
 	len = sizeof(event);
-	if (quic_copy_from_user(&event, optval, len))
+	if (copy_from_sockptr(&event, optval, len))
 		return -EFAULT;
 
 	if (!event.type || event.type > QUIC_EVENT_MAX)
 		return -EINVAL;
 	event.on = quic_inq_events(inq) & (1 << event.type);
 
-	if (quic_put_user(len, optlen) || quic_copy_to_user(optval, &event, len))
+	if (copy_to_sockptr(optlen, &len, sizeof(len)) || copy_to_sockptr(optval, &event, len))
 		return -EFAULT;
 
 	return 0;
 }
 
-static int quic_sock_get_connection_close(struct sock *sk, int len, char __user *optval,
-					  int __user *optlen)
+static int quic_sock_get_connection_close(struct sock *sk, int len, sockptr_t optval,
+					  sockptr_t optlen)
 {
 	struct quic_outqueue *outq = quic_outq(sk);
 	struct quic_connection_close *close;
@@ -2015,21 +1998,17 @@ static int quic_sock_get_connection_close(struct sock *sk, int len, char __user 
 	if (phrase_len)
 		strscpy(close->phrase, phrase, phrase_len);
 
-	if (quic_put_user(len, optlen) || quic_copy_to_user(optval, close, len))
+	if (copy_to_sockptr(optlen, &len, sizeof(len)) || copy_to_sockptr(optval, close, len))
 		return -EFAULT;
 	return 0;
 }
 
-static int quic_getsockopt(struct sock *sk, int level, int optname,
-			   char __user *optval, int __user *optlen)
+static int quic_do_getsockopt(struct sock *sk, int optname, sockptr_t optval, sockptr_t optlen)
 {
 	int retval = 0;
 	int len;
 
-	if (level != SOL_QUIC)
-		return quic_af_ops(sk)->getsockopt(sk, level, optname, optval, optlen);
-
-	if (quic_get_user(len, optlen))
+	if (copy_from_sockptr(&len, optlen, sizeof(len)))
 		return -EFAULT;
 
 	if (len < 0)
@@ -2077,6 +2056,21 @@ static int quic_getsockopt(struct sock *sk, int level, int optname,
 	release_sock(sk);
 	return retval;
 }
+
+static int quic_getsockopt(struct sock *sk, int level, int optname,
+			   char __user *optval, int __user *optlen)
+{
+	if (level != SOL_QUIC)
+		return quic_af_ops(sk)->getsockopt(sk, level, optname, optval, optlen);
+
+	return quic_do_getsockopt(sk, optname, USER_SOCKPTR(optval), USER_SOCKPTR(optlen));
+}
+
+int quic_sock_getopt(struct sock *sk, int optname, void *optval, unsigned int *optlen)
+{
+	return quic_do_getsockopt(sk, optname, KERNEL_SOCKPTR(optval), KERNEL_SOCKPTR(optlen));
+}
+EXPORT_SYMBOL_GPL(quic_sock_getopt);
 
 static void quic_release_cb(struct sock *sk)
 {

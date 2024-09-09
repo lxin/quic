@@ -11,13 +11,16 @@
  */
 
 #include <linux/completion.h>
-#include <uapi/linux/quic.h>
 #include <linux/module.h>
-#include <net/handshake.h>
+#include <linux/socket.h>
 #include <linux/kernel.h>
 #include <linux/delay.h>
+#include <linux/quic.h>
 #include <linux/inet.h>
 #include <linux/net.h>
+#include <linux/key.h>
+
+#include <net/handshake.h>
 #include <net/sock.h>
 
 #define ROLE_LEN	10
@@ -187,14 +190,12 @@ static int quic_test_do_ticket_client(void)
 	priv.filp = sock_alloc_file(sock, 0, NULL);
 	if (IS_ERR(priv.filp))
 		return PTR_ERR(priv.filp);
-	err = sock_common_setsockopt(sock, SOL_QUIC, QUIC_SOCKOPT_ALPN,
-				     KERNEL_SOCKPTR(alpn), strlen(alpn));
+	err = quic_sock_setopt(sock->sk, QUIC_SOCKOPT_ALPN, alpn, strlen(alpn));
 	if (err)
 		goto free;
 
 	config.receive_session_ticket = 1;
-	err = sock_common_setsockopt(sock, SOL_QUIC, QUIC_SOCKOPT_CONFIG,
-				     KERNEL_SOCKPTR(&config), sizeof(config));
+	err = quic_sock_setopt(sock->sk, QUIC_SOCKOPT_CONFIG, &config, sizeof(config));
 	if (err)
 		goto free;
 
@@ -213,21 +214,18 @@ static int quic_test_do_ticket_client(void)
 	pr_info("quic_test: handshake completed\n");
 
 	ticket_len = sizeof(session_data);
-	err = sock_common_getsockopt(sock, SOL_QUIC, QUIC_SOCKOPT_SESSION_TICKET,
-				     session_data, &ticket_len);
+	err = quic_sock_getopt(sock->sk, QUIC_SOCKOPT_SESSION_TICKET, session_data, &ticket_len);
 	if (err < 0)
 		goto free;
 
 	param_len = sizeof(param);
 	param.remote = 1;
-	err = sock_common_getsockopt(sock, SOL_QUIC, QUIC_SOCKOPT_TRANSPORT_PARAM,
-				     (char *)&param, &param_len);
+	err = quic_sock_getopt(sock->sk, QUIC_SOCKOPT_TRANSPORT_PARAM, &param, &param_len);
 	if (err < 0)
 		goto free;
 
 	token_len = sizeof(token);
-	err = sock_common_getsockopt(sock, SOL_QUIC, QUIC_SOCKOPT_TOKEN,
-				     token, &token_len);
+	err = quic_sock_getopt(sock->sk, QUIC_SOCKOPT_TOKEN, token, &token_len);
 	if (err < 0)
 		goto free;
 
@@ -266,8 +264,7 @@ static int quic_test_do_ticket_client(void)
 	priv.filp = sock_alloc_file(sock, 0, NULL);
 	if (IS_ERR(priv.filp))
 		return PTR_ERR(priv.filp);
-	err = sock_common_setsockopt(sock, SOL_QUIC, QUIC_SOCKOPT_ALPN,
-				     KERNEL_SOCKPTR(alpn), strlen(alpn));
+	err = quic_sock_setopt(sock->sk, QUIC_SOCKOPT_ALPN, alpn, strlen(alpn));
 	if (err)
 		goto free;
 
@@ -283,18 +280,15 @@ static int quic_test_do_ticket_client(void)
 	if (err < 0)
 		goto free;
 
-	err = sock_common_setsockopt(sock, SOL_QUIC, QUIC_SOCKOPT_TOKEN,
-				     KERNEL_SOCKPTR(token), token_len);
+	err = quic_sock_setopt(sock->sk, QUIC_SOCKOPT_TOKEN, token, token_len);
 	if (err)
 		goto free;
 
-	err = sock_common_setsockopt(sock, SOL_QUIC, QUIC_SOCKOPT_SESSION_TICKET,
-				     KERNEL_SOCKPTR(session_data), ticket_len);
+	err = quic_sock_setopt(sock->sk, QUIC_SOCKOPT_SESSION_TICKET, session_data, ticket_len);
 	if (err)
 		goto free;
 
-	err = sock_common_setsockopt(sock, SOL_QUIC, QUIC_SOCKOPT_TRANSPORT_PARAM,
-				     KERNEL_SOCKPTR(&param), param_len);
+	err = quic_sock_setopt(sock->sk, QUIC_SOCKOPT_TRANSPORT_PARAM, &param, param_len);
 	if (err)
 		goto free;
 
@@ -345,8 +339,7 @@ static int quic_test_do_sample_client(void)
 	priv.filp = sock_alloc_file(sock, 0, NULL);
 	if (IS_ERR(priv.filp))
 		return PTR_ERR(priv.filp);
-	err = sock_common_setsockopt(sock, SOL_QUIC, QUIC_SOCKOPT_ALPN,
-				     KERNEL_SOCKPTR(alpn), strlen(alpn));
+	err = quic_sock_setopt(sock->sk, QUIC_SOCKOPT_ALPN, alpn, strlen(alpn));
 	if (err)
 		goto free;
 	ra.sin_family = AF_INET;
@@ -413,16 +406,14 @@ static int quic_test_do_ticket_server(void)
 	err = kernel_bind(sock, (struct sockaddr *)&la, sizeof(la));
 	if (err < 0)
 		goto free;
-	err = sock_common_setsockopt(sock, SOL_QUIC, QUIC_SOCKOPT_ALPN,
-				     KERNEL_SOCKPTR(alpn), strlen(alpn));
+	err = quic_sock_setopt(sock->sk, QUIC_SOCKOPT_ALPN, alpn, strlen(alpn));
 	if (err)
 		goto free;
 	err = kernel_listen(sock, 1);
 	if (err < 0)
 		goto free;
 	config.validate_peer_address = 1;
-	err = sock_common_setsockopt(sock, SOL_QUIC, QUIC_SOCKOPT_CONFIG,
-				     KERNEL_SOCKPTR(&config), sizeof(config));
+	err = quic_sock_setopt(sock->sk, QUIC_SOCKOPT_CONFIG, &config, sizeof(config));
 	if (err)
 		goto free;
 
@@ -532,8 +523,7 @@ static int quic_test_do_sample_server(void)
 	err = kernel_bind(sock, (struct sockaddr *)&la, sizeof(la));
 	if (err < 0)
 		goto free;
-	err = sock_common_setsockopt(sock, SOL_QUIC, QUIC_SOCKOPT_ALPN,
-				     KERNEL_SOCKPTR(alpn), strlen(alpn));
+	err = quic_sock_setopt(sock->sk, QUIC_SOCKOPT_ALPN, alpn, strlen(alpn));
 	if (err)
 		goto free;
 	err = kernel_listen(sock, 1);
