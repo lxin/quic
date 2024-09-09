@@ -753,7 +753,7 @@ static int http_server_end_stream(nghttp3_conn *conn, int64_t stream_id, void *u
 		goto err;
 
 send:
-	ret = sprintf(len, "%d", req->len);
+	ret = sprintf(len, "%u", req->len);
 	if (ret < 0)
 		goto err;
 

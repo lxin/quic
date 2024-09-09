@@ -41,6 +41,7 @@ static int do_client_notification_test(int sockfd)
 		printf("send error %d\n", errno);
 		return -1;
 	}
+	memset(msg, 0, sizeof(msg));
 	ret = quic_recvmsg(sockfd, msg, sizeof(msg), &sid, &flags);
 	if (ret == -1) {
 		printf("recv error %d\n", errno);
@@ -57,6 +58,7 @@ static int do_client_notification_test(int sockfd)
 	}
 	printf("test2: PASS (QUIC_EVENT_STREAM_UPDATE/QUIC_STREAM_SEND_STATE_RECVD event)\n");
 
+	memset(msg, 0, sizeof(msg));
 	ret = quic_recvmsg(sockfd, msg, sizeof(msg), &sid, &flags);
 	if (ret == -1) {
 		printf("recv error %d\n", errno);
@@ -74,6 +76,7 @@ static int do_client_notification_test(int sockfd)
 	}
 	printf("test3: PASS (QUIC_EVENT_STREAM_UPDATE/QUIC_STREAM_RECV_STATE_RECVD event)\n");
 
+	memset(msg, 0, sizeof(msg));
 	ret = quic_recvmsg(sockfd, msg, sizeof(msg), &sid, &flags);
 	if (ret == -1) {
 		printf("recv error %d\n", errno);
@@ -101,6 +104,7 @@ static int do_client_notification_test(int sockfd)
 		printf("socket setsockopt stream reset error %d\n", errno);
 		return -1;
 	}
+	memset(msg, 0, sizeof(msg));
 	ret = quic_recvmsg(sockfd, msg, sizeof(msg), &sid, &flags);
 	if (ret == -1) {
 		printf("recv error %d\n", errno);
@@ -126,6 +130,7 @@ static int do_client_notification_test(int sockfd)
 		return -1;
 	}
 	sleep(1);
+	memset(msg, 0, sizeof(msg));
 	ret = quic_recvmsg(sockfd, msg, sizeof(msg), &sid, &flags);
 	if (ret == -1) {
 		printf("recv error %d\n", errno);
@@ -142,6 +147,7 @@ static int do_client_notification_test(int sockfd)
 	}
 	printf("test6: PASS (QUIC_EVENT_STREAM_UPDATE/QUIC_STREAM_SEND_STATE_RESET_SENT event)\n");
 
+	memset(msg, 0, sizeof(msg));
 	ret = quic_recvmsg(sockfd, msg, sizeof(msg), &sid, &flags);
 	if (ret == -1) {
 		printf("recv error %d\n", errno);
@@ -167,12 +173,14 @@ static int do_client_notification_test(int sockfd)
 		printf("send error %d\n", errno);
 		return -1;
 	}
+	memset(msg, 0, sizeof(msg));
 	ret = quic_recvmsg(sockfd, msg, sizeof(msg), &sid, &flags);
 	if (ret == -1) {
 		printf("recv error %d\n", errno);
 		return -1;
 	}
 	/* skip the QUIC_EVENT_STREAM_UPDATE/QUIC_STREAM_SEND_STATE_RECVD event */
+	memset(msg, 0, sizeof(msg));
 	ret = quic_recvmsg(sockfd, msg, sizeof(msg), &sid, &flags);
 	if (ret == -1) {
 		printf("recv error %d\n", errno);
@@ -190,6 +198,7 @@ static int do_client_notification_test(int sockfd)
 	printf("test8: PASS (QUIC_EVENT_STREAM_UPDATE/QUIC_STREAM_RECV_STATE_RECV event)\n");
 
 	sleep(1);
+	memset(msg, 0, sizeof(msg));
 	ret = quic_recvmsg(sockfd, msg, sizeof(msg), &sid, &flags);
 	if (ret == -1) {
 		printf("recv error %d\n", errno);
@@ -206,6 +215,7 @@ static int do_client_notification_test(int sockfd)
 	}
 	printf("test9: PASS (QUIC_EVENT_STREAM_UPDATE/QUIC_STREAM_RECV_STATE_RESET_RECVD event)\n");
 
+	memset(msg, 0, sizeof(msg));
 	ret = quic_recvmsg(sockfd, msg, sizeof(msg), &sid, &flags);
 	if (ret == -1) {
 		printf("recv error %d\n", errno);
@@ -244,6 +254,7 @@ static int do_client_notification_test(int sockfd)
 		return -1;
 	}
 	sleep(1);
+	memset(msg, 0, sizeof(msg));
 	ret = quic_recvmsg(sockfd, msg, sizeof(msg), &sid, &flags);
 	if (ret == -1) {
 		printf("recv error %d\n", errno);
@@ -270,6 +281,7 @@ static int do_client_notification_test(int sockfd)
 		return -1;
 	}
 	sleep(1);
+	memset(msg, 0, sizeof(msg));
 	ret = quic_recvmsg(sockfd, msg, sizeof(msg), &sid, &flags);
 	if (ret == -1) {
 		printf("recv error %d\n", errno);
@@ -325,6 +337,7 @@ static int do_client_notification_test(int sockfd)
 		printf("send error %d\n", errno);
 		return -1;
 	}
+	memset(msg, 0, sizeof(msg));
 	ret = quic_recvmsg(sockfd, msg, sizeof(msg), &sid, &flags);
 	if (ret == -1) {
 		printf("recv error %d\n", errno);
@@ -339,6 +352,7 @@ static int do_client_notification_test(int sockfd)
 		printf("test17: FAIL local_migration %d\n", ev->local_migration);
 		return -1;
 	}
+	memset(msg, 0, sizeof(msg));
 	ret = quic_recvmsg(sockfd, msg, sizeof(msg), &sid, &flags);
 	if (ret == -1) {
 		printf("recv error %d\n", errno);
@@ -359,6 +373,7 @@ static int do_client_notification_test(int sockfd)
 		return -1;
 	}
 	sleep(4);
+	memset(msg, 0, sizeof(msg));
 	ret = quic_recvmsg(sockfd, msg, sizeof(msg), &sid, &flags);
 	if (ret == -1) {
 		printf("recv error %d\n", errno);
@@ -373,6 +388,7 @@ static int do_client_notification_test(int sockfd)
 		printf("test18: FAIL local_migration %d\n", ev->local_migration);
 		return -1;
 	}
+	memset(msg, 0, sizeof(msg));
 	ret = quic_recvmsg(sockfd, msg, sizeof(msg), &sid, &flags);
 	if (ret == -1) {
 		printf("recv error %d\n", errno);
@@ -415,6 +431,7 @@ static int do_client_notification_test(int sockfd)
 		printf("send error %d\n", errno);
 		return -1;
 	}
+	memset(msg, 0, sizeof(msg));
 	ret = quic_recvmsg(sockfd, msg, sizeof(msg), &sid, &flags);
 	if (ret == -1) {
 		printf("recv error %d\n", errno);
@@ -433,6 +450,7 @@ static int do_client_notification_test(int sockfd)
 		printf("send error %d\n", errno);
 		return -1;
 	}
+	memset(msg, 0, sizeof(msg));
 	ret = quic_recvmsg(sockfd, msg, sizeof(msg), &sid, &flags);
 	if (ret == -1) {
 		printf("recv error %d\n", errno);
@@ -447,6 +465,7 @@ static int do_client_notification_test(int sockfd)
 		printf("test21: FAIL key_phase %d\n", ev->key_update_phase);
 		return -1;
 	}
+	memset(msg, 0, sizeof(msg));
 	ret = quic_recvmsg(sockfd, msg, sizeof(msg), &sid, &flags);
 	if (ret == -1) {
 		printf("recv error %d\n", errno);
@@ -466,6 +485,7 @@ static int do_client_notification_test(int sockfd)
 		printf("send error %d\n", errno);
 		return -1;
 	}
+	memset(msg, 0, sizeof(msg));
 	ret = quic_recvmsg(sockfd, msg, sizeof(msg), &sid, &flags);
 	if (ret == -1) {
 		printf("recv error %d\n", errno);
@@ -484,6 +504,7 @@ static int do_client_notification_test(int sockfd)
 		printf("send error %d\n", errno);
 		return -1;
 	}
+	memset(msg, 0, sizeof(msg));
 	ret = quic_recvmsg(sockfd, msg, sizeof(msg), &sid, &flags);
 	if (ret == -1) {
 		printf("recv error %d\n", errno);
@@ -498,6 +519,7 @@ static int do_client_notification_test(int sockfd)
 		printf("test22: FAIL key_phase %d\n", ev->key_update_phase);
 		return -1;
 	}
+	memset(msg, 0, sizeof(msg));
 	ret = quic_recvmsg(sockfd, msg, sizeof(msg), &sid, &flags);
 	if (ret == -1) {
 		printf("recv error %d\n", errno);
@@ -535,6 +557,7 @@ static int do_client_notification_test(int sockfd)
 		printf("send error %d\n", errno);
 		return -1;
 	}
+	memset(msg, 0, sizeof(msg));
 	ret = quic_recvmsg(sockfd, msg, sizeof(msg), &sid, &flags);
 	if (ret == -1) {
 		printf("recv error %d\n", errno);
@@ -644,6 +667,7 @@ static int do_client_close_test(int sockfd)
 		printf("send error %d\n", errno);
 		return -1;
 	}
+	memset(msg, 0, sizeof(msg));
 	ret = quic_recvmsg(sockfd, msg, sizeof(msg), &sid, &flags);
 	if (ret == -1) {
 		printf("recv error %d\n", errno);
@@ -655,6 +679,7 @@ static int do_client_close_test(int sockfd)
 	}
 	printf("test6: PASS (set peer close info)\n");
 
+	memset(msg, 0, sizeof(msg));
 	ret = quic_recvmsg(sockfd, msg, sizeof(msg), &sid, &flags);
 	if (ret == -1) {
 		printf("recv error %d\n", errno);
@@ -1066,6 +1091,7 @@ static int do_client_connection_test(int sockfd)
 		printf("send error %d %d\n", ret, errno);
 		return -1;
 	}
+	memset(msg, 0, sizeof(msg));
 	ret = quic_recvmsg(sockfd, msg, sizeof(msg), &sid, &flags);
 	if (ret == -1) {
 		printf("recv error %d\n", errno);
@@ -1290,6 +1316,7 @@ static int do_client_stream_test(int sockfd)
 		printf("send error %d\n", errno);
 		return -1;
 	}
+	memset(msg, 0, sizeof(msg));
 	ret = quic_recvmsg(sockfd, msg, sizeof(msg), &sid, &flags);
 	if (ret == -1) {
 		printf("recv error %d\n", errno);
@@ -1325,6 +1352,7 @@ static int do_client_stream_test(int sockfd)
 		printf("send error %d\n", errno);
 		return -1;
 	}
+	memset(msg, 0, sizeof(msg));
 	ret = quic_recvmsg(sockfd, msg, sizeof(msg), &sid, &flags);
 	if (ret == -1) {
 		printf("recv error %d\n", errno);
@@ -1344,6 +1372,7 @@ static int do_client_stream_test(int sockfd)
 		printf("send error %d\n", errno);
 		return -1;
 	}
+	memset(msg, 0, sizeof(msg));
 	ret = quic_recvmsg(sockfd, msg, sizeof(msg), &sid, &flags);
 	if (ret == -1) {
 		printf("recv error %d\n", errno);
@@ -1379,6 +1408,7 @@ static int do_client_stream_test(int sockfd)
 		printf("send error %d\n", errno);
 		return -1;
 	}
+	memset(msg, 0, sizeof(msg));
 	ret = quic_recvmsg(sockfd, msg, sizeof(msg), &sid, &flags);
 	if (ret == -1) {
 		printf("recv error %d\n", errno);
@@ -1398,6 +1428,7 @@ static int do_client_stream_test(int sockfd)
 		printf("send error %d\n", errno);
 		return -1;
 	}
+	memset(msg, 0, sizeof(msg));
 	ret = quic_recvmsg(sockfd, msg, sizeof(msg), &sid, &flags);
 	if (ret == -1) {
 		printf("recv error %d\n", errno);
@@ -1427,6 +1458,7 @@ static int do_client_stream_test(int sockfd)
 		printf("send error %d\n", errno);
 		return -1;
 	}
+	memset(msg, 0, sizeof(msg));
 	ret = quic_recvmsg(sockfd, msg, sizeof(msg), &sid, &flags);
 	if (ret == -1) {
 		printf("recv error %d\n", errno);
@@ -1446,6 +1478,7 @@ static int do_client_stream_test(int sockfd)
 		printf("send error %d\n", errno);
 		return -1;
 	}
+	memset(msg, 0, sizeof(msg));
 	ret = quic_recvmsg(sockfd, msg, sizeof(msg), &sid, &flags);
 	if (ret == -1) {
 		printf("recv error %d\n", errno);
@@ -1476,6 +1509,7 @@ static int do_client_stream_test(int sockfd)
 		printf("send error %d\n", errno);
 		return -1;
 	}
+	memset(msg, 0, sizeof(msg));
 	ret = quic_recvmsg(sockfd, msg, sizeof(msg), &sid, &flags);
 	if (ret == -1) {
 		printf("recv error %d\n", errno);
@@ -1506,6 +1540,7 @@ static int do_client_stream_test(int sockfd)
 		printf("send error %d\n", errno);
 		return -1;
 	}
+	memset(msg, 0, sizeof(msg));
 	ret = quic_recvmsg(sockfd, msg, sizeof(msg), &sid, &flags);
 	if (ret == -1) {
 		printf("recv error %d\n", errno);
@@ -1533,6 +1568,7 @@ static int do_client_stream_test(int sockfd)
 		printf("send error %d\n", errno);
 		return -1;
 	}
+	memset(msg, 0, sizeof(msg));
 	ret = quic_recvmsg(sockfd, msg, sizeof(msg), &sid, &flags);
 	if (ret == -1) {
 		printf("recv error %d\n", errno);
@@ -1561,6 +1597,7 @@ static int do_client_stream_test(int sockfd)
 		printf("send error %d\n", errno);
 		return -1;
 	}
+	memset(msg, 0, sizeof(msg));
 	ret = quic_recvmsg(sockfd, msg, sizeof(msg), &sid, &flags);
 	if (ret == -1) {
 		printf("recv error %d\n", errno);
@@ -1593,6 +1630,7 @@ static int do_client_stream_test(int sockfd)
 		printf("send error %d\n", errno);
 		return -1;
 	}
+	memset(msg, 0, sizeof(msg));
 	ret = quic_recvmsg(sockfd, msg, sizeof(msg), &sid, &flags);
 	if (ret == -1) {
 		printf("recv error %d\n", errno);
@@ -1625,6 +1663,7 @@ static int do_client_stream_test(int sockfd)
 		printf("send error %d\n", errno);
 		return -1;
 	}
+	memset(msg, 0, sizeof(msg));
 	ret = quic_recvmsg(sockfd, msg, sizeof(msg), &sid, &flags);
 	if (ret == -1) {
 		printf("recv error %d\n", errno);

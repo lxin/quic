@@ -157,8 +157,8 @@ static int do_client(int argc, char *argv[])
 	}
 	printf("send '%s' on stream %ld\n", msg, sid);
 
-	memset(msg, 0, sizeof(msg));
 	flags = 0;
+	memset(msg, 0, sizeof(msg));
 	ret = quic_recvmsg(sockfd, msg, sizeof(msg) - 1, &sid, &flags);
 	if (ret == -1) {
 		printf("recv error %d %d\n", ret, errno);
@@ -219,8 +219,8 @@ static int do_client(int argc, char *argv[])
 	if (client_handshake(sockfd, alpn, NULL, ticket, ticket_len, NULL, NULL))
 		return -1;
 
-	memset(msg, 0, sizeof(msg));
 	flags = 0;
+	memset(msg, 0, sizeof(msg));
 	ret = quic_recvmsg(sockfd, msg, sizeof(msg) - 1, &sid, &flags);
 	if (ret == -1) {
 		printf("recv error %d %d\n", ret, errno);
@@ -350,8 +350,8 @@ static int do_server(int argc, char *argv[])
 	if (server_handshake(sockfd, argv[4], argv[5], alpn, key, keylen))
 		return -1;
 
-	memset(msg, 0, sizeof(msg));
 	flags = 0;
+	memset(msg, 0, sizeof(msg));
 	ret = quic_recvmsg(sockfd, msg, sizeof(msg) - 1, &sid, &flags);
 	if (ret == -1) {
 		printf("recv error %d %d\n", ret, errno);
@@ -383,8 +383,8 @@ static int do_server(int argc, char *argv[])
 	if (server_handshake(sockfd, argv[4], argv[5], alpn, key, keylen))
 		return -1;
 
-	memset(msg, 0, sizeof(msg));
 	flags = 0;
+	memset(msg, 0, sizeof(msg));
 	ret = quic_recvmsg(sockfd, msg, sizeof(msg) - 1, &sid, &flags);
 	if (ret == -1) {
 		printf("recv error %d %d\n", ret, errno);

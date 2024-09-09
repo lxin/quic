@@ -56,8 +56,8 @@ static int do_client(int argc, char *argv[])
 	}
 	printf("send '%s' on stream %ld\n", msg, sid);
 
-	memset(msg, 0, sizeof(msg));
 	flags = 0;
+	memset(msg, 0, sizeof(msg));
 	ret = quic_recvmsg(sockfd, msg, sizeof(msg) - 1, &sid, &flags);
 	if (ret == -1) {
 		printf("recv error %d %d\n", ret, errno);
@@ -115,8 +115,8 @@ static int do_server(int argc, char *argv[])
 	if (quic_server_handshake(sockfd, argv[4], cert, argv[6]))
 		return -1;
 
-	memset(msg, 0, sizeof(msg));
 	flags = 0;
+	memset(msg, 0, sizeof(msg));
 	ret = quic_recvmsg(sockfd, msg, sizeof(msg) - 1, &sid, &flags);
 	if (ret == -1) {
 		printf("recv error %d %d\n", ret, errno);

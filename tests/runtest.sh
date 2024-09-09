@@ -73,12 +73,12 @@ func_tests()
 	print_start "Function Tests (PSK)"
 	daemon_run ./func_test server 0.0.0.0 1234 ./keys/server-psk.txt
 	./func_test client 127.0.0.1 1234 ./keys/client-psk.txt || return 1
-	daemon_stop
+	daemon_stop "func_test"
 
 	print_start "Function Tests (Certificate)"
 	daemon_run ./func_test server 0.0.0.0 1234 ./keys/server-key.pem ./keys/server-cert.pem
 	./func_test client 127.0.0.1 1234 || return 1
-	daemon_stop
+	daemon_stop "func_test"
 }
 
 perf_tests()
@@ -267,17 +267,17 @@ sample_tests()
 	print_start "Session Resumption Tests"
 	daemon_run ./ticket_test server 0.0.0.0 1234 ./keys/server-key.pem ./keys/server-cert.pem
 	./ticket_test client 127.0.0.1 1234 || return 1
-	daemon_stop
+	daemon_stop "ticket_test"
 
 	print_start "Sample Tests"
 	daemon_run ./sample_test server 0.0.0.0 1234 ./keys/server-key.pem ./keys/server-cert.pem
 	./sample_test client 127.0.0.1 1234 none none || return 1
-	daemon_stop
+	daemon_stop "sample_test"
 
 	print_start "ALPN and Preferred Address Tests"
 	daemon_run ./alpn_test server 0.0.0.0 1234 ./keys/server-key.pem ./keys/server-cert.pem
 	./alpn_test client 127.0.0.1 1234 || return 1
-	daemon_stop
+	daemon_stop "alpn_test"
 }
 
 TESTS="func perf netem msquic http3 tlshd sample"
