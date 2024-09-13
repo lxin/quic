@@ -29,6 +29,9 @@
 
 #define QUIC_TLSEXT_TP_PARAM	0x39u
 
+#define QUIC_MSG_STREAM_FLAGS \
+	(MSG_STREAM_NEW | MSG_STREAM_FIN | MSG_STREAM_UNI | MSG_STREAM_DONTWAIT)
+
 struct quic_msg {
 	struct quic_msg *next;
 	uint8_t data[4096];
@@ -183,17 +186,18 @@ ssize_t quic_recvmsg(int sockfd, void *msg, size_t len, int64_t *sid, uint32_t *
 	if (error < 0)
 		return error;
 
-	if (!sid)
-		return error;
+	if (flags)
+		*flags = inmsg.msg_flags;
 
 	for (cmsg = CMSG_FIRSTHDR(&inmsg); cmsg != NULL; cmsg = CMSG_NXTHDR(&inmsg, cmsg))
 		if (IPPROTO_QUIC == cmsg->cmsg_level && QUIC_STREAM_INFO == cmsg->cmsg_type)
 			break;
-	*flags = inmsg.msg_flags;
 	if (cmsg) {
 		memcpy(&info, CMSG_DATA(cmsg), sizeof(struct quic_stream_info));
-		*sid = info.stream_id;
-		*flags |= info.stream_flags;
+		if (sid)
+			*sid = info.stream_id;
+		if (flags)
+			*flags |= info.stream_flags;
 	}
 	return error;
 }
@@ -236,9 +240,9 @@ ssize_t quic_sendmsg(int sockfd, const void *msg, size_t len, int64_t sid, uint3
 	outmsg.msg_controllen = cmsg->cmsg_len;
 	info = (struct quic_stream_info *)CMSG_DATA(cmsg);
 	info->stream_id = sid;
-	info->stream_flags = flags;
+	info->stream_flags = (flags & QUIC_MSG_STREAM_FLAGS);
 
-	return sendmsg(sockfd, &outmsg, flags);
+	return sendmsg(sockfd, &outmsg, (flags & ~QUIC_MSG_STREAM_FLAGS));
 }
 
 static uint32_t quic_tls_cipher_type(gnutls_cipher_algorithm_t cipher)
