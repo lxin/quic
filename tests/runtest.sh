@@ -165,6 +165,8 @@ http3_tests() {
 	./http3_test -c https://quic.tech:8443/ > /dev/null || return 1 # Cloudflare Quiche
 	echo "- https://test.privateoctopus.com:4433"
 	./http3_test -c https://test.privateoctopus.com:4433/ > /dev/null || return 1 # picoquic
+	echo "- https://59.82.120.200:18001"
+	./http3_test -c https://59.82.120.200:18001/ > /dev/null || return 1 # xquic
 
 	print_start "Http/3 Tests (http3_test client -> http3_test server)"
 	daemon_run ./http3_test -s 127.0.0.1:443 ./keys/server-key.pem ./keys/server-cert.pem
