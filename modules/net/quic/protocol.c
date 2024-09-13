@@ -433,9 +433,11 @@ static int quic_inet_listen(struct socket *sock, int backlog)
 {
 	struct quic_conn_id_set *source, *dest;
 	struct quic_conn_id conn_id, *active;
+	struct quic_path_addr *path;
 	struct quic_crypto *crypto;
 	struct quic_outqueue *outq;
 	struct sock *sk = sock->sk;
+	union quic_addr *sa;
 	int err = 0;
 
 	lock_sock(sk);
@@ -449,6 +451,22 @@ static int quic_inet_listen(struct socket *sock, int backlog)
 
 	if (!sk_unhashed(sk))
 		goto out;
+
+	path = quic_src(sk);
+	sa = quic_path_addr(path, 0);
+	if (!sa->v4.sin_port) { /* auto bind */
+		err = quic_path_set_bind_port(sk, path, 0);
+		if (err) {
+			quic_path_addr_free(sk, path, 0);
+			goto free;
+		}
+		err = quic_path_set_udp_sock(sk, path, 0);
+		if (err) {
+			quic_path_addr_free(sk, path, 0);
+			goto free;
+		}
+		quic_set_sk_addr(sk, sa, true);
+	}
 	quic_conn_id_generate(&conn_id);
 	err = quic_conn_id_add(dest, &conn_id, 0, NULL);
 	if (err)

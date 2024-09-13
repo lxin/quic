@@ -299,7 +299,7 @@ static int quic_bind(struct sock *sk, struct sockaddr *addr, int addr_len)
 
 	a = quic_path_addr(path, 0);
 	if (a->v4.sin_port || addr_len < quic_addr_len(sk) ||
-	    addr->sa_family != sk->sk_family || !quic_addr(addr)->v4.sin_port) {
+	    addr->sa_family != sk->sk_family) {
 		err = -EINVAL;
 		goto out;
 	}
