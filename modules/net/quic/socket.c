@@ -475,6 +475,12 @@ out:
 	spin_unlock(&head->lock);
 }
 
+#define QUIC_MSG_STREAM_FLAGS \
+	(MSG_STREAM_NEW | MSG_STREAM_FIN | MSG_STREAM_UNI | MSG_STREAM_DONTWAIT)
+
+#define QUIC_MSG_FLAGS \
+	(QUIC_MSG_STREAM_FLAGS | MSG_MORE | MSG_DONTWAIT | MSG_DATAGRAM)
+
 static int quic_msghdr_parse(struct sock *sk, struct msghdr *msg, struct quic_handshake_info *hinfo,
 			     struct quic_stream_info *sinfo, bool *has_hinfo)
 {
@@ -483,6 +489,9 @@ static int quic_msghdr_parse(struct sock *sk, struct msghdr *msg, struct quic_ha
 	struct quic_stream_table *streams;
 	struct cmsghdr *cmsg;
 	u64 active;
+
+	if (msg->msg_flags & ~QUIC_MSG_FLAGS)
+		return -EINVAL;
 
 	sinfo->stream_id = -1;
 	for_each_cmsghdr(cmsg, msg) {
@@ -503,6 +512,8 @@ static int quic_msghdr_parse(struct sock *sk, struct msghdr *msg, struct quic_ha
 			if (cmsg->cmsg_len != CMSG_LEN(sizeof(*s)))
 				return -EINVAL;
 			s = CMSG_DATA(cmsg);
+			if (s->stream_flags & ~QUIC_MSG_STREAM_FLAGS)
+				return -EINVAL;
 			sinfo->stream_id = s->stream_id;
 			sinfo->stream_flags = s->stream_flags;
 			break;
@@ -1934,6 +1945,9 @@ static int quic_sock_stream_open(struct sock *sk, int len, sockptr_t optval, soc
 	len = sizeof(sinfo);
 	if (copy_from_sockptr(&sinfo, optval, len))
 		return -EFAULT;
+
+	if (sinfo.stream_flags & ~QUIC_MSG_STREAM_FLAGS)
+		return -EINVAL;
 
 	if (sinfo.stream_id == -1) {
 		sinfo.stream_id = (quic_stream_send_bidi(streams) << 2);
