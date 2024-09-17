@@ -237,7 +237,7 @@ static int quic_test_do_ticket_client(void)
 		ticket_len, param_len, token_len);
 
 	strscpy(msg, "hello quic server!", sizeof(msg));
-	sid = (0 | QUIC_STREAM_TYPE_UNI_MASK);
+	sid = QUIC_STREAM_TYPE_UNI_MASK;
 	flags = MSG_STREAM_NEW | MSG_STREAM_FIN;
 	err = quic_test_sendmsg(sock, msg, strlen(msg), sid, flags);
 	if (err < 0) {
@@ -294,7 +294,7 @@ static int quic_test_do_ticket_client(void)
 
 	/* send early data before handshake */
 	strscpy(msg, "hello quic server! I'm back!", sizeof(msg));
-	sid = (0 | QUIC_STREAM_TYPE_UNI_MASK);
+	sid = QUIC_STREAM_TYPE_UNI_MASK;
 	flags = MSG_STREAM_NEW | MSG_STREAM_FIN;
 	err = quic_test_sendmsg(sock, msg, strlen(msg), sid, flags);
 	if (err < 0) {
@@ -361,7 +361,7 @@ static int quic_test_do_sample_client(void)
 	 * set MSG_STREAM_FIN to mark the last data on this stream.
 	 */
 	strscpy(msg, "hello quic server!", sizeof(msg));
-	sid = (0 | QUIC_STREAM_TYPE_UNI_MASK);
+	sid = QUIC_STREAM_TYPE_UNI_MASK;
 	flags = MSG_STREAM_NEW | MSG_STREAM_FIN;
 	err = quic_test_sendmsg(sock, msg, strlen(msg), sid, flags);
 	if (err < 0) {
@@ -445,7 +445,7 @@ static int quic_test_do_ticket_server(void)
 	pr_info("quic_test: recv '%s' on stream %lld\n", msg, sid);
 
 	strscpy(msg, "hello quic client!", sizeof(msg));
-	sid = (0 | QUIC_STREAM_TYPE_SERVER_MASK);
+	sid = QUIC_STREAM_TYPE_SERVER_MASK;
 	flags = MSG_STREAM_NEW | MSG_STREAM_FIN;
 	err = quic_test_sendmsg(newsock, msg, strlen(msg), sid, flags);
 	if (err < 0) {
@@ -486,7 +486,7 @@ static int quic_test_do_ticket_server(void)
 	pr_info("quic_test: recv '%s' on stream %lld\n", msg, sid);
 
 	strscpy(msg, "hello quic client! welcome back!", sizeof(msg));
-	sid = (0 | QUIC_STREAM_TYPE_SERVER_MASK);
+	sid = QUIC_STREAM_TYPE_SERVER_MASK;
 	flags = MSG_STREAM_NEW | MSG_STREAM_FIN;
 	err = quic_test_sendmsg(newsock, msg, strlen(msg), sid, flags);
 	if (err < 0) {
@@ -557,7 +557,7 @@ static int quic_test_do_sample_server(void)
 	pr_info("quic_test: recv '%s' on stream %lld\n", msg, sid);
 
 	strscpy(msg, "hello quic client!", sizeof(msg));
-	sid = (0 | QUIC_STREAM_TYPE_SERVER_MASK);
+	sid = QUIC_STREAM_TYPE_SERVER_MASK;
 	flags = MSG_STREAM_NEW | MSG_STREAM_FIN;
 	err = quic_test_sendmsg(newsock, msg, strlen(msg), sid, flags);
 	if (err < 0) {

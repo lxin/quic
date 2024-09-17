@@ -243,15 +243,15 @@ void quic_outq_transmit_probe(struct sock *sk)
 	struct quic_path_dst *d = (struct quic_path_dst *)quic_dst(sk);
 	struct quic_pnspace *space = quic_pnspace(sk, QUIC_CRYPTO_APP);
 	u8 taglen = quic_packet_taglen(quic_packet(sk));
+	u32 pathmtu, probe_size = d->pl.probe_size;
 	struct quic_config *c = quic_config(sk);
 	struct quic_frame *frame;
-	u32 pathmtu;
 	s64 number;
 
 	if (!quic_is_established(sk))
 		return;
 
-	frame = quic_frame_create(sk, QUIC_FRAME_PING, &d->pl.probe_size);
+	frame = quic_frame_create(sk, QUIC_FRAME_PING, &probe_size);
 	if (frame) {
 		number = quic_pnspace_next_pn(space);
 		quic_outq_ctrl_tail(sk, frame, false);
