@@ -13,6 +13,7 @@ char msg[MSG_LEN + 1];
 
 static int do_client_notification_test(int sockfd)
 {
+	struct quic_connection_id_info connid_info = {};
 	struct quic_errinfo errinfo = {};
 	struct quic_event_option event;
 	struct sockaddr_in addr = {};
@@ -70,7 +71,7 @@ static int do_client_notification_test(int sockfd)
 	}
 	ev = (union quic_event *)&msg[1];
 	if (ev->update.state != QUIC_STREAM_RECV_STATE_RECVD ||
-	    ev->update.errcode != strlen("quic event test2")) {
+	    ev->update.finalsz != strlen("quic event test2")) {
 		printf("test3: FAIL state %u\n", ev->update.state);
 		return -1;
 	}
@@ -407,7 +408,7 @@ static int do_client_notification_test(int sockfd)
 		printf("socket setsockopt event error %d\n", errno);
 		return -1;
 	}
-	printf("test19: PASS (enable connection migration event)\n");
+	printf("test19: PASS (disable connection migration event)\n");
 
 	event.type = QUIC_EVENT_KEY_UPDATE;
 	event.on = 1;
@@ -586,7 +587,93 @@ static int do_client_notification_test(int sockfd)
 		printf("socket setsockopt event error %d\n", errno);
 		return -1;
 	}
-	printf("test26: PASS (enable new token event)\n");
+	printf("test26: PASS (disable new token event)\n");
+
+	event.type = QUIC_EVENT_CONNECTION_ID;
+	event.on = 1;
+	ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_EVENT, &event, sizeof(event));
+	if (ret == -1) {
+		printf("socket setsockopt event error %d\n", errno);
+		return -1;
+	}
+	printf("test27: PASS (enable new connection id event)\n");
+
+	connid_info.dest = 0;
+	optlen = sizeof(connid_info);
+	ret = getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_CONNECTION_ID, &connid_info, &optlen);
+	if (ret == -1) {
+		printf("test28: FAIL ret %d, source %u\n", ret, connid_info.prior_to);
+		return -1;
+	}
+
+	connid_info.prior_to++;
+	connid_info.active = 0;
+	connid_info.dest = 0;
+	ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_CONNECTION_ID, &connid_info, optlen);
+	if (ret == -1) {
+		printf("socket setsockopt retire connection id error %d\n", errno);
+		return -1;
+	}
+	sleep(1);
+	memset(msg, 0, sizeof(msg));
+	ret = quic_recvmsg(sockfd, msg, sizeof(msg), &sid, &flags);
+	if (ret == -1) {
+		printf("recv error %d\n", errno);
+		return -1;
+	}
+	if (!(flags & MSG_NOTIFICATION) || msg[0] != QUIC_EVENT_CONNECTION_ID) {
+		printf("test28: FAIL flags %u, event %d\n", flags, msg[0]);
+		return -1;
+	}
+	ev = (union quic_event *)&msg[1];
+	if (ev->info.dest || ev->info.prior_to != connid_info.prior_to) {
+		printf("test28: FAIL prior_to %u %u\n", ev->info.prior_to, connid_info.prior_to);
+		return -1;
+	}
+	printf("test28: PASS (QUIC_EVENT_CONNECTION_ID event for source connection ID)\n");
+
+	connid_info.dest = 1;
+	optlen = sizeof(connid_info);
+	ret = getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_CONNECTION_ID, &connid_info, &optlen);
+	if (ret == -1) {
+		printf("test29: FAIL ret %d, source %u\n", ret, connid_info.prior_to);
+		return -1;
+	}
+
+	connid_info.prior_to++;
+	connid_info.active = 0;
+	connid_info.dest = 1;
+	ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_CONNECTION_ID, &connid_info, optlen);
+	if (ret == -1) {
+		printf("socket setsockopt retire connection id error %d\n", errno);
+		return -1;
+	}
+	sleep(1);
+	memset(msg, 0, sizeof(msg));
+	ret = quic_recvmsg(sockfd, msg, sizeof(msg), &sid, &flags);
+	if (ret == -1) {
+		printf("recv error %d\n", errno);
+		return -1;
+	}
+	if (!(flags & MSG_NOTIFICATION) || msg[0] != QUIC_EVENT_CONNECTION_ID) {
+		printf("test29: FAIL flags %u, event %d\n", flags, msg[0]);
+		return -1;
+	}
+	ev = (union quic_event *)&msg[1];
+	if (!ev->info.dest || ev->info.prior_to != connid_info.prior_to) {
+		printf("test29: FAIL prior_to %u %u\n", ev->info.prior_to, connid_info.prior_to);
+		return -1;
+	}
+	printf("test29: PASS (QUIC_EVENT_CONNECTION_ID event for dest connection ID)\n");
+
+	event.type = QUIC_EVENT_CONNECTION_ID;
+	event.on = 0;
+	ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_EVENT, &event, sizeof(event));
+	if (ret == -1) {
+		printf("socket setsockopt event error %d\n", errno);
+		return -1;
+	}
+	printf("test30: PASS (disable new connection id event)\n");
 
 	return 0;
 }
@@ -713,171 +800,247 @@ static int do_client_connection_test(int sockfd)
 	printf("CONNECTION TEST:\n");
 
 	optlen = sizeof(info);
-	info.source = 2;
-	ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_RETIRE_CONNECTION_ID,
-			 &info, optlen); /* 2-8 */
+	info.prior_to = 2;
+	info.active = 0;
+	info.dest = 0;
+	ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_CONNECTION_ID, &info, optlen); /* 2-8 */
 	if (ret == -1) {
 		printf("socket setsockopt retire connection id error %d\n", errno);
 		return -1;
 	}
 	sleep(1);
-	ret = getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_ACTIVE_CONNECTION_ID, &info, &optlen);
-	if (ret == -1 || info.source != 2) {
-		printf("test1: FAIL ret %d, source %u\n", ret, info.source);
+	info.dest = 0;
+	ret = getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_CONNECTION_ID, &info, &optlen);
+	if (ret == -1 || info.active != 2) {
+		printf("test1: FAIL ret %d, source %u\n", ret, info.prior_to);
 		return -1;
 	}
 	printf("test1: PASS (retire source connection id 0)\n");
 
 	optlen = sizeof(info);
-	info.source = 3;
-	ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_RETIRE_CONNECTION_ID,
-			 &info, optlen); /* 3-9 */
+	info.prior_to = 3;
+	info.active = 0;
+	info.dest = 0;
+	ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_CONNECTION_ID, &info, optlen); /* 3-9 */
 	if (ret == -1) {
 		printf("socket setsockopt retire connection id error %d\n", errno);
 		return -1;
 	}
 	sleep(1);
-	ret = getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_ACTIVE_CONNECTION_ID, &info, &optlen);
-	if (ret == -1 || info.source != 3) {
-		printf("test2: FAIL ret %d, source %u\n", ret, info.source);
+	info.dest = 0;
+	ret = getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_CONNECTION_ID, &info, &optlen);
+	if (ret == -1 || info.active != 3 || info.prior_to != 3) {
+		printf("test2: FAIL ret %d, source %u\n", ret, info.prior_to);
 		return -1;
 	}
 	printf("test2: PASS (retire source connection id 1)\n");
 
 	optlen = sizeof(info);
-	info.source = 3;
-	ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_RETIRE_CONNECTION_ID, &info, optlen);
+	info.prior_to = 3;
+	info.active = 5;
+	info.dest = 0;
+	ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_CONNECTION_ID, &info, optlen);
 	if (ret != -1) {
 		printf("test3: FAIL\n");
+		return -1;
+	}
+	info.prior_to = 5;
+	info.active = 2;
+	info.dest = 0;
+	ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_CONNECTION_ID, &info, optlen);
+	if (ret != -1) {
+		printf("test3: FAIL active 2\n");
+		return -1;
+	}
+	info.dest = 0;
+	ret = getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_CONNECTION_ID, &info, &optlen);
+	if (ret == -1 || info.active != 3 || info.prior_to != 3) {
+		printf("test3: FAIL ret %d, source %u\n", ret, info.prior_to);
 		return -1;
 	}
 	printf("test3: PASS (not allow to retire a retired source connection id)\n");
 
 	optlen = sizeof(info);
-	info.source = 10;
-	ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_RETIRE_CONNECTION_ID, &info, optlen);
+	info.prior_to = 10;
+	info.active = 5;
+	info.dest = 0;
+	ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_CONNECTION_ID, &info, optlen);
 	if (ret != -1) {
 		printf("test4: FAIL\n");
+		return -1;
+	}
+	info.prior_to = 5;
+	info.active = 10;
+	info.dest = 0;
+	ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_CONNECTION_ID, &info, optlen);
+	if (ret != -1) {
+		printf("test4: FAIL active 10\n");
+		return -1;
+	}
+	info.dest = 0;
+	ret = getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_CONNECTION_ID, &info, &optlen);
+	if (ret == -1 || info.active != 3 || info.prior_to != 3) {
+		printf("test4: FAIL ret %d, source %u\n", ret, info.prior_to);
 		return -1;
 	}
 	printf("test4: PASS (not allow to retire all source connection id)\n");
 
 	optlen = sizeof(info);
-	info.source = 5;
-	ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_RETIRE_CONNECTION_ID,
-			 &info, optlen); /* 5-11 */
+	info.prior_to = 5;
+	info.active = 8;
+	info.dest = 0;
+	ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_CONNECTION_ID, &info, optlen); /* 5-11 */
 	if (ret == -1) {
 		printf("socket setsockopt retire connection id %d\n", errno);
 		return -1;
 	}
 	sleep(1);
-	ret = getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_ACTIVE_CONNECTION_ID, &info, &optlen);
-	if (ret == -1 || info.source != 5) {
-		printf("test5: FAIL ret %d, source %u\n", ret, info.source);
+	info.dest = 0;
+	ret = getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_CONNECTION_ID, &info, &optlen);
+	if (ret == -1 || info.active != 8 || info.prior_to != 5) {
+		printf("test5: FAIL ret %d, active: %u, source %u\n",
+		       ret, info.active, info.prior_to);
 		return -1;
 	}
 	printf("test5: PASS (retire multiple source connection id)\n");
 
 	optlen = sizeof(info);
-	info.source = 11;
-	ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_RETIRE_CONNECTION_ID,
-			 &info, optlen); /* 11-17 */
+	info.prior_to = 11;
+	info.active = 0;
+	info.dest = 0;
+	ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_CONNECTION_ID, &info, optlen); /* 11-17 */
 	if (ret == -1) {
 		printf("socket setsockopt retire connection id %d\n", errno);
 		return -1;
 	}
 	sleep(1);
-	ret = getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_ACTIVE_CONNECTION_ID, &info, &optlen);
-	if (ret == -1 || info.source != 11) {
-		printf("test6: FAIL ret %d, source %u\n", ret, info.source);
+	info.dest = 0;
+	ret = getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_CONNECTION_ID, &info, &optlen);
+	if (ret == -1 || info.active != 11 || info.prior_to != 11) {
+		printf("test6: FAIL ret %d, source %u\n", ret, info.prior_to);
 		return -1;
 	}
 	printf("test6: PASS (retire max_count - 1 source connection id)\n");
 
 	optlen = sizeof(info);
-	info.source = 0;
-	info.dest = 2;
-	ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_RETIRE_CONNECTION_ID,
-			 &info, optlen); /* 2-8 */
+	info.prior_to = 2;
+	info.active = 0;
+	info.dest = 1;
+	ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_CONNECTION_ID, &info, optlen); /* 2-8 */
 	if (ret == -1) {
 		printf("socket setsockopt retire connection id error %d\n", errno);
 		return -1;
 	}
 	sleep(1);
-	ret = getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_ACTIVE_CONNECTION_ID, &info, &optlen);
-	if (ret == -1 || info.dest != 2) {
-		printf("test7: FAIL ret %d, dest %u\n", ret, info.dest);
+	info.dest = 1;
+	ret = getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_CONNECTION_ID, &info, &optlen);
+	if (ret == -1 || info.active != 2 || info.prior_to != 2) {
+		printf("test7: FAIL ret %d, dest %u\n", ret, info.prior_to);
 		return -1;
 	}
 	printf("test7: PASS (retire dest connection id 0)\n");
 
 	optlen = sizeof(info);
-	info.source = 0;
-	info.dest = 3;
-	ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_RETIRE_CONNECTION_ID,
-			 &info, optlen); /* 3-9 */
+	info.prior_to = 3;
+	info.active = 0;
+	info.dest = 1;
+	ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_CONNECTION_ID, &info, optlen); /* 3-9 */
 	if (ret == -1) {
 		printf("socket setsockopt retire connection id error %d\n", errno);
 		return -1;
 	}
 	sleep(1);
-	ret = getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_ACTIVE_CONNECTION_ID, &info, &optlen);
-	if (ret == -1 || info.dest != 3) {
-		printf("test8: FAIL ret %d, dest %u\n", ret, info.dest);
+	info.dest = 1;
+	ret = getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_CONNECTION_ID, &info, &optlen);
+	if (ret == -1 || info.active != 3 || info.prior_to != 3) {
+		printf("test8: FAIL ret %d, dest %u\n", ret, info.prior_to);
 		return -1;
 	}
 	printf("test8: PASS (retire dest connection id 1)\n");
 
 	optlen = sizeof(info);
-	info.source = 0;
-	info.dest = 3;
-	ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_RETIRE_CONNECTION_ID, &info, optlen);
+	info.prior_to = 3;
+	info.active = 0;
+	info.dest = 1;
+	ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_CONNECTION_ID, &info, optlen);
 	if (ret != -1) {
 		printf("test9: FAIL\n");
+		return -1;
+	}
+	info.prior_to = 5;
+	info.active = 2;
+	info.dest = 1;
+	ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_CONNECTION_ID, &info, optlen);
+	if (ret != -1) {
+		printf("test9: FAIL active 2\n");
+		return -1;
+	}
+	info.dest = 1;
+	ret = getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_CONNECTION_ID, &info, &optlen);
+	if (ret == -1 || info.active != 3 || info.prior_to != 3) {
+		printf("test9: FAIL ret %d, source %u\n", ret, info.prior_to);
 		return -1;
 	}
 	printf("test9: PASS (not allow to retire a retired dest connection id)\n");
 
 	optlen = sizeof(info);
-	info.source = 0;
-	info.dest = 10;
-	ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_RETIRE_CONNECTION_ID, &info, optlen);
+	info.prior_to = 10;
+	info.active = 5;
+	info.dest = 1;
+	ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_CONNECTION_ID, &info, optlen);
 	if (ret != -1) {
 		printf("test10: FAIL\n");
+		return -1;
+	}
+	info.prior_to = 5;
+	info.active = 10;
+	info.dest = 1;
+	ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_CONNECTION_ID, &info, optlen);
+	if (ret != -1) {
+		printf("test10: FAIL active 10\n");
+		return -1;
+	}
+	info.dest = 1;
+	ret = getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_CONNECTION_ID, &info, &optlen);
+	if (ret == -1 || info.active != 3 || info.prior_to != 3) {
+		printf("test10: FAIL ret %d, source %u\n", ret, info.prior_to);
 		return -1;
 	}
 	printf("test10: PASS (not allow to retire all dest connection id)\n");
 
 	optlen = sizeof(info);
-	info.source = 0;
-	info.dest = 5;
-	ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_RETIRE_CONNECTION_ID,
-			 &info, optlen); /* 5-11 */
+	info.prior_to = 5;
+	info.active = 8;
+	info.dest = 1;
+	ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_CONNECTION_ID, &info, optlen); /* 5-11 */
 	if (ret == -1) {
 		printf("socket setsockopt retire connection id error %d\n", errno);
 		return -1;
 	}
 	sleep(1);
-	ret = getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_ACTIVE_CONNECTION_ID, &info, &optlen);
-	if (ret == -1 || info.dest != 5) {
-		printf("test11: FAIL ret %d, dest %u\n", ret, info.dest);
+	info.dest = 1;
+	ret = getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_CONNECTION_ID, &info, &optlen);
+	if (ret == -1 || info.active != 8 || info.prior_to != 5) {
+		printf("test11: FAIL ret %d, active: %u, dest %u\n",
+		       ret, info.active, info.prior_to);
 		return -1;
 	}
 	printf("test11: PASS (retire multiple dest connection id)\n");
 
 	optlen = sizeof(info);
-	info.source = 0;
-	info.dest = 11;
-	ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_RETIRE_CONNECTION_ID,
-			 &info, optlen); /* 11-17 */
+	info.prior_to = 11;
+	info.active = 0;
+	info.dest = 1;
+	ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_CONNECTION_ID, &info, optlen); /* 11-17 */
 	if (ret == -1) {
 		printf("socket setsockopt retire connection id error %d\n", errno);
 		return -1;
 	}
 	sleep(1);
-	ret = getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_ACTIVE_CONNECTION_ID, &info, &optlen);
-	if (ret == -1 || info.dest != 11) {
-		printf("test12: FAIL ret %d, dest %u\n", ret, info.dest);
+	info.dest = 1;
+	ret = getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_CONNECTION_ID, &info, &optlen);
+	if (ret == -1 || info.active != 11 || info.prior_to != 11) {
+		printf("test12: FAIL ret %d, dest %u\n", ret, info.prior_to);
 		return -1;
 	}
 	printf("test12: PASS (retire max_count - 1 dest connection id)\n");
@@ -924,9 +1087,16 @@ static int do_client_connection_test(int sockfd)
 	printf("test15: PASS (connection migration is done)\n");
 
 	optlen = sizeof(info);
-	ret = getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_ACTIVE_CONNECTION_ID, &info, &optlen);
-	if (ret == -1 || info.dest != 11 || info.source != 12) {
-		printf("teset16: FAIL ret %d, dest %u, source %u\n", ret, info.dest, info.source);
+	info.dest = 0;
+	ret = getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_CONNECTION_ID, &info, &optlen);
+	if (ret == -1 || info.active != 12) {
+		printf("teset16: FAIL ret %d, source %u\n", ret, info.active);
+		return -1;
+	}
+	info.dest = 1;
+	ret = getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_CONNECTION_ID, &info, &optlen);
+	if (ret == -1 || info.active != 11) {
+		printf("teset16: FAIL ret %d, dest %u\n", ret, info.active);
 		return -1;
 	}
 	printf("test16: PASS (retire source & dest connection id when doing migration)\n");
@@ -966,9 +1136,10 @@ static int do_client_connection_test(int sockfd)
 	printf("test18: PASS (connection migration is done)\n");
 
 	optlen = sizeof(info);
-	ret = getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_ACTIVE_CONNECTION_ID, &info, &optlen);
-	if (ret == -1 || info.dest != 12 || info.source != 12) {
-		printf("teset20: FAIL ret %d, dest %u, source %u\n", ret, info.dest, info.source);
+	info.dest = 1;
+	ret = getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_CONNECTION_ID, &info, &optlen);
+	if (ret == -1 || info.active != 12) {
+		printf("teset20: FAIL ret %d, dest %u, source %u\n", ret, info.dest, info.prior_to);
 		return -1;
 	}
 	printf("test19: PASS (retire source & dest connection id when doing migration)\n");

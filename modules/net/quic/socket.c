@@ -1546,37 +1546,65 @@ static int quic_sock_set_crypto_secret(struct sock *sk, struct quic_crypto_secre
 	return 0;
 }
 
-static int quic_sock_retire_conn_id(struct sock *sk, struct quic_connection_id_info *info, u8 len)
+static int quic_sock_set_connection_id(struct sock *sk,
+				       struct quic_connection_id_info *info, u8 len)
 {
-	struct quic_frame *frame;
-	u64 number, first;
+	struct quic_conn_id *active, *old;
+	struct quic_conn_id_set *id_set;
+	struct quic_frame *frame, *tmp;
+	u64 number, first, last;
+	struct list_head list;
 
 	if (len < sizeof(*info) || !quic_is_established(sk))
 		return -EINVAL;
 
-	if (info->source) {
-		number = info->source;
-		if (number > quic_conn_id_last_number(quic_source(sk)) ||
-		    number <= quic_conn_id_first_number(quic_source(sk)))
+	id_set = info->dest ? quic_dest(sk) : quic_source(sk);
+	old = quic_conn_id_active(id_set);
+	if (info->active) {
+		active = quic_conn_id_find(id_set, info->active);
+		if (!active)
 			return -EINVAL;
+		quic_conn_id_set_active(id_set, active);
+	}
+
+	if (!info->prior_to)
+		return 0;
+
+	number = info->prior_to;
+	last = quic_conn_id_last_number(id_set);
+	first = quic_conn_id_first_number(id_set);
+	if (number > last || number <= first) {
+		quic_conn_id_set_active(id_set, old);
+		return -EINVAL;
+	}
+
+	if (!info->dest) {
 		frame = quic_frame_create(sk, QUIC_FRAME_NEW_CONNECTION_ID, &number);
-		if (!frame)
+		if (!frame) {
+			quic_conn_id_set_active(id_set, old);
 			return -ENOMEM;
+		}
 		quic_outq_ctrl_tail(sk, frame, false);
 		return 0;
 	}
 
-	number = info->dest;
-	first = quic_conn_id_first_number(quic_dest(sk));
-	if (number > quic_conn_id_last_number(quic_dest(sk)) || number <= first)
-		return -EINVAL;
-
+	INIT_LIST_HEAD(&list);
 	for (; first < number; first++) {
 		frame = quic_frame_create(sk, QUIC_FRAME_RETIRE_CONNECTION_ID, &first);
-		if (!frame)
+		if (!frame) {
+			quic_conn_id_set_active(id_set, old);
+			quic_outq_list_purge(sk, &list);
 			return -ENOMEM;
-		quic_outq_ctrl_tail(sk, frame, first != number - 1);
+		}
+		list_add_tail(&frame->list, &list);
 	}
+
+	list_for_each_entry_safe(frame, tmp, &list, list) {
+		list_del(&frame->list);
+		quic_outq_ctrl_tail(sk, frame, true);
+	}
+	quic_outq_transmit(sk);
+
 	return 0;
 }
 
@@ -1725,8 +1753,8 @@ static int quic_do_setsockopt(struct sock *sk, int optname, sockptr_t optval, un
 	case QUIC_SOCKOPT_KEY_UPDATE:
 		retval = quic_crypto_key_update(quic_crypto(sk, QUIC_CRYPTO_APP));
 		break;
-	case QUIC_SOCKOPT_RETIRE_CONNECTION_ID:
-		retval = quic_sock_retire_conn_id(sk, kopt, optlen);
+	case QUIC_SOCKOPT_CONNECTION_ID:
+		retval = quic_sock_set_connection_id(sk, kopt, optlen);
 		break;
 	case QUIC_SOCKOPT_ALPN:
 		retval = quic_sock_set_alpn(sk, kopt, optlen);
@@ -1890,8 +1918,7 @@ static int quic_sock_get_crypto_secret(struct sock *sk, int len,
 	return 0;
 }
 
-static int quic_sock_get_active_conn_id(struct sock *sk, int len,
-					sockptr_t optval, sockptr_t optlen)
+static int quic_sock_get_connection_id(struct sock *sk, int len, sockptr_t optval, sockptr_t optlen)
 {
 	struct quic_connection_id_info info;
 	struct quic_conn_id_set *id_set;
@@ -1899,15 +1926,14 @@ static int quic_sock_get_active_conn_id(struct sock *sk, int len,
 
 	if (len < sizeof(info) || !quic_is_established(sk))
 		return -EINVAL;
-
 	len = sizeof(info);
-	id_set = quic_source(sk);
-	active = quic_conn_id_active(id_set);
-	info.source = quic_conn_id_number(active);
+	if (copy_from_sockptr(&info, optval, len))
+		return -EFAULT;
 
-	id_set = quic_dest(sk);
+	id_set = info.dest ? quic_dest(sk) : quic_source(sk);
 	active = quic_conn_id_active(id_set);
-	info.dest = quic_conn_id_number(active);
+	info.active = quic_conn_id_number(active);
+	info.prior_to = quic_conn_id_first_number(id_set);
 
 	if (copy_to_sockptr(optlen, &len, sizeof(len)) || copy_to_sockptr(optval, &info, len))
 		return -EFAULT;
@@ -2039,8 +2065,8 @@ static int quic_do_getsockopt(struct sock *sk, int optname, sockptr_t optval, so
 	case QUIC_SOCKOPT_CONNECTION_CLOSE:
 		retval = quic_sock_get_connection_close(sk, len, optval, optlen);
 		break;
-	case QUIC_SOCKOPT_ACTIVE_CONNECTION_ID:
-		retval = quic_sock_get_active_conn_id(sk, len, optval, optlen);
+	case QUIC_SOCKOPT_CONNECTION_ID:
+		retval = quic_sock_get_connection_id(sk, len, optval, optlen);
 		break;
 	case QUIC_SOCKOPT_ALPN:
 		retval = quic_sock_get_alpn(sk, len, optval, optlen);

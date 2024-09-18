@@ -158,7 +158,7 @@ static void quic_inq_stream_tail(struct sock *sk, struct quic_stream *stream,
 	if (frame->stream_fin) {
 		update.id = stream->id;
 		update.state = QUIC_STREAM_RECV_STATE_RECVD;
-		update.errcode = frame->offset + frame->len;
+		update.finalsz = frame->offset + frame->len;
 		quic_inq_event_recv(sk, QUIC_EVENT_STREAM_UPDATE, &update);
 		stream->recv.state = update.state;
 	}
@@ -494,6 +494,9 @@ int quic_inq_event_recv(struct sock *sk, u8 event, void *args)
 		break;
 	case QUIC_EVENT_CONNECTION_MIGRATION:
 		args_len = sizeof(u8);
+		break;
+	case QUIC_EVENT_CONNECTION_ID:
+		args_len = sizeof(struct quic_connection_id_info);
 		break;
 	default:
 		return -EINVAL;

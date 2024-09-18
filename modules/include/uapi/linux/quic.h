@@ -68,18 +68,17 @@ struct quic_stream_info {
 #define QUIC_SOCKOPT_STREAM_OPEN			1
 #define QUIC_SOCKOPT_STREAM_RESET			2
 #define QUIC_SOCKOPT_STREAM_STOP_SENDING		3
-#define QUIC_SOCKOPT_CONNECTION_CLOSE			4
-#define QUIC_SOCKOPT_CONNECTION_MIGRATION		5
-#define QUIC_SOCKOPT_KEY_UPDATE				6
-#define QUIC_SOCKOPT_TRANSPORT_PARAM			7
-#define QUIC_SOCKOPT_CONFIG				8
-#define QUIC_SOCKOPT_TOKEN				9
-#define QUIC_SOCKOPT_ALPN				10
-#define QUIC_SOCKOPT_SESSION_TICKET			11
-#define QUIC_SOCKOPT_CRYPTO_SECRET			12
-#define QUIC_SOCKOPT_TRANSPORT_PARAM_EXT		13
-#define QUIC_SOCKOPT_RETIRE_CONNECTION_ID		14
-#define QUIC_SOCKOPT_ACTIVE_CONNECTION_ID		15
+#define QUIC_SOCKOPT_CONNECTION_ID			4
+#define QUIC_SOCKOPT_CONNECTION_CLOSE			5
+#define QUIC_SOCKOPT_CONNECTION_MIGRATION		6
+#define QUIC_SOCKOPT_KEY_UPDATE				7
+#define QUIC_SOCKOPT_TRANSPORT_PARAM			8
+#define QUIC_SOCKOPT_CONFIG				9
+#define QUIC_SOCKOPT_TOKEN				10
+#define QUIC_SOCKOPT_ALPN				11
+#define QUIC_SOCKOPT_SESSION_TICKET			12
+#define QUIC_SOCKOPT_CRYPTO_SECRET			13
+#define QUIC_SOCKOPT_TRANSPORT_PARAM_EXT		14
 
 #define QUIC_VERSION_V1			0x1
 #define QUIC_VERSION_V2			0x6b3343cf
@@ -135,8 +134,9 @@ struct quic_errinfo {
 };
 
 struct quic_connection_id_info {
-	uint32_t source;
-	uint32_t dest;
+	uint8_t  dest;
+	uint32_t active;
+	uint32_t prior_to;
 };
 
 struct quic_event_option {
@@ -149,6 +149,7 @@ enum quic_event_type {
 	QUIC_EVENT_NONE,
 	QUIC_EVENT_STREAM_UPDATE,
 	QUIC_EVENT_STREAM_MAX_STREAM,
+	QUIC_EVENT_CONNECTION_ID,
 	QUIC_EVENT_CONNECTION_CLOSE,
 	QUIC_EVENT_CONNECTION_MIGRATION,
 	QUIC_EVENT_KEY_UPDATE,
@@ -190,6 +191,7 @@ struct quic_connection_close {
 union quic_event {
 	struct quic_stream_update update;
 	struct quic_connection_close close;
+	struct quic_connection_id_info info;
 	uint64_t max_stream;
 	uint8_t local_migration;
 	uint8_t key_update_phase;

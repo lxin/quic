@@ -89,6 +89,12 @@ static inline struct quic_conn_id *quic_conn_id_active(struct quic_conn_id_set *
 	return &id_set->active->id;
 }
 
+static inline void quic_conn_id_set_active(struct quic_conn_id_set *id_set,
+					   struct quic_conn_id *active)
+{
+	id_set->active = (struct quic_common_conn_id *)active;
+}
+
 static inline u32 quic_conn_id_number(struct quic_conn_id *conn_id)
 {
 	return ((struct quic_common_conn_id *)conn_id)->number;
@@ -111,9 +117,11 @@ static inline int quic_conn_id_cmp(struct quic_conn_id *a, struct quic_conn_id *
 
 int quic_conn_id_add(struct quic_conn_id_set *id_set, struct quic_conn_id *conn_id,
 		     u32 number, void *data);
-struct quic_conn_id *quic_conn_id_lookup(struct net *net, u8 *scid, u32 len);
 bool quic_conn_id_token_exists(struct quic_conn_id_set *id_set, u8 *token);
 void quic_conn_id_remove(struct quic_conn_id_set *id_set, u32 number);
+
+struct quic_conn_id *quic_conn_id_lookup(struct net *net, u8 *scid, u32 len);
+struct quic_conn_id *quic_conn_id_find(struct quic_conn_id_set *id_set, u32 number);
 
 void quic_conn_id_set_param(struct quic_conn_id_set *id_set, struct quic_transport_param *p);
 void quic_conn_id_set_init(struct quic_conn_id_set *id_set, bool source);

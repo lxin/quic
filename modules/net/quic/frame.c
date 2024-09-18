@@ -295,6 +295,9 @@ static struct quic_frame *quic_frame_crypto_create(struct sock *sk, void *data, 
 
 static struct quic_frame *quic_frame_retire_conn_id_create(struct sock *sk, void *data, u8 type)
 {
+	struct quic_conn_id_set *id_set = quic_dest(sk);
+	struct quic_connection_id_info info = {};
+	struct quic_conn_id *active;
 	struct quic_frame *frame;
 	u64 *seqno = data;
 	u8 *p, buf[10];
@@ -309,7 +312,12 @@ static struct quic_frame *quic_frame_retire_conn_id_create(struct sock *sk, void
 		return NULL;
 	quic_put_data(frame->data, buf, frame_len);
 
-	quic_conn_id_remove(quic_dest(sk), *seqno);
+	quic_conn_id_remove(id_set, *seqno);
+	info.dest = 1;
+	info.prior_to =  quic_conn_id_first_number(id_set);
+	active = quic_conn_id_active(id_set);
+	info.active = quic_conn_id_number(active);
+	quic_inq_event_recv(sk, QUIC_EVENT_CONNECTION_ID, &info);
 	return frame;
 }
 
@@ -828,6 +836,8 @@ static int quic_frame_new_conn_id_process(struct sock *sk, struct quic_frame *fr
 static int quic_frame_retire_conn_id_process(struct sock *sk, struct quic_frame *frame, u8 type)
 {
 	struct quic_conn_id_set *id_set = quic_source(sk);
+	struct quic_connection_id_info info = {};
+	struct quic_conn_id *active;
 	struct quic_frame *nframe;
 	u64 seqno, last, first;
 	u32 len = frame->len;
@@ -845,6 +855,10 @@ static int quic_frame_retire_conn_id_process(struct sock *sk, struct quic_frame 
 	}
 
 	quic_conn_id_remove(id_set, seqno);
+	info.prior_to =  quic_conn_id_first_number(id_set);
+	active = quic_conn_id_active(id_set);
+	info.active = quic_conn_id_number(active);
+	quic_inq_event_recv(sk, QUIC_EVENT_CONNECTION_ID, &info);
 	if (last - seqno >= quic_conn_id_max_count(id_set))
 		goto out;
 	seqno++;
@@ -1141,7 +1155,7 @@ static int quic_frame_connection_close_process(struct sock *sk, struct quic_fram
 	if (quic_inq_event_recv(sk, QUIC_EVENT_CONNECTION_CLOSE, close))
 		return -ENOMEM;
 	quic_set_state(sk, QUIC_SS_CLOSED);
-	pr_debug("%s: phrase: %d, frame: %d\n", __func__, close->errcode, close->frame);
+	pr_debug("%s: errcode: %d, frame: %d\n", __func__, close->errcode, close->frame);
 
 	len -= phrase_len;
 	return frame->len - len;
