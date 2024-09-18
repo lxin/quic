@@ -546,6 +546,7 @@ enum quic_event_type {
   QUIC_EVENT_NONE,
   QUIC_EVENT_STREAM_UPDATE,
   QUIC_EVENT_STREAM_MAX_STREAM,
+  QUIC_EVENT_CONNECTION_ID,
   QUIC_EVENT_CONNECTION_CLOSE,
   QUIC_EVENT_CONNECTION_MIGRATION,
   QUIC_EVENT_KEY_UPDATE,
@@ -602,6 +603,21 @@ struct quic_stream_update {
   uint64_t finalsz;
 };
 .fi
+.TP
+id
+The stream ID.
+.TP
+state
+The new stream state. All valid states are listed above.
+.TP
+errcode
+Error code for the application protocol. It is used for the RESET_SENT or
+RESET_RECVD state update on send side, and for the RESET_RECVD update on
+receive side.
+.TP
+finalsz
+The final size of the stream. It is used for the SIZE_KNOWN, RESET_RECVD,
+or RECVD state updates on receive side.
 
 .SS QUIC_EVENT_STREAM_MAX_STREAM
 Delivered when a `MAX_STREAMS` frame is received. Useful when
@@ -615,6 +631,37 @@ Data format in the event:
 .nf
 uint64_t max_stream;
 .fi
+.TP
+max_stream
+Indicates the maximum stream limit for a specific stream byte. The stream
+type is encoded in the first 2 bits, and the maximum stream limit is calculated
+by shifting max_stream right by 2 bits.
+
+.SS QUIC_EVENT_CONNECTION_ID
+Delivered when any source or destination connection IDs are retired. This
+usually occurs during connection migration or when managing connection IDs via
+socket option
+.B QUIC_SOCKOPT_CONNECTION_ID.
+
+.PP
+Data format in the event:
+
+.nf
+struct quic_connection_id_info {
+  uint8_t  dest;
+  uint32_t active;
+  uint32_t prior_to;
+};
+.fi
+.TP
+dest
+Indicates whether to operate on destination connection IDs.
+.TP
+active
+The number of the connection ID in use.
+.TP
+prior_to
+The lowest connection ID number.
 
 .SS QUIC_EVENT_CONNECTION_CLOSE
 Delivered when a `CLOSE` frame is received from the peer. The peer MAY set the
@@ -632,6 +679,15 @@ struct quic_connection_close {
   uint8_t phrase[];
 };
 .fi
+.TP
+errcode
+Error code for the application protocol.
+.TP
+phrase
+Optional string for additional details.
+.TP
+frame
+Frame type that caused the closure.
 
 .SS QUIC_EVENT_CONNECTION_MIGRATION
 Delivered when either side successfully changes its source address using the
@@ -647,6 +703,11 @@ Data format in the event:
 .nf
 uint8_t local_migration;
 .fi
+.TP
+local_migration
+Indicates whether the migration was local or initiated by the peer. After
+receiving this notification, the new address can be retrieved using
+getsockname() for the local address or getpeername() for the peer's address.
 
 .SS QUIC_EVENT_KEY_UPDATE
 Delivered when both sides have successfully updated to the new key phase after
@@ -660,6 +721,9 @@ Data format in the event:
 .nf
 uint8_t key_update_phase;
 .fi
+.TP
+key_update_phase
+Indicates which key phase is currently in use.
 
 .SS QUIC_EVENT_NEW_TOKEN
 Delivered whenever a `NEW_TOKEN` frame is received from the peer. Tokens can be
@@ -670,8 +734,11 @@ sent using socket option
 Data format in the event:
 
 .nf
-uint8_t *token;
+uint8_t token[];
 .fi
+.TP
+token
+Carries the token data.
 
 .SS QUIC_EVENT_NEW_SESSION_TICKET
 Delivered whenever a `NEW_SESSION_TICKET` message carried in crypto frame is
@@ -681,8 +748,11 @@ received from the peer.
 Data format in the event:
 
 .nf
-uint8_t *ticket;
+uint8_t ticket[];
 .fi
+.TP
+ticket
+Carries the data of the TLS session ticket message.
 
 .SH SOCKET OPTIONS
 To set or get a QUIC socket option, call
@@ -724,36 +794,6 @@ disable.
 enable.
 .PP
 By default, all events are disabled.
-.RE
-
-.PP
-.B QUIC_SOCKOPT_CONNECTION_CLOSE
-
-.RS 4
-.PP
-This option is used to get or set the close context, which includes `errcode`,
-`phrase`, and `frame`.
-.IP "On the closing side"
-Set this option before calling `close()` to communicate the closing information
-to the peer.
-.IP "On the receiving side"
-Get this option to retrieve the closing information from the peer.
-.PP
-The `optval` type is:
-
-.nf
-struct quic_connection_close {
-  uint32_t errcode;
-  uint8_t  frame;
-  uint8_t  phrase[];
-};
-.fi
-.IP "errcode"
-Error code for the application protocol. Defaults to 0.
-.IP "frame"
-Frame type that caused the closure. Defaults to 0.
-.IP "phrase"
-Optional string for additional details. Defaults to null.
 .RE
 
 .PP
@@ -899,6 +939,71 @@ from the client. Options include:
 .IP \[bu] 4
 `2`: REQUIRE
 .RE
+.RE
+
+.PP
+.B QUIC_SOCKOPT_CONNECTION_ID
+
+.RS 4
+.PP
+This option is used to get or set the source and destination connection IDs,
+including `dest`, `active` and `prior_to`. Along with
+the `active_connection_id_limit` in the transport parameters, it helps
+determine the range of available connection IDs.
+
+.PP
+The `optval` type is:
+
+.nf
+struct quic_connection_id_info {
+  uint8_t  dest;
+  uint32_t active;
+  uint32_t prior_to;
+};
+.fi
+.IP "dest"
+Indicates whether to operate on destination connection IDs.
+.IP "active"
+The number of the connection ID in use.
+.IP "prior_to"
+The lowest connection ID number.
+
+.PP
+The `active` is used to switch the connection ID in use. The `prior_to`, for
+source connection IDs, specifies prior to which ID will be retired by
+sending `NEW_CONNECTION_ID` frames; for destination connection IDs, it
+indicates prior to which ID issued by the peer will no longer be used and
+should be retired by sending `RETIRE_CONNECTION_ID` frames.
+.RE
+
+.PP
+.B QUIC_SOCKOPT_CONNECTION_CLOSE
+
+.RS 4
+.PP
+This option is used to get or set the close context, which includes `errcode`,
+`phrase`, and `frame`.
+.IP "On the closing side"
+Set this option before calling `close()` to communicate the closing information
+to the peer.
+.IP "On the receiving side"
+Get this option to retrieve the closing information from the peer.
+.PP
+The `optval` type is:
+
+.nf
+struct quic_connection_close {
+  uint32_t errcode;
+  uint8_t  frame;
+  uint8_t  phrase[];
+};
+.fi
+.IP "errcode"
+Error code for the application protocol. Defaults to 0.
+.IP "frame"
+Frame type that caused the closure. Defaults to 0.
+.IP "phrase"
+Optional string for additional details. Defaults to null.
 .RE
 
 .PP
