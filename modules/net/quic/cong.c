@@ -51,11 +51,13 @@ static u64 cubic_root(u64 n)
 	if (!n)
 		return 0;
 
-	d = __builtin_clzll(n);
-	a = 1ULL << ((64 - d) / 3 + 1);
+	d = (64 - __builtin_clzll(n)) / 3;
+	a = 1ULL << (d + 1);
 
-	for (; a * a * a > n;)
-		a = (2 * a + n / a / a) / 3;
+	for (; a * a * a > n;) {
+		d = div64_ul(n, a * a);
+		a = div64_ul(2 * a + d, 3);
+	}
 	return a;
 }
 
@@ -120,7 +122,7 @@ static void cubic_cong_avoid(struct quic_cong *cong, u32 bytes)
 			 *       ╲│       C
 			 */
 			cubic->k = cubic->w_last_max - cong->window;
-			cubic->k = cubic_root(cubic->k * 10 / 4 / cong->mss);
+			cubic->k = cubic_root(div64_ul(cubic->k * 10, cong->mss * 4));
 			cubic->origin_point = cubic->w_last_max;
 		} else {
 			cubic->k = 0;
@@ -136,7 +138,7 @@ static void cubic_cong_avoid(struct quic_cong *cong, u32 bytes)
 	 *      current    epoch
 	 */
 	t = cong->time - cubic->epoch_start;
-	tx = (t << 10) / USEC_PER_SEC;
+	tx = div64_ul(t << 10, USEC_PER_SEC);
 	kx = (cubic->k << 10);
 	if (tx > kx)
 		time_delta = tx - kx;
@@ -147,8 +149,8 @@ static void cubic_cong_avoid(struct quic_cong *cong, u32 bytes)
 	 * W     (t) = C * (t - K)  + W
 	 *  cubic                      max
 	 */
-	delta = cong->mss * ((((time_delta * time_delta) >> 10) * time_delta) >> 10) * 4 / 10;
-	delta >>= 10;
+	delta = cong->mss * ((((time_delta * time_delta) >> 10) * time_delta) >> 10);
+	delta = div64_ul(delta * 4, 10) >> 10;
 	if (tx > kx)
 		target = cubic->origin_point + delta;
 	else
@@ -158,7 +160,7 @@ static void cubic_cong_avoid(struct quic_cong *cong, u32 bytes)
 	 * W     (t + RTT)
 	 *  cubic
 	 */
-	cwnd_thres = (target * (((t + cong->smoothed_rtt) << 10) / USEC_PER_SEC)) >> 10;
+	cwnd_thres = (div64_ul((t + cong->smoothed_rtt) << 10, USEC_PER_SEC) * target) >> 10;
 	pr_debug("%s: target: %llu, thres: %llu, delta: %llu, t: %llu, srtt: %u, tx: %llu, kx: %llu\n",
 		 __func__, target, cwnd_thres, delta, t, cong->smoothed_rtt, tx, kx);
 	/*
@@ -183,13 +185,11 @@ static void cubic_cong_avoid(struct quic_cong *cong, u32 bytes)
 	 *      cwnd
 	 */
 	if (target > cong->window) {
-		m = cubic->pending_add + cong->mss * (target - cong->window);
-		target_add = m / cong->window;
-		cubic->pending_add = m % cong->window;
+		target_add = cubic->pending_add + cong->mss * (target - cong->window);
+		cubic->pending_add = do_div(target_add, cong->window);
 	} else {
-		m = cubic->pending_add + cong->mss;
-		target_add = m / (100 * cong->window);
-		cubic->pending_add = m % (100 * cong->window);
+		target_add = cubic->pending_add + cong->mss;
+		cubic->pending_add = do_div(target_add, 100 * cong->window);
 	}
 
 	pr_debug("%s: target: %llu, window: %u, target_add: %u\n",
@@ -201,11 +201,11 @@ static void cubic_cong_avoid(struct quic_cong *cong, u32 bytes)
 	 *  est    est    cubic        cwnd
 	 */
 	m = cubic->pending_w_add + cong->mss * bytes;
-	cubic->w_tcp += m / cong->window;
-	cubic->pending_w_add = m % cong->window;
+	cubic->pending_w_add = do_div(m, cong->window);
+	cubic->w_tcp += m;
 
 	if (cubic->w_tcp > cong->window)
-		tcp_add = cong->mss * (cubic->w_tcp - cong->window) / cong->window;
+		tcp_add = div64_ul(cong->mss * (cubic->w_tcp - cong->window), cong->window);
 
 	pr_debug("%s: w_tcp: %u, window: %u, tcp_add: %u\n",
 		 __func__, cubic->w_tcp, cong->window, tcp_add);

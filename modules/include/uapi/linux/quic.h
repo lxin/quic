@@ -123,7 +123,7 @@ struct quic_crypto_secret {
 	uint8_t secret[48];
 };
 
-enum {
+enum quic_cong_algo {
 	QUIC_CONG_ALG_RENO,
 	QUIC_CONG_ALG_CUBIC,
 	QUIC_CONG_ALG_MAX,

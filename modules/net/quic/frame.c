@@ -1850,11 +1850,11 @@ int quic_frame_get_transport_params_ext(struct sock *sk, struct quic_transport_p
 	}
 	if (params->max_ack_delay != QUIC_DEF_ACK_DELAY) {
 		p = quic_put_param(p, QUIC_TRANSPORT_PARAM_MAX_ACK_DELAY,
-				   params->max_ack_delay / 1000);
+				   div64_ul(params->max_ack_delay, 1000));
 	}
 	if (params->max_idle_timeout) {
 		p = quic_put_param(p, QUIC_TRANSPORT_PARAM_MAX_IDLE_TIMEOUT,
-				   params->max_idle_timeout / 1000);
+				   div64_ul(params->max_idle_timeout, 1000));
 	}
 	if (params->active_connection_id_limit &&
 	    params->active_connection_id_limit != QUIC_CONN_ID_LEAST) {

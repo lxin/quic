@@ -1855,8 +1855,8 @@ static int quic_sock_get_transport_params_ext(struct sock *sk, int len,
 					      sockptr_t optval, sockptr_t optlen)
 {
 	struct quic_transport_param *param = quic_local(sk);
+	u32 datalen = 0;
 	u8 data[256];
-	u32 datalen;
 
 	if (quic_frame_get_transport_params_ext(sk, param, data, &datalen))
 		return -EINVAL;
