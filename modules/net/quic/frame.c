@@ -1082,7 +1082,6 @@ static int quic_frame_max_streams_uni_process(struct sock *sk, struct quic_frame
 	if (quic_inq_event_recv(sk, QUIC_EVENT_STREAM_MAX_STREAM, &stream_id))
 		return -ENOMEM;
 	quic_stream_set_send_max_uni(streams, max);
-	quic_stream_set_send_uni(streams, max);
 	sk->sk_write_space(sk);
 out:
 	return frame->len - len;
@@ -1107,7 +1106,6 @@ static int quic_frame_max_streams_bidi_process(struct sock *sk, struct quic_fram
 	if (quic_inq_event_recv(sk, QUIC_EVENT_STREAM_MAX_STREAM, &stream_id))
 		return -ENOMEM;
 	quic_stream_set_send_max_bidi(streams, max);
-	quic_stream_set_send_bidi(streams, max);
 	sk->sk_write_space(sk);
 out:
 	return frame->len - len;
