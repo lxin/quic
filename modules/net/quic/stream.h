@@ -102,9 +102,9 @@ static inline u64 quic_stream_send_bidi(struct quic_stream_table *streams)
 	return streams->send.streams_bidi;
 }
 
-static inline void quic_stream_set_send_uni(struct quic_stream_table *streams, u64 uni)
+static inline u64 quic_stream_send_uni(struct quic_stream_table *streams)
 {
-	streams->send.streams_uni = uni;
+	return streams->send.streams_uni;
 }
 
 static inline u64 quic_stream_recv_max_uni(struct quic_stream_table *streams)
