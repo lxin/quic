@@ -144,8 +144,8 @@ static int do_client(int argc, char *argv[])
 		return -1;
 	}
 
-	printf("get the session ticket %lu and transport param %u and token %u, save it\n",
-	       ticket_len, param_len, token_len);
+	printf("get the session ticket %u and transport param %u and token %u, save it\n",
+	       (unsigned int)ticket_len, param_len, token_len);
 
 	strcpy(msg, "hello quic server!");
 	sid = QUIC_STREAM_TYPE_UNI_MASK;
@@ -155,7 +155,7 @@ static int do_client(int argc, char *argv[])
 		printf("send error %d %d\n", ret, errno);
 		return -1;
 	}
-	printf("send '%s' on stream %ld\n", msg, sid);
+	printf("send '%s' on stream %d\n", msg, (int)sid);
 
 	flags = 0;
 	memset(msg, 0, sizeof(msg));
@@ -164,7 +164,7 @@ static int do_client(int argc, char *argv[])
 		printf("recv error %d %d\n", ret, errno);
 		return 1;
 	}
-	printf("recv '%s' on stream %ld\n", msg, sid);
+	printf("recv '%s' on stream %d\n", msg, (int)sid);
 
 	close(sockfd);
 
@@ -214,7 +214,7 @@ static int do_client(int argc, char *argv[])
 		printf("send error %d %d\n", ret, errno);
 		return -1;
 	}
-	printf("send '%s' on stream %ld\n", msg, sid);
+	printf("send '%s' on stream %d\n", msg, (int)sid);
 
 	if (client_handshake(sockfd, alpn, NULL, ticket, ticket_len, NULL, NULL))
 		return -1;
@@ -226,7 +226,7 @@ static int do_client(int argc, char *argv[])
 		printf("recv error %d %d\n", ret, errno);
 		return 1;
 	}
-	printf("recv '%s' on stream %ld\n", msg, sid);
+	printf("recv '%s' on stream %d\n", msg, (int)sid);
 
 	close(sockfd);
 	return 0;
@@ -357,7 +357,7 @@ static int do_server(int argc, char *argv[])
 		printf("recv error %d %d\n", ret, errno);
 		return 1;
 	}
-	printf("recv '%s' on stream %ld\n", msg, sid);
+	printf("recv '%s' on stream %d\n", msg, (int)sid);
 
 	strcpy(msg, "hello quic client!");
 	sid = QUIC_STREAM_TYPE_SERVER_MASK;
@@ -367,7 +367,7 @@ static int do_server(int argc, char *argv[])
 		printf("send error %d %d\n", ret, errno);
 		return -1;
 	}
-	printf("send '%s' on stream %ld\n", msg, sid);
+	printf("send '%s' on stream %d\n", msg, (int)sid);
 
 	close(sockfd);
 
@@ -390,7 +390,7 @@ static int do_server(int argc, char *argv[])
 		printf("recv error %d %d\n", ret, errno);
 		return 1;
 	}
-	printf("recv '%s' on stream %ld\n", msg, sid);
+	printf("recv '%s' on stream %d\n", msg, (int)sid);
 
 	strcpy(msg, "hello quic client! welcome back!");
 	sid = QUIC_STREAM_TYPE_SERVER_MASK;
@@ -400,7 +400,7 @@ static int do_server(int argc, char *argv[])
 		printf("send error %d %d\n", ret, errno);
 		return -1;
 	}
-	printf("send '%s' on stream %ld\n", msg, sid);
+	printf("send '%s' on stream %d\n", msg, (int)sid);
 
 	close(sockfd);
 	close(listenfd);

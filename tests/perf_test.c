@@ -122,13 +122,13 @@ static int parse_options(int argc, char *argv[], struct options *opts)
 static int do_server(struct options *opts)
 {
 	struct quic_transport_param param = {};
+	uint32_t flags = 0, addrlen, len = 0;
 	struct sockaddr_storage ra = {};
 	struct quic_config config = {};
-	uint32_t flags = 0, addrlen;
 	struct sockaddr_in la = {};
 	int ret, sockfd, listenfd;
-	int64_t len = 0, sid = 0;
 	struct addrinfo *rp;
+	int64_t sid = 0;
 
 	if (getaddrinfo(opts->addr, opts->port, NULL, &rp)) {
 		printf("getaddrinfo error\n");
@@ -210,10 +210,10 @@ loop:
 		usleep(20);
 		if (flags & MSG_STREAM_FIN)
 			break;
-		printf("  recv len: %ld, stream_id: %ld, flags: %u.\n", len, sid, flags);
+		printf("  recv len: %u, stream_id: %d, flags: %u.\n", len, (int)sid, flags);
 	}
 
-	printf("RECV DONE: tot_len %ld, stream_id: %ld, flags: %u.\n", len, sid, flags);
+	printf("RECV DONE: tot_len %u, stream_id: %d, flags: %u.\n", len, (int)sid, flags);
 
 	flags = MSG_STREAM_FIN;
 	strcpy(snd_msg, "recv done");
@@ -241,11 +241,11 @@ static uint64_t get_now_time()
 static int do_client(struct options *opts)
 {
 	struct sockaddr_in ra = {};
-	int64_t len = 0, sid = 0;
+	uint32_t len = 0, flags;
 	struct addrinfo *rp;
 	uint64_t start, end;
 	int ret, sockfd;
-	uint32_t flags;
+	int64_t sid = 0;
 	float rate;
 
 	if (getaddrinfo(opts->addr, opts->port, NULL, &rp)) {
@@ -322,7 +322,7 @@ handshake:
 		}
 		len += ret;
 		if (!(len % (opts->msg_len * 1024)))
-			printf("  send len: %ld, stream_id: %ld, flags: %u.\n", len, sid, flags);
+			printf("  send len: %u, stream_id: %d, flags: %u.\n", len, (int)sid, flags);
 		if (len > opts->tot_len - opts->msg_len)
 			break;
 	}
@@ -333,7 +333,7 @@ handshake:
 		return -1;
 	}
 	len += ret;
-	printf("SEND DONE: tot_len: %ld, stream_id: %ld, flags: %u.\n", len, sid, flags);
+	printf("SEND DONE: tot_len: %u, stream_id: %d, flags: %u.\n", len, (int)sid, flags);
 
 	memset(rcv_msg, 0, sizeof(rcv_msg));
 	ret = quic_recvmsg(sockfd, rcv_msg, opts->msg_len * 16, &sid, &flags);
