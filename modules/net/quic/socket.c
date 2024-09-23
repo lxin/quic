@@ -2027,10 +2027,10 @@ static int quic_sock_get_connection_close(struct sock *sk, int len, sockptr_t op
 	phrase = quic_outq_close_phrase(outq);
 	if (phrase)
 		phrase_len = strlen(phrase) + 1;
-	if (len < sizeof(close) + phrase_len)
+	if (len < sizeof(*close) + phrase_len)
 		return -EINVAL;
 
-	len = sizeof(close) + phrase_len;
+	len = sizeof(*close) + phrase_len;
 	close = (void *)frame;
 	close->errcode = quic_outq_close_errcode(outq);
 	close->frame = quic_outq_close_frame(outq);
