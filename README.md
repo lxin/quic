@@ -100,11 +100,11 @@ in [ktls-utils](https://github.com/oracle/ktls-utils) will handle the handshake 
 - RFC9287 - *Greasing the QUIC Bit*
 - RFC9368 - *Compatible Version Negotiation for QUIC*
 - RFC9369 - *QUIC Version 2*
-- Handshake APIs for tlshd Use - *NFS/SMB over QUIC*
+- Internet-Draft - *Sockets API Extensions for In-kernel QUIC Implementations*
 
 ### Next Step
-- Submit QUIC module to upstream kernel and libquic to gnutls library.
-- Create an Internet Draft For QUIC Sockets API Extensions.
+- Submit QUIC module to upstream kernel.
+- Submit quic_handshake() in libquic to gnutls library.
 - Implement HW crypto offloading infrastructure.
 
 ## INSTALL
