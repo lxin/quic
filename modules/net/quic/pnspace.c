@@ -159,9 +159,8 @@ static int quic_pnspace_next_gap_ack(const struct quic_pnspace *space,
 	return 1;
 }
 
-u16 quic_pnspace_num_gabs(struct quic_pnspace *space)
+u16 quic_pnspace_num_gabs(struct quic_pnspace *space, struct quic_gap_ack_block *gabs)
 {
-	struct quic_gap_ack_block *gabs = space->gabs;
 	u16 start, end, ngaps = 0;
 	s64 iter;
 
@@ -174,10 +173,13 @@ u16 quic_pnspace_num_gabs(struct quic_pnspace *space)
 
 	while (quic_pnspace_next_gap_ack(space, &iter, &start, &end)) {
 		gabs[ngaps].start = start;
+		if (ngaps == QUIC_PN_MAX_GABS - 1) {
+			gabs[ngaps].end = space->max_pn_seen - space->base_pn;
+			ngaps++;
+			break;
+		}
 		gabs[ngaps].end = end;
 		ngaps++;
-		if (ngaps >= QUIC_PN_MAX_GABS)
-			break;
 	}
 	return ngaps;
 }

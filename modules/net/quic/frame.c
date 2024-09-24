@@ -37,9 +37,9 @@ static bool quic_frame_copy_from_iter_full(void *addr, size_t bytes, struct iov_
 
 static struct quic_frame *quic_frame_ack_create(struct sock *sk, void *data, u8 type)
 {
+	struct quic_gap_ack_block gabs[QUIC_PN_MAX_GABS];
 	struct quic_outqueue *outq = quic_outq(sk);
 	u64 largest, smallest, range, *ecn_count;
-	struct quic_gap_ack_block *gabs;
 	u32 frame_len, num_gabs, time;
 	u8 *p, level = *((u8 *)data);
 	struct quic_pnspace *space;
@@ -47,10 +47,8 @@ static struct quic_frame *quic_frame_ack_create(struct sock *sk, void *data, u8 
 	int i;
 
 	space = quic_pnspace(sk, level);
-	gabs = quic_pnspace_gabs(space);
 	type += quic_pnspace_has_ecn_count(space);
-	num_gabs = quic_pnspace_num_gabs(space);
-	WARN_ON_ONCE(num_gabs == QUIC_PN_MAX_GABS);
+	num_gabs = quic_pnspace_num_gabs(space, gabs);
 	frame_len = sizeof(type) + sizeof(u32) * 7;
 	frame_len += sizeof(struct quic_gap_ack_block) * num_gabs;
 

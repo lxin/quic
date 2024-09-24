@@ -8,7 +8,7 @@
  *    Xin Long <lucien.xin@gmail.com>
  */
 
-#define QUIC_PN_MAX_GABS	256
+#define QUIC_PN_MAX_GABS	32
 #define QUIC_PN_MAP_MAX_PN	((1ULL << 62) - 1)
 
 #define QUIC_PN_MAP_INITIAL	BITS_PER_LONG
@@ -40,7 +40,6 @@ struct quic_gap_ack_block {
  *    from base_pn - 1 to max_pn_seen
  */
 struct quic_pnspace {
-	struct quic_gap_ack_block gabs[QUIC_PN_MAX_GABS];
 	unsigned long *pn_map;
 	u64 ecn_count[2][3]; /* ECT_1, ECT_0, CE count of local and peer */
 	u16 pn_map_len;
@@ -60,11 +59,6 @@ struct quic_pnspace {
 	u32 inflight;
 	s64 next_pn; /* next packet number to send */
 };
-
-static inline struct quic_gap_ack_block *quic_pnspace_gabs(struct quic_pnspace *space)
-{
-	return space->gabs;
-}
 
 static inline void quic_pnspace_set_max_time_limit(struct quic_pnspace *space, u32 max_time_limit)
 {
@@ -201,9 +195,9 @@ static inline bool quic_pnspace_has_ecn_count(struct quic_pnspace *space)
 	return space->ecn_count[0][0] || space->ecn_count[0][1] || space->ecn_count[0][2];
 }
 
+u16 quic_pnspace_num_gabs(struct quic_pnspace *space, struct quic_gap_ack_block *gabs);
 int quic_pnspace_check(struct quic_pnspace *space, s64 pn);
 int quic_pnspace_mark(struct quic_pnspace *space, s64 pn);
-u16 quic_pnspace_num_gabs(struct quic_pnspace *space);
 
 void quic_pnspace_free(struct quic_pnspace *space);
 int quic_pnspace_init(struct quic_pnspace *space);
