@@ -106,10 +106,9 @@ static void cubic_slow_start(struct quic_cong *cong, u32 bytes, s64 number)
 static void cubic_cong_avoid(struct quic_cong *cong, u32 bytes)
 {
 	struct quic_cubic *cubic = quic_cong_priv(cong);
-	u32 add, target_add, tcp_add = 0;
 	u64 tx, kx, time_delta, delta, t;
-	u64 target, cwnd_thres;
-	u64 m;
+	u64 target_add, tcp_add = 0;
+	u64 target, cwnd_thres, m;
 
 	if (cubic->epoch_start == U32_MAX) {
 		cubic->epoch_start = cong->time;
@@ -192,7 +191,7 @@ static void cubic_cong_avoid(struct quic_cong *cong, u32 bytes)
 		cubic->pending_add = do_div(target_add, 100 * cong->window);
 	}
 
-	pr_debug("%s: target: %llu, window: %u, target_add: %u\n",
+	pr_debug("%s: target: %llu, window: %u, target_add: %llu\n",
 		 __func__, target, cong->window, target_add);
 
 	/*
@@ -207,12 +206,11 @@ static void cubic_cong_avoid(struct quic_cong *cong, u32 bytes)
 	if (cubic->w_tcp > cong->window)
 		tcp_add = div64_ul(cong->mss * (cubic->w_tcp - cong->window), cong->window);
 
-	pr_debug("%s: w_tcp: %u, window: %u, tcp_add: %u\n",
+	pr_debug("%s: w_tcp: %u, window: %u, tcp_add: %llu\n",
 		 __func__, cubic->w_tcp, cong->window, tcp_add);
 
 	/* W_cubic(_t_) or _W_est_, whichever is bigger */
-	add = max(tcp_add, target_add);
-	cong->window += add;
+	cong->window += max(tcp_add, target_add);
 }
 
 static void cubic_recovery(struct quic_cong *cong)
