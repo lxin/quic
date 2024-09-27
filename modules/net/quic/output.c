@@ -476,6 +476,7 @@ static void quic_outq_retransmit_one(struct sock *sk, struct quic_frame *frame)
 		}
 	}
 	list_add_tail(&frame->list, head);
+	QUIC_INC_STATS(sock_net(sk), QUIC_MIB_FRM_RETRANS);
 }
 
 int quic_outq_retransmit_mark(struct sock *sk, u8 level, u8 immediate)

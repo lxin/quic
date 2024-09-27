@@ -647,6 +647,14 @@ static struct ctl_table quic_table[] = {
 	{ /* sentinel */ }
 };
 
+static unsigned int quic_net_id __read_mostly;
+
+struct quic_net *quic_net(struct net *net)
+{
+	return net_generic(net, quic_net_id);
+}
+
+#ifdef CONFIG_PROC_FS
 static int quic_seq_show(struct seq_file *seq, void *v)
 {
 	struct net *net = seq_file_net(seq);
@@ -707,12 +715,75 @@ static void quic_seq_stop(struct seq_file *seq, void *v)
 {
 }
 
+static const struct snmp_mib quic_snmp_list[] = {
+	SNMP_MIB_ITEM("QuicConnCurrentEstabs", QUIC_MIB_CONN_CURRENTESTABS),
+	SNMP_MIB_ITEM("QuicConnPassiveEstabs", QUIC_MIB_CONN_PASSIVEESTABS),
+	SNMP_MIB_ITEM("QuicConnActiveEstabs", QUIC_MIB_CONN_ACTIVEESTABS),
+	SNMP_MIB_ITEM("QuicPktRcvFastpaths", QUIC_MIB_PKT_RCVFASTPATHS),
+	SNMP_MIB_ITEM("QuicPktDecFastpaths", QUIC_MIB_PKT_DECFASTPATHS),
+	SNMP_MIB_ITEM("QuicPktEncFastpaths", QUIC_MIB_PKT_ENCFASTPATHS),
+	SNMP_MIB_ITEM("QuicPktRcvBacklogs", QUIC_MIB_PKT_RCVBACKLOGS),
+	SNMP_MIB_ITEM("QuicPktDecBacklogs", QUIC_MIB_PKT_DECBACKLOGS),
+	SNMP_MIB_ITEM("QuicPktEncBacklogs", QUIC_MIB_PKT_ENCBACKLOGS),
+	SNMP_MIB_ITEM("QuicPktInvHdrDrop", QUIC_MIB_PKT_INVHDRDROP),
+	SNMP_MIB_ITEM("QuicPktInvNumDrop", QUIC_MIB_PKT_INVNUMDROP),
+	SNMP_MIB_ITEM("QuicPktInvFrmDrop", QUIC_MIB_PKT_INVFRMDROP),
+	SNMP_MIB_ITEM("QuicPktRcvDrop", QUIC_MIB_PKT_RCVDROP),
+	SNMP_MIB_ITEM("QuicPktDecDrop", QUIC_MIB_PKT_DECDROP),
+	SNMP_MIB_ITEM("QuicPktEncDrop", QUIC_MIB_PKT_ENCDROP),
+	SNMP_MIB_ITEM("QuicFrmRcvBufDrop", QUIC_MIB_FRM_RCVBUFDROP),
+	SNMP_MIB_ITEM("QuicFrmRetrans", QUIC_MIB_FRM_RETRANS),
+	SNMP_MIB_ITEM("QuicFrmCloses", QUIC_MIB_FRM_CLOSES),
+	SNMP_MIB_SENTINEL
+};
+
+static int quic_snmp_seq_show(struct seq_file *seq, void *v)
+{
+	unsigned long buff[QUIC_MIB_MAX];
+	struct net *net = seq->private;
+	int i;
+
+	memset(buff, 0, sizeof(unsigned long) * QUIC_MIB_MAX);
+
+	snmp_get_cpu_field_batch(buff, quic_snmp_list, quic_net(net)->stat);
+	for (i = 0; quic_snmp_list[i].name; i++)
+		seq_printf(seq, "%-32s\t%ld\n", quic_snmp_list[i].name, buff[i]);
+
+	return 0;
+}
+
 static const struct seq_operations quic_seq_ops = {
 	.show		= quic_seq_show,
 	.start		= quic_seq_start,
 	.next		= quic_seq_next,
 	.stop		= quic_seq_stop,
 };
+
+static int quic_net_proc_init(struct net *net)
+{
+	quic_net(net)->proc_net = proc_net_mkdir(net, "quic", net->proc_net);
+	if (!quic_net(net)->proc_net)
+		return -ENOMEM;
+
+	if (!proc_create_net_single("snmp", 0444, quic_net(net)->proc_net,
+				    quic_snmp_seq_show, NULL))
+		goto free;
+	if (!proc_create_net("sks", 0444, quic_net(net)->proc_net,
+			     &quic_seq_ops, sizeof(struct seq_net_private)))
+		goto free;
+	return 0;
+free:
+	remove_proc_subtree("quic", net->proc_net);
+	quic_net(net)->proc_net = NULL;
+	return -ENOMEM;
+}
+
+static void quic_net_proc_exit(struct net *net)
+{
+	remove_proc_subtree("quic", net->proc_net);
+	quic_net(net)->proc_net = NULL;
+}
+#endif
 
 static const struct proto_ops quic_proto_ops = {
 	.family		   = PF_INET,
@@ -835,20 +906,36 @@ static void quic_protosw_exit(void)
 
 static int __net_init quic_net_init(struct net *net)
 {
-	if (!proc_create_net("quic", 0444, net->proc_net,
-			     &quic_seq_ops, sizeof(struct seq_net_private)))
+	int err = 0;
+
+	quic_net(net)->stat = alloc_percpu(struct quic_mib);
+	if (!quic_net(net)->stat)
 		return -ENOMEM;
-	return 0;
+
+#ifdef CONFIG_PROC_FS
+	err = quic_net_proc_init(net);
+	if (err) {
+		free_percpu(quic_net(net)->stat);
+		quic_net(net)->stat = NULL;
+	}
+#endif
+	return err;
 }
 
 static void __net_exit quic_net_exit(struct net *net)
 {
-	remove_proc_entry("quic", net->proc_net);
+#ifdef CONFIG_PROC_FS
+	quic_net_proc_exit(net);
+#endif
+	free_percpu(quic_net(net)->stat);
+	quic_net(net)->stat = NULL;
 }
 
 static struct pernet_operations quic_net_ops = {
 	.init = quic_net_init,
 	.exit = quic_net_exit,
+	.id   = &quic_net_id,
+	.size = sizeof(struct quic_net),
 };
 
 static void quic_hash_tables_destroy(void)
@@ -887,6 +974,7 @@ static int quic_hash_tables_init(void)
 	return 0;
 }
 
+#ifdef CONFIG_SYSCTL
 static struct ctl_table_header *quic_sysctl_header;
 
 static void quic_sysctl_register(void)
@@ -918,6 +1006,7 @@ static void quic_sysctl_unregister(void)
 {
 	unregister_net_sysctl_table(quic_sysctl_header);
 }
+#endif
 
 static __init int quic_init(void)
 {
@@ -947,7 +1036,9 @@ static __init int quic_init(void)
 	if (err)
 		goto err_def_ops;
 
+#ifdef CONFIG_SYSCTL
 	quic_sysctl_register();
+#endif
 
 	get_random_bytes(quic_random_data, 32);
 	pr_info("quic: init\n");
@@ -969,7 +1060,9 @@ err:
 
 static __exit void quic_exit(void)
 {
+#ifdef CONFIG_SYSCTL
 	quic_sysctl_unregister();
+#endif
 	unregister_pernet_subsys(&quic_net_ops);
 	quic_protosw_exit();
 	percpu_counter_destroy(&quic_sockets_allocated);

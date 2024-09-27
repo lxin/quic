@@ -251,6 +251,21 @@ static inline bool quic_is_closed(struct sock *sk)
 
 static inline void quic_set_state(struct sock *sk, int state)
 {
+	struct net *net = sock_net(sk);
+	int mib;
+
+	if (sk->sk_state == state)
+		return;
+
+	if (state == QUIC_SS_ESTABLISHED) {
+		mib = quic_is_serv(sk) ? QUIC_MIB_CONN_PASSIVEESTABS
+				       : QUIC_MIB_CONN_ACTIVEESTABS;
+		QUIC_INC_STATS(net, mib);
+		QUIC_INC_STATS(net, QUIC_MIB_CONN_CURRENTESTABS);
+	} else if (quic_is_established(sk)) {
+		QUIC_DEC_STATS(net, QUIC_MIB_CONN_CURRENTESTABS);
+	}
+
 	inet_sk_set_state(sk, state);
 	sk->sk_state_change(sk);
 }

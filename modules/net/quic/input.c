@@ -34,6 +34,7 @@ int quic_rcv(struct sk_buff *skb)
 {
 	struct quic_crypto_cb *cb = QUIC_CRYPTO_CB(skb);
 	struct quic_addr_family_ops *af_ops;
+	struct net *net = dev_net(skb->dev);
 	struct quic_conn_id *conn_id;
 	union quic_addr daddr, saddr;
 	struct sock *sk = NULL;
@@ -48,7 +49,7 @@ int quic_rcv(struct sk_buff *skb)
 
 	if (!quic_hdr(skb)->form) { /* search scid hashtable for post-handshake packets */
 		dcid = (u8 *)quic_hdr(skb) + 1;
-		conn_id = quic_conn_id_lookup(dev_net(skb->dev), dcid, skb->len - 1);
+		conn_id = quic_conn_id_lookup(net, dcid, skb->len - 1);
 		if (conn_id) {
 			cb->number_offset = conn_id->len + sizeof(struct quichdr);
 			sk = quic_conn_id_sk(conn_id);
@@ -65,10 +66,13 @@ int quic_rcv(struct sk_buff *skb)
 	if (sock_owned_by_user(sk)) {
 		cb->backlog = 1;
 		if (sk_add_backlog(sk, skb, READ_ONCE(sk->sk_rcvbuf))) {
+			QUIC_INC_STATS(net, QUIC_MIB_PKT_RCVDROP);
 			bh_unlock_sock(sk);
 			goto err;
 		}
+		QUIC_INC_STATS(net, QUIC_MIB_PKT_RCVBACKLOGS);
 	} else {
+		QUIC_INC_STATS(net, QUIC_MIB_PKT_RCVFASTPATHS);
 		sk->sk_backlog_rcv(sk, skb); /* quic_packet_process */
 	}
 	bh_unlock_sock(sk);
@@ -227,6 +231,7 @@ int quic_inq_stream_recv(struct sock *sk, struct quic_frame *frame)
 	struct quic_stream *stream = frame->stream;
 	struct quic_inqueue *inq = quic_inq(sk);
 	struct quic_stream_update update = {};
+	struct net *net = sock_net(sk);
 	u64 stream_id = stream->id;
 	struct list_head *head;
 	struct quic_frame *pos;
@@ -237,8 +242,10 @@ int quic_inq_stream_recv(struct sock *sk, struct quic_frame *frame)
 	}
 
 	quic_inq_set_owner_r(frame->len, sk);
-	if (sk_rmem_alloc_get(sk) > sk->sk_rcvbuf || !quic_sk_rmem_schedule(sk, frame->len))
+	if (sk_rmem_alloc_get(sk) > sk->sk_rcvbuf || !quic_sk_rmem_schedule(sk, frame->len)) {
+		QUIC_INC_STATS(net, QUIC_MIB_FRM_RCVBUFDROP);
 		return -ENOBUFS;
+	}
 
 	off = offset + frame->len;
 	if (off > stream->recv.highest) {
@@ -394,6 +401,7 @@ int quic_inq_handshake_recv(struct sock *sk, struct quic_frame *frame)
 	}
 	quic_inq_set_owner_r(frame->len, sk);
 	if (sk_rmem_alloc_get(sk) > sk->sk_rcvbuf) {
+		QUIC_INC_STATS(sock_net(sk), QUIC_MIB_FRM_RCVBUFDROP);
 		frame->errcode = QUIC_TRANSPORT_ERROR_CRYPTO_BUF_EXCEEDED;
 		return -ENOBUFS;
 	}
@@ -528,8 +536,10 @@ int quic_inq_event_recv(struct sock *sk, u8 event, void *args)
 int quic_inq_dgram_recv(struct sock *sk, struct quic_frame *frame)
 {
 	quic_inq_set_owner_r(frame->len, sk);
-	if (sk_rmem_alloc_get(sk) > sk->sk_rcvbuf || !quic_sk_rmem_schedule(sk, frame->len))
+	if (sk_rmem_alloc_get(sk) > sk->sk_rcvbuf || !quic_sk_rmem_schedule(sk, frame->len)) {
+		QUIC_INC_STATS(sock_net(sk), QUIC_MIB_FRM_RCVBUFDROP);
 		return -ENOBUFS;
+	}
 
 	frame->dgram = 1;
 	list_add_tail(&frame->list, &quic_inq(sk)->recv_list);

@@ -384,6 +384,7 @@ static int quic_packet_listen_process(struct sock *sk, struct sk_buff *skb)
 	struct quic_packet *packet = quic_packet(sk);
 	int err = 0, errcode, len = skb->len;
 	u8 *p = skb->data, type, retry = 0;
+	struct net *net = sock_net(sk);
 	struct quic_crypto *crypto;
 	struct quic_conn_id odcid;
 	struct quic_data token;
@@ -399,6 +400,7 @@ static int quic_packet_listen_process(struct sock *sk, struct sk_buff *skb)
 
 	if (!quic_hshdr(skb)->form) { /* stateless reset always by listen sock */
 		if (len < 17) {
+			QUIC_INC_STATS(net, QUIC_MIB_PKT_INVHDRDROP);
 			err = -EINVAL;
 			kfree_skb(skb);
 			goto out;
@@ -410,6 +412,7 @@ static int quic_packet_listen_process(struct sock *sk, struct sk_buff *skb)
 	}
 
 	if (quic_packet_get_version_and_connid(packet, &p, &len)) {
+		QUIC_INC_STATS(net, QUIC_MIB_PKT_INVHDRDROP);
 		err = -EINVAL;
 		kfree_skb(skb);
 		goto out;
@@ -429,6 +432,7 @@ static int quic_packet_listen_process(struct sock *sk, struct sk_buff *skb)
 	}
 
 	if (quic_packet_get_token(&token, &p, &len)) {
+		QUIC_INC_STATS(net, QUIC_MIB_PKT_INVHDRDROP);
 		err = -EINVAL;
 		kfree_skb(skb);
 		goto out;
@@ -562,6 +566,7 @@ err:
 static void quic_packet_decrypt_done(struct sk_buff *skb, int err)
 {
 	if (err) {
+		QUIC_INC_STATS(sock_net(skb->sk), QUIC_MIB_PKT_DECDROP);
 		kfree_skb(skb);
 		pr_debug("%s: err: %d\n", __func__, err);
 		return;
@@ -641,6 +646,7 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb)
 	struct quic_packet *packet = quic_packet(sk);
 	struct quic_inqueue *inq = quic_inq(sk);
 	struct quic_frame frame = {}, *nframe;
+	struct net *net = sock_net(sk);
 	struct quic_conn_id *active;
 	struct quic_crypto *crypto;
 	struct quic_pnspace *space;
@@ -656,8 +662,10 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb)
 			cb->number_offset = 0;
 			return quic_packet_process(sk, skb);
 		}
-		if (quic_packet_handshake_header_process(sk, skb))
+		if (quic_packet_handshake_header_process(sk, skb)) {
+			QUIC_INC_STATS(net, QUIC_MIB_PKT_INVHDRDROP);
 			goto err;
+		}
 		if (!packet->level)
 			return 0;
 
@@ -670,12 +678,18 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb)
 		cb->crypto_done = quic_packet_decrypt_done;
 		err = quic_crypto_decrypt(crypto, skb);
 		if (err) {
-			if (err == -EINPROGRESS)
+			if (err == -EINPROGRESS) {
+				QUIC_INC_STATS(net, QUIC_MIB_PKT_DECBACKLOGS);
 				return err;
+			}
+			QUIC_INC_STATS(net, QUIC_MIB_PKT_DECDROP);
 			packet->errcode = cb->errcode;
 			goto err;
 		}
+		if (!cb->resume)
+			QUIC_INC_STATS(net, QUIC_MIB_PKT_DECFASTPATHS);
 		if (hshdr->reserved) {
+			QUIC_INC_STATS(net, QUIC_MIB_PKT_INVHDRDROP);
 			packet->errcode = QUIC_TRANSPORT_ERROR_PROTOCOL_VIOLATION;
 			goto err;
 		}
@@ -685,6 +699,7 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb)
 
 		err = quic_pnspace_check(space, cb->number);
 		if (err) {
+			QUIC_INC_STATS(net, QUIC_MIB_PKT_INVNUMDROP);
 			err = -EINVAL;
 			goto err;
 		}
@@ -694,8 +709,10 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb)
 		frame.level = packet->level;
 		frame.skb = skb;
 		err = quic_frame_process(sk, &frame);
-		if (err)
+		if (err) {
+			QUIC_INC_STATS(net, QUIC_MIB_PKT_INVFRMDROP);
 			goto err;
+		}
 		err = quic_pnspace_mark(space, cb->number);
 		if (err)
 			goto err;
@@ -800,14 +817,17 @@ static int quic_packet_app_process(struct sock *sk, struct sk_buff *skb)
 	struct quic_crypto_cb *cb = QUIC_CRYPTO_CB(skb);
 	struct quic_packet *packet = quic_packet(sk);
 	struct quichdr *hdr = quic_hdr(skb);
+	struct net *net = sock_net(sk);
 	struct quic_frame frame = {};
 	int err = -EINVAL, taglen;
 
 	WARN_ON(!skb_set_owner_sk_safe(skb, sk));
 
 	quic_packet_reset(packet);
-	if (!hdr->fixed && !quic_inq_grease_quic_bit(quic_inq(sk)))
+	if (!hdr->fixed && !quic_inq_grease_quic_bit(quic_inq(sk))) {
+		QUIC_INC_STATS(net, QUIC_MIB_PKT_INVHDRDROP);
 		goto err;
+	}
 
 	if (!quic_crypto_recv_ready(crypto)) {
 		quic_inq_backlog_tail(sk, skb);
@@ -826,14 +846,20 @@ static int quic_packet_app_process(struct sock *sk, struct sk_buff *skb)
 		cb->resume = 1; /* !taglen means disable_1rtt_encryption */
 	err = quic_crypto_decrypt(crypto, skb);
 	if (err) {
-		if (err == -EINPROGRESS)
+		if (err == -EINPROGRESS) {
+			QUIC_INC_STATS(net, QUIC_MIB_PKT_DECBACKLOGS);
 			return err;
+		}
 		if (!quic_packet_stateless_reset_process(sk, skb))
 			return 0;
+		QUIC_INC_STATS(net, QUIC_MIB_PKT_DECDROP);
 		packet->errcode = cb->errcode;
 		goto err;
 	}
+	if (!cb->resume)
+		QUIC_INC_STATS(net, QUIC_MIB_PKT_DECFASTPATHS);
 	if (hdr->reserved) {
+		QUIC_INC_STATS(net, QUIC_MIB_PKT_INVHDRDROP);
 		packet->errcode = QUIC_TRANSPORT_ERROR_PROTOCOL_VIOLATION;
 		goto err;
 	}
@@ -847,6 +873,7 @@ static int quic_packet_app_process(struct sock *sk, struct sk_buff *skb)
 			packet->ack_immediate = 1;
 			goto out;
 		}
+		QUIC_INC_STATS(net, QUIC_MIB_PKT_INVNUMDROP);
 		packet->errcode = QUIC_TRANSPORT_ERROR_INTERNAL;
 		err = -EINVAL;
 		goto err;
@@ -866,8 +893,10 @@ static int quic_packet_app_process(struct sock *sk, struct sk_buff *skb)
 	frame.len = cb->length - cb->number_len - taglen;
 	frame.skb = skb;
 	err = quic_frame_process(sk, &frame);
-	if (err)
+	if (err) {
+		QUIC_INC_STATS(net, QUIC_MIB_PKT_INVFRMDROP);
 		goto err;
+	}
 	err = quic_pnspace_mark(space, cb->number);
 	if (err)
 		goto err;
@@ -967,6 +996,7 @@ int quic_packet_parse_alpn(struct sk_buff *skb, struct quic_data *alpn)
 {
 	struct quic_crypto_cb *cb = QUIC_CRYPTO_CB(skb);
 	struct quichshdr *hdr = quic_hshdr(skb);
+	struct net *net = dev_net(skb->dev);
 	int len = skb->len, err = -EINVAL;
 	u8 *p = skb->data, *data, type;
 	struct quic_crypto *crypto;
@@ -1003,9 +1033,11 @@ int quic_packet_parse_alpn(struct sk_buff *skb, struct quic_data *alpn)
 	cb->crypto_done = quic_packet_decrypt_done;
 	err = quic_crypto_decrypt(crypto, skb);
 	if (err) {
+		QUIC_INC_STATS(net, QUIC_MIB_PKT_DECDROP);
 		memcpy(skb->data, data, skb->len);
 		goto out;
 	}
+	QUIC_INC_STATS(net, QUIC_MIB_PKT_DECFASTPATHS);
 	cb->resume = 1;
 
 	/* QUIC CRYPTO frame */
@@ -1370,6 +1402,7 @@ int quic_packet_config(struct sock *sk, u8 level, u8 path_alt)
 static void quic_packet_encrypt_done(struct sk_buff *skb, int err)
 {
 	if (err) {
+		QUIC_INC_STATS(sock_net(skb->sk), QUIC_MIB_PKT_ENCDROP);
 		kfree_skb(skb);
 		pr_debug("%s: err: %d\n", __func__, err);
 		return;
@@ -1416,6 +1449,7 @@ int quic_packet_xmit(struct sock *sk, struct sk_buff *skb)
 {
 	struct quic_crypto_cb *cb = QUIC_CRYPTO_CB(skb);
 	struct quic_packet *packet = quic_packet(sk);
+	struct net *net = sock_net(sk);
 	int err;
 
 	WARN_ON(!skb_set_owner_sk_safe(skb, sk));
@@ -1426,10 +1460,16 @@ int quic_packet_xmit(struct sock *sk, struct sk_buff *skb)
 	cb->crypto_done = quic_packet_encrypt_done;
 	err = quic_crypto_encrypt(quic_crypto(sk, packet->level), skb);
 	if (err) {
-		if (err != -EINPROGRESS)
+		if (err != -EINPROGRESS) {
+			QUIC_INC_STATS(net, QUIC_MIB_PKT_ENCDROP);
 			kfree_skb(skb);
+			return err;
+		}
+		QUIC_INC_STATS(net, QUIC_MIB_PKT_ENCBACKLOGS);
 		return err;
 	}
+	if (!cb->resume)
+		QUIC_INC_STATS(net, QUIC_MIB_PKT_ENCFASTPATHS);
 
 xmit:
 	if (quic_packet_bundle(sk, skb)) {
