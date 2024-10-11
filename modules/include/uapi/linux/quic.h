@@ -129,7 +129,7 @@ enum quic_cong_algo {
 };
 
 struct quic_errinfo {
-	uint64_t stream_id;
+	int64_t  stream_id;
 	uint32_t errcode;
 };
 
@@ -176,8 +176,8 @@ enum {
 };
 
 struct quic_stream_update {
-	uint64_t id;
-	uint32_t state;
+	int64_t  id;
+	uint8_t  state;
 	uint32_t errcode;
 	uint64_t finalsz;
 };

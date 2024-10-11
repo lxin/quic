@@ -32,7 +32,7 @@ struct quic_cubic {
 	u32 last_round_min_rtt;
 	u16 rtt_sample_count;
 	u16 css_rounds;
-	s32 window_end;
+	s64 window_end;
 };
 
 /* HyStart++ constants */
@@ -121,7 +121,7 @@ static void cubic_cong_avoid(struct quic_cong *cong, u32 bytes)
 			 *       ╲│       C
 			 */
 			cubic->k = cubic->w_last_max - cong->window;
-			cubic->k = cubic_root(div64_ul(cubic->k * 10, cong->mss * 4));
+			cubic->k = cubic_root(div64_ul(cubic->k * 10, (u64)cong->mss * 4));
 			cubic->origin_point = cubic->w_last_max;
 		} else {
 			cubic->k = 0;
@@ -173,7 +173,7 @@ static void cubic_cong_avoid(struct quic_cong *cong, u32 bytes)
 	 */
 	if (cwnd_thres < cong->window)
 		target = cong->window;
-	else if (2 * cwnd_thres > 3 * cong->window)
+	else if (cwnd_thres * 2 > (u64)cong->window * 3)
 		target = cong->window * 3 / 2;
 	else
 		target = cwnd_thres;
@@ -204,7 +204,7 @@ static void cubic_cong_avoid(struct quic_cong *cong, u32 bytes)
 	cubic->w_tcp += m;
 
 	if (cubic->w_tcp > cong->window)
-		tcp_add = div64_ul(cong->mss * (cubic->w_tcp - cong->window), cong->window);
+		tcp_add = div64_ul((u64)cong->mss * (cubic->w_tcp - cong->window), cong->window);
 
 	pr_debug("%s: w_tcp: %u, window: %u, tcp_add: %llu\n",
 		 __func__, cubic->w_tcp, cong->window, tcp_add);
@@ -545,7 +545,7 @@ void quic_cong_set_param(struct quic_cong *cong, struct quic_transport_param *p)
 }
 EXPORT_SYMBOL_GPL(quic_cong_set_param);
 
-static void quic_cong_update_pacing_time(struct quic_cong *cong, u16 bytes)
+static void quic_cong_update_pacing_time(struct quic_cong *cong, u32 bytes)
 {
 	unsigned long rate = READ_ONCE(cong->pacing_rate);
 	u64 prior_time, credit, len_ns;
@@ -570,7 +570,7 @@ static void quic_cong_pace_update(struct quic_cong *cong, u32 bytes, u32 max_rat
 	/* rate = N * congestion_window / smoothed_rtt */
 	rate = 2 * cong->window * USEC_PER_SEC;
 	if (likely(cong->smoothed_rtt))
-		do_div(rate, cong->smoothed_rtt);
+		rate = div64_ul(rate, cong->smoothed_rtt);
 
 	WRITE_ONCE(cong->pacing_rate, min_t(u64, rate, max_rate));
 	pr_debug("%s: update pacing rate: %u, max rate: %u, srtt: %u\n",
@@ -618,7 +618,10 @@ void quic_cong_rtt_update(struct quic_cong *cong, u32 time, u32 ack_delay)
 		adjusted_rtt = cong->latest_rtt - ack_delay;
 
 	cong->smoothed_rtt = (cong->smoothed_rtt * 7 + adjusted_rtt) / 8;
-	rttvar_sample = abs(cong->smoothed_rtt - adjusted_rtt);
+	if (cong->smoothed_rtt >= adjusted_rtt)
+		rttvar_sample = cong->smoothed_rtt - adjusted_rtt;
+	else
+		rttvar_sample = adjusted_rtt - cong->smoothed_rtt;
 	cong->rttvar = (cong->rttvar * 3 + rttvar_sample) / 4;
 	quic_cong_rto_update(cong);
 

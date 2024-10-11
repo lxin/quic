@@ -71,7 +71,7 @@ static inline void quic_conn_id_generate(struct quic_conn_id *conn_id)
 static inline void quic_conn_id_update(struct quic_conn_id *conn_id, u8 *data, u32 len)
 {
 	memcpy(conn_id->data, data, len);
-	conn_id->len = len;
+	conn_id->len = (u8)len;
 }
 
 static inline u8 quic_conn_id_disable_active_migration(struct quic_conn_id_set *id_set)

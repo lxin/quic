@@ -62,7 +62,7 @@ static void quic_udp_sock_destroy(struct work_struct *work)
 
 static struct quic_udp_sock *quic_udp_sock_create(struct sock *sk, union quic_addr *a)
 {
-	struct udp_tunnel_sock_cfg tuncfg = {NULL};
+	struct udp_tunnel_sock_cfg tuncfg = {};
 	struct udp_port_cfg udp_conf = {0};
 	struct net *net = sock_net(sk);
 	struct quic_hash_head *head;
@@ -168,20 +168,20 @@ int quic_path_set_bind_port(struct sock *sk, struct quic_path_addr *path, bool a
 {
 	struct quic_bind_port *port = quic_path_port(path, alt);
 	union quic_addr *addr = quic_path_addr(path, alt);
+	int rover, low, high, remaining;
 	struct net *net = sock_net(sk);
 	struct quic_hash_head *head;
 	struct quic_bind_port *pp;
-	int low, high, remaining;
-	unsigned int rover;
+	u16 snum;
 
 	quic_path_put_bind_port(sk, port);
 
 	rover = ntohs(addr->v4.sin_port);
 	if (rover) {
-		head = quic_bind_port_head(net, rover);
+		head = quic_bind_port_head(net, (u16)rover);
 		spin_lock_bh(&head->lock);
 		port->net = net;
-		port->port = rover;
+		port->port = (u16)rover;
 		hlist_add_head(&port->node, &head->head);
 		spin_unlock_bh(&head->lock);
 		return 0;
@@ -189,21 +189,22 @@ int quic_path_set_bind_port(struct sock *sk, struct quic_path_addr *path, bool a
 
 	inet_get_local_port_range(net, &low, &high);
 	remaining = (high - low) + 1;
-	rover = (u32)(((u64)get_random_u32() * remaining) >> 32) + low;
+	rover = (int)(((u64)get_random_u32() * remaining) >> 32) + low;
 	do {
 		rover++;
 		if (rover < low || rover > high)
 			rover = low;
-		if (inet_is_local_reserved_port(net, rover))
+		snum = (u16)rover;
+		if (inet_is_local_reserved_port(net, snum))
 			continue;
-		head = quic_bind_port_head(net, rover);
+		head = quic_bind_port_head(net, snum);
 		spin_lock_bh(&head->lock);
 		hlist_for_each_entry(pp, &head->head, node)
-			if (pp->port == rover && net_eq(net, pp->net))
+			if (pp->port == snum && net_eq(net, pp->net))
 				goto next;
-		addr->v4.sin_port = htons(rover);
+		addr->v4.sin_port = htons(snum);
 		port->net = net;
-		port->port = rover;
+		port->port = snum;
 		hlist_add_head(&port->node, &head->head);
 		spin_unlock_bh(&head->lock);
 		return 0;
@@ -253,10 +254,10 @@ enum quic_plpmtud_state {
 #define QUIC_PL_BIG_STEP        32
 #define QUIC_PL_MIN_STEP        4
 
-int quic_path_pl_send(struct quic_path_addr *a, s64 number)
+u32 quic_path_pl_send(struct quic_path_addr *a, s64 number)
 {
 	struct quic_path_dst *d = (struct quic_path_dst *)a;
-	int pathmtu = 0;
+	u32 pathmtu = 0;
 
 	d->pl.number = number;
 	if (d->pl.probe_count < QUIC_MAX_PROBES)
@@ -268,7 +269,7 @@ int quic_path_pl_send(struct quic_path_addr *a, s64 number)
 			d->pl.state = QUIC_PL_ERROR; /* Base -> Error */
 
 			d->pl.pmtu = QUIC_BASE_PLPMTU;
-			d->pathmtu = d->pl.pmtu;
+			d->pathmtu = QUIC_BASE_PLPMTU;
 			pathmtu = d->pathmtu;
 		}
 	} else if (d->pl.state == QUIC_PL_SEARCH) {
@@ -278,7 +279,7 @@ int quic_path_pl_send(struct quic_path_addr *a, s64 number)
 			d->pl.probe_high = 0;
 
 			d->pl.pmtu = QUIC_BASE_PLPMTU;
-			d->pathmtu = d->pl.pmtu;
+			d->pathmtu = QUIC_BASE_PLPMTU;
 			pathmtu = d->pathmtu;
 		} else { /* Normal probe failure. */
 			d->pl.probe_high = d->pl.probe_size;
@@ -290,7 +291,7 @@ int quic_path_pl_send(struct quic_path_addr *a, s64 number)
 			d->pl.probe_size = QUIC_BASE_PLPMTU;
 
 			d->pl.pmtu = QUIC_BASE_PLPMTU;
-			d->pathmtu = d->pl.pmtu;
+			d->pathmtu = QUIC_BASE_PLPMTU;
 			pathmtu = d->pathmtu;
 		}
 	}
@@ -302,10 +303,10 @@ out:
 	return pathmtu;
 }
 
-int quic_path_pl_recv(struct quic_path_addr *a, bool *raise_timer, bool *complete)
+u32 quic_path_pl_recv(struct quic_path_addr *a, bool *raise_timer, bool *complete)
 {
 	struct quic_path_dst *d = (struct quic_path_dst *)a;
-	int pathmtu = 0;
+	u32 pathmtu = 0;
 
 	pr_debug("%s: dst: %p, state: %d, pmtu: %d, size: %d, high: %d\n",
 		 __func__, d, d->pl.state, d->pl.pmtu, d->pl.probe_size, d->pl.probe_high);
@@ -321,14 +322,14 @@ int quic_path_pl_recv(struct quic_path_addr *a, bool *raise_timer, bool *complet
 		d->pl.state = QUIC_PL_SEARCH; /* Error -> Search */
 
 		d->pl.pmtu = d->pl.probe_size;
-		d->pathmtu = d->pl.pmtu;
+		d->pathmtu = (u32)d->pl.pmtu;
 		pathmtu = d->pathmtu;
 		d->pl.probe_size += QUIC_PL_BIG_STEP;
 	} else if (d->pl.state == QUIC_PL_SEARCH) {
 		if (!d->pl.probe_high) {
 			if (d->pl.probe_size < QUIC_MAX_PLPMTU) {
-				d->pl.probe_size = min(d->pl.probe_size + QUIC_PL_BIG_STEP,
-						       QUIC_MAX_PLPMTU);
+				d->pl.probe_size = (u16)min(d->pl.probe_size + QUIC_PL_BIG_STEP,
+							    QUIC_MAX_PLPMTU);
 				*complete = false;
 				return pathmtu;
 			}
@@ -340,30 +341,31 @@ int quic_path_pl_recv(struct quic_path_addr *a, bool *raise_timer, bool *complet
 			d->pl.state = QUIC_PL_COMPLETE; /* Search -> Search Complete */
 
 			d->pl.probe_size = d->pl.pmtu;
-			d->pathmtu = d->pl.pmtu;
+			d->pathmtu = (u32)d->pl.pmtu;
 			pathmtu = d->pathmtu;
 			*raise_timer = true;
 		}
 	} else if (d->pl.state == QUIC_PL_COMPLETE) {
 		/* Raise probe_size again after 30 * interval in Search Complete */
 		d->pl.state = QUIC_PL_SEARCH; /* Search Complete -> Search */
-		d->pl.probe_size = min(d->pl.probe_size + QUIC_PL_MIN_STEP, QUIC_MAX_PLPMTU);
+		d->pl.probe_size = (u16)min(d->pl.probe_size + QUIC_PL_MIN_STEP,
+					    QUIC_MAX_PLPMTU);
 	}
 
 	*complete = (d->pl.state == QUIC_PL_COMPLETE);
 	return pathmtu;
 }
 
-int quic_path_pl_toobig(struct quic_path_addr *a, u32 pmtu, bool *reset_timer)
+u32 quic_path_pl_toobig(struct quic_path_addr *a, u32 pmtu, bool *reset_timer)
 {
 	struct quic_path_dst *d = (struct quic_path_dst *)a;
-	int pathmtu = 0;
+	u32 pathmtu = 0;
 
 	pr_debug("%s: dst: %p, state: %d, pmtu: %d, size: %d, ptb: %d\n",
 		 __func__, d, d->pl.state, d->pl.pmtu, d->pl.probe_size, pmtu);
 
 	*reset_timer = false;
-	if (pmtu < QUIC_MIN_PLPMTU || pmtu >= d->pl.probe_size)
+	if (pmtu < QUIC_MIN_PLPMTU || pmtu >= (u32)d->pl.probe_size)
 		return pathmtu;
 
 	if (d->pl.state == QUIC_PL_BASE) {
@@ -371,32 +373,32 @@ int quic_path_pl_toobig(struct quic_path_addr *a, u32 pmtu, bool *reset_timer)
 			d->pl.state = QUIC_PL_ERROR; /* Base -> Error */
 
 			d->pl.pmtu = QUIC_BASE_PLPMTU;
-			d->pathmtu = d->pl.pmtu;
+			d->pathmtu = QUIC_BASE_PLPMTU;
 			pathmtu = d->pathmtu;
 		}
 	} else if (d->pl.state == QUIC_PL_SEARCH) {
-		if (pmtu >= QUIC_BASE_PLPMTU && pmtu < d->pl.pmtu) {
+		if (pmtu >= QUIC_BASE_PLPMTU && pmtu < (u32)d->pl.pmtu) {
 			d->pl.state = QUIC_PL_BASE;  /* Search -> Base */
 			d->pl.probe_size = QUIC_BASE_PLPMTU;
 			d->pl.probe_count = 0;
 
 			d->pl.probe_high = 0;
 			d->pl.pmtu = QUIC_BASE_PLPMTU;
-			d->pathmtu = d->pl.pmtu;
+			d->pathmtu = QUIC_BASE_PLPMTU;
 			pathmtu = d->pathmtu;
-		} else if (pmtu > d->pl.pmtu && pmtu < d->pl.probe_size) {
-			d->pl.probe_size = pmtu;
+		} else if (pmtu > (u32)d->pl.pmtu && pmtu < (u32)d->pl.probe_size) {
+			d->pl.probe_size = (u16)pmtu;
 			d->pl.probe_count = 0;
 		}
 	} else if (d->pl.state == QUIC_PL_COMPLETE) {
-		if (pmtu >= QUIC_BASE_PLPMTU && pmtu < d->pl.pmtu) {
+		if (pmtu >= QUIC_BASE_PLPMTU && pmtu < (u32)d->pl.pmtu) {
 			d->pl.state = QUIC_PL_BASE;  /* Complete -> Base */
 			d->pl.probe_size = QUIC_BASE_PLPMTU;
 			d->pl.probe_count = 0;
 
 			d->pl.probe_high = 0;
 			d->pl.pmtu = QUIC_BASE_PLPMTU;
-			d->pathmtu = d->pl.pmtu;
+			d->pathmtu = QUIC_BASE_PLPMTU;
 			pathmtu = d->pathmtu;
 			*reset_timer = true;
 		}

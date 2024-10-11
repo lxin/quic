@@ -18,7 +18,7 @@
 
 struct quic_stream {
 	struct hlist_node node;
-	u64 id;
+	s64 id;
 	struct {
 		u64 last_max_bytes;
 		u64 max_bytes;
@@ -54,7 +54,7 @@ struct quic_stream_table {
 		u64 max_stream_data_uni;
 		u64 max_streams_bidi;
 		u64 max_streams_uni;
-		u64 stream_active;
+		s64 stream_active;
 		u64 streams_bidi;
 		u64 streams_uni;
 	} send;
@@ -67,12 +67,12 @@ struct quic_stream_table {
 	} recv;
 };
 
-static inline u64 quic_stream_send_active(struct quic_stream_table *streams)
+static inline s64 quic_stream_send_active(struct quic_stream_table *streams)
 {
 	return streams->send.stream_active;
 }
 
-static inline void quic_stream_set_send_active(struct quic_stream_table *streams, u64 active)
+static inline void quic_stream_set_send_active(struct quic_stream_table *streams, s64 active)
 {
 	streams->send.stream_active = active;
 }
@@ -127,12 +127,12 @@ static inline void quic_stream_set_recv_max_bidi(struct quic_stream_table *strea
 	streams->recv.max_streams_bidi = max;
 }
 
-struct quic_stream *quic_stream_send_get(struct quic_stream_table *streams, u64 stream_id,
+struct quic_stream *quic_stream_send_get(struct quic_stream_table *streams, s64 stream_id,
 					 u32 flags, bool is_serv);
-struct quic_stream *quic_stream_recv_get(struct quic_stream_table *streams, u64 stream_id,
+struct quic_stream *quic_stream_recv_get(struct quic_stream_table *streams, s64 stream_id,
 					 bool is_serv);
-struct quic_stream *quic_stream_find(struct quic_stream_table *streams, u64 stream_id);
-bool quic_stream_id_send_exceeds(struct quic_stream_table *streams, u64 stream_id);
+struct quic_stream *quic_stream_find(struct quic_stream_table *streams, s64 stream_id);
+bool quic_stream_id_send_exceeds(struct quic_stream_table *streams, s64 stream_id);
 
 void quic_stream_set_param(struct quic_stream_table *streams, struct quic_transport_param *local,
 			   struct quic_transport_param *remote);

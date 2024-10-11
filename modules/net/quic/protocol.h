@@ -19,8 +19,8 @@ extern int sysctl_quic_wmem[3];
 
 struct quic_addr_family_ops {
 	sa_family_t sa_family;
-	int	addr_len;
-	int	iph_len;
+	u32	addr_len;
+	u32	iph_len;
 
 	void	(*udp_conf_init)(struct sock *sk, struct udp_port_cfg *conf, union quic_addr *addr);
 	int	(*flow_route)(struct sock *sk, union quic_addr *da, union quic_addr *sa);
@@ -38,7 +38,7 @@ struct quic_addr_family_ops {
 	int	(*get_mtu_info)(struct sk_buff *skb, u32 *info);
 
 	void	(*set_sk_ecn)(struct sock *sk, u8 ecn);
-	int	(*get_msg_ecn)(struct sk_buff *skb);
+	u8	(*get_msg_ecn)(struct sk_buff *skb);
 
 	int	(*setsockopt)(struct sock *sk, int level, int optname, sockptr_t optval,
 			      unsigned int optlen);
@@ -99,11 +99,11 @@ struct quic_net *quic_net(struct net *net);
 
 void quic_udp_conf_init(struct sock *sk, struct udp_port_cfg *conf, union quic_addr *a);
 int quic_get_mtu_info(struct sock *sk, struct sk_buff *skb, u32 *info);
-int quic_get_msg_ecn(struct sock *sk, struct sk_buff *skb);
+u8 quic_get_msg_ecn(struct sock *sk, struct sk_buff *skb);
 void quic_set_sk_ecn(struct sock *sk, u8 ecn);
 
 struct quic_addr_family_ops *quic_af_ops_get_skb(struct sk_buff *skb);
 struct quic_addr_family_ops *quic_af_ops_get(sa_family_t family);
 int quic_addr_family(struct sock *sk);
-int quic_encap_len(struct sock *sk);
-int quic_addr_len(struct sock *sk);
+u32 quic_encap_len(struct sock *sk);
+u32 quic_addr_len(struct sock *sk);

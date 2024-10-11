@@ -148,7 +148,7 @@ static void quic_pnspace_test1(struct kunit *test)
 	KUNIT_EXPECT_EQ(test, 3, quic_pnspace_num_gabs(space, gabs));
 
 	for (i = 1; i <= 128; i++)
-		KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 256 * i));
+		KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, (s64)(256 * i)));
 
 	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, QUIC_PN_MAP_SIZE + 1));
 	KUNIT_EXPECT_EQ(test, -ENOMEM,
@@ -478,7 +478,7 @@ static void quic_crypto_test2(struct kunit *test)
 	cb->number_offset = 17;
 	cb->crypto_done = quic_decrypt_done;
 	cb->resume = 0;
-	cb->length = skb->len - cb->number_offset;
+	cb->length = (u16)(skb->len - cb->number_offset);
 	err = quic_crypto_decrypt(&crypto, skb);
 	if (err) {
 		if (err != -EINPROGRESS)
@@ -886,7 +886,7 @@ static void quic_cong_test3(struct kunit *test)
 	struct quic_cong cong = {};
 	struct quic_config c = {};
 	u32 time, bytes;
-	u64 number;
+	s64 number;
 
 	p.max_data = 106496;
 	p.max_ack_delay = 25000;

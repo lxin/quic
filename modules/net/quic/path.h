@@ -55,7 +55,7 @@ struct quic_path_dst {
 	u32 mtu_info;
 	u32 pathmtu;
 	struct {
-		u64 number;
+		s64 number;
 		u16 pmtu;
 
 		u16 probe_size;
@@ -136,8 +136,8 @@ int quic_path_set_udp_sock(struct sock *sk, struct quic_path_addr *a, bool alt);
 void quic_path_addr_free(struct sock *sk, struct quic_path_addr *path, bool alt);
 void quic_path_free(struct sock *sk, struct quic_path_addr *a);
 
-int quic_path_pl_recv(struct quic_path_addr *a, bool *raise_timer, bool *complete);
-int quic_path_pl_toobig(struct quic_path_addr *a, u32 pmtu, bool *reset_timer);
+u32 quic_path_pl_recv(struct quic_path_addr *a, bool *raise_timer, bool *complete);
+u32 quic_path_pl_toobig(struct quic_path_addr *a, u32 pmtu, bool *reset_timer);
 bool quic_path_pl_confirm(struct quic_path_addr *a, s64 largest, s64 smallest);
-int quic_path_pl_send(struct quic_path_addr *a, s64 number);
+u32 quic_path_pl_send(struct quic_path_addr *a, s64 number);
 void quic_path_pl_reset(struct quic_path_addr *a);

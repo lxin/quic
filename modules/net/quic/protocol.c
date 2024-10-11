@@ -92,7 +92,7 @@ static void quic_v4_lower_xmit(struct sock *sk, struct sk_buff *skb, union quic_
 			       union quic_addr *sa)
 {
 	struct quic_crypto_cb *cb = QUIC_CRYPTO_CB(skb);
-	u8 tos = (inet_sk(sk)->tos | cb->ecn);
+	u8 tos = (inet_sk(sk)->tos | cb->ecn), ttl;
 	struct dst_entry *dst;
 	__be16 df = 0;
 
@@ -108,16 +108,17 @@ static void quic_v4_lower_xmit(struct sock *sk, struct sk_buff *skb, union quic_
 	if (ip_dont_fragment(sk, dst) && !skb->ignore_df)
 		df = htons(IP_DF);
 
+	ttl = (u8)ip4_dst_hoplimit(dst);
 	udp_tunnel_xmit_skb((struct rtable *)dst, sk, skb, sa->v4.sin_addr.s_addr,
-			    da->v4.sin_addr.s_addr, tos, ip4_dst_hoplimit(dst), df,
-			    sa->v4.sin_port, da->v4.sin_port, false, false);
+			    da->v4.sin_addr.s_addr, tos, ttl, df, sa->v4.sin_port,
+			    da->v4.sin_port, false, false);
 }
 
 static void quic_v6_lower_xmit(struct sock *sk, struct sk_buff *skb, union quic_addr *da,
 			       union quic_addr *sa)
 {
 	struct quic_crypto_cb *cb = QUIC_CRYPTO_CB(skb);
-	u8 tc = (inet6_sk(sk)->tclass | cb->ecn);
+	u8 tc = (inet6_sk(sk)->tclass | cb->ecn), ttl;
 	struct dst_entry *dst = sk_dst_get(sk);
 
 	if (!dst) {
@@ -128,8 +129,9 @@ static void quic_v6_lower_xmit(struct sock *sk, struct sk_buff *skb, union quic_
 		 skb, skb->len, cb->number, &sa->v6.sin6_addr, ntohs(sa->v6.sin6_port),
 		 &da->v6.sin6_addr, ntohs(da->v6.sin6_port));
 
+	ttl = (u8)ip6_dst_hoplimit(dst);
 	udp_tunnel6_xmit_skb(dst, sk, skb, NULL, &sa->v6.sin6_addr, &da->v6.sin6_addr, tc,
-			     ip6_dst_hoplimit(dst), 0, sa->v6.sin6_port, da->v6.sin6_port, false);
+			     ttl, 0, sa->v6.sin6_port, da->v6.sin6_port, false);
 }
 
 static void quic_v4_udp_conf_init(struct sock *sk, struct udp_port_cfg *conf, union quic_addr *a)
@@ -245,12 +247,12 @@ static int quic_v6_get_mtu_info(struct sk_buff *skb, u32 *info)
 	return 1;
 }
 
-static int quic_v4_get_msg_ecn(struct sk_buff *skb)
+static u8 quic_v4_get_msg_ecn(struct sk_buff *skb)
 {
 	return (ip_hdr(skb)->tos & INET_ECN_MASK);
 }
 
-static int quic_v6_get_msg_ecn(struct sk_buff *skb)
+static u8 quic_v6_get_msg_ecn(struct sk_buff *skb)
 {
 	return (ipv6_get_dsfield(ipv6_hdr(skb)) & INET_ECN_MASK);
 }
@@ -302,7 +304,6 @@ static void quic_v4_set_pref_addr(u8 *p, union quic_addr *addr)
 	memset(p, 0, 16);
 	p += 16;
 	memset(p, 0, 2);
-	p += 2;
 }
 
 static void quic_v6_set_pref_addr(u8 *p, union quic_addr *addr)
@@ -314,7 +315,6 @@ static void quic_v6_set_pref_addr(u8 *p, union quic_addr *addr)
 	memcpy(p, &addr->v6.sin6_addr, 16);
 	p += 16;
 	memcpy(p, &addr->v6.sin6_port, 2);
-	p += 2;
 }
 
 static void quic_v4_seq_dump_addr(struct seq_file *seq, union quic_addr *addr)
@@ -421,7 +421,7 @@ static int quic_inet_connect(struct socket *sock, struct sockaddr *addr, int add
 	struct sock *sk = sock->sk;
 	const struct proto *prot;
 
-	if (addr_len < sizeof(addr->sa_family))
+	if (addr_len < (int)sizeof(addr->sa_family))
 		return -EINVAL;
 
 	prot = READ_ONCE(sk->sk_prot);
@@ -540,12 +540,12 @@ static __poll_t quic_inet_poll(struct file *file, struct socket *sock, poll_tabl
 	return mask;
 }
 
-int quic_encap_len(struct sock *sk)
+u32 quic_encap_len(struct sock *sk)
 {
 	return sizeof(struct udphdr) + quic_af_ops(sk)->iph_len;
 }
 
-int quic_addr_len(struct sock *sk)
+u32 quic_addr_len(struct sock *sk)
 {
 	return quic_af_ops(sk)->addr_len;
 }
@@ -611,7 +611,7 @@ int quic_flow_route(struct sock *sk, union quic_addr *da, union quic_addr *sa)
 	return quic_af_ops(sk)->flow_route(sk, da, sa);
 }
 
-int quic_get_msg_ecn(struct sock *sk, struct sk_buff *skb)
+u8 quic_get_msg_ecn(struct sock *sk, struct sk_buff *skb)
 {
 	return quic_af_ops(sk)->get_msg_ecn(skb);
 }
@@ -658,9 +658,9 @@ struct quic_net *quic_net(struct net *net)
 static int quic_seq_show(struct seq_file *seq, void *v)
 {
 	struct net *net = seq_file_net(seq);
+	u32 hash = (u32)(*(loff_t *)v);
 	struct quic_hash_head *head;
 	struct quic_outqueue *outq;
-	int hash = *(loff_t *)v;
 	union quic_addr *addr;
 	struct sock *sk;
 
@@ -741,13 +741,13 @@ static int quic_snmp_seq_show(struct seq_file *seq, void *v)
 {
 	unsigned long buff[QUIC_MIB_MAX];
 	struct net *net = seq->private;
-	int i;
+	u32 idx;
 
 	memset(buff, 0, sizeof(unsigned long) * QUIC_MIB_MAX);
 
 	snmp_get_cpu_field_batch(buff, quic_snmp_list, quic_net(net)->stat);
-	for (i = 0; quic_snmp_list[i].name; i++)
-		seq_printf(seq, "%-32s\t%ld\n", quic_snmp_list[i].name, buff[i]);
+	for (idx = 0; quic_snmp_list[idx].name; idx++)
+		seq_printf(seq, "%-32s\t%ld\n", quic_snmp_list[idx].name, buff[idx]);
 
 	return 0;
 }
@@ -863,7 +863,7 @@ static int quic_protosw_init(void)
 
 	proto = &quic_prot;
 	offset = (void *)(&proto->memory_allocated) + sizeof(proto->memory_allocated);
-	if (offset != &proto->sockets_allocated) /* per_cpu_fw_alloc */
+	if (offset != (void *)&proto->sockets_allocated) /* per_cpu_fw_alloc */
 		*(int  __percpu **)offset = &quic_memory_per_cpu_fw_alloc;
 
 	err = proto_register(proto, 1);
@@ -872,7 +872,7 @@ static int quic_protosw_init(void)
 
 	proto = &quicv6_prot;
 	offset = (void *)(&proto->memory_allocated) + sizeof(proto->memory_allocated);
-	if (offset != &proto->sockets_allocated) /* per_cpu_fw_alloc */
+	if (offset != (void *)&proto->sockets_allocated) /* per_cpu_fw_alloc */
 		*(int  __percpu **)offset = &quic_memory_per_cpu_fw_alloc;
 
 	offset = (void *)(&proto->obj_size) + sizeof(proto->obj_size);
@@ -984,8 +984,8 @@ static void quic_sysctl_register(void)
 
 	limit = nr_free_buffer_pages() / 8;
 	limit = max(limit, 128UL);
-	sysctl_quic_mem[0] = limit / 4 * 3;
-	sysctl_quic_mem[1] = limit;
+	sysctl_quic_mem[0] = (long)limit / 4 * 3;
+	sysctl_quic_mem[1] = (long)limit;
 	sysctl_quic_mem[2] = sysctl_quic_mem[0] * 2;
 
 	limit = (sysctl_quic_mem[1]) << (PAGE_SHIFT - 7);

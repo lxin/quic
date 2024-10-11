@@ -28,7 +28,7 @@ static inline u32 quic_var_len(u64 n)
 
 static inline u8 quic_get_var(u8 **pp, u32 *plen, u64 *val)
 {
-	union quic_num n;
+	union quic_num n = {};
 	u8 *p = *pp, len;
 	u64 v = 0;
 
@@ -58,6 +58,8 @@ static inline u8 quic_get_var(u8 **pp, u32 *plen, u64 *val)
 		n.u8 &= 0x3f;
 		v = be64_to_cpu(n.be64);
 		break;
+	default:
+		return 0;
 	}
 
 	*plen -= len;
@@ -66,7 +68,7 @@ static inline u8 quic_get_var(u8 **pp, u32 *plen, u64 *val)
 	return len;
 }
 
-static inline u8 quic_get_int(u8 **pp, u32 *plen, u64 *val, u32 len)
+static inline u32 quic_get_int(u8 **pp, u32 *plen, u64 *val, u32 len)
 {
 	union quic_num n;
 	u8 *p = *pp;
@@ -97,6 +99,8 @@ static inline u8 quic_get_int(u8 **pp, u32 *plen, u64 *val, u32 len)
 		memcpy(&n.be64, p, 8);
 		v = be64_to_cpu(n.be64);
 		break;
+	default:
+		return 0;
 	}
 	*pp = p + len;
 	*val = v;
@@ -308,7 +312,7 @@ static inline void quic_data_from_string(struct quic_data *to, u8 *from, u32 len
 			len--;
 			d.len++;
 		}
-		*d.data = d.len - 1;
+		*d.data = (u8)(d.len - 1);
 		to->len += d.len;
 	}
 }

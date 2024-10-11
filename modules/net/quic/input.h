@@ -143,7 +143,7 @@ int quic_inq_stream_recv(struct sock *sk, struct quic_frame *frame);
 int quic_inq_dgram_recv(struct sock *sk, struct quic_frame *frame);
 int quic_inq_event_recv(struct sock *sk, u8 event, void *args);
 
-void quic_inq_flow_control(struct sock *sk, struct quic_stream *stream, int len);
+void quic_inq_flow_control(struct sock *sk, struct quic_stream *stream, u32 len);
 void quic_inq_stream_purge(struct sock *sk, struct quic_stream *stream);
 void quic_inq_decrypted_tail(struct sock *sk, struct sk_buff *skb);
 void quic_inq_backlog_tail(struct sock *sk, struct sk_buff *skb);

@@ -18,21 +18,20 @@
 
 static int quic_pnspace_grow(struct quic_pnspace *space, u16 size)
 {
+	u16 len, inc, offset;
 	unsigned long *new;
-	unsigned long inc;
-	u16 len, offset;
 
 	if (size > QUIC_PN_MAP_SIZE)
 		return 0;
 
 	inc = ALIGN((size - space->pn_map_len), BITS_PER_LONG) + QUIC_PN_MAP_INCREMENT;
-	len = min_t(u16, space->pn_map_len + inc, QUIC_PN_MAP_SIZE);
+	len = (u16)min(space->pn_map_len + inc, QUIC_PN_MAP_SIZE);
 
 	new = kzalloc(len >> 3, GFP_ATOMIC);
 	if (!new)
 		return 0;
 
-	offset = space->max_pn_seen + 1 - space->base_pn;
+	offset = (u16)(space->max_pn_seen + 1 - space->base_pn);
 	bitmap_copy(new, space->pn_map, offset);
 	kfree(space->pn_map);
 	space->pn_map = new;
@@ -89,8 +88,8 @@ static void quic_pnspace_move(struct quic_pnspace *space, s64 pn)
 {
 	u16 offset;
 
-	offset = pn + 1 - space->base_pn;
-	offset = find_next_zero_bit(space->pn_map, space->pn_map_len, offset);
+	offset = (u16)(pn + 1 - space->base_pn);
+	offset = (u16)find_next_zero_bit(space->pn_map, space->pn_map_len, offset);
 	space->base_pn += offset;
 	bitmap_shift_right(space->pn_map, space->pn_map, offset, space->pn_map_len);
 }
@@ -103,7 +102,7 @@ int quic_pnspace_mark(struct quic_pnspace *space, s64 pn)
 	if (pn < space->base_pn)
 		return 0;
 
-	gap = pn - space->base_pn;
+	gap = (u16)(pn - space->base_pn);
 	if (gap >= space->pn_map_len && !quic_pnspace_grow(space, gap + 1))
 		return -ENOMEM;
 
@@ -143,13 +142,13 @@ EXPORT_SYMBOL_GPL(quic_pnspace_mark);
 static int quic_pnspace_next_gap_ack(const struct quic_pnspace *space,
 				     s64 *iter, u16 *start, u16 *end)
 {
-	u16 start_ = 0, end_ = 0, offset = *iter - space->base_pn;
+	u16 start_ = 0, end_ = 0, offset = (u16)(*iter - space->base_pn);
 
-	start_ = find_next_zero_bit(space->pn_map, space->pn_map_len, offset);
+	start_ = (u16)find_next_zero_bit(space->pn_map, space->pn_map_len, offset);
 	if (space->max_pn_seen <= space->base_pn + start_)
 		return 0;
 
-	end_ = find_next_bit(space->pn_map, space->pn_map_len, start_);
+	end_ = (u16)find_next_bit(space->pn_map, space->pn_map_len, start_);
 	if (space->max_pn_seen <= space->base_pn + end_ - 1)
 		return 0;
 
@@ -174,7 +173,7 @@ u16 quic_pnspace_num_gabs(struct quic_pnspace *space, struct quic_gap_ack_block 
 	while (quic_pnspace_next_gap_ack(space, &iter, &start, &end)) {
 		gabs[ngaps].start = start;
 		if (ngaps == QUIC_PN_MAX_GABS - 1) {
-			gabs[ngaps].end = space->max_pn_seen - space->base_pn;
+			gabs[ngaps].end = (u16)(space->max_pn_seen - space->base_pn);
 			ngaps++;
 			break;
 		}

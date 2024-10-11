@@ -36,13 +36,13 @@ static int psk;
 static u8 session_data[4096];
 static u8 token[256];
 
-static int quic_test_recvmsg(struct socket *sock, void *msg, int len, s64 *sid, int *flags)
+static int quic_test_recvmsg(struct socket *sock, void *msg, int len, s64 *sid, u32 *flags)
 {
 	char incmsg[CMSG_SPACE(sizeof(struct quic_stream_info))];
 	struct quic_stream_info *rinfo = CMSG_DATA(incmsg);
 	struct msghdr inmsg;
 	struct kvec iov;
-	int error;
+	int err;
 
 	iov.iov_base = msg;
 	iov.iov_len = len;
@@ -51,19 +51,16 @@ static int quic_test_recvmsg(struct socket *sock, void *msg, int len, s64 *sid, 
 	inmsg.msg_control = incmsg;
 	inmsg.msg_controllen = sizeof(incmsg);
 
-	error = kernel_recvmsg(sock, &inmsg, &iov, 1, len, *flags);
-	if (error < 0)
-		return error;
-
-	if (!sid)
-		return error;
+	err = kernel_recvmsg(sock, &inmsg, &iov, 1, len, (int)(*flags));
+	if (err < 0)
+		return err;
 
 	*sid = rinfo->stream_id;
 	*flags = rinfo->stream_flags | inmsg.msg_flags;
-	return error;
+	return err;
 }
 
-static int quic_test_sendmsg(struct socket *sock, const void *msg, int len, s64 sid, int flags)
+static int quic_test_sendmsg(struct socket *sock, const void *msg, int len, s64 sid, u32 flags)
 {
 	char outcmsg[CMSG_SPACE(sizeof(struct quic_stream_info))];
 	struct quic_stream_info *sinfo;
@@ -86,7 +83,6 @@ static int quic_test_sendmsg(struct socket *sock, const void *msg, int len, s64 
 
 	outmsg.msg_controllen = cmsg->cmsg_len;
 	sinfo = (struct quic_stream_info *)CMSG_DATA(cmsg);
-	memset(sinfo, 0, sizeof(struct quic_stream_info));
 	sinfo->stream_id = sid;
 	sinfo->stream_flags = flags;
 
@@ -133,7 +129,7 @@ static int quic_test_client_handshake(struct socket *sock, struct quic_test_priv
 	if (err)
 		return err;
 wait:
-	err = wait_for_completion_interruptible_timeout(&priv->sk_handshake_done, 5 * HZ);
+	err = wait_for_completion_interruptible_timeout(&priv->sk_handshake_done, HZ * 5UL);
 	if (err <= 0) {
 		tls_handshake_cancel(sock->sk);
 		return -EINVAL;
@@ -164,7 +160,7 @@ static int quic_test_server_handshake(struct socket *sock, struct quic_test_priv
 	if (err)
 		return err;
 wait:
-	err = wait_for_completion_interruptible_timeout(&priv->sk_handshake_done, 5 * HZ);
+	err = wait_for_completion_interruptible_timeout(&priv->sk_handshake_done, HZ * 5UL);
 	if (err <= 0) {
 		tls_handshake_cancel(sock->sk);
 		return -EINVAL;
@@ -180,8 +176,9 @@ static int quic_test_do_ticket_client(void)
 	struct quic_test_priv priv = {};
 	struct quic_config config = {};
 	struct socket *sock;
-	int err, flags = 0;
+	u32 flags = 0;
 	char msg[64];
+	int err;
 	s64 sid;
 
 	err = __sock_create(&init_net, PF_INET, SOCK_DGRAM, IPPROTO_QUIC, &sock, 1);
@@ -329,8 +326,9 @@ static int quic_test_do_sample_client(void)
 	struct quic_test_priv priv = {};
 	struct sockaddr_in ra = {};
 	struct socket *sock;
-	int err, flags = 0;
+	u32 flags = 0;
 	char msg[64];
+	int err;
 	s64 sid;
 
 	err = __sock_create(&init_net, PF_INET, SOCK_DGRAM, IPPROTO_QUIC, &sock, 1);
@@ -391,8 +389,9 @@ static int quic_test_do_ticket_server(void)
 	struct quic_config config = {};
 	struct socket *sock, *newsock;
 	struct sockaddr_in la = {};
-	int err, flags = 0;
+	u32 flags = 0;
 	char msg[64];
+	int err;
 	s64 sid;
 
 	err = __sock_create(&init_net, PF_INET, SOCK_DGRAM, IPPROTO_QUIC, &sock, 1);
@@ -508,8 +507,9 @@ static int quic_test_do_sample_server(void)
 	struct quic_test_priv priv = {};
 	struct socket *sock, *newsock;
 	struct sockaddr_in la = {};
-	int err, flags = 0;
+	u32 flags = 0;
 	char msg[64];
+	int err;
 	s64 sid;
 
 	err = __sock_create(&init_net, PF_INET, SOCK_DGRAM, IPPROTO_QUIC, &sock, 1);

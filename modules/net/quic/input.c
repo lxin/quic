@@ -85,7 +85,7 @@ err:
 
 void quic_rcv_err_icmp(struct sock *sk)
 {
-	u8 taglen = quic_packet_taglen(quic_packet(sk));
+	u32 taglen = quic_packet_taglen(quic_packet(sk));
 	struct quic_config *c = quic_config(sk);
 	struct quic_path_addr *s = quic_src(sk);
 	struct quic_path_addr *d = quic_dst(sk);
@@ -152,10 +152,10 @@ static void quic_inq_stream_tail(struct sock *sk, struct quic_stream *stream,
 
 	overlap = stream->recv.offset - frame->offset;
 	if (overlap) {
-		quic_inq_rfree(frame->len, sk);
+		quic_inq_rfree((int)frame->len, sk);
 		frame->data += overlap;
 		frame->len -= overlap;
-		quic_inq_set_owner_r(frame->len, sk);
+		quic_inq_set_owner_r((int)frame->len, sk);
 		frame->offset += overlap;
 	}
 
@@ -178,7 +178,7 @@ static void quic_inq_stream_tail(struct sock *sk, struct quic_stream *stream,
 	sk->sk_data_ready(sk);
 }
 
-void quic_inq_flow_control(struct sock *sk, struct quic_stream *stream, int len)
+void quic_inq_flow_control(struct sock *sk, struct quic_stream *stream, u32 len)
 {
 	struct quic_inqueue *inq = quic_inq(sk);
 	struct quic_frame *frame = NULL;
@@ -232,7 +232,7 @@ int quic_inq_stream_recv(struct sock *sk, struct quic_frame *frame)
 	struct quic_inqueue *inq = quic_inq(sk);
 	struct quic_stream_update update = {};
 	struct net *net = sock_net(sk);
-	u64 stream_id = stream->id;
+	s64 stream_id = stream->id;
 	struct list_head *head;
 	struct quic_frame *pos;
 
@@ -241,7 +241,7 @@ int quic_inq_stream_recv(struct sock *sk, struct quic_frame *frame)
 		return 0;
 	}
 
-	quic_inq_set_owner_r(frame->len, sk);
+	quic_inq_set_owner_r((int)frame->len, sk);
 	if (sk_rmem_alloc_get(sk) > sk->sk_rcvbuf || !quic_sk_rmem_schedule(sk, frame->len)) {
 		QUIC_INC_STATS(net, QUIC_MIB_FRM_RCVBUFDROP);
 		return -ENOBUFS;
@@ -280,7 +280,7 @@ int quic_inq_stream_recv(struct sock *sk, struct quic_frame *frame)
 				break;
 			}
 			if (pos->offset + pos->len >= offset + frame->len) { /* dup */
-				quic_inq_rfree(frame->len, sk);
+				quic_inq_rfree((int)frame->len, sk);
 				quic_frame_free(frame);
 				return 0;
 			}
@@ -323,7 +323,7 @@ int quic_inq_stream_recv(struct sock *sk, struct quic_frame *frame)
 		list_del(&frame->list);
 		stream->recv.frags--;
 		if (frame->offset + frame->len <= stream->recv.offset) { /* dup */
-			quic_inq_rfree(frame->len, sk);
+			quic_inq_rfree((int)frame->len, sk);
 			quic_frame_free(frame);
 			continue;
 		}
@@ -399,7 +399,7 @@ int quic_inq_handshake_recv(struct sock *sk, struct quic_frame *frame)
 		quic_frame_free(frame);
 		return 0;
 	}
-	quic_inq_set_owner_r(frame->len, sk);
+	quic_inq_set_owner_r((int)frame->len, sk);
 	if (sk_rmem_alloc_get(sk) > sk->sk_rcvbuf) {
 		QUIC_INC_STATS(sock_net(sk), QUIC_MIB_FRM_RCVBUFDROP);
 		frame->errcode = QUIC_TRANSPORT_ERROR_CRYPTO_BUF_EXCEEDED;
@@ -419,7 +419,7 @@ int quic_inq_handshake_recv(struct sock *sk, struct quic_frame *frame)
 				break;
 			}
 			if (pos->offset == offset) { /* dup */
-				quic_inq_rfree(frame->len, sk);
+				quic_inq_rfree((int)frame->len, sk);
 				quic_frame_free(frame);
 				return 0;
 			}
@@ -459,7 +459,7 @@ void quic_inq_set_param(struct sock *sk, struct quic_transport_param *p)
 	inq->window = p->max_data;
 
 	inq->max_bytes = p->max_data;
-	sk->sk_rcvbuf = p->max_data * 2;
+	sk->sk_rcvbuf = (int)p->max_data * 2;
 	inq->disable_1rtt_encryption = p->disable_1rtt_encryption;
 }
 
@@ -468,7 +468,7 @@ int quic_inq_event_recv(struct sock *sk, u8 event, void *args)
 	struct list_head *head = &quic_inq(sk)->recv_list;
 	struct quic_stream *stream = NULL;
 	struct quic_frame *frame, *pos;
-	int args_len = 0;
+	u32 args_len = 0;
 	u8 *p;
 
 	if (!event || event > QUIC_EVENT_MAX)
@@ -514,7 +514,7 @@ int quic_inq_event_recv(struct sock *sk, u8 event, void *args)
 	if (!frame)
 		return -ENOMEM;
 	p = quic_put_data(frame->data, &event, 1);
-	p = quic_put_data(p, args, args_len);
+	quic_put_data(p, args, args_len);
 
 	frame->event = event;
 	frame->stream = stream;
@@ -526,7 +526,7 @@ int quic_inq_event_recv(struct sock *sk, u8 event, void *args)
 			break;
 		}
 	}
-	quic_inq_set_owner_r(frame->len, sk);
+	quic_inq_set_owner_r((int)frame->len, sk);
 	list_add_tail(&frame->list, head);
 	quic_inq(sk)->last_event = frame;
 	sk->sk_data_ready(sk);
@@ -535,7 +535,7 @@ int quic_inq_event_recv(struct sock *sk, u8 event, void *args)
 
 int quic_inq_dgram_recv(struct sock *sk, struct quic_frame *frame)
 {
-	quic_inq_set_owner_r(frame->len, sk);
+	quic_inq_set_owner_r((int)frame->len, sk);
 	if (sk_rmem_alloc_get(sk) > sk->sk_rcvbuf || !quic_sk_rmem_schedule(sk, frame->len)) {
 		QUIC_INC_STATS(sock_net(sk), QUIC_MIB_FRM_RCVBUFDROP);
 		return -ENOBUFS;

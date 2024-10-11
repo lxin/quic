@@ -9,7 +9,7 @@
  */
 
 #define QUIC_PN_MAX_GABS	32
-#define QUIC_PN_MAP_MAX_PN	((1ULL << 62) - 1)
+#define QUIC_PN_MAP_MAX_PN	((1LL << 62) - 1)
 
 #define QUIC_PN_MAP_INITIAL	64
 #define QUIC_PN_MAP_INCREMENT	QUIC_PN_MAP_INITIAL
@@ -89,7 +89,7 @@ static inline s64 quic_pnspace_max_pn_acked_seen(const struct quic_pnspace *spac
 	return space->max_pn_acked_seen;
 }
 
-static inline s32 quic_pnspace_max_pn_acked_time(const struct quic_pnspace *space)
+static inline u32 quic_pnspace_max_pn_acked_time(const struct quic_pnspace *space)
 {
 	return space->max_pn_acked_time;
 }

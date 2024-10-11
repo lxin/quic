@@ -181,7 +181,7 @@ void quic_outq_validate_path(struct sock *sk, struct quic_frame *frame,
 			     struct quic_path_addr *path);
 void quic_outq_transmitted_tail(struct sock *sk, struct quic_frame *frame);
 void quic_outq_retransmit_list(struct sock *sk, struct list_head *head);
-int quic_outq_retransmit_mark(struct sock *sk, u8 level, u8 immediate);
+u32 quic_outq_retransmit_mark(struct sock *sk, u8 level, u8 immediate);
 void quic_outq_update_loss_timer(struct sock *sk, u8 level);
 
 void quic_outq_transmit_close(struct sock *sk, u8 frame, u32 errcode, u8 level);

@@ -26,7 +26,7 @@
 #define QUIC_STREAM_TYPE_CLIENT_UNI	0x02
 #define QUIC_STREAM_TYPE_SERVER_UNI	0x03
 
-struct quic_stream *quic_stream_find(struct quic_stream_table *streams, u64 stream_id)
+struct quic_stream *quic_stream_find(struct quic_stream_table *streams, s64 stream_id)
 {
 	struct quic_hash_head *head = quic_stream_head(&streams->ht, stream_id);
 	struct quic_stream *stream;
@@ -38,7 +38,7 @@ struct quic_stream *quic_stream_find(struct quic_stream_table *streams, u64 stre
 	return stream;
 }
 
-static bool quic_stream_id_is_send(u64 stream_id, bool is_serv)
+static bool quic_stream_id_is_send(s64 stream_id, bool is_serv)
 {
 	u8 type = (stream_id & QUIC_STREAM_TYPE_MASK);
 
@@ -51,7 +51,7 @@ static bool quic_stream_id_is_send(u64 stream_id, bool is_serv)
 	return true;
 }
 
-static struct quic_stream *quic_stream_add(struct quic_stream_table *streams, u64 stream_id,
+static struct quic_stream *quic_stream_add(struct quic_stream_table *streams, s64 stream_id,
 					   u8 is_serv)
 {
 	struct quic_hash_head *head;
@@ -69,13 +69,13 @@ static struct quic_stream *quic_stream_add(struct quic_stream_table *streams, u6
 		stream->recv.max_bytes = stream->recv.window;
 
 		if (quic_stream_id_is_send(stream_id, is_serv) &&
-		    streams->send.streams_uni <= (stream_id >> 2))
-			streams->send.streams_uni = (stream_id >> 2) + 1;
+		    streams->send.streams_uni <= (u64)(stream_id >> 2))
+			streams->send.streams_uni = (u64)(stream_id >> 2) + 1;
 		goto out;
 	}
 
-	if (streams->send.streams_bidi <= (stream_id >> 2))
-		streams->send.streams_bidi = (stream_id >> 2) + 1;
+	if (streams->send.streams_bidi <= (u64)(stream_id >> 2))
+		streams->send.streams_bidi = (u64)(stream_id >> 2) + 1;
 	if (is_serv ^ !(stream_id & QUIC_STREAM_TYPE_SERVER_MASK)) {
 		stream->send.window = streams->send.max_stream_data_bidi_remote;
 		stream->recv.window = streams->recv.max_stream_data_bidi_local;
@@ -148,7 +148,7 @@ void quic_stream_set_param(struct quic_stream_table *streams, struct quic_transp
 	}
 }
 
-static bool quic_stream_id_is_recv(u64 stream_id, bool is_serv)
+static bool quic_stream_id_is_recv(s64 stream_id, bool is_serv)
 {
 	u8 type = (stream_id & QUIC_STREAM_TYPE_MASK);
 
@@ -161,31 +161,31 @@ static bool quic_stream_id_is_recv(u64 stream_id, bool is_serv)
 	return true;
 }
 
-bool quic_stream_id_send_exceeds(struct quic_stream_table *streams, u64 stream_id)
+bool quic_stream_id_send_exceeds(struct quic_stream_table *streams, s64 stream_id)
 {
 	if (stream_id & QUIC_STREAM_TYPE_UNI_MASK) {
-		if ((stream_id >> 2) >= streams->send.max_streams_uni)
+		if ((u64)(stream_id >> 2) >= streams->send.max_streams_uni)
 			return true;
 	} else {
-		if ((stream_id >> 2) >= streams->send.max_streams_bidi)
+		if ((u64)(stream_id >> 2) >= streams->send.max_streams_bidi)
 			return true;
 	}
 	return false;
 }
 
-static bool quic_stream_id_recv_exceeds(struct quic_stream_table *streams, u64 stream_id)
+static bool quic_stream_id_recv_exceeds(struct quic_stream_table *streams, s64 stream_id)
 {
 	if (stream_id & QUIC_STREAM_TYPE_UNI_MASK) {
-		if ((stream_id >> 2) >= streams->recv.max_streams_uni)
+		if ((u64)(stream_id >> 2) >= streams->recv.max_streams_uni)
 			return true;
 	} else {
-		if ((stream_id >> 2) >= streams->recv.max_streams_bidi)
+		if ((u64)(stream_id >> 2) >= streams->recv.max_streams_bidi)
 			return true;
 	}
 	return false;
 }
 
-static bool quic_stream_id_send_allowed(u64 stream_id, bool is_serv)
+static bool quic_stream_id_send_allowed(s64 stream_id, bool is_serv)
 {
 	u8 type = (stream_id & QUIC_STREAM_TYPE_MASK);
 
@@ -199,7 +199,7 @@ static bool quic_stream_id_send_allowed(u64 stream_id, bool is_serv)
 	return true;
 }
 
-struct quic_stream *quic_stream_send_get(struct quic_stream_table *streams, u64 stream_id,
+struct quic_stream *quic_stream_send_get(struct quic_stream_table *streams, s64 stream_id,
 					 u32 flags, bool is_serv)
 {
 	struct quic_stream *stream;
@@ -230,7 +230,7 @@ struct quic_stream *quic_stream_send_get(struct quic_stream_table *streams, u64 
 	return stream;
 }
 
-struct quic_stream *quic_stream_recv_get(struct quic_stream_table *streams, u64 stream_id,
+struct quic_stream *quic_stream_recv_get(struct quic_stream_table *streams, s64 stream_id,
 					 bool is_serv)
 {
 	struct quic_stream *stream;

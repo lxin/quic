@@ -191,7 +191,7 @@ int quic_frame_get_transport_params_ext(struct sock *sk, struct quic_transport_p
 					u8 *data, u32 *len);
 int quic_frame_set_transport_params_ext(struct sock *sk, struct quic_transport_param *params,
 					u8 *data, u32 len);
-struct quic_frame *quic_frame_alloc(unsigned int size, u8 *data, gfp_t gfp);
+struct quic_frame *quic_frame_alloc(u32 size, u8 *data, gfp_t gfp);
 void quic_frame_free(struct quic_frame *frame);
 
 struct quic_frame *quic_frame_create(struct sock *sk, u8 type, void *data);

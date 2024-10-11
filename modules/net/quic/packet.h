@@ -68,7 +68,7 @@ static inline void quic_packet_set_max_snd_count(struct quic_packet *packet, u16
 	packet->max_snd_count = count;
 }
 
-static inline u32 quic_packet_taglen(struct quic_packet *packet)
+static inline u8 quic_packet_taglen(struct quic_packet *packet)
 {
 	return packet->taglen[0];
 }
@@ -115,7 +115,7 @@ int quic_packet_xmit(struct sock *sk, struct sk_buff *skb);
 int quic_packet_flush(struct sock *sk);
 int quic_packet_route(struct sock *sk);
 
-void quic_packet_mss_update(struct sock *sk, int mss);
+void quic_packet_mss_update(struct sock *sk, u32 mss);
 void quic_packet_create(struct sock *sk);
 void quic_packet_init(struct sock *sk);
 

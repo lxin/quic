@@ -242,7 +242,7 @@ void quic_outq_transmit_probe(struct sock *sk)
 {
 	struct quic_path_dst *d = (struct quic_path_dst *)quic_dst(sk);
 	struct quic_pnspace *space = quic_pnspace(sk, QUIC_CRYPTO_APP);
-	u8 taglen = quic_packet_taglen(quic_packet(sk));
+	u32 taglen = quic_packet_taglen(quic_packet(sk));
 	u32 pathmtu, probe_size = d->pl.probe_size;
 	struct quic_config *c = quic_config(sk);
 	struct quic_frame *frame;
@@ -338,7 +338,7 @@ void quic_outq_transmitted_sack(struct sock *sk, u8 level, s64 largest, s64 smal
 		if (!complete)
 			quic_outq_transmit_probe(sk);
 		if (raise_timer) /* reuse probe timer as raise timer */
-			quic_timer_reset(sk, QUIC_TIMER_PATH, c->plpmtud_probe_interval * 30);
+			quic_timer_reset(sk, QUIC_TIMER_PATH, (u64)c->plpmtud_probe_interval * 30);
 	}
 
 	head = &outq->transmitted_list;
@@ -405,7 +405,7 @@ void quic_outq_transmitted_sack(struct sock *sk, u8 level, s64 largest, s64 smal
 	}
 
 	outq->rtx_count = 0;
-	quic_outq_wfree(acked, sk);
+	quic_outq_wfree((int)acked, sk);
 	quic_cong_on_ack_recv(cong, bytes, READ_ONCE(sk->sk_max_pacing_rate));
 }
 
@@ -442,10 +442,10 @@ void quic_outq_sync_window(struct sock *sk)
 
 	if (sk->sk_userlocks & SOCK_SNDBUF_LOCK)
 		return;
-	if (sk->sk_sndbuf > 2 * window)
+	if (sk->sk_sndbuf > (int)window * 2)
 		if (sk_stream_wspace(sk) > 0)
 			sk->sk_write_space(sk);
-	sk->sk_sndbuf = 2 * window;
+	sk->sk_sndbuf = (int)window * 2;
 }
 
 /* put the timeout frame back to the corresponding outqueue */
@@ -479,7 +479,7 @@ static void quic_outq_retransmit_one(struct sock *sk, struct quic_frame *frame)
 	QUIC_INC_STATS(sock_net(sk), QUIC_MIB_FRM_RETRANS);
 }
 
-int quic_outq_retransmit_mark(struct sock *sk, u8 level, u8 immediate)
+u32 quic_outq_retransmit_mark(struct sock *sk, u8 level, u8 immediate)
 {
 	struct quic_pnspace *space = quic_pnspace(sk, level);
 	u32 time, now, rto, count = 0, freed = 0, bytes = 0;
@@ -522,7 +522,7 @@ int quic_outq_retransmit_mark(struct sock *sk, u8 level, u8 immediate)
 			count++;
 		}
 	}
-	quic_outq_wfree(freed, sk);
+	quic_outq_wfree((int)freed, sk);
 	quic_outq_update_loss_timer(sk, level);
 	return count;
 }
