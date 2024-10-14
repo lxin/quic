@@ -63,7 +63,8 @@ void quic_log_debug(char const *fmt, ...)
 		return;
 
 	va_start(arg, fmt);
-	vsnprintf(msg, sizeof(msg), fmt, arg);
+	if (vsnprintf(msg, sizeof(msg), fmt, arg) < 0)
+		printf("%s: msg size is greater than 128 bytes!\n", __func__);
 	va_end(arg);
 
 	if (quic_log_func) {
@@ -86,7 +87,8 @@ void quic_log_notice(char const *fmt, ...)
 		return;
 
 	va_start(arg, fmt);
-	vsnprintf(msg, sizeof(msg), fmt, arg);
+	if (vsnprintf(msg, sizeof(msg), fmt, arg) < 0)
+		printf("%s: msg size is greater than 128 bytes!\n", __func__);
 	va_end(arg);
 
 	if (quic_log_func) {
@@ -109,7 +111,8 @@ void quic_log_error(char const *fmt, ...)
 		return;
 
 	va_start(arg, fmt);
-	vsnprintf(msg, sizeof(msg), fmt, arg);
+	if (vsnprintf(msg, sizeof(msg), fmt, arg) < 0)
+		printf("%s: msg size is greater than 128 bytes!\n", __func__);
 	va_end(arg);
 
 	if (quic_log_func) {
@@ -168,7 +171,7 @@ ssize_t quic_recvmsg(int sockfd, void *msg, size_t len, int64_t *sid, uint32_t *
 	struct cmsghdr *cmsg = NULL;
 	struct msghdr inmsg;
 	struct iovec iov;
-	int error;
+	ssize_t ret;
 
 	memset(&inmsg, 0, sizeof(inmsg));
 
@@ -182,9 +185,9 @@ ssize_t quic_recvmsg(int sockfd, void *msg, size_t len, int64_t *sid, uint32_t *
 	inmsg.msg_control = incmsg;
 	inmsg.msg_controllen = sizeof(incmsg);
 
-	error = recvmsg(sockfd, &inmsg, *flags);
-	if (error < 0)
-		return error;
+	ret = recvmsg(sockfd, &inmsg, flags ? (int)*flags : 0);
+	if (ret < 0)
+		return ret;
 
 	if (flags)
 		*flags = inmsg.msg_flags;
@@ -199,7 +202,7 @@ ssize_t quic_recvmsg(int sockfd, void *msg, size_t len, int64_t *sid, uint32_t *
 		if (flags)
 			*flags |= info.stream_flags;
 	}
-	return error;
+	return ret;
 }
 
 /**
@@ -242,7 +245,7 @@ ssize_t quic_sendmsg(int sockfd, const void *msg, size_t len, int64_t sid, uint3
 	info->stream_id = sid;
 	info->stream_flags = (flags & QUIC_MSG_STREAM_FLAGS);
 
-	return sendmsg(sockfd, &outmsg, (flags & ~QUIC_MSG_STREAM_FLAGS));
+	return sendmsg(sockfd, &outmsg, (int)(flags & ~QUIC_MSG_STREAM_FLAGS));
 }
 
 static uint32_t quic_tls_cipher_type(gnutls_cipher_algorithm_t cipher)
@@ -262,7 +265,7 @@ static uint32_t quic_tls_cipher_type(gnutls_cipher_algorithm_t cipher)
 	}
 }
 
-static enum quic_crypto_level quic_crypto_level(gnutls_record_encryption_level_t level)
+static uint8_t quic_crypto_level(gnutls_record_encryption_level_t level)
 {
 	switch (level) {
 	case GNUTLS_ENCRYPTION_LEVEL_INITIAL:
@@ -418,11 +421,12 @@ static int quic_msg_read(gnutls_session_t session, gnutls_record_encryption_leve
 static int quic_handshake_process(gnutls_session_t session, uint8_t level,
 				  const uint8_t *data, size_t datalen)
 {
+	gnutls_record_encryption_level_t l;
 	int ret;
 
-	level = quic_tls_crypto_level(level);
+	l = quic_tls_crypto_level(level);
 	if (datalen > 0) {
-		ret = gnutls_handshake_write(session, level, data, datalen);
+		ret = gnutls_handshake_write(session, l, data, datalen);
 		if (ret != 0) {
 			if (!gnutls_error_is_fatal(ret))
 				return 0;
@@ -473,7 +477,7 @@ static int quic_handshake_sendmsg(int sockfd, struct quic_msg *msg)
 	info = (struct quic_handshake_info *)CMSG_DATA(cmsg);
 	info->crypto_level = msg->level;
 
-	return sendmsg(sockfd, &outmsg, flags);
+	return sendmsg(sockfd, &outmsg, (int)flags);
 }
 
 static int quic_handshake_recvmsg(int sockfd, struct quic_msg *msg)
@@ -483,7 +487,7 @@ static int quic_handshake_recvmsg(int sockfd, struct quic_msg *msg)
 	struct cmsghdr *cmsg = NULL;
 	struct msghdr inmsg;
 	struct iovec iov;
-	int ret;
+	ssize_t ret;
 
 	msg->len = 0;
 	memset(&inmsg, 0, sizeof(inmsg));
