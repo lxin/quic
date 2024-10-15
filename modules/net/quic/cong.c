@@ -568,7 +568,7 @@ static void quic_cong_pace_update(struct quic_cong *cong, u32 bytes, u32 max_rat
 	u64 rate;
 
 	/* rate = N * congestion_window / smoothed_rtt */
-	rate = 2 * cong->window * USEC_PER_SEC;
+	rate = (u64)cong->window * USEC_PER_SEC * 2;
 	if (likely(cong->smoothed_rtt))
 		rate = div64_ul(rate, cong->smoothed_rtt);
 
