@@ -36,13 +36,8 @@ static int quic_udp_rcv(struct sock *sk, struct sk_buff *skb)
 
 static int quic_udp_err(struct sock *sk, struct sk_buff *skb)
 {
-	int ret;
-
-	skb->transport_header += sizeof(struct udphdr);
-	ret = quic_rcv_err(skb);
-	skb->transport_header -= sizeof(struct udphdr);
-
-	return ret;
+	QUIC_CRYPTO_CB(skb)->udph_offset = skb->transport_header;
+	return quic_rcv_err(skb);
 }
 
 static void quic_udp_sock_destroy(struct work_struct *work)
