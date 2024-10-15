@@ -134,7 +134,7 @@ static inline void quic_inq_set_need_sack(struct quic_inqueue *inq, u8 need_sack
 	inq->need_sack = need_sack;
 }
 
-void quic_rcv_err_icmp(struct sock *sk);
+void quic_rcv_err_pmtu(struct sock *sk);
 int quic_rcv_err(struct sk_buff *skb);
 int quic_rcv(struct sk_buff *skb);
 

@@ -2120,7 +2120,7 @@ static void quic_release_cb(struct sock *sk)
 	} while (!try_cmpxchg(&sk->sk_tsq_flags, &flags, nflags));
 
 	if (flags & QUIC_F_MTU_REDUCED_DEFERRED) {
-		quic_rcv_err_icmp(sk);
+		quic_rcv_err_pmtu(sk);
 		__sock_put(sk);
 	}
 	if (flags & QUIC_F_AP_LOSS_DEFERRED) {

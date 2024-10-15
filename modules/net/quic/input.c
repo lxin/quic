@@ -83,18 +83,29 @@ err:
 	return err;
 }
 
-void quic_rcv_err_icmp(struct sock *sk)
+void quic_rcv_err_pmtu(struct sock *sk)
 {
 	u32 taglen = quic_packet_taglen(quic_packet(sk));
 	struct quic_config *c = quic_config(sk);
 	struct quic_path_addr *s = quic_src(sk);
 	struct quic_path_addr *d = quic_dst(sk);
+	struct dst_entry *dst;
 	u32 pathmtu, info;
 	bool reset_timer;
 
+	if (!ip_sk_accept_pmtu(sk))
+		return;
+
 	info = min_t(u32, quic_path_mtu_info(d), QUIC_PATH_MAX_PMTU);
 	if (!c->plpmtud_probe_interval || quic_path_sent_cnt(s) || quic_path_sent_cnt(d)) {
+		if (quic_packet_route(sk) < 0)
+			return;
+
+		dst = __sk_dst_get(sk);
+		dst->ops->update_pmtu(dst, sk, NULL, info, true);
 		quic_packet_mss_update(sk, info - quic_encap_len(sk));
+		quic_outq_retransmit_mark(sk, QUIC_CRYPTO_APP, 1);
+		quic_outq_transmit(sk);
 		return;
 	}
 	info = info - quic_encap_len(sk) - taglen;
@@ -137,7 +148,7 @@ int quic_rcv_err(struct sk_buff *skb)
 			sock_hold(sk);
 		goto out;
 	}
-	quic_rcv_err_icmp(sk);
+	quic_rcv_err_pmtu(sk);
 out:
 	bh_unlock_sock(sk);
 	return ret;
