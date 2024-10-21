@@ -1377,7 +1377,7 @@ int quic_packet_config(struct sock *sk, u8 level, u8 path_alt)
 	    packet->snd_count >= packet->max_snd_count)
 		return -1;
 
-	if (!list_empty(&packet->frame_list))
+	if (!quic_packet_empty(packet))
 		return 0;
 
 	packet->ack_eliciting = 0;
@@ -1514,7 +1514,7 @@ int quic_packet_flush(struct sock *sk)
 	struct quic_packet *packet = quic_packet(sk);
 	u16 count;
 
-	if (!list_empty(&packet->frame_list))
+	if (!quic_packet_empty(packet))
 		quic_packet_create(sk);
 
 	if (packet->head) {

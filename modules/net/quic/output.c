@@ -112,6 +112,23 @@ static int quic_outq_flow_control(struct sock *sk, struct quic_frame *frame)
 	return blocked;
 }
 
+static int quic_outq_delay_check(struct sock *sk, struct quic_frame *frame)
+{
+	struct quic_packet *packet = quic_packet(sk);
+	struct quic_outqueue *outq = quic_outq(sk);
+
+	if ((quic_config(sk)->stream_data_nodelay || !outq->data_inflight) &&
+	    !outq->force_delay)
+		return 0;
+	if (!quic_packet_empty(packet))
+		return 0;
+	if (frame->bytes + outq->stream_bytes > quic_packet_mss(packet))
+		return 0;
+	if (frame->nodelay)
+		return 0;
+	return 1;
+}
+
 static void quic_outq_transmit_stream(struct sock *sk)
 {
 	struct quic_outqueue *outq = quic_outq(sk);
@@ -130,11 +147,15 @@ static void quic_outq_transmit_stream(struct sock *sk)
 			break;
 		if (quic_packet_config(sk, level, frame->path_alt))
 			break;
+		if (!level && quic_outq_delay_check(sk, frame))
+			break;
 		if (quic_packet_tail(sk, frame, 0)) {
 			frame->stream->send.frags++;
 			frame->stream->send.bytes += frame->bytes;
 			outq->bytes += frame->bytes;
 			outq->data_inflight += frame->bytes;
+
+			outq->stream_bytes -= frame->bytes;
 			continue;
 		}
 		quic_packet_create(sk);
@@ -181,6 +202,7 @@ void quic_outq_stream_tail(struct sock *sk, struct quic_frame *frame, bool cork)
 {
 	struct quic_stream_table *streams = quic_streams(sk);
 	struct quic_stream *stream = frame->stream;
+	struct quic_outqueue *outq = quic_outq(sk);
 
 	if (stream->send.state == QUIC_STREAM_SEND_STATE_READY)
 		stream->send.state = QUIC_STREAM_SEND_STATE_SEND;
@@ -192,7 +214,8 @@ void quic_outq_stream_tail(struct sock *sk, struct quic_frame *frame, bool cork)
 		stream->send.state = QUIC_STREAM_SEND_STATE_SENT;
 	}
 
-	list_add_tail(&frame->list, &quic_outq(sk)->stream_list);
+	list_add_tail(&frame->list, &outq->stream_list);
+	outq->stream_bytes += frame->bytes;
 	if (!cork)
 		quic_outq_transmit(sk);
 }
@@ -461,6 +484,8 @@ static void quic_outq_retransmit_one(struct sock *sk, struct quic_frame *frame)
 		frame->stream->send.frags--;
 		frame->stream->send.bytes -= frame->bytes;
 		outq->bytes -= frame->bytes;
+
+		outq->stream_bytes += frame->bytes;
 	}
 
 	list_for_each_entry_safe(pos, tmp, head, list) {
@@ -635,6 +660,8 @@ void quic_outq_stream_purge(struct sock *sk, struct quic_stream *stream)
 			continue;
 		list_del(&frame->list);
 		bytes += frame->bytes;
+
+		outq->stream_bytes -= frame->bytes;
 		quic_frame_free(frame);
 	}
 	quic_outq_wfree(bytes, sk);

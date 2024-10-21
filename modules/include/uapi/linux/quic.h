@@ -113,6 +113,7 @@ struct quic_config {
 	uint32_t	payload_cipher_type;
 	uint8_t		receive_session_ticket;
 	uint8_t		certificate_request;
+	uint8_t		stream_data_nodelay;
 };
 
 struct quic_crypto_secret {

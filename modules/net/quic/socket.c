@@ -637,6 +637,8 @@ static struct quic_stream *quic_sock_send_stream(struct sock *sk, struct quic_st
 
 static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 {
+	struct quic_outqueue *outq = quic_outq(sk);
+	u8 delay = !!(msg->msg_flags & MSG_MORE);
 	struct quic_handshake_info hinfo = {};
 	struct quic_stream_info sinfo = {};
 	struct quic_msginfo msginfo;
@@ -666,26 +668,34 @@ static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 		msginfo.msg = &msg->msg_iter;
 		while (iov_iter_count(&msg->msg_iter) > 0) {
 			frame = quic_frame_create(sk, QUIC_FRAME_CRYPTO, &msginfo);
-			if (!frame)
+			if (!frame) {
+				if (!bytes) {
+					err = -ENOMEM;
+					goto err;
+				}
 				goto out;
+			}
 			if (sk_stream_wspace(sk) < frame->bytes ||
 			    !sk_wmem_schedule(sk, frame->bytes)) {
 				timeo = sock_sndtimeo(sk, msg->msg_flags & MSG_DONTWAIT);
 				err = quic_wait_for_send(sk, 0, timeo, frame->bytes);
 				if (err) {
 					quic_frame_free(frame);
-					goto err;
+					if (err == -EPIPE)
+						goto err;
+					goto out;
 				}
 			}
 			bytes += frame->bytes;
-			quic_outq_ctrl_tail(sk, frame, true);
+			quic_outq_set_force_delay(outq, delay);
+			quic_outq_ctrl_tail(sk, frame, delay);
 			quic_outq_set_owner_w((int)frame->bytes, sk);
 		}
 		goto out;
 	}
 
 	if (msg->msg_flags & MSG_DATAGRAM) {
-		if (!quic_outq_max_dgram(quic_outq(sk))) {
+		if (!quic_outq_max_dgram(outq)) {
 			err = -EINVAL;
 			goto err;
 		}
@@ -703,7 +713,8 @@ static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 			}
 		}
 		bytes += frame->bytes;
-		quic_outq_dgram_tail(sk, frame, true);
+		quic_outq_set_force_delay(outq, delay);
+		quic_outq_dgram_tail(sk, frame, delay);
 		quic_outq_set_owner_w((int)frame->bytes, sk);
 		goto out;
 	}
@@ -720,8 +731,13 @@ static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 
 	while (iov_iter_count(msginfo.msg) > 0) {
 		frame = quic_frame_create(sk, QUIC_FRAME_STREAM, &msginfo);
-		if (!frame)
+		if (!frame) {
+			if (!bytes) {
+				err = -ENOMEM;
+				goto err;
+			}
 			goto out;
+		}
 		if (sk_stream_wspace(sk) < frame->bytes || !sk_wmem_schedule(sk, frame->bytes)) {
 			timeo = sock_sndtimeo(sk, msg->msg_flags & MSG_DONTWAIT);
 			err = quic_wait_for_send(sk, 0, timeo, frame->bytes);
@@ -733,13 +749,12 @@ static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 			}
 		}
 		bytes += frame->bytes;
-		quic_outq_stream_tail(sk, frame, true);
+		quic_outq_set_force_delay(outq, delay);
+		quic_outq_stream_tail(sk, frame, delay);
 		quic_outq_set_owner_w((int)frame->bytes, sk);
 	}
 out:
 	err = bytes;
-	if (!(msg->msg_flags & MSG_MORE) && err)
-		quic_outq_transmit(sk);
 err:
 	release_sock(sk);
 	return err;
@@ -1385,6 +1400,10 @@ static int quic_sock_set_config(struct sock *sk, struct quic_config *c, u32 len)
 	}
 	if (c->version)
 		config->version = c->version;
+	if (c->congestion_control_algo)
+		config->congestion_control_algo = c->congestion_control_algo;
+	if (c->stream_data_nodelay)
+		config->stream_data_nodelay = c->stream_data_nodelay;
 
 	quic_cong_set_config(quic_cong(sk), config);
 	return 0;

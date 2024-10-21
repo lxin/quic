@@ -98,6 +98,11 @@ static inline void quic_packet_set_ecn_probes(struct quic_packet *packet, u8 pro
 	packet->ecn_probes = probes;
 }
 
+static inline int quic_packet_empty(struct quic_packet *packet)
+{
+	return list_empty(&packet->frame_list);
+}
+
 static inline void quic_packet_reset(struct quic_packet *packet)
 {
 	packet->len = 0;

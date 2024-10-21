@@ -167,7 +167,7 @@ static struct quic_frame *quic_frame_stream_create(struct sock *sk, void *data, 
 	struct quic_msginfo *info = data;
 	struct quic_stream *stream;
 	struct quic_frame *frame;
-	u8 *p;
+	u8 *p, nodelay = 0;
 
 	if (quic_packet_config(sk, 0, 0))
 		return NULL;
@@ -187,6 +187,7 @@ static struct quic_frame *quic_frame_stream_create(struct sock *sk, void *data, 
 		if (info->flags & MSG_STREAM_FIN)
 			type |= QUIC_STREAM_BIT_FIN;
 	} else {
+		nodelay = 1;
 		msg_len = max_frame_len - hlen;
 	}
 
@@ -194,6 +195,7 @@ static struct quic_frame *quic_frame_stream_create(struct sock *sk, void *data, 
 	if (!frame)
 		return NULL;
 
+	frame->nodelay = nodelay;
 	p = quic_put_var(frame->data, type);
 	p = quic_put_var(p, stream->id);
 	if (type & QUIC_STREAM_BIT_OFF)

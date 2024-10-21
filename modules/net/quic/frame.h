@@ -118,6 +118,7 @@ struct quic_frame {
 	u16 len;	/* data length */
 
 	u8  path_alt:2;	/* bit 1: src, bit 2: dst */
+	u8  nodelay:1;
 
 	u32 sent_time;
 	u16 errcode;

@@ -16,6 +16,7 @@ struct quic_outqueue {
 	struct work_struct work;
 	u64 last_max_bytes;
 	u64 data_inflight;
+	u64 stream_bytes;
 	u64 max_bytes;
 	u64 window;
 	u64 bytes;
@@ -31,6 +32,7 @@ struct quic_outqueue {
 	u8 disable_1rtt_encryption:1;
 	u8 grease_quic_bit:1;
 	u8 data_blocked:1;
+	u8 force_delay:1;
 	u8 pref_addr:1;
 	u8 retry:1;
 	u8 serv:1;
@@ -162,6 +164,11 @@ static inline void quic_outq_set_pref_addr(struct quic_outqueue *outq, u8 pref_a
 static inline u8 quic_outq_pref_addr(struct quic_outqueue *outq)
 {
 	return outq->pref_addr;
+}
+
+static inline void quic_outq_set_force_delay(struct quic_outqueue *outq, u8 delay)
+{
+	outq->force_delay = !!delay;
 }
 
 static inline u32 quic_outq_data_inflight(struct quic_outqueue *outq)
