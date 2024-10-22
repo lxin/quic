@@ -1669,7 +1669,7 @@ static int quic_sock_stream_reset(struct sock *sk, struct quic_errinfo *info, u3
 	if (IS_ERR(stream))
 		return PTR_ERR(stream);
 
-	if (stream->send.state > QUIC_STREAM_SEND_STATE_SENT)
+	if (stream->send.state >= QUIC_STREAM_SEND_STATE_RECVD)
 		return -EINVAL;
 
 	frame = quic_frame_create(sk, QUIC_FRAME_RESET_STREAM, info);
@@ -1694,6 +1694,9 @@ static int quic_sock_stream_stop_sending(struct sock *sk, struct quic_errinfo *i
 	stream = quic_stream_recv_get(streams, info->stream_id, quic_is_serv(sk));
 	if (IS_ERR(stream))
 		return PTR_ERR(stream);
+
+	if (stream->recv.state >= QUIC_STREAM_RECV_STATE_RECVD)
+		return -EINVAL;
 
 	frame = quic_frame_create(sk, QUIC_FRAME_STOP_SENDING, info);
 	if (!frame)

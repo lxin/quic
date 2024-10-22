@@ -199,6 +199,18 @@ static bool quic_stream_id_send_allowed(s64 stream_id, bool is_serv)
 	return true;
 }
 
+static bool quic_stream_id_send_activated(struct quic_stream_table *streams, s64 stream_id)
+{
+	if (stream_id & QUIC_STREAM_TYPE_UNI_MASK) {
+		if ((u64)(stream_id >> 2) >= streams->send.streams_uni)
+			return false;
+	} else {
+		if ((u64)(stream_id >> 2) >= streams->send.streams_bidi)
+			return false;
+	}
+	return true;
+}
+
 struct quic_stream *quic_stream_send_get(struct quic_stream_table *streams, s64 stream_id,
 					 u32 flags, bool is_serv)
 {
@@ -214,7 +226,8 @@ struct quic_stream *quic_stream_send_get(struct quic_stream_table *streams, s64 
 		return stream;
 	}
 
-	if (!(flags & MSG_STREAM_NEW))
+	if (!(flags & MSG_STREAM_NEW) &&
+	    !quic_stream_id_send_activated(streams, stream_id))
 		return ERR_PTR(-EINVAL);
 
 	if (!quic_stream_id_send_allowed(stream_id, is_serv))
