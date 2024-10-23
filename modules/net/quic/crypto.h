@@ -65,14 +65,15 @@ struct quic_crypto {
 
 	u32 key_update_send_time;
 	u32 key_update_time;
-	u64 send_offset;
-	u64 recv_offset;
 	u32 version;
 
 	u8 key_pending:1;
 	u8 send_ready:1;
 	u8 recv_ready:1;
 	u8 key_phase:1;
+
+	u64 send_offset;
+	u64 recv_offset;
 };
 
 static inline u32 quic_crypto_cipher_type(struct quic_crypto *crypto)

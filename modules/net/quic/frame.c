@@ -1498,7 +1498,7 @@ static int quic_frame_get_conn_id(struct quic_conn_id *conn_id, u8 **pp, u32 *pl
 	if (!quic_get_var(pp, plen, &valuelen))
 		return -1;
 
-	if (*plen < valuelen || valuelen > QUIC_CONN_ID_MAX_LEN)
+	if ((u64)*plen < valuelen || valuelen > QUIC_CONN_ID_MAX_LEN)
 		return -1;
 
 	memcpy(conn_id->data, *pp, valuelen);
@@ -1517,7 +1517,7 @@ static int quic_frame_get_version_info(u32 *versions, u8 *count, u8 **pp, u32 *p
 	if (!quic_get_var(pp, plen, &valuelen))
 		return -1;
 
-	if (*plen < valuelen || valuelen > 64)
+	if ((u64)*plen < valuelen || valuelen > 64)
 		return -1;
 
 	*count = (u8)(valuelen >> 2);
@@ -1537,7 +1537,7 @@ static int quic_frame_get_address(union quic_addr *addr, struct quic_conn_id *co
 	if (!quic_get_var(pp, plen, &valuelen))
 		return -1;
 
-	if (*plen < valuelen || valuelen < 25)
+	if ((u64)*plen < valuelen || valuelen < 25)
 		return -1;
 
 	quic_get_pref_addr(sk, addr, pp, plen);
@@ -1563,12 +1563,13 @@ int quic_frame_set_transport_params_ext(struct sock *sk, struct quic_transport_p
 					u8 *data, u32 len)
 {
 	struct quic_conn_id_set *id_set = quic_dest(sk);
+	struct quic_packet *packet = quic_packet(sk);
 	struct quic_outqueue *outq = quic_outq(sk);
 	struct quic_conn_id *active, conn_id;
-	u8 *p = data, count = 0, token[16];
+	u32 versions[16] = {packet->version};
+	u8 *p = data, count = 1, token[16];
 	union quic_addr addr = {};
 	u64 type, valuelen;
-	u32 versions[16];
 
 	params->max_udp_payload_size = QUIC_MAX_UDP_PAYLOAD;
 	params->ack_delay_exponent = QUIC_DEF_ACK_DELAY_EXPONENT;
@@ -1688,7 +1689,7 @@ int quic_frame_set_transport_params_ext(struct sock *sk, struct quic_transport_p
 		case QUIC_TRANSPORT_PARAM_STATELESS_RESET_TOKEN:
 			if (quic_is_serv(sk))
 				return -1;
-			if (!quic_get_var(&p, &len, &valuelen) || len < valuelen ||
+			if (!quic_get_var(&p, &len, &valuelen) || (u64)len < valuelen ||
 			    valuelen != 16)
 				return -1;
 			quic_conn_id_set_token(active, p);
@@ -1699,7 +1700,7 @@ int quic_frame_set_transport_params_ext(struct sock *sk, struct quic_transport_p
 		case QUIC_TRANSPORT_PARAM_VERSION_INFORMATION:
 			if (quic_frame_get_version_info(versions, &count, &p, &len))
 				return -1;
-			if (!count || quic_packet_select_version(sk, versions, count))
+			if (!count || versions[0] != packet->version)
 				return -1;
 			break;
 		case QUIC_TRANSPORT_PARAM_PREFERRED_ADDRESS:
@@ -1716,16 +1717,15 @@ int quic_frame_set_transport_params_ext(struct sock *sk, struct quic_transport_p
 			break;
 		default:
 			/* Ignore unknown parameter */
-			if (!quic_get_var(&p, &len, &valuelen))
-				return -1;
-			if (len < valuelen)
+			if (!quic_get_var(&p, &len, &valuelen) || (u64)len < valuelen)
 				return -1;
 			len -= valuelen;
 			p += valuelen;
 			break;
 		}
 	}
-	return 0;
+
+	return quic_packet_select_version(sk, versions, count);
 }
 
 static u8 *quic_frame_put_conn_id(u8 *p, u16 id, struct quic_conn_id *conn_id)
@@ -1852,7 +1852,7 @@ int quic_frame_get_transport_params_ext(struct sock *sk, struct quic_transport_p
 	}
 	if (!params->disable_compatible_version) {
 		p = quic_frame_put_version_info(p, QUIC_TRANSPORT_PARAM_VERSION_INFORMATION,
-						quic_config(sk)->version);
+						quic_packet(sk)->version);
 	}
 	if (params->grease_quic_bit) {
 		p = quic_put_var(p, QUIC_TRANSPORT_PARAM_GREASE_QUIC_BIT);

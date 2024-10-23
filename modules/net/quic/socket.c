@@ -135,7 +135,7 @@ struct sock *quic_sock_lookup(struct sk_buff *skb, union quic_addr *sa, union qu
 	if (sk)
 		return sk;
 
-	if (quic_packet_parse_alpn(skb, &alpns) < 0)
+	if (quic_packet_parse_alpn(skb, &alpns))
 		return NULL;
 
 	/* Search for listen socket */
@@ -327,6 +327,7 @@ static int quic_connect(struct sock *sk, struct sockaddr *addr, int addr_len)
 	struct quic_crypto *crypto = quic_crypto(sk, QUIC_CRYPTO_INITIAL);
 	struct quic_conn_id_set *source = quic_source(sk);
 	struct quic_conn_id_set *dest = quic_dest(sk);
+	struct quic_packet *packet = quic_packet(sk);
 	struct quic_path_addr *path = quic_src(sk);
 	struct quic_outqueue *outq = quic_outq(sk);
 	struct quic_inqueue *inq = quic_inq(sk);
@@ -371,7 +372,7 @@ static int quic_connect(struct sock *sk, struct sockaddr *addr, int addr_len)
 	if (err)
 		goto free;
 	active = quic_conn_id_active(dest);
-	err = quic_crypto_initial_keys_install(crypto, active, quic_config(sk)->version, 0);
+	err = quic_crypto_initial_keys_install(crypto, active, packet->version, 0);
 	if (err)
 		goto free;
 
@@ -1098,6 +1099,7 @@ static int quic_copy_sock(struct sock *nsk, struct sock *sk, struct quic_request
 	if (sk->sk_family == AF_INET6) /* nsk uses quicv6 ops in this case */
 		inet_sk(nsk)->pinet6 = &((struct quic6_sock *)nsk)->inet6;
 
+	memcpy(quic_config(nsk), quic_config(sk), sizeof(struct quic_config));
 	quic_sock_set_transport_param(nsk, param, sizeof(*param));
 	events = quic_inq_events(inq);
 	inq = quic_inq(nsk);
@@ -1112,6 +1114,7 @@ static int quic_copy_sock(struct sock *nsk, struct sock *sk, struct quic_request
 
 static int quic_accept_sock_init(struct sock *sk, struct quic_request_sock *req)
 {
+	struct quic_crypto *crypto = quic_crypto(sk, QUIC_CRYPTO_INITIAL);
 	struct quic_outqueue *outq = quic_outq(sk);
 	struct quic_inqueue *inq = quic_inq(sk);
 	struct quic_conn_id conn_id;
@@ -1135,9 +1138,10 @@ static int quic_accept_sock_init(struct sock *sk, struct quic_request_sock *req)
 		goto out;
 
 	quic_outq_set_serv(outq);
-	err = quic_packet_version_change(sk, &req->dcid, req->version);
+	err = quic_crypto_initial_keys_install(crypto, &req->dcid, req->version, 1);
 	if (err)
 		goto out;
+	quic_packet(sk)->version = req->version;
 
 	err = sk->sk_prot->hash(sk);
 	if (err)
@@ -1366,6 +1370,7 @@ static int quic_sock_set_session_ticket(struct sock *sk, u8 *data, u32 len)
 static int quic_sock_set_config(struct sock *sk, struct quic_config *c, u32 len)
 {
 	struct quic_config *config = quic_config(sk);
+	struct quic_packet *packet = quic_packet(sk);
 
 	if (len < sizeof(*config) || quic_is_established(sk))
 		return -EINVAL;
@@ -1398,8 +1403,10 @@ static int quic_sock_set_config(struct sock *sk, struct quic_config *c, u32 len)
 			return -EINVAL;
 		config->payload_cipher_type = c->payload_cipher_type;
 	}
-	if (c->version)
+	if (c->version) {
 		config->version = c->version;
+		packet->version = c->version;
+	}
 	if (c->congestion_control_algo)
 		config->congestion_control_algo = c->congestion_control_algo;
 	if (c->stream_data_nodelay)
@@ -1433,6 +1440,7 @@ static int quic_sock_set_transport_params_ext(struct sock *sk, u8 *p, u32 len)
 static int quic_sock_set_crypto_secret(struct sock *sk, struct quic_crypto_secret *secret, u32 len)
 {
 	struct quic_conn_id_set *id_set = quic_source(sk);
+	struct quic_packet *packet = quic_packet(sk);
 	struct quic_path_addr *path = quic_src(sk);
 	struct quic_outqueue *outq = quic_outq(sk);
 	struct quic_inqueue *inq = quic_inq(sk);
@@ -1455,7 +1463,7 @@ static int quic_sock_set_crypto_secret(struct sock *sk, struct quic_crypto_secre
 		return -EINVAL;
 
 	crypto = quic_crypto(sk, secret->level);
-	err = quic_crypto_set_secret(crypto, secret, c->version, 0);
+	err = quic_crypto_set_secret(crypto, secret, packet->version, 0);
 	if (err)
 		return err;
 

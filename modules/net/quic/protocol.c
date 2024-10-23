@@ -435,7 +435,7 @@ static int quic_inet_listen(struct socket *sock, int backlog)
 	struct quic_conn_id conn_id, *active;
 	struct quic_path_addr *path;
 	struct quic_crypto *crypto;
-	struct quic_outqueue *outq;
+	struct quic_packet *packet;
 	struct sock *sk = sock->sk;
 	union quic_addr *sa;
 	int err = 0;
@@ -443,6 +443,7 @@ static int quic_inet_listen(struct socket *sock, int backlog)
 	lock_sock(sk);
 
 	crypto = quic_crypto(sk, QUIC_CRYPTO_INITIAL);
+	packet = quic_packet(sk);
 	source = quic_source(sk);
 	dest = quic_dest(sk);
 
@@ -476,10 +477,9 @@ static int quic_inet_listen(struct socket *sock, int backlog)
 	if (err)
 		goto free;
 	active = quic_conn_id_active(dest);
-	outq = quic_outq(sk);
-	quic_outq_set_serv(outq);
+	quic_outq_set_serv(quic_outq(sk));
 
-	err = quic_crypto_initial_keys_install(crypto, active, quic_config(sk)->version, 1);
+	err = quic_crypto_initial_keys_install(crypto, active, packet->version, 1);
 	if (err)
 		goto free;
 	quic_set_state(sk, QUIC_SS_LISTENING);

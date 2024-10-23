@@ -746,7 +746,7 @@ void quic_crypto_destroy(struct quic_crypto *crypto)
 	if (crypto->tx_hp_tfm)
 		crypto_free_skcipher(crypto->tx_hp_tfm);
 
-	memset(crypto, 0, sizeof(*crypto));
+	memset(crypto, 0, offsetof(struct quic_crypto, send_offset));
 }
 EXPORT_SYMBOL_GPL(quic_crypto_destroy);
 

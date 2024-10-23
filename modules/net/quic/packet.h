@@ -124,7 +124,6 @@ void quic_packet_mss_update(struct sock *sk, u32 mss);
 void quic_packet_create(struct sock *sk);
 void quic_packet_init(struct sock *sk);
 
-int quic_packet_version_change(struct sock *sk, struct quic_conn_id *conn_id, u32 version);
 int quic_packet_select_version(struct sock *sk, u32 *versions, u8 count);
 int quic_packet_parse_alpn(struct sk_buff *skb, struct quic_data *alpn);
 u32 *quic_packet_compatible_versions(u32 version);
