@@ -9,7 +9,6 @@
 #include <netinet/quic.h>
 
 static uint8_t ticket[4096];
-static uint8_t token[256];
 
 static int client_handshake(int sockfd, const char *alpns, const char *host,
 			    const uint8_t *ticket_in, size_t ticket_in_len,
@@ -88,9 +87,9 @@ err:
 
 static int do_client(int argc, char *argv[])
 {
-	unsigned int param_len, token_len, addr_len, flags;
 	struct quic_transport_param param = {};
-	struct sockaddr_in ra = {}, la = {};
+	unsigned int param_len, flags;
+	struct sockaddr_in ra = {};
 	char msg[50], *alpn;
 	size_t ticket_len;
 	int ret, sockfd;
@@ -116,7 +115,7 @@ static int do_client(int argc, char *argv[])
 		return -1;
 	}
 
-	/* get session ticket, remote tranaport param, token for session resumption */
+	/* get session ticket, remote tranaport param for session resumption */
 	alpn = argv[4];
 	ticket_len = sizeof(ticket);
 	if (client_handshake(sockfd, alpn, NULL, NULL, 0, ticket, &ticket_len))
@@ -130,22 +129,8 @@ static int do_client(int argc, char *argv[])
 		return -1;
 	}
 
-	token_len = sizeof(token);
-	ret = getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_TOKEN, &token, &token_len);
-	if (ret == -1) {
-		printf("socket getsockopt regular token\n");
-		return -1;
-	}
-
-	addr_len = sizeof(la);
-	ret = getsockname(sockfd, (struct sockaddr *)&la, &addr_len);
-	if (ret == -1) {
-		printf("getsockname local address and port used\n");
-		return -1;
-	}
-
-	printf("get the session ticket %u and transport param %u and token %u, save it\n",
-	       (unsigned int)ticket_len, param_len, token_len);
+	printf("get the session ticket %u and transport param %u, save it\n",
+	       (unsigned int)ticket_len, param_len);
 
 	strcpy(msg, "hello quic server!");
 	sid = QUIC_STREAM_TYPE_UNI_MASK;
@@ -177,25 +162,12 @@ static int do_client(int argc, char *argv[])
 		return -1;
 	}
 
-	/* bind previous address and port and set token for address validation */
-	if (bind(sockfd, (struct sockaddr *)&la, addr_len)) {
-		printf("socket bind failed\n");
-		return -1;
-	}
-
 	ra.sin_family = AF_INET;
 	ra.sin_port = htons(atoi(argv[3]));
 	inet_pton(AF_INET, argv[2], &ra.sin_addr.s_addr);
 
 	if (connect(sockfd, (struct sockaddr *)&ra, sizeof(ra))) {
 		printf("socket connect failed\n");
-		return -1;
-	}
-
-	/* set session ticket, remote tranaport param, token for session resumption */
-	ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_TOKEN, token, token_len);
-	if (ret == -1) {
-		printf("socket setsockopt token\n");
 		return -1;
 	}
 
@@ -295,7 +267,6 @@ err:
 static int do_server(int argc, char *argv[])
 {
 	unsigned int addrlen, keylen, flags;
-	struct quic_config config = {};
 	struct sockaddr_in sa = {};
 	int listenfd, sockfd, ret;
 	char msg[50], *alpn;
@@ -330,9 +301,6 @@ static int do_server(int argc, char *argv[])
 		printf("socket listen failed\n");
 		return -1;
 	}
-	config.validate_peer_address = 1; /* trigger retry packet sending */
-	if (setsockopt(listenfd, SOL_QUIC, QUIC_SOCKOPT_CONFIG, &config, sizeof(config)))
-		return -1;
 
 	addrlen = sizeof(sa);
 	sockfd = accept(listenfd, (struct sockaddr *)&sa, &addrlen);

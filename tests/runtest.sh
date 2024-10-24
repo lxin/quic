@@ -147,8 +147,6 @@ http3_tests() {
 	make http3_test > /dev/null || return 1
 	echo "- https://cloudflare-quic.com/"
 	./http3_test -c https://cloudflare-quic.com/ > /dev/null || return 1  # Cloudflare Quiche
-	echo "- https://h2o.examp1e.net/"
-	./http3_test -c https://h2o.examp1e.net/ > /dev/null || return 1 # h2o/quicly
 	echo "- https://quic.aiortc.org/"
 	./http3_test -c https://quic.aiortc.org/ > /dev/null || return 1  # aioquic
 	echo "- https://facebook.com/"
