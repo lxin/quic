@@ -644,7 +644,9 @@ static struct ctl_table quic_table[] = {
 		.proc_handler	= proc_dointvec,
 	},
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 	{ /* sentinel */ }
+#endif
 };
 
 static unsigned int quic_net_id __read_mostly;
