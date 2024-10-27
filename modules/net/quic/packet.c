@@ -736,6 +736,8 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb)
 		if (err)
 			goto err;
 		skb_pull(skb, cb->number_offset + cb->length);
+
+		quic_pnspace_inc_ecn_count(space, quic_get_msg_ecn(sk, skb));
 		if (packet->ack_eliciting) {
 			if (!quic_is_serv(sk) && packet->level == QUIC_CRYPTO_INITIAL) {
 				active = quic_conn_id_active(quic_dest(sk));
