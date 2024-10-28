@@ -1451,7 +1451,7 @@ static int quic_sock_set_crypto_secret(struct sock *sk, struct quic_crypto_secre
 	struct sk_buff_head tmpq;
 	u32 window, mss, seqno;
 	struct sk_buff *skb;
-	u64 prior = 1;
+	u64 prior = 0;
 	int err;
 
 	if (len != sizeof(*secret))
@@ -1544,7 +1544,7 @@ static int quic_sock_set_crypto_secret(struct sock *sk, struct quic_crypto_secre
 	/* app send key is ready */
 	quic_outq_set_data_level(outq, QUIC_CRYPTO_APP);
 	seqno = quic_conn_id_last_number(id_set) + 1;
-	for (; seqno <= quic_conn_id_max_count(id_set); seqno++) {
+	for (; seqno <= quic_conn_id_max_count(id_set) + prior - 1; seqno++) {
 		frame = quic_frame_create(sk, QUIC_FRAME_NEW_CONNECTION_ID, &prior);
 		if (!frame) {
 			while (seqno)
