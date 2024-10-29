@@ -18,6 +18,7 @@
 
 #define QUIC_PNSPACE_MAX	(QUIC_CRYPTO_MAX - 1)
 #define QUIC_PNSPACE_NEXT_PN	0
+#define QUIC_PNSPACE_TIME_LIMIT	(333000 * 3)
 
 struct quic_gap_ack_block {
 	u16 start;

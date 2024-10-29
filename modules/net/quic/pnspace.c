@@ -51,7 +51,7 @@ int quic_pnspace_init(struct quic_pnspace *space)
 		bitmap_zero(space->pn_map, space->pn_map_len);
 	}
 
-	/* set it to a large value so that the 1st packet can update it */
+	space->max_time_limit = QUIC_PNSPACE_TIME_LIMIT;
 	space->next_pn = QUIC_PNSPACE_NEXT_PN;
 	space->base_pn = -1;
 	return 0;
