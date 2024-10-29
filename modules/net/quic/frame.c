@@ -777,8 +777,6 @@ static int quic_frame_ack_process(struct sock *sk, struct quic_frame *frame, u8 
 		}
 	}
 
-	quic_outq_retransmit_mark(sk, level, 0);
-
 	return (int)(frame->len - len);
 }
 
@@ -1467,6 +1465,8 @@ int quic_frame_process(struct sock *sk, struct quic_frame *frame)
 		}
 		if (quic_frame_non_probing(type))
 			packet->non_probing = 1;
+		if (quic_frame_sack(type))
+			packet->has_sack = 1;
 
 		frame->data += ret;
 		frame->len -= ret;
