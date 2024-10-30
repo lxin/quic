@@ -1190,17 +1190,19 @@ static u8 *quic_packet_pack_frames(struct sock *sk, struct sk_buff *skb, s64 num
 static struct sk_buff *quic_packet_handshake_create(struct sock *sk)
 {
 	struct quic_packet *packet = quic_packet(sk);
-	u8 *p, type, level = packet->level;
+	u8 type, fixed = 1, level = packet->level;
 	u32 version, len, hlen, plen = 0;
 	struct quic_conn_id_set *id_set;
 	struct quic_conn_id *active;
 	struct quichshdr *hdr;
 	struct sk_buff *skb;
 	s64 number;
+	u8 *p;
 
 	type = QUIC_PACKET_INITIAL;
 	if (level == QUIC_CRYPTO_HANDSHAKE) {
 		type = QUIC_PACKET_HANDSHAKE;
+		fixed = !quic_outq_grease_quic_bit(quic_outq(sk));
 	} else if (level == QUIC_CRYPTO_EARLY) {
 		type = QUIC_PACKET_0RTT;
 		level = QUIC_CRYPTO_APP; /* space level */
@@ -1226,7 +1228,7 @@ static struct sk_buff *quic_packet_handshake_create(struct sock *sk)
 	number = quic_pnspace_inc_next_pn(quic_pnspace(sk, level));
 	hdr = skb_push(skb, len);
 	hdr->form = 1;
-	hdr->fixed = !quic_outq_grease_quic_bit(quic_outq(sk));
+	hdr->fixed = fixed;
 	hdr->type = quic_packet_version_put_type(version, type);
 	hdr->reserved = 0;
 	hdr->pnl = QUIC_PACKET_NUMBER_LEN - 1;
