@@ -209,8 +209,8 @@ void quic_outq_stream_tail(struct sock *sk, struct quic_frame *frame, bool cork)
 
 	if (frame->type & QUIC_STREAM_BIT_FIN &&
 	    stream->send.state == QUIC_STREAM_SEND_STATE_SEND) {
-		if (quic_stream_send_active(streams) == stream->id)
-			quic_stream_set_send_active(streams, -1);
+		if (quic_stream_send_active_id(streams) == stream->id)
+			quic_stream_set_send_active_id(streams, -1);
 		stream->send.state = QUIC_STREAM_SEND_STATE_SENT;
 	}
 
@@ -340,6 +340,7 @@ void quic_outq_transmit_app_close(struct sock *sk)
 void quic_outq_transmitted_sack(struct sock *sk, u8 level, s64 largest, s64 smallest,
 				s64 ack_largest, u32 ack_delay)
 {
+	struct quic_stream_table *streams = quic_streams(sk);
 	struct quic_pnspace *space = quic_pnspace(sk, level);
 	struct quic_crypto *crypto = quic_crypto(sk, level);
 	u32 pathmtu, rto, acked = 0, bytes = 0, pbytes = 0;
@@ -383,6 +384,8 @@ void quic_outq_transmitted_sack(struct sock *sk, u8 level, s64 largest, s64 smal
 					continue;
 				}
 				stream->send.state = update.state;
+				quic_stream_send_put(streams, stream, quic_is_serv(sk));
+				sk->sk_write_space(sk);
 			}
 			if (!quic_frame_is_crypto(frame->type))
 				pbytes += frame->bytes;
@@ -393,6 +396,8 @@ void quic_outq_transmitted_sack(struct sock *sk, u8 level, s64 largest, s64 smal
 			if (quic_inq_event_recv(sk, QUIC_EVENT_STREAM_UPDATE, &update))
 				continue;
 			stream->send.state = update.state;
+			quic_stream_send_put(streams, stream, quic_is_serv(sk));
+			sk->sk_write_space(sk);
 		} else if (frame->type == QUIC_FRAME_STREAM_DATA_BLOCKED) {
 			stream->send.data_blocked = 0;
 		} else if (frame->type == QUIC_FRAME_DATA_BLOCKED) {

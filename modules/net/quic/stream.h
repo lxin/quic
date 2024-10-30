@@ -14,7 +14,12 @@
 #define QUIC_STREAM_BIT_MASK	0x08
 
 #define QUIC_DEF_STREAMS	100
-#define QUIC_MAX_STREAMS	BIT_ULL(60)
+#define QUIC_MAX_STREAMS	4096ULL
+
+#define QUIC_STREAM_TYPE_CLIENT_BIDI	0x00
+#define QUIC_STREAM_TYPE_SERVER_BIDI	0x01
+#define QUIC_STREAM_TYPE_CLIENT_UNI	0x02
+#define QUIC_STREAM_TYPE_SERVER_UNI	0x03
 
 struct quic_stream {
 	struct hlist_node node;
@@ -31,6 +36,7 @@ struct quic_stream {
 		u8 state;
 
 		u8 data_blocked;
+		u8 done:1;
 	} send;
 	struct {
 		u64 max_bytes;
@@ -42,6 +48,7 @@ struct quic_stream {
 
 		u32 frags;
 		u8 state;
+		u8 done:1;
 	} recv;
 };
 
@@ -54,9 +61,14 @@ struct quic_stream_table {
 		u64 max_stream_data_uni;
 		u64 max_streams_bidi;
 		u64 max_streams_uni;
-		s64 stream_active;
 		u64 streams_bidi;
 		u64 streams_uni;
+
+		s64 next_bidi_stream_id;
+		s64 next_uni_stream_id;
+		s64 max_bidi_stream_id;
+		s64 max_uni_stream_id;
+		s64 active_stream_id;
 	} send;
 	struct {
 		u64 max_stream_data_bidi_remote;
@@ -64,17 +76,56 @@ struct quic_stream_table {
 		u64 max_stream_data_uni;
 		u64 max_streams_bidi;
 		u64 max_streams_uni;
+		u64 streams_bidi;
+		u64 streams_uni;
+
+		s64 next_bidi_stream_id;
+		s64 next_uni_stream_id;
+		s64 max_bidi_stream_id;
+		s64 max_uni_stream_id;
+		u8 bidi_pending:1;
+		u8 uni_pending:1;
 	} recv;
 };
 
-static inline s64 quic_stream_send_active(struct quic_stream_table *streams)
+static inline s64 quic_stream_send_next_bidi_id(struct quic_stream_table *streams)
 {
-	return streams->send.stream_active;
+	return streams->send.next_bidi_stream_id;
 }
 
-static inline void quic_stream_set_send_active(struct quic_stream_table *streams, s64 active)
+static inline s64 quic_stream_send_next_uni_id(struct quic_stream_table *streams)
 {
-	streams->send.stream_active = active;
+	return streams->send.next_uni_stream_id;
+}
+
+static inline s64 quic_stream_send_active_id(struct quic_stream_table *streams)
+{
+	return streams->send.active_stream_id;
+}
+
+static inline void quic_stream_set_send_active_id(struct quic_stream_table *streams, s64 active)
+{
+	streams->send.active_stream_id = active;
+}
+
+static inline s64 quic_stream_send_max_bidi_id(struct quic_stream_table *streams)
+{
+	return streams->send.max_bidi_stream_id;
+}
+
+static inline void quic_stream_set_send_max_bidi_id(struct quic_stream_table *streams, s64 max)
+{
+	streams->send.max_bidi_stream_id = max;
+}
+
+static inline s64 quic_stream_send_max_uni_id(struct quic_stream_table *streams)
+{
+	return streams->send.max_uni_stream_id;
+}
+
+static inline void quic_stream_set_send_max_uni_id(struct quic_stream_table *streams, s64 max)
+{
+	streams->send.max_uni_stream_id = max;
 }
 
 static inline u64 quic_stream_send_max_bidi(struct quic_stream_table *streams)
@@ -102,6 +153,26 @@ static inline u64 quic_stream_send_bidi(struct quic_stream_table *streams)
 	return streams->send.streams_bidi;
 }
 
+static inline s64 quic_stream_recv_max_bidi_id(struct quic_stream_table *streams)
+{
+	return streams->recv.max_bidi_stream_id;
+}
+
+static inline void quic_stream_set_recv_max_bidi_id(struct quic_stream_table *streams, s64 max)
+{
+	streams->recv.max_bidi_stream_id = max;
+}
+
+static inline s64 quic_stream_recv_max_uni_id(struct quic_stream_table *streams)
+{
+	return streams->send.max_uni_stream_id;
+}
+
+static inline void quic_stream_set_recv_max_uni_id(struct quic_stream_table *streams, s64 max)
+{
+	streams->recv.max_uni_stream_id = max;
+}
+
 static inline u64 quic_stream_send_uni(struct quic_stream_table *streams)
 {
 	return streams->send.streams_uni;
@@ -127,14 +198,31 @@ static inline void quic_stream_set_recv_max_bidi(struct quic_stream_table *strea
 	streams->recv.max_streams_bidi = max;
 }
 
+static inline u64 quic_stream_id_to_streams(s64 stream_id)
+{
+	return (u64)(stream_id >> 2) + 1;
+}
+
+static inline s64 quic_stream_streams_to_id(u64 streams, u8 type)
+{
+	return (s64)((streams - 1) << 2) | type;
+}
+
 struct quic_stream *quic_stream_send_get(struct quic_stream_table *streams, s64 stream_id,
 					 u32 flags, bool is_serv);
 struct quic_stream *quic_stream_recv_get(struct quic_stream_table *streams, s64 stream_id,
 					 bool is_serv);
+void quic_stream_send_put(struct quic_stream_table *streams, struct quic_stream *stream,
+			  bool is_serv);
+void quic_stream_recv_put(struct quic_stream_table *streams, struct quic_stream *stream,
+			  bool is_serv);
+
+bool quic_stream_max_streams_update(struct quic_stream_table *streams, s64 *max_uni, s64 *max_bidi);
 struct quic_stream *quic_stream_find(struct quic_stream_table *streams, s64 stream_id);
+bool quic_stream_id_send_overflow(struct quic_stream_table *streams, s64 stream_id);
 bool quic_stream_id_send_exceeds(struct quic_stream_table *streams, s64 stream_id);
 
 void quic_stream_set_param(struct quic_stream_table *streams, struct quic_transport_param *local,
-			   struct quic_transport_param *remote);
+			   struct quic_transport_param *remote, bool is_serv);
 void quic_stream_free(struct quic_stream_table *streams);
 int quic_stream_init(struct quic_stream_table *streams);

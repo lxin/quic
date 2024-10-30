@@ -169,6 +169,7 @@ static void quic_inq_stream_tail(struct sock *sk, struct quic_stream *stream,
 		quic_inq_set_owner_r((int)frame->len, sk);
 		frame->offset += overlap;
 	}
+	stream->recv.offset += frame->len;
 
 	if (frame->stream_fin) {
 		update.id = stream->id;
@@ -176,8 +177,8 @@ static void quic_inq_stream_tail(struct sock *sk, struct quic_stream *stream,
 		update.finalsz = frame->offset + frame->len;
 		quic_inq_event_recv(sk, QUIC_EVENT_STREAM_UPDATE, &update);
 		stream->recv.state = update.state;
+		quic_stream_recv_put(quic_streams(sk), stream, quic_is_serv(sk));
 	}
-	stream->recv.offset += frame->len;
 
 	frame->offset = 0;
 	if (frame->level) {
@@ -477,7 +478,6 @@ void quic_inq_set_param(struct sock *sk, struct quic_transport_param *p)
 int quic_inq_event_recv(struct sock *sk, u8 event, void *args)
 {
 	struct list_head *head = &quic_inq(sk)->recv_list;
-	struct quic_stream *stream = NULL;
 	struct quic_frame *frame, *pos;
 	u32 args_len = 0;
 	u8 *p;
@@ -490,10 +490,6 @@ int quic_inq_event_recv(struct sock *sk, u8 event, void *args)
 
 	switch (event) {
 	case QUIC_EVENT_STREAM_UPDATE:
-		stream = quic_stream_find(quic_streams(sk),
-					  ((struct quic_stream_update *)args)->id);
-		if (!stream)
-			return -EINVAL;
 		args_len = sizeof(struct quic_stream_update);
 		break;
 	case QUIC_EVENT_STREAM_MAX_STREAM:
@@ -528,7 +524,6 @@ int quic_inq_event_recv(struct sock *sk, u8 event, void *args)
 	quic_put_data(p, args, args_len);
 
 	frame->event = event;
-	frame->stream = stream;
 
 	/* always put event ahead of data */
 	list_for_each_entry(pos, head, list) {

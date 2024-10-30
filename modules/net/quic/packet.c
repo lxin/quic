@@ -781,9 +781,11 @@ static int quic_packet_app_process_done(struct sock *sk, struct sk_buff *skb)
 {
 	struct quic_pnspace *space = quic_pnspace(sk, QUIC_CRYPTO_APP);
 	struct quic_crypto *crypto = quic_crypto(sk, QUIC_CRYPTO_APP);
+	struct quic_stream_table *streams = quic_streams(sk);
 	struct quic_crypto_cb *cb = QUIC_CRYPTO_CB(skb);
 	struct quic_packet *packet = quic_packet(sk);
 	struct quic_inqueue *inq = quic_inq(sk);
+	s64 max_bidi = 0, max_uni = 0;
 	struct quic_frame *frame;
 	u8 key_phase, level = 0;
 
@@ -811,6 +813,19 @@ static int quic_packet_app_process_done(struct sock *sk, struct sk_buff *skb)
 
 	if (packet->has_sack)
 		quic_outq_retransmit_mark(sk, 0, 0);
+
+	if (quic_stream_max_streams_update(streams, &max_uni, &max_bidi)) {
+		if (max_uni) {
+			frame = quic_frame_create(sk, QUIC_FRAME_MAX_STREAMS_UNI, &max_uni);
+			if (frame)
+				quic_outq_ctrl_tail(sk, frame, true);
+		}
+		if (max_bidi) {
+			frame = quic_frame_create(sk, QUIC_FRAME_MAX_STREAMS_BIDI, &max_bidi);
+			if (frame)
+				quic_outq_ctrl_tail(sk, frame, true);
+		}
+	}
 
 	if (!packet->ack_eliciting)
 		goto out;

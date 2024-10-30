@@ -211,7 +211,7 @@ static void quic_transport_param_init(struct sock *sk)
 	quic_inq_set_param(sk, param);
 	quic_cong_set_param(quic_cong(sk), param);
 	quic_conn_id_set_param(quic_dest(sk), param);
-	quic_stream_set_param(quic_streams(sk), param, NULL);
+	quic_stream_set_param(quic_streams(sk), param, NULL, quic_is_serv(sk));
 }
 
 static void quic_config_init(struct sock *sk)
@@ -535,22 +535,21 @@ static int quic_msghdr_parse(struct sock *sk, struct msghdr *msg, struct quic_ha
 		return 0;
 
 	streams = quic_streams(sk);
-	active = quic_stream_send_active(streams);
+	active = quic_stream_send_active_id(streams);
 	if (active != -1) {
 		sinfo->stream_id = active;
 		return 0;
 	}
-	sinfo->stream_id = (s64)(quic_stream_send_bidi(streams) << 2);
-	if (sinfo->stream_flags & MSG_STREAM_UNI) {
-		sinfo->stream_id = (s64)(quic_stream_send_uni(streams) << 2);
-		sinfo->stream_id |= QUIC_STREAM_TYPE_UNI_MASK;
-	}
-	sinfo->stream_id |= quic_is_serv(sk);
+	sinfo->stream_id = quic_stream_send_next_bidi_id(streams);
+	if (sinfo->stream_flags & MSG_STREAM_UNI)
+		sinfo->stream_id = quic_stream_send_next_uni_id(streams);
 	return 0;
 }
 
 static int quic_wait_for_send(struct sock *sk, s64 stream_id, long timeo, u32 msg_len)
 {
+	struct quic_stream_table *streams = quic_streams(sk);
+
 	for (;;) {
 		int err = 0, exit = 1;
 		DEFINE_WAIT(wait);
@@ -576,7 +575,8 @@ static int quic_wait_for_send(struct sock *sk, s64 stream_id, long timeo, u32 ms
 		}
 
 		if (stream_id) {
-			if (!quic_stream_id_send_exceeds(quic_streams(sk), stream_id))
+			if (!quic_stream_id_send_exceeds(streams, stream_id) &&
+			    !quic_stream_id_send_overflow(streams, stream_id))
 				goto out;
 		} else {
 			if ((int)msg_len <= sk_stream_wspace(sk) &&
@@ -619,13 +619,16 @@ static struct quic_stream *quic_sock_send_stream(struct sock *sk, struct quic_st
 	if (!quic_crypto_send_ready(crypto))
 		return ERR_PTR(-EINVAL);
 
-	if (sinfo->stream_id & QUIC_STREAM_TYPE_UNI_MASK)
-		type = QUIC_FRAME_STREAMS_BLOCKED_UNI;
+	if ((sinfo->stream_flags & MSG_STREAM_SNDBLOCK) &&
+	    quic_stream_id_send_exceeds(streams, sinfo->stream_id)) {
+		if (sinfo->stream_id & QUIC_STREAM_TYPE_UNI_MASK)
+			type = QUIC_FRAME_STREAMS_BLOCKED_UNI;
 
-	frame = quic_frame_create(sk, type, &sinfo->stream_id);
-	if (!frame)
-		return ERR_PTR(-ENOMEM);
-	quic_outq_ctrl_tail(sk, frame, false);
+		frame = quic_frame_create(sk, type, &sinfo->stream_id);
+		if (!frame)
+			return ERR_PTR(-ENOMEM);
+		quic_outq_ctrl_tail(sk, frame, false);
+	}
 
 	timeo = sock_sndtimeo(sk, sinfo->stream_flags & MSG_STREAM_DONTWAIT);
 	err = quic_wait_for_send(sk, sinfo->stream_id, timeo, 0);
@@ -873,9 +876,6 @@ static int quic_recvmsg(struct sock *sk, struct msghdr *msg, size_t len, int non
 		if (event) {
 			if (frame == quic_inq_last_event(inq))
 				quic_inq_set_last_event(inq, NULL); /* no more event on list */
-			if (event == QUIC_EVENT_STREAM_UPDATE &&
-			    stream->recv.state == QUIC_STREAM_RECV_STATE_RESET_RECVD)
-				stream->recv.state = QUIC_STREAM_RECV_STATE_RESET_READ;
 			list_del(&frame->list);
 			quic_frame_free(frame);
 			break;
@@ -900,13 +900,15 @@ static int quic_recvmsg(struct sock *sk, struct msghdr *msg, size_t len, int non
 			break;
 	};
 
-	if (!event && stream) {
+	if (stream) {
 		sinfo.stream_id = stream->id;
 		put_cmsg(msg, IPPROTO_QUIC, QUIC_STREAM_INFO, sizeof(sinfo), &sinfo);
 		if (msg->msg_flags & MSG_CTRUNC)
 			msg->msg_flags |= sinfo.stream_flags;
 
 		quic_inq_flow_control(sk, stream, freed);
+		if (stream->recv.state == QUIC_STREAM_RECV_STATE_READ)
+			quic_stream_recv_put(quic_streams(sk), stream, quic_is_serv(sk));
 	}
 
 	quic_inq_rfree((int)bytes, sk);
@@ -1010,13 +1012,19 @@ static int quic_param_check_and_copy(struct quic_transport_param *p,
 		param->max_stream_data_uni = p->max_stream_data_uni;
 	}
 	if (p->max_streams_bidi) {
-		if (p->max_streams_bidi > QUIC_MAX_STREAMS)
-			return -EINVAL;
+		if (p->max_streams_bidi > QUIC_MAX_STREAMS) {
+			if (!p->remote)
+				return -EINVAL;
+			p->max_streams_bidi = QUIC_MAX_STREAMS;
+		}
 		param->max_streams_bidi = p->max_streams_bidi;
 	}
 	if (p->max_streams_uni) {
-		if (p->max_streams_uni > QUIC_MAX_STREAMS)
-			return -EINVAL;
+		if (p->max_streams_uni > QUIC_MAX_STREAMS) {
+			if (!p->remote)
+				return -EINVAL;
+			p->max_streams_uni = QUIC_MAX_STREAMS;
+		}
 		param->max_streams_uni = p->max_streams_uni;
 	}
 	if (p->disable_active_migration)
@@ -1050,14 +1058,14 @@ static int quic_sock_set_transport_param(struct sock *sk, struct quic_transport_
 		param->remote = 1;
 		quic_outq_set_param(sk, param);
 		quic_conn_id_set_param(quic_source(sk), param);
-		quic_stream_set_param(quic_streams(sk), NULL, param);
+		quic_stream_set_param(quic_streams(sk), NULL, param, quic_is_serv(sk));
 		return 0;
 	}
 
 	quic_inq_set_param(sk, param);
 	quic_cong_set_param(quic_cong(sk), param);
 	quic_conn_id_set_param(quic_dest(sk), param);
-	quic_stream_set_param(quic_streams(sk), param, NULL);
+	quic_stream_set_param(quic_streams(sk), param, NULL, quic_is_serv(sk));
 	return 0;
 }
 
@@ -1137,7 +1145,6 @@ static int quic_accept_sock_init(struct sock *sk, struct quic_request_sock *req)
 	if (err)
 		goto out;
 
-	quic_outq_set_serv(outq);
 	err = quic_crypto_initial_keys_install(crypto, &req->dcid, req->version, 1);
 	if (err)
 		goto out;
@@ -1200,6 +1207,9 @@ static struct sock *quic_accept(struct sock *sk, int flags, int *errp, bool kern
 		goto out;
 	}
 	sock_init_data(NULL, nsk);
+
+	quic_outq_set_serv(quic_outq(nsk));
+
 	err = nsk->sk_prot->init(nsk);
 	if (err)
 		goto free;
@@ -1433,7 +1443,7 @@ static int quic_sock_set_transport_params_ext(struct sock *sk, u8 *p, u32 len)
 	param->remote = 1;
 	quic_outq_set_param(sk, param);
 	quic_conn_id_set_param(quic_source(sk), param);
-	quic_stream_set_param(quic_streams(sk), NULL, param);
+	quic_stream_set_param(quic_streams(sk), NULL, param, quic_is_serv(sk));
 	return 0;
 }
 
@@ -2006,12 +2016,9 @@ static int quic_sock_stream_open(struct sock *sk, u32 len, sockptr_t optval, soc
 		return -EINVAL;
 
 	if (sinfo.stream_id == -1) {
-		sinfo.stream_id = (s64)(quic_stream_send_bidi(streams) << 2);
-		if (sinfo.stream_flags & MSG_STREAM_UNI) {
-			sinfo.stream_id = (s64)(quic_stream_send_uni(streams) << 2);
-			sinfo.stream_id |= QUIC_STREAM_TYPE_UNI_MASK;
-		}
-		sinfo.stream_id |= quic_is_serv(sk);
+		sinfo.stream_id = quic_stream_send_next_bidi_id(streams);
+		if (sinfo.stream_flags & MSG_STREAM_UNI)
+			sinfo.stream_id = quic_stream_send_next_uni_id(streams);
 	}
 	sinfo.stream_flags |= MSG_STREAM_NEW;
 

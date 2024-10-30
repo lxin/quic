@@ -40,6 +40,7 @@ enum quic_msg_flags {
 	MSG_STREAM_FIN		= 0x200,
 	MSG_STREAM_UNI		= 0x800,
 	MSG_STREAM_DONTWAIT	= 0x10000,
+	MSG_STREAM_SNDBLOCK	= 0x20000,
 
 	/* extented flags for msg_flags */
 	MSG_DATAGRAM		= 0x10,
