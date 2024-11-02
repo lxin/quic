@@ -17,7 +17,6 @@ static int do_client_notification_test(int sockfd)
 	struct quic_errinfo errinfo = {};
 	struct quic_event_option event;
 	struct sockaddr_in addr = {};
-	struct quic_stream_info info;
 	unsigned int optlen, flags;
 	union quic_event *ev;
 	int ret, port;
@@ -79,7 +78,7 @@ static int do_client_notification_test(int sockfd)
 
 	memset(msg, 0, sizeof(msg));
 	ret = quic_recvmsg(sockfd, msg, sizeof(msg), &sid, &flags);
-	if (ret == -1) {
+	if (ret == -1) { /* max_bidi_stream_id: 484 */
 		printf("recv error %d\n", errno);
 		return -1;
 	}
@@ -107,7 +106,7 @@ static int do_client_notification_test(int sockfd)
 	}
 	memset(msg, 0, sizeof(msg));
 	ret = quic_recvmsg(sockfd, msg, sizeof(msg), &sid, &flags);
-	if (ret == -1) {
+	if (ret == -1) { /* max_uni_stream_id: 450 */
 		printf("recv error %d\n", errno);
 		return -1;
 	}
@@ -176,7 +175,7 @@ static int do_client_notification_test(int sockfd)
 	}
 	memset(msg, 0, sizeof(msg));
 	ret = quic_recvmsg(sockfd, msg, sizeof(msg), &sid, &flags);
-	if (ret == -1) {
+	if (ret == -1) { /* max_uni_stream_id: 454 */
 		printf("recv error %d\n", errno);
 		return -1;
 	}
@@ -246,18 +245,19 @@ static int do_client_notification_test(int sockfd)
 	}
 	printf("test12: PASS (enable max stream event)\n");
 
-	optlen = sizeof(info);
-	info.stream_flags = MSG_STREAM_DONTWAIT;
-	info.stream_id = 600;
-	ret = getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_STREAM_OPEN, &info, &optlen); /* stream_id: 600 */
-	if (ret != -1 || errno != EAGAIN) {
-		printf("test13: FAIL ret %d, error %d\n", ret, errno);
+
+	flags = MSG_STREAM_FIN;
+	sid  = 200;
+	strcpy(msg, "quic test13");
+	ret = quic_sendmsg(sockfd, msg, strlen(msg), sid, flags);
+	if (ret == -1) {
+		printf("send error %d\n", errno);
 		return -1;
 	}
 	sleep(1);
 	memset(msg, 0, sizeof(msg));
 	ret = quic_recvmsg(sockfd, msg, sizeof(msg), &sid, &flags);
-	if (ret == -1) {
+	if (ret == -1) { /* max_bidi_stream_id: 488 */
 		printf("recv error %d\n", errno);
 		return -1;
 	}
@@ -266,25 +266,34 @@ static int do_client_notification_test(int sockfd)
 		return -1;
 	}
 	ev = (union quic_event *)&msg[1];
-	if (ev->max_stream != 600) {
+	if (ev->max_stream != 488) {
 		printf("test13: FAIL max_stream %d\n", (int)ev->max_stream);
+		return -1;
+	}
+	memset(msg, 0, sizeof(msg));
+	ret = quic_recvmsg(sockfd, msg, sizeof(msg), &sid, &flags);
+	if (ret == -1) {
+		printf("recv error %d\n", errno);
+		return -1;
+	}
+	if (strcmp(msg, "quic test13") || sid != 200) {
+		printf("test13: FAIL msg %s, sid %d\n", msg, (int)sid);
 		return -1;
 	}
 	printf("test13: PASS (QUIC_EVENT_STREAM_MAX_STREAM event for bidi stream)\n");
 
-	optlen = sizeof(info);
-	info.stream_flags = MSG_STREAM_DONTWAIT;
-	info.stream_id = 602;
-	ret = getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_STREAM_OPEN,
-			 &info, &optlen); /* stream_id: 602 */
-	if (ret != -1 || errno != EAGAIN) {
+	optlen = sizeof(errinfo);
+	errinfo.stream_id = 198;
+	errinfo.errcode = 1;
+	ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_STREAM_RESET, &errinfo, optlen);
+	if (ret == -1) {
 		printf("test14: FAIL ret %d, error %d\n", ret, errno);
 		return -1;
 	}
 	sleep(1);
 	memset(msg, 0, sizeof(msg));
 	ret = quic_recvmsg(sockfd, msg, sizeof(msg), &sid, &flags);
-	if (ret == -1) {
+	if (ret == -1) {  /* max_uni_stream_id: 454 */
 		printf("recv error %d\n", errno);
 		return -1;
 	}
@@ -293,7 +302,7 @@ static int do_client_notification_test(int sockfd)
 		return -1;
 	}
 	ev = (union quic_event *)&msg[1];
-	if (ev->max_stream != 602) {
+	if (ev->max_stream != 458) {
 		printf("test14: FAIL max_stream %d\n", (int)ev->max_stream);
 		return -1;
 	}
@@ -1067,7 +1076,7 @@ static int do_client_connection_test(int sockfd)
 		return -1;
 	}
 	ret = recv(sockfd, msg, sizeof(msg), 0);
-	if (ret == -1) {
+	if (ret == -1) { /* max_bidi_stream_id: 456 */
 		printf("recv error %d\n", errno);
 		return 1;
 	}
@@ -1115,7 +1124,7 @@ static int do_client_connection_test(int sockfd)
 		return -1;
 	}
 	ret = recv(sockfd, msg, sizeof(msg), 0);
-	if (ret == -1) {
+	if (ret == -1) { /* max_bidi_stream_id: 460 */
 		printf("recv error %d\n", errno);
 		return 1;
 	}
@@ -1163,7 +1172,7 @@ static int do_client_connection_test(int sockfd)
 		return -1;
 	}
 	ret = recv(sockfd, msg, sizeof(msg), 0);
-	if (ret == -1) {
+	if (ret == -1) { /* max_bidi_stream_id: 464 */
 		printf("recv error %d\n", errno);
 		return 1;
 	}
@@ -1179,7 +1188,7 @@ static int do_client_connection_test(int sockfd)
 		return -1;
 	}
 	ret = recv(sockfd, msg, sizeof(msg), 0);
-	if (ret == -1) {
+	if (ret == -1) { /* max_bidi_stream_id: 468 */
 		printf("recv error %d\n", errno);
 		return 1;
 	}
@@ -1197,7 +1206,7 @@ static int do_client_connection_test(int sockfd)
 		return -1;
 	}
 	ret = recv(sockfd, msg, sizeof(msg), 0);
-	if (ret == -1) {
+	if (ret == -1) { /* max_bidi_stream_id: 472 */
 		printf("recv error %d\n", errno);
 		return 1;
 	}
@@ -1213,7 +1222,7 @@ static int do_client_connection_test(int sockfd)
 		return -1;
 	}
 	ret = recv(sockfd, msg, sizeof(msg), 0);
-	if (ret == -1) {
+	if (ret == -1) { /* max_bidi_stream_id: 476 */
 		printf("recv error %d\n", errno);
 		return 1;
 	}
@@ -1230,7 +1239,7 @@ static int do_client_connection_test(int sockfd)
 		return -1;
 	}
 	ret = recv(sockfd, msg, sizeof(msg), 0);
-	if (ret == -1) {
+	if (ret == -1) { /* max_bidi_stream_id: 480 */
 		printf("recv error %d\n", errno);
 		return 1;
 	}
@@ -1639,7 +1648,7 @@ static int do_client_stream_test(int sockfd)
 		printf("test18: FAIL msg %s, sid %d\n", msg, (int)sid);
 		return -1;
 	}
-	printf("test18: PASS (sendmsg with sid > max_streams_bidi in blocked mode)\n");
+	printf("test18: PASS (sendmsg with sid > original max_streams_bidi)\n");
 
 	flags = MSG_STREAM_NEW | MSG_STREAM_FIN;
 	sid  = 402;
@@ -1659,19 +1668,18 @@ static int do_client_stream_test(int sockfd)
 		printf("test19: FAIL msg %s, sid %d\n", msg, (int)sid);
 		return -1;
 	}
-	printf("test19: PASS (sendmsg with sid > max_streams_uni in blocked mode)\n");
+	printf("test19: PASS (sendmsg with sid > original max_streams_uni)\n");
 
 	flags = MSG_STREAM_NEW | MSG_STREAM_FIN | MSG_STREAM_DONTWAIT;
-	sid  = 404;
+	sid  = 428;
 	strcpy(msg, "quic test20");
 	ret = quic_sendmsg(sockfd, msg, strlen(msg), sid, flags);
 	if (ret != -1 || errno != EAGAIN) {
 		printf("test20: FAIL ret %d, error %d\n", ret, errno);
 		return -1;
 	}
-	printf("test20: PASS (return -EAGAIN in bidi non-blocked mode)\n");
+	printf("test20: PASS (return -EAGAIN if sid > current max_streams_bidi)\n");
 
-	sleep(1);
 	flags = MSG_STREAM_NEW | MSG_STREAM_FIN;
 	sid  = 404;
 	strcpy(msg, "quic test21");
@@ -1690,19 +1698,36 @@ static int do_client_stream_test(int sockfd)
 		printf("test21: FAIL msg %s, sid %d\n", msg, (int)sid);
 		return -1;
 	}
-	printf("test21: PASS (sendmsg with sid > max_streams_bidi in non-blocked mode)\n");
+	flags = MSG_STREAM_NEW | MSG_STREAM_FIN;
+	sid  = 428;
+	strcpy(msg, "quic test21");
+	ret = quic_sendmsg(sockfd, msg, strlen(msg), sid, flags);
+	if (ret == -1) {
+		printf("send error %d\n", errno);
+		return -1;
+	}
+	memset(msg, 0, sizeof(msg));
+	ret = quic_recvmsg(sockfd, msg, sizeof(msg), &sid, &flags);
+	if (ret == -1) {
+		printf("recv error %d\n", errno);
+		return -1;
+	}
+	if (strcmp(msg, "quic test21") || sid != 428) {
+		printf("test21: FAIL msg %s, sid %d\n", msg, (int)sid);
+		return -1;
+	}
+	printf("test21: PASS (sendmsg after current max_streams_bidi grows)\n");
 
 	flags = MSG_STREAM_NEW | MSG_STREAM_FIN | MSG_STREAM_DONTWAIT;
-	sid  = 406;
+	sid  = 426;
 	strcpy(msg, "quic test22");
 	ret = quic_sendmsg(sockfd, msg, strlen(msg), sid, flags);
 	if (ret != -1 || errno != EAGAIN) {
 		printf("test22: FAIL ret %d, error %d\n", ret, errno);
 		return -1;
 	}
-	printf("test22: PASS (return -EAGAIN in uni non-blocked mode)\n");
+	printf("test22: PASS (return -EAGAIN if sid > current max_streams_uni)\n");
 
-	sleep(1);
 	flags = MSG_STREAM_NEW | MSG_STREAM_FIN;
 	sid  = 406;
 	strcpy(msg, "quic test23");
@@ -1721,7 +1746,25 @@ static int do_client_stream_test(int sockfd)
 		printf("test23: FAIL msg %s, sid %d\n", msg, (int)sid);
 		return -1;
 	}
-	printf("test23: PASS (sendmsg with sid > max_streams_uni in non-blocked mode)\n");
+	flags = MSG_STREAM_NEW | MSG_STREAM_FIN;
+	sid  = 426;
+	strcpy(msg, "quic test23");
+	ret = quic_sendmsg(sockfd, msg, strlen(msg), sid, flags);
+	if (ret == -1) {
+		printf("send error %d\n", errno);
+		return -1;
+	}
+	memset(msg, 0, sizeof(msg));
+	ret = quic_recvmsg(sockfd, msg, sizeof(msg), &sid, &flags);
+	if (ret == -1) {
+		printf("recv error %d\n", errno);
+		return -1;
+	}
+	if (strcmp(msg, "quic test23") || sid != 427) {
+		printf("test23: FAIL msg %s, sid %d\n", msg, (int)sid);
+		return -1;
+	}
+	printf("test23: PASS (sendmsg after current max_streams_uni grows)\n");
 
 	optlen = sizeof(info);
 	info.stream_id = 408;
@@ -1749,8 +1792,7 @@ static int do_client_stream_test(int sockfd)
 		printf("test24: FAIL msg %s, sid %d\n", msg, (int)sid);
 		return -1;
 	}
-	printf("test24: PASS (getsockopt(QUIC_SOCKOPT_STREAM_OPEN) with sid > max_streams_bidi "
-	       "in blocked mode)\n");
+	printf("test24: PASS (getsockopt(STREAM_OPEN) with sid > original max_streams_bidi)\n");
 
 	optlen = sizeof(info);
 	info.stream_id = 410;
@@ -1778,21 +1820,19 @@ static int do_client_stream_test(int sockfd)
 		printf("test25: FAIL msg %s, sid %d\n", msg, (int)sid);
 		return -1;
 	}
-	printf("test25: PASS (getsockopt(QUIC_SOCKOPT_STREAM_OPEN) with sid > max_streams_uni "
-	       "in blocked mode)\n");
+	printf("test25: PASS (getsockopt(STREAM_OPEN) with sid > original max_streams_uni)\n");
 
 	optlen = sizeof(info);
 	info.stream_flags = MSG_STREAM_DONTWAIT;
-	info.stream_id = 412;
+	info.stream_id = 440;
 	ret = getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_STREAM_OPEN,
-			 &info, &optlen); /* stream_id: 412 */
+			 &info, &optlen); /* stream_id: 440 */
 	if (ret != -1 || errno != EAGAIN) {
 		printf("test26: FAIL ret %d, error %d\n", ret, errno);
 		return -1;
 	}
-	printf("test26: PASS (return -EAGAIN in bidi non-blocked mode)\n");
+	printf("test26: PASS (return -EAGAIN if sid > current max_streams_bidi)\n");
 
-	sleep(1);
 	flags = MSG_STREAM_NEW | MSG_STREAM_FIN;
 	sid  = 412;
 	strcpy(msg, "quic test27");
@@ -1807,25 +1847,50 @@ static int do_client_stream_test(int sockfd)
 		printf("recv error %d\n", errno);
 		return -1;
 	}
-	if (strcmp(msg, "quic test27") || sid != 412) {
+	if (strcmp(msg, "quic test27") || sid != 412) { /* max_bidi_stream_id: 440 */
 		printf("test27: FAIL msg %s, sid %d\n", msg, (int)sid);
 		return -1;
 	}
-	printf("test27: PASS (getsockopt(QUIC_SOCKOPT_STREAM_OPEN) with sid > max_streams_bidi "
-	       "in non-blocked mode)\n");
+	optlen = sizeof(info);
+	info.stream_flags = 0;
+	info.stream_id = 440;
+	ret = getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_STREAM_OPEN,
+			 &info, &optlen); /* stream_id: 440 */
+	if (ret == -1) {
+		printf("test27: FAIL ret %d, error %d\n", ret, errno);
+		return -1;
+	}
+	flags = MSG_STREAM_FIN;
+	sid  = 440;
+	strcpy(msg, "quic test27");
+	ret = quic_sendmsg(sockfd, msg, strlen(msg), sid, flags);
+	if (ret == -1) {
+		printf("send error %d\n", errno);
+		return -1;
+	}
+	memset(msg, 0, sizeof(msg));
+	ret = quic_recvmsg(sockfd, msg, sizeof(msg), &sid, &flags);
+	if (ret == -1) {
+		printf("recv error %d\n", errno);
+		return -1;
+	}
+	if (strcmp(msg, "quic test27") || sid != 440) { /* max_bidi_stream_id: 444 */
+		printf("test27: FAIL msg %s, sid %d\n", msg, (int)sid);
+		return -1;
+	}
+	printf("test27: PASS (getsockopt(STREAM_OPEN) after max_streams_bidi grows)\n");
 
 	optlen = sizeof(info);
 	info.stream_flags = MSG_STREAM_DONTWAIT;
-	info.stream_id = 414;
+	info.stream_id = 438;
 	ret = getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_STREAM_OPEN,
-			 &info, &optlen); /* stream_id: 414 */
+			 &info, &optlen); /* stream_id: 438 */
 	if (ret != -1 || errno != EAGAIN) {
 		printf("test28: FAIL ret %d, errno %d\n", ret, errno);
 		return -1;
 	}
-	printf("test28: PASS (return -EAGAIN in uni non-blocked mode)\n");
+	printf("test28: PASS (return -EAGAIN if sid > current max_streams_uni)\n");
 
-	sleep(1);
 	flags = MSG_STREAM_NEW | MSG_STREAM_FIN;
 	sid  = 414;
 	strcpy(msg, "quic test29");
@@ -1844,7 +1909,34 @@ static int do_client_stream_test(int sockfd)
 		printf("test29: FAIL msg %s, sid %d\n", msg, (int)sid);
 		return -1;
 	}
-	printf("test29: PASS (sendmsg with sid > max_streams_uni in non-blocked mode)\n");
+	optlen = sizeof(info);
+	info.stream_flags = 0;
+	info.stream_id = 438;
+	ret = getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_STREAM_OPEN,
+			 &info, &optlen); /* stream_id: 438 */
+	if (ret == -1) {
+		printf("test29: FAIL ret %d, errno %d\n", ret, errno);
+		return -1;
+	}
+	flags = MSG_STREAM_FIN;
+	sid  = 438;
+	strcpy(msg, "quic test29");
+	ret = quic_sendmsg(sockfd, msg, strlen(msg), sid, flags);
+	if (ret == -1) {
+		printf("send error %d\n", errno);
+		return -1;
+	}
+	memset(msg, 0, sizeof(msg));
+	ret = quic_recvmsg(sockfd, msg, sizeof(msg), &sid, &flags);
+	if (ret == -1) {
+		printf("recv error %d\n", errno);
+		return -1;
+	}
+	if (strcmp(msg, "quic test29") || sid != 439) { /* max_uni_stream_id: 442 */
+		printf("test29: FAIL msg %s, sid %d\n", msg, (int)sid);
+		return -1;
+	}
+	printf("test29: PASS (getsockopt(STREAM_OPEN) max_streams_bidi grows)\n");
 
 	optlen = sizeof(errinfo);
 	errinfo.stream_id = 414;
@@ -1856,8 +1948,44 @@ static int do_client_stream_test(int sockfd)
 	}
 	printf("test30: PASS (not allowed to reset a closed stream)\n");
 
+	flags = MSG_STREAM_FIN;
+	sid  = 416;
+	strcpy(msg, "quic test31");
+	ret = quic_sendmsg(sockfd, msg, strlen(msg), sid, flags);
+	if (ret == -1) {
+		printf("send error %d\n", errno);
+		return -1;
+	}
+	memset(msg, 0, sizeof(msg));
+	ret = quic_recvmsg(sockfd, msg, sizeof(msg), &sid, &flags);
+	if (ret == -1) { /* max_bidi_stream_id: 448 */
+		printf("recv error %d\n", errno);
+		return -1;
+	}
+	if (strcmp(msg, "quic test31") || sid != 416) {
+		printf("test31: FAIL msg %s, sid %d\n", msg, (int)sid);
+		return -1;
+	}
+	flags = MSG_STREAM_FIN;
+	sid  = 420;
+	strcpy(msg, "quic test31");
+	ret = quic_sendmsg(sockfd, msg, strlen(msg), sid, flags);
+	if (ret == -1) {
+		printf("send error %d\n", errno);
+		return -1;
+	}
+	memset(msg, 0, sizeof(msg));
+	ret = quic_recvmsg(sockfd, msg, sizeof(msg), &sid, &flags);
+	if (ret == -1) {  /* max_bidi_stream_id: 452 */
+		printf("recv error %d\n", errno);
+		return -1;
+	}
+	if (strcmp(msg, "quic test31") || sid != 420) {
+		printf("test31: FAIL msg %s, sid %d\n", msg, (int)sid);
+		return -1;
+	}
 	optlen = sizeof(errinfo);
-	errinfo.stream_id = 416;
+	errinfo.stream_id = 444;
 	errinfo.errcode = 1;
 	ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_STREAM_RESET, &errinfo, optlen);
 	if (ret != -1 || errno != EINVAL) {
@@ -1867,15 +1995,15 @@ static int do_client_stream_test(int sockfd)
 	printf("test31: PASS (not allowed to reset a stream that hasn't opened)\n");
 
 	flags = MSG_STREAM_NEW;
-	sid  = 416;
+	sid  = 444;
 	strcpy(msg, "client reset");
-	ret = quic_sendmsg(sockfd, msg, strlen(msg), sid, flags); /* stream_id: 416 */
+	ret = quic_sendmsg(sockfd, msg, strlen(msg), sid, flags); /* stream_id: 444 */
 	if (ret == -1) {
 		printf("send error %d\n", errno);
 		return -1;
 	}
 	optlen = sizeof(errinfo);
-	errinfo.stream_id = 416;
+	errinfo.stream_id = 444;
 	errinfo.errcode = 1;
 	ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_STREAM_RESET, &errinfo, optlen);
 	if (ret == -1) {
@@ -1909,7 +2037,7 @@ static int do_client_stream_test(int sockfd)
 	if (ret == -1) {
 		printf("send error %d\n", errno);
 		return -1;
-	}
+	} /* max_uni_stream_id: 446 */
 	sleep(1);
 	flags = 0;
 	strcpy(msg, "test35");
