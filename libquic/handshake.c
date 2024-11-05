@@ -34,7 +34,7 @@
 
 struct quic_msg {
 	struct quic_msg *next;
-	uint8_t data[4096];
+	uint8_t *data;
 	uint32_t len;
 	uint8_t level;
 };
@@ -42,7 +42,7 @@ struct quic_msg {
 struct quic_ctx {
 	struct quic_msg *send_list;
 	struct quic_msg *send_last;
-	struct quic_msg recv_msg;
+	uint8_t data[65536];
 	uint8_t completed:1;
 	uint8_t is_serv:1;
 };
@@ -388,24 +388,45 @@ static int quic_tp_send(gnutls_session_t session, gnutls_buffer_t extdata)
 	return 0;
 }
 
+static struct quic_msg *quic_msg_create(const void *data, size_t datalen)
+{
+	struct quic_msg *msg = malloc(sizeof(*msg));
+
+	if (!msg)
+		return NULL;
+
+	memset(msg, 0, sizeof(*msg));
+	msg->data = malloc(datalen);
+	if (!msg->data) {
+		free(msg);
+		return NULL;
+	}
+
+	msg->len = datalen;
+	memcpy(msg->data, data, msg->len);
+	return msg;
+}
+
+static void quic_msg_destroy(struct quic_msg *msg)
+{
+	free(msg->data);
+	free(msg);
+}
+
 static int quic_msg_read(gnutls_session_t session, gnutls_record_encryption_level_t level,
 			 gnutls_handshake_description_t htype, const void *data, size_t datalen)
 {
 	struct quic_ctx *ctx = gnutls_db_get_ptr(session);
-	unsigned int len = datalen;
 	struct quic_msg *msg;
 
 	if (!ctx || htype == GNUTLS_HANDSHAKE_KEY_UPDATE)
 		return 0;
 
-	msg = malloc(sizeof(*msg));
+	msg = quic_msg_create(data, datalen);
 	if (!msg) {
-		quic_log_error("msg malloc error %d", ENOMEM);
+		quic_log_error("msg create error %d", ENOMEM);
 		return -1;
 	}
-	memset(msg, 0, sizeof(*msg));
-	msg->len = len;
-	memcpy(msg->data, data, msg->len);
 
 	msg->level = quic_crypto_level(level);
 	if (!ctx->send_list)
@@ -489,11 +510,10 @@ static int quic_handshake_recvmsg(int sockfd, struct quic_msg *msg)
 	struct iovec iov;
 	ssize_t ret;
 
-	msg->len = 0;
 	memset(&inmsg, 0, sizeof(inmsg));
 
 	iov.iov_base = msg->data;
-	iov.iov_len = sizeof(msg->data);
+	iov.iov_len = msg->len;
 
 	inmsg.msg_name = NULL;
 	inmsg.msg_namelen = 0;
@@ -537,8 +557,8 @@ static gnutls_anti_replay_t quic_anti_replay;
 int quic_handshake(gnutls_session_t session)
 {
 	int ret, sockfd = gnutls_transport_get_int(session);
+	struct quic_msg *msg, _msg = {};
 	struct quic_ctx *ctx;
-	struct quic_msg *msg;
 	struct timeval tv;
 	unsigned int len;
 	uint8_t opt[128];
@@ -550,6 +570,7 @@ int quic_handshake(gnutls_session_t session)
 		return -ENOMEM;
 	}
 	memset(ctx, 0, sizeof(*ctx));
+
 	len = sizeof(opt);
 	ret = getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_TOKEN, opt, &len);
 	ctx->is_serv = !!ret;
@@ -581,7 +602,7 @@ int quic_handshake(gnutls_session_t session)
 				goto out;
 			}
 			ctx->send_list = msg->next;
-			free(msg);
+			quic_msg_destroy(msg);
 			msg = ctx->send_list;
 		}
 	} else {
@@ -607,8 +628,10 @@ int quic_handshake(gnutls_session_t session)
 			ret = -errno;
 			goto out;
 		}
-		msg = &ctx->recv_msg;
+		msg = &_msg;
 		while (!ctx->completed) {
+			msg->data = ctx->data;
+			msg->len = sizeof(ctx->data);
 			ret = quic_handshake_recvmsg(sockfd, msg);
 			if (ret <= 0) {
 				if (errno == EAGAIN || errno == EWOULDBLOCK)
@@ -633,7 +656,7 @@ int quic_handshake(gnutls_session_t session)
 				goto out;
 			}
 			ctx->send_list = msg->next;
-			free(msg);
+			quic_msg_destroy(msg);
 			msg = ctx->send_list;
 		}
 	}
@@ -644,7 +667,7 @@ out:
 	msg = ctx->send_list;
 	while (msg) {
 		ctx->send_list = msg->next;
-		free(msg);
+		quic_msg_destroy(msg);
 		msg = ctx->send_list;
 	}
 	free(ctx);
