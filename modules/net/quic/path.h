@@ -51,6 +51,8 @@ struct quic_path_src {
 
 struct quic_path_dst {
 	struct quic_path_addr a;
+	u16 ampl_sndlen; /* amplificationlimit send counting */
+	u16 ampl_rcvlen; /* amplificationlimit recv counting */
 
 	u32 mtu_info;
 	u32 pathmtu;
@@ -63,6 +65,8 @@ struct quic_path_dst {
 		u8 probe_count;
 		u8 state;
 	} pl; /* plpmtud related */
+	u8 ecn_probes;
+	u8 validated:1;
 };
 
 static inline void quic_path_addr_set(struct quic_path_addr *a, union quic_addr *addr, bool alt)
@@ -96,6 +100,16 @@ static inline int quic_path_cmp(struct quic_path_addr *a, bool alt, union quic_a
 	return memcmp(addr, quic_path_addr(a, alt), a->addr_len);
 }
 
+static inline u8 quic_path_ecn_probes(struct quic_path_addr *a)
+{
+	return ((struct quic_path_dst *)a)->ecn_probes;
+}
+
+static inline void quic_path_inc_ecn_probes(struct quic_path_addr *a)
+{
+	((struct quic_path_dst *)a)->ecn_probes++;
+}
+
 static inline u32 quic_path_mtu_info(struct quic_path_addr *a)
 {
 	return ((struct quic_path_dst *)a)->mtu_info;
@@ -104,6 +118,36 @@ static inline u32 quic_path_mtu_info(struct quic_path_addr *a)
 static inline void quic_path_set_mtu_info(struct quic_path_addr *a, u32 mtu_info)
 {
 	((struct quic_path_dst *)a)->mtu_info = mtu_info;
+}
+
+static inline u16 quic_path_ampl_sndlen(struct quic_path_addr *a)
+{
+	return ((struct quic_path_dst *)a)->ampl_sndlen;
+}
+
+static inline void quic_path_inc_ampl_sndlen(struct quic_path_addr *a, u16 len)
+{
+	((struct quic_path_dst *)a)->ampl_sndlen += len;
+}
+
+static inline u16 quic_path_ampl_rcvlen(struct quic_path_addr *a)
+{
+	return ((struct quic_path_dst *)a)->ampl_rcvlen;
+}
+
+static inline void quic_path_inc_ampl_rcvlen(struct quic_path_addr *a, u16 len)
+{
+	((struct quic_path_dst *)a)->ampl_rcvlen += len;
+}
+
+static inline bool quic_path_validated(struct quic_path_addr *a)
+{
+	return ((struct quic_path_dst *)a)->validated;
+}
+
+static inline void quic_path_set_validated(struct quic_path_addr *a, u8 validated)
+{
+	((struct quic_path_dst *)a)->validated = validated;
 }
 
 static inline u8 quic_path_sent_cnt(struct quic_path_addr *a)

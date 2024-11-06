@@ -9,13 +9,12 @@
  */
 
 enum {
-	QUIC_TIMER_AP_LOSS = QUIC_CRYPTO_APP,
-	QUIC_TIMER_IN_LOSS = QUIC_CRYPTO_INITIAL,
-	QUIC_TIMER_HS_LOSS = QUIC_CRYPTO_HANDSHAKE,
+	QUIC_TIMER_LOSS,
 	QUIC_TIMER_SACK,
 	QUIC_TIMER_PATH,
 	QUIC_TIMER_PACE,
 	QUIC_TIMER_MAX,
+	QUIC_TIMER_IDLE = QUIC_TIMER_SACK,
 };
 
 struct quic_timer {
@@ -37,7 +36,7 @@ void quic_timer_stop(struct sock *sk, u8 type);
 void quic_timer_init(struct sock *sk);
 void quic_timer_free(struct sock *sk);
 
-void quic_timer_loss_handler(struct sock *sk, u8 level);
+void quic_timer_loss_handler(struct sock *sk);
 void quic_timer_pace_handler(struct sock *sk);
 void quic_timer_path_handler(struct sock *sk);
 void quic_timer_sack_handler(struct sock *sk);

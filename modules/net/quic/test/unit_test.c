@@ -30,6 +30,7 @@ static void quic_pnspace_test1(struct kunit *test)
 	int i;
 
 	KUNIT_ASSERT_EQ(test, 0, quic_pnspace_init(space));
+	quic_pnspace_set_time(space, jiffies_to_usecs(jiffies));
 	quic_pnspace_set_base_pn(space, 1);
 	quic_pnspace_set_max_time_limit(space, 30000);
 
@@ -164,6 +165,7 @@ static void quic_pnspace_test2(struct kunit *test)
 	struct quic_gap_ack_block gabs[QUIC_PN_MAX_GABS];
 
 	KUNIT_ASSERT_EQ(test, 0, quic_pnspace_init(space));
+	quic_pnspace_set_time(space, jiffies_to_usecs(jiffies));
 	quic_pnspace_set_base_pn(space, 1);
 	quic_pnspace_set_max_time_limit(space, 30000);
 
@@ -183,6 +185,7 @@ static void quic_pnspace_test2(struct kunit *test)
 				 (quic_pnspace_min_pn_seen(space) + 1));
 
 	msleep(50);
+	quic_pnspace_set_time(space, jiffies_to_usecs(jiffies));
 	/* ! space->max_pn_time - space->mid_pn_time < space->max_time_limit */
 	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 4));
 	KUNIT_EXPECT_EQ(test, 1, space->base_pn);
@@ -217,6 +220,7 @@ static void quic_pnspace_test2(struct kunit *test)
 	KUNIT_EXPECT_EQ(test, 1, quic_pnspace_num_gabs(space, gabs));
 
 	msleep(50);
+	quic_pnspace_set_time(space, jiffies_to_usecs(jiffies));
 	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 18));
 	KUNIT_EXPECT_EQ(test, 9, space->base_pn);
 	KUNIT_EXPECT_EQ(test, 6, space->min_pn_seen);
@@ -232,6 +236,7 @@ static void quic_pnspace_test2(struct kunit *test)
 	KUNIT_EXPECT_EQ(test, 1, quic_pnspace_num_gabs(space, gabs));
 
 	msleep(50);
+	quic_pnspace_set_time(space, jiffies_to_usecs(jiffies));
 	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 17));
 	KUNIT_EXPECT_EQ(test, 12, space->base_pn);
 	KUNIT_EXPECT_EQ(test, 6, space->min_pn_seen);
@@ -256,6 +261,7 @@ static void quic_pnspace_test2(struct kunit *test)
 	KUNIT_EXPECT_EQ(test, 2, quic_pnspace_num_gabs(space, gabs));
 
 	msleep(50);
+	quic_pnspace_set_time(space, jiffies_to_usecs(jiffies));
 	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 30));
 	KUNIT_EXPECT_EQ(test, 20, space->base_pn);
 	KUNIT_EXPECT_EQ(test, 30, space->max_pn_seen);
@@ -508,7 +514,7 @@ static void quic_cong_test1(struct kunit *test)
 	c.initial_smoothed_rtt = 333000;
 	quic_cong_set_config(&cong, &c);
 	KUNIT_EXPECT_EQ(test, cong.rttvar, 166500);
-	KUNIT_EXPECT_EQ(test, cong.rto, 499500);
+	KUNIT_EXPECT_EQ(test, cong.pto, 999000);
 
 	quic_cong_set_time(&cong, jiffies_to_usecs(jiffies));
 	time = quic_cong_time(&cong) - 30000;
@@ -520,62 +526,56 @@ static void quic_cong_test1(struct kunit *test)
 	KUNIT_EXPECT_EQ(test, cong.smoothed_rtt, 295125);
 	/* (rttvar * 3 + rttvar_sample) / 4 */
 	KUNIT_EXPECT_EQ(test, cong.rttvar, 191156);
-	/* smoothed_rtt + rttvar */
-	KUNIT_EXPECT_EQ(test, cong.rto, 486281);
+	/* smoothed_rtt + rttvar * 4 */
+	KUNIT_EXPECT_EQ(test, cong.pto, 1059749);
 
 	time = quic_cong_time(&cong) - 30000;
-	ack_delay = 2500;
+	ack_delay = 2500 * 8;
 	quic_cong_rtt_update(&cong, time, ack_delay);
 	KUNIT_EXPECT_EQ(test, cong.latest_rtt, 30000);
 	KUNIT_EXPECT_EQ(test, cong.min_rtt, 30000);
 	KUNIT_EXPECT_EQ(test, cong.smoothed_rtt, 261984);
 	KUNIT_EXPECT_EQ(test, cong.rttvar, 201363);
-	KUNIT_EXPECT_EQ(test, cong.rto, 463347);
 
 	time = quic_cong_time(&cong) - 30000;
-	ack_delay = 2500;
+	ack_delay = 2500 * 8;
 	quic_cong_rtt_update(&cong, time, ack_delay);
 	KUNIT_EXPECT_EQ(test, cong.latest_rtt, 30000);
 	KUNIT_EXPECT_EQ(test, cong.min_rtt, 30000);
 	KUNIT_EXPECT_EQ(test, cong.smoothed_rtt, 232986);
 	KUNIT_EXPECT_EQ(test, cong.rttvar, 201768);
-	KUNIT_EXPECT_EQ(test, cong.rto, 434754);
 
 	time = quic_cong_time(&cong) - 3000;
-	ack_delay = 250;
+	ack_delay = 250 * 8;
 	quic_cong_rtt_update(&cong, time, ack_delay);
 	KUNIT_EXPECT_EQ(test, cong.latest_rtt, 3000);
 	KUNIT_EXPECT_EQ(test, cong.min_rtt, 3000);
 	KUNIT_EXPECT_EQ(test, cong.smoothed_rtt, 204237);
 	KUNIT_EXPECT_EQ(test, cong.rttvar, 201635);
-	KUNIT_EXPECT_EQ(test, cong.rto, 405872);
 
 	time = quic_cong_time(&cong) - 3000;
-	ack_delay = 250;
+	ack_delay = 250 * 8;
 	quic_cong_rtt_update(&cong, time, ack_delay);
 	KUNIT_EXPECT_EQ(test, cong.latest_rtt, 3000);
 	KUNIT_EXPECT_EQ(test, cong.min_rtt, 3000);
 	KUNIT_EXPECT_EQ(test, cong.smoothed_rtt, 179082);
 	KUNIT_EXPECT_EQ(test, cong.rttvar, 195246);
-	KUNIT_EXPECT_EQ(test, cong.rto, 374328);
 
 	time = quic_cong_time(&cong) - 300;
-	ack_delay = 25;
+	ack_delay = 25 * 8;
 	quic_cong_rtt_update(&cong, time, ack_delay);
 	KUNIT_EXPECT_EQ(test, cong.latest_rtt, 300);
 	KUNIT_EXPECT_EQ(test, cong.min_rtt, 300);
 	KUNIT_EXPECT_EQ(test, cong.smoothed_rtt, 156734);
 	KUNIT_EXPECT_EQ(test, cong.rttvar, 185543);
-	KUNIT_EXPECT_EQ(test, cong.rto, 342277);
 
 	time = quic_cong_time(&cong) - 30;
-	ack_delay = 2;
+	ack_delay = 2 * 8;
 	quic_cong_rtt_update(&cong, time, ack_delay);
 	KUNIT_EXPECT_EQ(test, cong.latest_rtt, 30);
 	KUNIT_EXPECT_EQ(test, cong.min_rtt, 30);
 	KUNIT_EXPECT_EQ(test, cong.smoothed_rtt, 137146);
 	KUNIT_EXPECT_EQ(test, cong.rttvar, 173436);
-	KUNIT_EXPECT_EQ(test, cong.rto, 310582);
 
 	time = quic_cong_time(&cong) - 3;
 	ack_delay = 0;
@@ -584,7 +584,6 @@ static void quic_cong_test1(struct kunit *test)
 	KUNIT_EXPECT_EQ(test, cong.min_rtt, 3);
 	KUNIT_EXPECT_EQ(test, cong.smoothed_rtt, 120003);
 	KUNIT_EXPECT_EQ(test, cong.rttvar, 160077);
-	KUNIT_EXPECT_EQ(test, cong.rto, 280080);
 
 	time = quic_cong_time(&cong) - 1;
 	ack_delay = 0;
@@ -593,7 +592,6 @@ static void quic_cong_test1(struct kunit *test)
 	KUNIT_EXPECT_EQ(test, cong.min_rtt, 1);
 	KUNIT_EXPECT_EQ(test, cong.smoothed_rtt, 105002);
 	KUNIT_EXPECT_EQ(test, cong.rttvar, 146308);
-	KUNIT_EXPECT_EQ(test, cong.rto, 251310);
 
 	time = quic_cong_time(&cong) - 0;
 	ack_delay = 0;
@@ -602,43 +600,39 @@ static void quic_cong_test1(struct kunit *test)
 	KUNIT_EXPECT_EQ(test, cong.min_rtt, 0);
 	KUNIT_EXPECT_EQ(test, cong.smoothed_rtt, 91876);
 	KUNIT_EXPECT_EQ(test, cong.rttvar, 132700);
-	KUNIT_EXPECT_EQ(test, cong.rto, 224576);
 
 	time = quic_cong_time(&cong) - 3;
+	cong.min_rtt_valid = 0;
 	ack_delay = 0;
 	quic_cong_rtt_update(&cong, time, ack_delay);
 	KUNIT_EXPECT_EQ(test, cong.latest_rtt, 3);
 	KUNIT_EXPECT_EQ(test, cong.min_rtt, 3);
 	KUNIT_EXPECT_EQ(test, cong.smoothed_rtt, 80391);
 	KUNIT_EXPECT_EQ(test, cong.rttvar, 119622);
-	KUNIT_EXPECT_EQ(test, cong.rto, 200013);
 
 	time = quic_cong_time(&cong) - 300;
-	ack_delay = 25;
+	ack_delay = 25 * 8;
 	quic_cong_rtt_update(&cong, time, ack_delay);
 	KUNIT_EXPECT_EQ(test, cong.latest_rtt, 300);
 	KUNIT_EXPECT_EQ(test, cong.min_rtt, 3);
 	KUNIT_EXPECT_EQ(test, cong.smoothed_rtt, 70354);
 	KUNIT_EXPECT_EQ(test, cong.rttvar, 107280);
-	KUNIT_EXPECT_EQ(test, cong.rto, 177634);
 
 	time = quic_cong_time(&cong) - 300;
-	ack_delay = 25;
+	ack_delay = 25 * 8;
 	quic_cong_rtt_update(&cong, time, ack_delay);
 	KUNIT_EXPECT_EQ(test, cong.latest_rtt, 300);
 	KUNIT_EXPECT_EQ(test, cong.min_rtt, 3);
 	KUNIT_EXPECT_EQ(test, cong.smoothed_rtt, 61572);
 	KUNIT_EXPECT_EQ(test, cong.rttvar, 95828);
-	KUNIT_EXPECT_EQ(test, cong.rto, 157400);
 
 	time = quic_cong_time(&cong) - 3000;
-	ack_delay = 250;
+	ack_delay = 250 * 8;
 	quic_cong_rtt_update(&cong, time, ack_delay);
 	KUNIT_EXPECT_EQ(test, cong.latest_rtt, 3000);
 	KUNIT_EXPECT_EQ(test, cong.min_rtt, 3);
 	KUNIT_EXPECT_EQ(test, cong.smoothed_rtt, 54000);
 	KUNIT_EXPECT_EQ(test, cong.rttvar, 85121);
-	KUNIT_EXPECT_EQ(test, cong.rto, 139121);
 
 	time = quic_cong_time(&cong) - 0;
 	ack_delay = 0;
@@ -647,7 +641,6 @@ static void quic_cong_test1(struct kunit *test)
 	KUNIT_EXPECT_EQ(test, cong.min_rtt, 0);
 	KUNIT_EXPECT_EQ(test, cong.smoothed_rtt, 47250);
 	KUNIT_EXPECT_EQ(test, cong.rttvar, 75653);
-	KUNIT_EXPECT_EQ(test, cong.rto, 122903);
 
 	time = quic_cong_time(&cong) - 0;
 	ack_delay = 0;
@@ -656,70 +649,49 @@ static void quic_cong_test1(struct kunit *test)
 	KUNIT_EXPECT_EQ(test, cong.min_rtt, 0);
 	KUNIT_EXPECT_EQ(test, cong.smoothed_rtt, 41343);
 	KUNIT_EXPECT_EQ(test, cong.rttvar, 67075);
-	KUNIT_EXPECT_EQ(test, cong.rto, 108418);
 
 	time = quic_cong_time(&cong) - 30000;
-	ack_delay = 2500;
+	cong.min_rtt_valid = 0;
+	ack_delay = 2500 * 8;
 	quic_cong_rtt_update(&cong, time, ack_delay);
 	KUNIT_EXPECT_EQ(test, cong.latest_rtt, 30000);
 	KUNIT_EXPECT_EQ(test, cong.min_rtt, 30000);
 	KUNIT_EXPECT_EQ(test, cong.smoothed_rtt, 39925);
 	KUNIT_EXPECT_EQ(test, cong.rttvar, 52787);
-	KUNIT_EXPECT_EQ(test, cong.rto, 100000);
 
 	time = quic_cong_time(&cong) - 30000;
-	ack_delay = 2500;
+	ack_delay = 2500 * 8;
 	quic_cong_rtt_update(&cong, time, ack_delay);
 	KUNIT_EXPECT_EQ(test, cong.latest_rtt, 30000);
 	KUNIT_EXPECT_EQ(test, cong.min_rtt, 30000);
 	KUNIT_EXPECT_EQ(test, cong.smoothed_rtt, 38684);
 	KUNIT_EXPECT_EQ(test, cong.rttvar, 41761);
-	KUNIT_EXPECT_EQ(test, cong.rto, 100000);
 
 	time = quic_cong_time(&cong) - 3000000;
-	ack_delay = 2500;
+	ack_delay = 2500 * 8;
 	quic_cong_rtt_update(&cong, time, ack_delay);
 	KUNIT_EXPECT_EQ(test, cong.latest_rtt, 3000000);
 	KUNIT_EXPECT_EQ(test, cong.min_rtt, 30000);
 	KUNIT_EXPECT_EQ(test, cong.smoothed_rtt, 406348);
 	KUNIT_EXPECT_EQ(test, cong.rttvar, 674733);
-	KUNIT_EXPECT_EQ(test, cong.rto, 1081081);
 
 	time = quic_cong_time(&cong) - 3000000;
-	ack_delay = 2500;
+	ack_delay = 2500 * 8;
 	quic_cong_rtt_update(&cong, time, ack_delay);
 	KUNIT_EXPECT_EQ(test, cong.latest_rtt, 3000000);
 	KUNIT_EXPECT_EQ(test, cong.min_rtt, 30000);
 	KUNIT_EXPECT_EQ(test, cong.smoothed_rtt, 728054);
 	KUNIT_EXPECT_EQ(test, cong.rttvar, 1069036);
-	KUNIT_EXPECT_EQ(test, cong.rto, 1797090);
+	KUNIT_EXPECT_EQ(test, cong.pto, 5004198);
 
 	time = quic_cong_time(&cong) - 3000000;
-	ack_delay = 2500;
+	ack_delay = 2500 * 8;
 	quic_cong_rtt_update(&cong, time, ack_delay);
 	KUNIT_EXPECT_EQ(test, cong.latest_rtt, 3000000);
 	KUNIT_EXPECT_EQ(test, cong.min_rtt, 30000);
 	KUNIT_EXPECT_EQ(test, cong.smoothed_rtt, 1009547);
 	KUNIT_EXPECT_EQ(test, cong.rttvar, 1294390);
-	KUNIT_EXPECT_EQ(test, cong.rto, 2303937);
-
-	time = quic_cong_time(&cong) - 6000000;
-	ack_delay = 2500;
-	quic_cong_rtt_update(&cong, time, ack_delay);
-	KUNIT_EXPECT_EQ(test, cong.latest_rtt, 6000000);
-	KUNIT_EXPECT_EQ(test, cong.min_rtt, 30000);
-	KUNIT_EXPECT_EQ(test, cong.smoothed_rtt, 1630853);
-	KUNIT_EXPECT_EQ(test, cong.rttvar, 2058079);
-	KUNIT_EXPECT_EQ(test, cong.rto, 3688932);
-
-	time = quic_cong_time(&cong) - 10000000;
-	ack_delay = 2500;
-	quic_cong_rtt_update(&cong, time, ack_delay);
-	KUNIT_EXPECT_EQ(test, cong.latest_rtt, 10000000);
-	KUNIT_EXPECT_EQ(test, cong.min_rtt, 30000);
-	KUNIT_EXPECT_EQ(test, cong.smoothed_rtt, 2674496);
-	KUNIT_EXPECT_EQ(test, cong.rttvar, 3369935);
-	KUNIT_EXPECT_EQ(test, cong.rto, 6000000);
+	KUNIT_EXPECT_EQ(test, cong.pto, 6000000);
 }
 
 static void quic_cong_test2(struct kunit *test)

@@ -241,6 +241,7 @@ static void quic_cubic_on_packet_lost(struct quic_cong *cong, u32 time, u32 byte
 		/* persistent congestion: cong_avoid -> slow_start or recovery -> slow_start */
 		pr_debug("%s: permanent congestion, cwnd: %u, ssthresh: %u\n",
 			 __func__, cong->window, cong->ssthresh);
+		cong->min_rtt_valid = 0;
 		cong->window = cong->mss * 2;
 		cong->state = QUIC_CONG_SLOW_START;
 		return;
@@ -379,6 +380,7 @@ static void quic_reno_on_packet_lost(struct quic_cong *cong, u32 time, u32 bytes
 		/* persistent congestion: cong_avoid -> slow_start or recovery -> slow_start */
 		pr_debug("%s: permanent congestion, cwnd: %u, ssthresh: %u\n",
 			 __func__, cong->window, cong->ssthresh);
+		cong->min_rtt_valid = 0;
 		cong->window = cong->mss * 2;
 		cong->state = QUIC_CONG_SLOW_START;
 		return;
@@ -497,25 +499,13 @@ void quic_cong_on_process_ecn(struct quic_cong *cong)
 }
 EXPORT_SYMBOL_GPL(quic_cong_on_process_ecn);
 
-static void quic_cong_rto_update(struct quic_cong *cong)
+static void quic_cong_pto_update(struct quic_cong *cong)
 {
-	u32 rto, duration;
+	u32 pto  = cong->smoothed_rtt + cong->rttvar * 4;
 
-	rto = cong->smoothed_rtt + cong->rttvar;
+	cong->pto = clamp(pto, QUIC_RTO_MIN, QUIC_RTO_MAX);
 
-	if (rto < QUIC_RTO_MIN)
-		rto = QUIC_RTO_MIN;
-	else if (rto > QUIC_RTO_MAX)
-		rto = QUIC_RTO_MAX;
-	cong->rto = rto;
-
-	duration = cong->rttvar * 4;
-	if (duration < QUIC_RTO_MIN)
-		duration = QUIC_RTO_MIN;
-	duration += cong->smoothed_rtt;
-	cong->duration = duration;
-
-	pr_debug("%s: update rto: %u, duration: %u\n", __func__, rto, duration);
+	pr_debug("%s: update pto: %u\n", __func__, pto);
 }
 
 void quic_cong_set_config(struct quic_cong *cong, struct quic_config *c)
@@ -528,7 +518,7 @@ void quic_cong_set_config(struct quic_cong *cong, struct quic_config *c)
 	cong->latest_rtt = c->initial_smoothed_rtt;
 	cong->smoothed_rtt = cong->latest_rtt;
 	cong->rttvar = cong->smoothed_rtt / 2;
-	quic_cong_rto_update(cong);
+	quic_cong_pto_update(cong);
 
 	cong->state = QUIC_CONG_SLOW_START;
 	cong->ssthresh = U32_MAX;
@@ -541,7 +531,6 @@ void quic_cong_set_param(struct quic_cong *cong, struct quic_transport_param *p)
 {
 	cong->max_window = p->max_data;
 	cong->max_ack_delay = p->max_ack_delay;
-	cong->ack_delay_exponent = p->ack_delay_exponent;
 }
 EXPORT_SYMBOL_GPL(quic_cong_set_param);
 
@@ -602,13 +591,14 @@ void quic_cong_rtt_update(struct quic_cong *cong, u32 time, u32 ack_delay)
 {
 	u32 adjusted_rtt, rttvar_sample;
 
-	ack_delay = ack_delay * BIT(cong->ack_delay_exponent);
-	ack_delay = min(ack_delay, cong->max_ack_delay);
+	if (ack_delay > cong->max_ack_delay * 2) /* not a good one for rtt sample */
+		return;
 
 	cong->latest_rtt = cong->time - time;
-
-	if (!cong->min_rtt)
+	if (!cong->min_rtt_valid) {
 		cong->min_rtt = cong->latest_rtt;
+		cong->min_rtt_valid = 1;
+	}
 
 	if (cong->min_rtt > cong->latest_rtt)
 		cong->min_rtt = cong->latest_rtt;
@@ -623,7 +613,7 @@ void quic_cong_rtt_update(struct quic_cong *cong, u32 time, u32 ack_delay)
 	else
 		rttvar_sample = adjusted_rtt - cong->smoothed_rtt;
 	cong->rttvar = (cong->rttvar * 3 + rttvar_sample) / 4;
-	quic_cong_rto_update(cong);
+	quic_cong_pto_update(cong);
 
 	if (cong->ops->on_rtt_update)
 		cong->ops->on_rtt_update(cong);

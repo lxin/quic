@@ -44,6 +44,8 @@ struct quic_pnspace {
 	unsigned long *pn_map;
 	u64 ecn_count[2][3]; /* ECT_1, ECT_0, CE count of local and peer */
 	u16 pn_map_len;
+	u8  need_sack:1;
+	u8  path_alt:2;
 
 	u32 max_time_limit;
 	s64 min_pn_seen;
@@ -52,6 +54,7 @@ struct quic_pnspace {
 	u32 mid_pn_time;
 	u32 max_pn_time;
 	s64 base_pn;
+	u32 time;
 
 	s64 max_pn_acked_seen;
 	u32 max_pn_acked_time;
@@ -60,6 +63,31 @@ struct quic_pnspace {
 	u32 inflight;
 	s64 next_pn; /* next packet number to send */
 };
+
+static inline void quic_pnspace_set_time(struct quic_pnspace *space, u32 time)
+{
+	space->time = time;
+}
+
+static inline void quic_pnspace_set_path_alt(struct quic_pnspace *space, u8 path_alt)
+{
+	space->path_alt = path_alt;
+}
+
+static inline u8 quic_pnspace_path_alt(const struct quic_pnspace *space)
+{
+	return space->path_alt;
+}
+
+static inline void quic_pnspace_set_need_sack(struct quic_pnspace *space, u8 need_sack)
+{
+	space->need_sack = need_sack;
+}
+
+static inline u8 quic_pnspace_need_sack(const struct quic_pnspace *space)
+{
+	return space->need_sack;
+}
 
 static inline void quic_pnspace_set_max_time_limit(struct quic_pnspace *space, u32 max_time_limit)
 {
@@ -152,7 +180,7 @@ static inline void quic_pnspace_set_base_pn(struct quic_pnspace *space, s64 pn)
 	space->mid_pn_seen = space->max_pn_seen;
 	space->min_pn_seen = space->max_pn_seen;
 
-	space->max_pn_time = jiffies_to_usecs(jiffies);
+	space->max_pn_time = space->time;
 	space->mid_pn_time = space->max_pn_time;
 }
 

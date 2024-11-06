@@ -106,30 +106,24 @@ struct quic_frame_ops {
 struct quic_frame {
 	struct quic_stream *stream;
 	struct list_head list;
-	union {
-		struct sk_buff *skb;
-		s64 number;
-	};
-	u64 offset;	/* stream/crypto/read offset or first number */
+	struct sk_buff *skb;
+	u64 offset;	/* stream/crypto/read offset or first packet number */
 	u8  *data;
+
+	refcount_t refcnt;
+	u16 errcode;
 	u16 bytes;	/* user data bytes */
 	u8  level;
 	u8  type;
-	u16 len;	/* data length */
+	u16 len;	/* frame length */
 
+	u8  transmitted:1;
+	u8  stream_fin:1;
 	u8  path_alt:2;	/* bit 1: src, bit 2: dst */
 	u8  nodelay:1;
-
-	u32 sent_time;
-	u16 errcode;
-	u8  event;
-
-	u8  stream_fin:1;
 	u8  padding:1;
 	u8  dgram:1;
-	u8  first:1;
-	u8  last:1;
-	u8  ecn:2;
+	u8  event:1;
 };
 
 static inline bool quic_frame_ack_eliciting(u8 type)
@@ -141,8 +135,8 @@ static inline bool quic_frame_ack_eliciting(u8 type)
 
 static inline bool quic_frame_retransmittable(u8 type)
 {
-	return quic_frame_ack_eliciting(type) &&
-	       type != QUIC_FRAME_PING && type != QUIC_FRAME_PATH_CHALLENGE;
+	return type != QUIC_FRAME_PING && type != QUIC_FRAME_PATH_CHALLENGE &&
+	       type != QUIC_FRAME_DATAGRAM && type != QUIC_FRAME_DATAGRAM_LEN;
 }
 
 static inline bool quic_frame_ack_immediate(u8 type)
@@ -162,14 +156,14 @@ static inline bool quic_frame_sack(u8 type)
 	return type == QUIC_FRAME_ACK || type == QUIC_FRAME_ACK_ECN;
 }
 
-static inline bool quic_frame_is_crypto(u8 type)
+static inline bool quic_frame_crypto(u8 type)
 {
 	return type == QUIC_FRAME_CRYPTO;
 }
 
-static inline bool quic_frame_is_dgram(u8 type)
+static inline bool quic_frame_ping(u8 type)
 {
-	return type == QUIC_FRAME_DATAGRAM || type == QUIC_FRAME_DATAGRAM_LEN;
+	return type == QUIC_FRAME_PING;
 }
 
 static inline int quic_frame_level_check(u8 level, u8 type)
@@ -198,7 +192,8 @@ int quic_frame_get_transport_params_ext(struct sock *sk, struct quic_transport_p
 int quic_frame_set_transport_params_ext(struct sock *sk, struct quic_transport_param *params,
 					u8 *data, u32 len);
 struct quic_frame *quic_frame_alloc(u32 size, u8 *data, gfp_t gfp);
-void quic_frame_free(struct quic_frame *frame);
+struct quic_frame *quic_frame_get(struct quic_frame *frame);
+void quic_frame_put(struct quic_frame *frame);
 
 struct quic_frame *quic_frame_create(struct sock *sk, u8 type, void *data);
 int quic_frame_process(struct sock *sk, struct quic_frame *frame);

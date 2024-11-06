@@ -23,6 +23,7 @@ struct quic_crypto_cb {
 	u16 udph_offset;
 	u8 number_offset;
 	u8 number_len;
+	u32 time;
 	u8 level;
 
 	u8 key_update:1;

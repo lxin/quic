@@ -12,37 +12,45 @@ struct quic_packet {
 	/* send */
 	struct list_head frame_list;
 	struct sk_buff *head;
-	union quic_addr *da;
-	union quic_addr *sa;
-	u16 max_snd_count; /* the max count of packets to send */
-	u16 snd_count;
+	u16 frame_len;
+	u16 frames;
 	u16 mss[2];
-
-	u8 ecn_probes;
-	u8 overhead;
-	u8 ipfragok:1;
 	u8 path_alt:2;
+	u8 ipfragok:1;
 	u8 padding:1;
-	u8 taglen[2];
-
-	/* send or recv */
-	u8 ack_eliciting:1;
-	u8 level;
-	u16 len;
+	u8 overhead;
 
 	/* recv */
 	struct quic_conn_id dcid;
 	struct quic_conn_id scid;
 	union quic_addr daddr;
 	union quic_addr saddr;
-	u16 max_rcv_count; /* the count of packets received to trigger an ACK */
-	u16 rcv_count;
 	u32 version;
 	u16 errcode;
-
+	u8 ack_eliciting:1;
 	u8 ack_immediate:1;
 	u8 non_probing:1;
 	u8 has_sack:1;
+
+	/* send and recv */
+	union quic_addr *da;
+	union quic_addr *sa;
+	u8 taglen[2];
+	u8 level;
+	u16 len;
+};
+
+struct quic_packet_sent {
+	struct list_head list;
+	u16 frame_len;
+	u16 frames;
+	s64 number;
+
+	u32 sent_time;
+	u8  level;
+	u8  ecn:2;
+
+	struct quic_frame *frame_array[];
 };
 
 #define QUIC_PACKET_INITIAL_V1		0
@@ -64,14 +72,24 @@ struct quic_packet {
 
 struct quic_request_sock;
 
-static inline void quic_packet_set_max_snd_count(struct quic_packet *packet, u16 count)
+static inline void quic_packet_set_version(struct quic_packet *packet, u32 version)
 {
-	packet->max_snd_count = count;
+	packet->version = version;
+}
+
+static inline u16 quic_packet_len(struct quic_packet *packet)
+{
+	return packet->len;
+}
+
+static inline u16 quic_packet_frame_len(struct quic_packet *packet)
+{
+	return packet->frame_len;
 }
 
 static inline u8 quic_packet_taglen(struct quic_packet *packet)
 {
-	return packet->taglen[0];
+	return packet->taglen[!!packet->level];
 }
 
 static inline u32 quic_packet_mss(struct quic_packet *packet)
@@ -94,11 +112,6 @@ static inline void quic_packet_set_taglen(struct quic_packet *packet, u8 taglen)
 	packet->taglen[0] = taglen;
 }
 
-static inline void quic_packet_set_ecn_probes(struct quic_packet *packet, u8 probes)
-{
-	packet->ecn_probes = probes;
-}
-
 static inline int quic_packet_empty(struct quic_packet *packet)
 {
 	return list_empty(&packet->frame_list);
@@ -115,15 +128,16 @@ static inline void quic_packet_reset(struct quic_packet *packet)
 	packet->ack_immediate = 0;
 }
 
-int quic_packet_tail(struct sock *sk, struct quic_frame *frame, u8 dgram);
+int quic_packet_tail(struct sock *sk, struct quic_frame *frame);
 int quic_packet_config(struct sock *sk, u8 level, u8 path_alt);
 int quic_packet_process(struct sock *sk, struct sk_buff *skb);
+
 int quic_packet_xmit(struct sock *sk, struct sk_buff *skb);
-int quic_packet_flush(struct sock *sk);
+int quic_packet_create(struct sock *sk);
 int quic_packet_route(struct sock *sk);
 
 void quic_packet_mss_update(struct sock *sk, u32 mss);
-void quic_packet_create(struct sock *sk);
+void quic_packet_flush(struct sock *sk);
 void quic_packet_init(struct sock *sk);
 
 int quic_packet_select_version(struct sock *sk, u32 *versions, u8 count);

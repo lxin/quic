@@ -56,9 +56,7 @@ struct quic_request_sock {
 
 enum quic_tsq_enum {
 	QUIC_MTU_REDUCED_DEFERRED,
-	QUIC_AP_LOSS_DEFERRED,
-	QUIC_IN_LOSS_DEFERRED,
-	QUIC_HS_LOSS_DEFERRED,
+	QUIC_LOSS_DEFERRED,
 	QUIC_SACK_DEFERRED,
 	QUIC_PATH_DEFERRED,
 	QUIC_TSQ_DEFERRED,
@@ -66,18 +64,14 @@ enum quic_tsq_enum {
 
 enum quic_tsq_flags {
 	QUIC_F_MTU_REDUCED_DEFERRED	= BIT(QUIC_MTU_REDUCED_DEFERRED),
-	QUIC_F_AP_LOSS_DEFERRED		= BIT(QUIC_AP_LOSS_DEFERRED),
-	QUIC_F_IN_LOSS_DEFERRED		= BIT(QUIC_IN_LOSS_DEFERRED),
-	QUIC_F_HS_LOSS_DEFERRED		= BIT(QUIC_HS_LOSS_DEFERRED),
+	QUIC_F_LOSS_DEFERRED		= BIT(QUIC_LOSS_DEFERRED),
 	QUIC_F_SACK_DEFERRED		= BIT(QUIC_SACK_DEFERRED),
 	QUIC_F_PATH_DEFERRED		= BIT(QUIC_PATH_DEFERRED),
 	QUIC_F_TSQ_DEFERRED		= BIT(QUIC_TSQ_DEFERRED),
 };
 
 #define QUIC_DEFERRED_ALL (QUIC_F_MTU_REDUCED_DEFERRED |	\
-			   QUIC_F_AP_LOSS_DEFERRED |		\
-			   QUIC_F_IN_LOSS_DEFERRED |		\
-			   QUIC_F_HS_LOSS_DEFERRED |		\
+			   QUIC_F_LOSS_DEFERRED |		\
 			   QUIC_F_SACK_DEFERRED |		\
 			   QUIC_F_PATH_DEFERRED |		\
 			   QUIC_F_TSQ_DEFERRED)
@@ -166,7 +160,7 @@ static inline struct quic_crypto *quic_crypto(const struct sock *sk, u8 level)
 
 static inline struct quic_pnspace *quic_pnspace(const struct sock *sk, u8 level)
 {
-	return &quic_sk(sk)->space[level];
+	return &quic_sk(sk)->space[level % QUIC_CRYPTO_EARLY];
 }
 
 static inline struct quic_stream_table *quic_streams(const struct sock *sk)

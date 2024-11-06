@@ -108,7 +108,7 @@ int quic_pnspace_mark(struct quic_pnspace *space, s64 pn)
 
 	if (space->max_pn_seen < pn) {
 		space->max_pn_seen = pn;
-		space->max_pn_time = jiffies_to_usecs(jiffies);
+		space->max_pn_time = space->time;
 	}
 
 	if (space->base_pn == pn) {

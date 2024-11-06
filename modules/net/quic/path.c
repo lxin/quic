@@ -29,6 +29,7 @@ static int quic_udp_rcv(struct sock *sk, struct sk_buff *skb)
 
 	memset(skb->cb, 0, sizeof(skb->cb));
 	QUIC_CRYPTO_CB(skb)->udph_offset = skb->transport_header;
+	QUIC_CRYPTO_CB(skb)->time = jiffies_to_usecs(jiffies);
 	skb_set_transport_header(skb, sizeof(struct udphdr));
 	quic_rcv(skb);
 	return 0;

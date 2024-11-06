@@ -105,6 +105,7 @@ void quic_rcv_err_pmtu(struct sock *sk)
 		dst->ops->update_pmtu(dst, sk, NULL, info, true);
 		quic_packet_mss_update(sk, info - quic_encap_len(sk));
 		quic_outq_retransmit_mark(sk, QUIC_CRYPTO_APP, 1);
+		quic_outq_update_loss_timer(sk);
 		quic_outq_transmit(sk);
 		return;
 	}
@@ -176,6 +177,7 @@ static void quic_inq_stream_tail(struct sock *sk, struct quic_stream *stream,
 		update.state = QUIC_STREAM_RECV_STATE_RECVD;
 		update.finalsz = frame->offset + frame->len;
 		quic_inq_event_recv(sk, QUIC_EVENT_STREAM_UPDATE, &update);
+
 		stream->recv.state = update.state;
 		quic_stream_recv_put(quic_streams(sk), stream, quic_is_serv(sk));
 	}
@@ -190,17 +192,17 @@ static void quic_inq_stream_tail(struct sock *sk, struct quic_stream *stream,
 	sk->sk_data_ready(sk);
 }
 
-void quic_inq_flow_control(struct sock *sk, struct quic_stream *stream, u32 len)
+void quic_inq_flow_control(struct sock *sk, struct quic_stream *stream, u32 bytes)
 {
 	struct quic_inqueue *inq = quic_inq(sk);
 	struct quic_frame *frame = NULL;
 	u32 window;
 
-	if (!len)
+	if (!bytes)
 		return;
 
-	stream->recv.bytes += len;
-	inq->bytes += len;
+	stream->recv.bytes += bytes;
+	inq->bytes += bytes;
 
 	/* recv flow control */
 	if (inq->max_bytes - inq->bytes < inq->window / 2) {
@@ -249,7 +251,7 @@ int quic_inq_stream_recv(struct sock *sk, struct quic_frame *frame)
 	struct quic_frame *pos;
 
 	if (stream->recv.offset >= offset + frame->len) { /* dup */
-		quic_frame_free(frame);
+		quic_frame_put(frame);
 		return 0;
 	}
 
@@ -275,8 +277,7 @@ int quic_inq_stream_recv(struct sock *sk, struct quic_frame *frame)
 	if (!stream->recv.highest && !frame->stream_fin) {
 		update.id = stream->id;
 		update.state = QUIC_STREAM_RECV_STATE_RECV;
-		if (quic_inq_event_recv(sk, QUIC_EVENT_STREAM_UPDATE, &update))
-			return -ENOMEM;
+		quic_inq_event_recv(sk, QUIC_EVENT_STREAM_UPDATE, &update);
 	}
 	head = &inq->stream_list;
 	if (stream->recv.offset < offset) {
@@ -293,7 +294,7 @@ int quic_inq_stream_recv(struct sock *sk, struct quic_frame *frame)
 			}
 			if (pos->offset + pos->len >= offset + frame->len) { /* dup */
 				quic_inq_rfree((int)frame->len, sk);
-				quic_frame_free(frame);
+				quic_frame_put(frame);
 				return 0;
 			}
 		}
@@ -306,8 +307,8 @@ int quic_inq_stream_recv(struct sock *sk, struct quic_frame *frame)
 			update.id = stream->id;
 			update.state = QUIC_STREAM_RECV_STATE_SIZE_KNOWN;
 			update.finalsz = off;
-			if (quic_inq_event_recv(sk, QUIC_EVENT_STREAM_UPDATE, &update))
-				return -ENOMEM;
+			quic_inq_event_recv(sk, QUIC_EVENT_STREAM_UPDATE, &update);
+
 			stream->recv.state = update.state;
 			stream->recv.finalsz = update.finalsz;
 		}
@@ -336,7 +337,7 @@ int quic_inq_stream_recv(struct sock *sk, struct quic_frame *frame)
 		stream->recv.frags--;
 		if (frame->offset + frame->len <= stream->recv.offset) { /* dup */
 			quic_inq_rfree((int)frame->len, sk);
-			quic_frame_free(frame);
+			quic_frame_put(frame);
 			continue;
 		}
 		quic_inq_stream_tail(sk, stream, frame);
@@ -355,7 +356,7 @@ void quic_inq_stream_purge(struct sock *sk, struct quic_stream *stream)
 			continue;
 		list_del(&frame->list);
 		bytes += frame->len;
-		quic_frame_free(frame);
+		quic_frame_put(frame);
 	}
 	quic_inq_rfree(bytes, sk);
 }
@@ -368,7 +369,7 @@ static void quic_inq_list_purge(struct sock *sk, struct list_head *head)
 	list_for_each_entry_safe(frame, next, head, list) {
 		list_del(&frame->list);
 		bytes += frame->len;
-		quic_frame_free(frame);
+		quic_frame_put(frame);
 	}
 	quic_inq_rfree(bytes, sk);
 }
@@ -408,7 +409,7 @@ int quic_inq_handshake_recv(struct sock *sk, struct quic_frame *frame)
 	pr_debug("%s: recv_offset: %llu, offset: %llu, level: %u, len: %u\n",
 		 __func__, crypto_offset, offset, level, frame->len);
 	if (offset < crypto_offset) { /* dup */
-		quic_frame_free(frame);
+		quic_frame_put(frame);
 		return 0;
 	}
 	quic_inq_set_owner_r((int)frame->len, sk);
@@ -432,7 +433,7 @@ int quic_inq_handshake_recv(struct sock *sk, struct quic_frame *frame)
 			}
 			if (pos->offset == offset) { /* dup */
 				quic_inq_rfree((int)frame->len, sk);
-				quic_frame_free(frame);
+				quic_frame_put(frame);
 				return 0;
 			}
 		}
@@ -501,8 +502,8 @@ int quic_inq_event_recv(struct sock *sk, u8 event, void *args)
 		args = ((struct quic_data *)args)->data;
 		break;
 	case QUIC_EVENT_CONNECTION_CLOSE:
-		args_len = strlen(((struct quic_connection_close *)args)->phrase) +
-			   1 + sizeof(struct quic_connection_close);
+		args_len = strlen(((struct quic_connection_close *)args)->phrase) + 1 +
+			   sizeof(struct quic_connection_close);
 		break;
 	case QUIC_EVENT_KEY_UPDATE:
 		args_len = sizeof(u8);
@@ -518,12 +519,13 @@ int quic_inq_event_recv(struct sock *sk, u8 event, void *args)
 	}
 
 	frame = quic_frame_alloc(1 + args_len, NULL, GFP_ATOMIC);
-	if (!frame)
+	if (!frame) {
+		pr_debug("%s: event: %u, args_len: %u\n", __func__, event, args_len);
 		return -ENOMEM;
+	}
 	p = quic_put_data(frame->data, &event, 1);
 	quic_put_data(p, args, args_len);
-
-	frame->event = event;
+	frame->event = 1;
 
 	/* always put event ahead of data */
 	list_for_each_entry(pos, head, list) {

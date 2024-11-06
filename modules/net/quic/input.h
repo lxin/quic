@@ -33,11 +33,22 @@ struct quic_inqueue {
 	u32 max_idle_timeout;
 	u32 max_ack_delay;
 	u32 events;
+	u16 count;
 
 	u8 disable_1rtt_encryption:1;
 	u8 grease_quic_bit:1;
 	u8 need_sack:2;
 };
+
+static inline u16 quic_inq_count(struct quic_inqueue *inq)
+{
+	return inq->count;
+}
+
+static inline void quic_inq_set_count(struct quic_inqueue *inq, u16 count)
+{
+	inq->count = count;
+}
 
 static inline u32 quic_inq_max_idle_timeout(struct quic_inqueue *inq)
 {
@@ -47,6 +58,11 @@ static inline u32 quic_inq_max_idle_timeout(struct quic_inqueue *inq)
 static inline void quic_inq_set_max_idle_timeout(struct quic_inqueue *inq, u32 timeout)
 {
 	inq->max_idle_timeout = timeout;
+}
+
+static inline u32 quic_inq_ack_delay_exponent(struct quic_inqueue *inq)
+{
+	return inq->ack_delay_exponent;
 }
 
 static inline u32 quic_inq_max_ack_delay(struct quic_inqueue *inq)
@@ -143,7 +159,7 @@ int quic_inq_stream_recv(struct sock *sk, struct quic_frame *frame);
 int quic_inq_dgram_recv(struct sock *sk, struct quic_frame *frame);
 int quic_inq_event_recv(struct sock *sk, u8 event, void *args);
 
-void quic_inq_flow_control(struct sock *sk, struct quic_stream *stream, u32 len);
+void quic_inq_flow_control(struct sock *sk, struct quic_stream *stream, u32 bytes);
 void quic_inq_stream_purge(struct sock *sk, struct quic_stream *stream);
 void quic_inq_decrypted_tail(struct sock *sk, struct sk_buff *skb);
 void quic_inq_backlog_tail(struct sock *sk, struct sk_buff *skb);
