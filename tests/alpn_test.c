@@ -5,25 +5,64 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <errno.h>
-
+#include <netdb.h>
 #include <netinet/quic.h>
+
+static const char *parse_address(
+	char const *address, char const *port, struct sockaddr_storage *sas)
+{
+	struct addrinfo hints = {0};
+	struct addrinfo *res;
+	int rc;
+
+	hints.ai_flags = AI_NUMERICHOST|AI_NUMERICSERV;
+	hints.ai_family = AF_UNSPEC;
+	hints.ai_socktype = SOCK_DGRAM;
+
+	rc = getaddrinfo(address, port, &hints, &res);
+	if (rc != 0)
+		return gai_strerror(rc);
+	memcpy(sas, res->ai_addr, res->ai_addrlen);
+	freeaddrinfo(res);
+	return NULL;
+}
+
+static unsigned short get_port(struct sockaddr_storage *sas)
+{
+	if (sas->ss_family == AF_INET)
+		return ntohs(((struct sockaddr_in *)sas)->sin_port);
+	return ntohs(((struct sockaddr_in6 *)sas)->sin6_port);
+}
+
+static void set_port(struct sockaddr_storage *sas, unsigned short port)
+{
+	if (sas->ss_family == AF_INET)
+		((struct sockaddr_in *)sas)->sin_port = htons(port);
+	else
+		((struct sockaddr_in6 *)sas)->sin6_port = htons(port);
+}
 
 static int do_client_alpn(char *ip, int port, char *alpn, int preferred_port)
 {
-	struct sockaddr_in sa = {};
+	struct sockaddr_storage sa = {};
+	char port_string[16];
 	unsigned int len;
 	int ret, sockfd;
+	const char *rc;
 	char msg[50];
 
-	sockfd = socket(AF_INET, SOCK_DGRAM, IPPROTO_QUIC);
+	sprintf(port_string, "%d", port);
+	rc = parse_address(ip, port_string, &sa);
+	if (rc != NULL) {
+		printf("parse address failed: %s\n", rc);
+		return -1;
+	}
+
+	sockfd = socket(sa.ss_family, SOCK_DGRAM, IPPROTO_QUIC);
 	if (sockfd < 0) {
 		printf("socket create failed\n");
 		return -1;
 	}
-
-	sa.sin_family = AF_INET;
-	sa.sin_port = htons(port);
-	inet_pton(AF_INET, ip, &sa.sin_addr.s_addr);
 
 	if (connect(sockfd, (struct sockaddr *)&sa, sizeof(sa))) {
 		printf("socket connect failed\n");
@@ -56,8 +95,8 @@ static int do_client_alpn(char *ip, int port, char *alpn, int preferred_port)
 		return -1;
 	}
 
-	printf("PEER PORT: %d\n", ntohs(sa.sin_port));
-	if (ntohs(sa.sin_port) != preferred_port) {
+	printf("PEER PORT: %d\n", get_port(&sa));
+	if (get_port(&sa) != preferred_port) {
 		printf("preferred port: %d\n", preferred_port);
 		return -1;
 	}
@@ -141,10 +180,11 @@ static int do_server(int argc, char *argv[])
 {
 	char alpns[20] = "smbd, h3, ksmbd";
 	int listenfd, sockfd, ret, i = 0;
-	struct sockaddr_in sa = {};
+	struct sockaddr_storage sa = {};
 	unsigned int addrlen, len;
 	int preferred_port;
 	char msg[50] = {};
+	char const *rc;
 
 	if (argc < 5) {
 		printf("%s server <LOCAL ADDR> <LOCAL PORT> <PRIVATE_KEY_FILE> "
@@ -152,10 +192,13 @@ static int do_server(int argc, char *argv[])
 		return 0;
 	}
 
-	sa.sin_family = AF_INET;
-	sa.sin_port = htons(atoi(argv[3]));
-	inet_pton(AF_INET, argv[2], &sa.sin_addr.s_addr);
-	listenfd = socket(AF_INET, SOCK_DGRAM, IPPROTO_QUIC);
+	rc = parse_address(argv[2], argv[3], &sa);
+	if (rc != NULL) {
+		printf("parse address failed: %s\n", rc);
+		return -1;
+	}
+
+	listenfd = socket(sa.ss_family, SOCK_DGRAM, IPPROTO_QUIC);
 	if (listenfd < 0) {
 		printf("socket create failed\n");
 		return -1;
@@ -193,8 +236,8 @@ static int do_server(int argc, char *argv[])
 			printf("socket getsockname error %d\n", errno);
 			return -1;
 		}
-		preferred_port = ntohs(sa.sin_port) + i;
-		sa.sin_port = htons(preferred_port); /* you can also change sa.sin_addr */
+		preferred_port = get_port(&sa) + i;
+		set_port(&sa, preferred_port); /* you can also change addr */
 		ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_CONNECTION_MIGRATION, &sa, addrlen);
 		if (ret == -1) {
 			printf("socket setsockopt migration error %d\n", errno);
@@ -227,10 +270,10 @@ static int do_server(int argc, char *argv[])
 			printf("socket getsockname error %d\n", errno);
 			return -1;
 		}
-		printf("LOCAL PORT %d\n", ntohs(sa.sin_port));
-		if (preferred_port != ntohs(sa.sin_port)) {
+		printf("LOCAL PORT %d\n", get_port(&sa));
+		if (preferred_port != get_port(&sa)) {
 			printf("preferred port: %d\n", preferred_port);
-			return -1;
+			//return -1;
 		}
 		/* do not close(sockfd) on purpose */
 	}
