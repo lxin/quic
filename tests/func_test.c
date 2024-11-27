@@ -6,20 +6,55 @@
 #include <linux/tls.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
+#include <netdb.h>
 #include <netinet/quic.h>
 
 #define MSG_LEN	4096
 char msg[MSG_LEN + 1];
+
+static const char *parse_address(
+	char const *address, char const *port, struct sockaddr_storage *sas)
+{
+	struct addrinfo hints = {0};
+	struct addrinfo *res;
+	int rc;
+
+	hints.ai_flags = AI_NUMERICHOST|AI_NUMERICSERV;
+	hints.ai_family = AF_UNSPEC;
+	hints.ai_socktype = SOCK_DGRAM;
+
+	rc = getaddrinfo(address, port, &hints, &res);
+	if (rc != 0)
+		return gai_strerror(rc);
+	memcpy(sas, res->ai_addr, res->ai_addrlen);
+	freeaddrinfo(res);
+	return NULL;
+}
+
+static unsigned short get_port(struct sockaddr_storage *sas)
+{
+	if (sas->ss_family == AF_INET)
+		return ntohs(((struct sockaddr_in *)sas)->sin_port);
+	return ntohs(((struct sockaddr_in6 *)sas)->sin6_port);
+}
+
+static void set_port(struct sockaddr_storage *sas, unsigned short port)
+{
+	if (sas->ss_family == AF_INET)
+		((struct sockaddr_in *)sas)->sin_port = htons(port);
+	else
+		((struct sockaddr_in6 *)sas)->sin6_port = htons(port);
+}
 
 static int do_client_notification_test(int sockfd)
 {
 	struct quic_connection_id_info connid_info = {};
 	struct quic_errinfo errinfo = {};
 	struct quic_event_option event;
-	struct sockaddr_in addr = {};
+	struct sockaddr_storage addr = {};
 	unsigned int optlen, flags;
 	union quic_event *ev;
-	int ret, port;
+	int ret;
 	int64_t sid;
 
 	printf("NOTIFICATION TEST:\n");
@@ -332,9 +367,8 @@ static int do_client_notification_test(int sockfd)
 		printf("socket getsockname error %d\n", errno);
 		return -1;
 	}
-	port = ntohs(addr.sin_port);
-	addr.sin_port = htons(port + 1);
-	ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_CONNECTION_MIGRATION, &addr, sizeof(addr));
+	set_port(&addr, get_port(&addr) + 1);
+	ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_CONNECTION_MIGRATION, &addr, optlen);
 	if (ret == -1) {
 		printf("socket setsockopt migration error %d\n", errno);
 		return -1;
@@ -800,7 +834,7 @@ static int do_client_close_test(int sockfd)
 static int do_client_connection_test(int sockfd)
 {
 	struct quic_connection_id_info info = {};
-	struct sockaddr_in addr = {};
+	struct sockaddr_storage addr = {};
 	unsigned int optlen, flags;
 	char opt[100] = {};
 	int64_t sid = 0;
@@ -1060,9 +1094,9 @@ static int do_client_connection_test(int sockfd)
 		printf("socket getsockname error %d\n", errno);
 		return -1;
 	}
-	port = ntohs(addr.sin_port);
-	addr.sin_port = htons(port + 1);
-	ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_CONNECTION_MIGRATION, &addr, sizeof(addr));
+	port = get_port(&addr);
+	set_port(&addr, port + 1);
+	ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_CONNECTION_MIGRATION, &addr, optlen);
 	if (ret == -1) {
 		printf("socket setsockopt migration error %d\n", errno);
 		return -1;
@@ -1088,8 +1122,8 @@ static int do_client_connection_test(int sockfd)
 
 	optlen = sizeof(addr);
 	ret = getsockname(sockfd, (struct sockaddr *)&addr, &optlen);
-	if (ret == -1 || ntohs(addr.sin_port) != port + 1) {
-		printf("test15: FAIL new port %d, expected port %d\n", ntohs(addr.sin_port),
+	if (ret == -1 || get_port(&addr) != port + 1) {
+		printf("test15: FAIL new port %d, expected port %d\n", get_port(&addr),
 		       port + 1);
 		return -1;
 	}
@@ -1116,7 +1150,7 @@ static int do_client_connection_test(int sockfd)
 		printf("socket getpeername error %d\n", errno);
 		return -1;
 	}
-	port = ntohs(addr.sin_port);
+	port = get_port(&addr);
 	strcpy(msg, "client migration");
 	ret = send(sockfd, msg, strlen(msg), MSG_SYN | MSG_FIN); /* 13-19 */
 	if (ret == -1) {
@@ -1137,8 +1171,8 @@ static int do_client_connection_test(int sockfd)
 	sleep(2);
 	optlen = sizeof(addr);
 	ret = getpeername(sockfd, (struct sockaddr *)&addr, &optlen);
-	if (ret == -1 || ntohs(addr.sin_port) != port + 1) {
-		printf("test18: FAIL new port %d, expected port %d\n", ntohs(addr.sin_port),
+	if (ret == -1 || get_port(&addr) != port + 1) {
+		printf("test18: FAIL new port %d, expected port %d\n", get_port(&addr),
 		       port + 1);
 		return -1;
 	}
@@ -2078,7 +2112,7 @@ static int do_server_test(int sockfd)
 {
 	struct quic_errinfo errinfo = {};
 	unsigned int optlen, flags = 0;
-	struct sockaddr_in addr = {};
+	struct sockaddr_storage addr = {};
 	int64_t len = 0, sid = 0;
 	int ret;
 
@@ -2138,9 +2172,9 @@ static int do_server_test(int sockfd)
 				printf("socket getsockname failed %d\n", errno);
 				return -1;
 			}
-			addr.sin_port = htons(ntohs(addr.sin_port) + 1);
+			set_port(&addr, get_port(&addr) + 1);
 			ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_CONNECTION_MIGRATION,
-					 &addr, sizeof(addr));
+					 &addr, optlen);
 			if (ret == -1) {
 				printf("socket setsockopt migration failed %d\n", errno);
 				return -1;
@@ -2215,8 +2249,9 @@ reset:
 static int do_client(int argc, char *argv[])
 {
 	struct quic_transport_param param = {};
-        struct sockaddr_in ra = {};
+	struct sockaddr_storage ra = {};
 	char *pkey = NULL;
+	const char *rc;
 	int sockfd;
 
 	if (argc < 3) {
@@ -2224,15 +2259,17 @@ static int do_client(int argc, char *argv[])
 		return 0;
 	}
 
-	sockfd = socket(AF_INET, SOCK_DGRAM, IPPROTO_QUIC);
+	rc = parse_address(argv[2], argv[3], &ra);
+	if (rc != NULL) {
+		printf("parse address failed: %s\n", rc);
+		return -1;
+	}
+
+	sockfd = socket(ra.ss_family, SOCK_DGRAM, IPPROTO_QUIC);
 	if (sockfd < 0) {
 		printf("socket create failed\n");
 		return -1;
 	}
-
-        ra.sin_family = AF_INET;
-        ra.sin_port = htons(atoi(argv[3]));
-        inet_pton(AF_INET, argv[2], &ra.sin_addr.s_addr);
 
 	if (connect(sockfd, (struct sockaddr *)&ra, sizeof(ra))) {
 		printf("socket connect failed\n");
@@ -2256,10 +2293,11 @@ start:
 static int do_server(int argc, char *argv[])
 {
 	struct quic_transport_param param = {};
-	struct sockaddr_in la = {}, ra = {};
+	struct sockaddr_storage la = {}, ra = {};
 	char *pkey, *cert = NULL;
 	int listenfd, sockfd;
 	unsigned int addrlen;
+	const char *rc;
 
 	if (argc < 5) {
 		printf("%s server <LOCAL ADDR> <LOCAL PORT> <PSK_FILE> | <PRIVATE_KEY_FILE> "
@@ -2267,10 +2305,12 @@ static int do_server(int argc, char *argv[])
 		return 0;
 	}
 
-	la.sin_family = AF_INET;
-	la.sin_port = htons(atoi(argv[3]));
-	inet_pton(AF_INET, argv[2], &la.sin_addr.s_addr);
-	listenfd = socket(AF_INET, SOCK_DGRAM, IPPROTO_QUIC);
+	rc = parse_address(argv[2], argv[3], &la);
+	if (rc != NULL) {
+		printf("parse address failed: %s\n", rc);
+		return -1;
+	}
+	listenfd = socket(la.ss_family, SOCK_DGRAM, IPPROTO_QUIC);
 	if (listenfd < 0) {
 		printf("socket create failed\n");
 		return -1;

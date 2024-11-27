@@ -5,10 +5,29 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <errno.h>
-
+#include <netdb.h>
 #include <netinet/quic.h>
 
 static uint8_t ticket[4096];
+
+static const char *parse_address(
+	char const *address, char const *port, struct sockaddr_storage *sas)
+{
+	struct addrinfo hints = {0};
+	struct addrinfo *res;
+	int rc;
+
+	hints.ai_flags = AI_NUMERICHOST|AI_NUMERICSERV;
+	hints.ai_family = AF_UNSPEC;
+	hints.ai_socktype = SOCK_DGRAM;
+
+	rc = getaddrinfo(address, port, &hints, &res);
+	if (rc != 0)
+		return gai_strerror(rc);
+	memcpy(sas, res->ai_addr, res->ai_addrlen);
+	freeaddrinfo(res);
+	return NULL;
+}
 
 static int client_handshake(int sockfd, const char *alpns, const char *host,
 			    const uint8_t *ticket_in, size_t ticket_in_len,
@@ -89,10 +108,11 @@ static int do_client(int argc, char *argv[])
 {
 	struct quic_transport_param param = {};
 	unsigned int param_len, flags;
-	struct sockaddr_in ra = {};
+	struct sockaddr_storage ra = {};
 	char msg[50], *alpn;
 	size_t ticket_len;
 	int ret, sockfd;
+	const char *rc;
 	int64_t sid;
 
 	if (argc < 3) {
@@ -100,15 +120,17 @@ static int do_client(int argc, char *argv[])
 		return 0;
 	}
 
-	sockfd = socket(AF_INET, SOCK_DGRAM, IPPROTO_QUIC);
+	rc = parse_address(argv[2], argv[3], &ra);
+	if (rc != NULL) {
+		printf("parse address failed: %s\n", rc);
+		return -1;
+	}
+
+	sockfd = socket(ra.ss_family, SOCK_DGRAM, IPPROTO_QUIC);
 	if (sockfd < 0) {
 		printf("socket create failed\n");
 		return -1;
 	}
-
-	ra.sin_family = AF_INET;
-	ra.sin_port = htons(atoi(argv[3]));
-	inet_pton(AF_INET, argv[2], &ra.sin_addr.s_addr);
 
 	if (connect(sockfd, (struct sockaddr *)&ra, sizeof(ra))) {
 		printf("socket connect failed\n");
@@ -156,15 +178,17 @@ static int do_client(int argc, char *argv[])
 	printf("start new connection with the session ticket used...\n");
 	sleep(2);
 
-	sockfd = socket(AF_INET, SOCK_DGRAM, IPPROTO_QUIC);
+	rc = parse_address(argv[2], argv[3], &ra);
+	if (rc != NULL) {
+		printf("parse address failed: %s\n", rc);
+		return -1;
+	}
+
+	sockfd = socket(ra.ss_family, SOCK_DGRAM, IPPROTO_QUIC);
 	if (sockfd < 0) {
 		printf("socket create failed\n");
 		return -1;
 	}
-
-	ra.sin_family = AF_INET;
-	ra.sin_port = htons(atoi(argv[3]));
-	inet_pton(AF_INET, argv[2], &ra.sin_addr.s_addr);
 
 	if (connect(sockfd, (struct sockaddr *)&ra, sizeof(ra))) {
 		printf("socket connect failed\n");
@@ -267,10 +291,11 @@ err:
 static int do_server(int argc, char *argv[])
 {
 	unsigned int addrlen, keylen, flags;
-	struct sockaddr_in sa = {};
+	struct sockaddr_storage sa = {};
 	int listenfd, sockfd, ret;
 	char msg[50], *alpn;
 	uint8_t key[64];
+	const char *rc;
 	int64_t sid;
 
 	if (argc < 5) {
@@ -279,10 +304,13 @@ static int do_server(int argc, char *argv[])
 		return 0;
 	}
 
-	sa.sin_family = AF_INET;
-	sa.sin_port = htons(atoi(argv[3]));
-	inet_pton(AF_INET, argv[2], &sa.sin_addr.s_addr);
-	listenfd = socket(AF_INET, SOCK_DGRAM, IPPROTO_QUIC);
+	rc = parse_address(argv[2], argv[3], &sa);
+	if (rc != NULL) {
+		printf("parse address failed: %s\n", rc);
+		return -1;
+	}
+
+	listenfd = socket(sa.ss_family, SOCK_DGRAM, IPPROTO_QUIC);
 	if (listenfd < 0) {
 		printf("socket create failed\n");
 		return -1;
