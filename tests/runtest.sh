@@ -22,7 +22,7 @@ daemon_run()
 
 cleanup()
 {
-	tc qdisc del dev lo root netem loss 10% > /dev/null 2>&1
+	tc qdisc del dev lo root netem loss 20% > /dev/null 2>&1
 	pkill func_test > /dev/null 2>&1
 	pkill perf_test > /dev/null 2>&1
 	pkill msquic_test > /dev/null 2>&1
@@ -103,17 +103,17 @@ perf_tests()
 netem_tests()
 {
 	modprobe -q sch_netem || return 0
-	tc qdisc add dev lo root netem loss 10%
-	print_start "Performance Tests (IPv4, 10% packet loss on both sides)"
+	tc qdisc add dev lo root netem loss 20%
+	print_start "Performance Tests (IPv4, 20% packet loss on both sides)"
 	daemon_run ./perf_test -l --pkey ./keys/server-key.pem --cert ./keys/server-cert.pem
 	./perf_test --addr 127.0.0.1 --tot_len 1048576 --msg_len 1024 || return 1
 	daemon_stop "perf_test"
 
-	print_start "Performance Tests (IPv6, 10% packet loss on both sides)"
+	print_start "Performance Tests (IPv6, 20% packet loss on both sides)"
 	daemon_run ./perf_test -l --pkey ./keys/server-key.pem --cert ./keys/server-cert.pem
 	./perf_test --addr ::1 --tot_len 1048576 --msg_len 1024 || return 1
 	daemon_stop "perf_test"
-	tc qdisc del dev lo root netem loss 10%
+	tc qdisc del dev lo root netem loss 20%
 }
 
 msquic_tests() {

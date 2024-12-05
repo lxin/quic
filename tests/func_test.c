@@ -2125,6 +2125,7 @@ static int do_server_test(int sockfd)
 		len += ret;
 		if (!strcmp(msg, "client reset")) {
 			if (flags & MSG_STREAM_FIN) {
+				sleep(1);
 				flags = MSG_STREAM_NEW;
 				if (sid & QUIC_STREAM_TYPE_UNI_MASK) {
 					flags |= MSG_STREAM_NEW;
