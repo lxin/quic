@@ -34,7 +34,6 @@ static int port = 1234;
 static int psk;
 
 static u8 session_data[4096];
-static u8 token[256];
 
 static int quic_test_recvmsg(struct socket *sock, void *msg, int len, s64 *sid, u32 *flags)
 {
@@ -170,9 +169,9 @@ wait:
 
 static int quic_test_do_ticket_client(void)
 {
-	unsigned int param_len, token_len, ticket_len;
 	struct quic_transport_param param = {};
 	struct sockaddr_in ra = {}, la = {};
+	unsigned int param_len, ticket_len;
 	struct quic_test_priv priv = {};
 	struct quic_config config = {};
 	struct socket *sock;
@@ -221,17 +220,12 @@ static int quic_test_do_ticket_client(void)
 	if (err < 0)
 		goto free;
 
-	token_len = sizeof(token);
-	err = quic_sock_getopt(sock->sk, QUIC_SOCKOPT_TOKEN, token, &token_len);
-	if (err < 0)
-		goto free;
-
 	err = kernel_getsockname(sock, (struct sockaddr *)&la);
 	if (err < 0)
 		goto free;
 
-	pr_info("quic_test: save session ticket: %d, transport param %d, token %d for session resumption\n",
-		ticket_len, param_len, token_len);
+	pr_info("quic_test: save session ticket: %d, transport param %d for session resumption\n",
+		ticket_len, param_len);
 
 	strscpy(msg, "hello quic server!", sizeof(msg));
 	sid = QUIC_STREAM_TYPE_UNI_MASK;
@@ -275,10 +269,6 @@ static int quic_test_do_ticket_client(void)
 		goto free;
 	err = kernel_connect(sock, (struct sockaddr *)&ra, sizeof(ra), 0);
 	if (err < 0)
-		goto free;
-
-	err = quic_sock_setopt(sock->sk, QUIC_SOCKOPT_TOKEN, token, token_len);
-	if (err)
 		goto free;
 
 	err = quic_sock_setopt(sock->sk, QUIC_SOCKOPT_SESSION_TICKET, session_data, ticket_len);
@@ -386,7 +376,6 @@ free:
 static int quic_test_do_ticket_server(void)
 {
 	struct quic_test_priv priv = {};
-	struct quic_config config = {};
 	struct socket *sock, *newsock;
 	struct sockaddr_in la = {};
 	u32 flags = 0;
@@ -410,10 +399,6 @@ static int quic_test_do_ticket_server(void)
 		goto free;
 	err = kernel_listen(sock, 1);
 	if (err < 0)
-		goto free;
-	config.validate_peer_address = 1;
-	err = quic_sock_setopt(sock->sk, QUIC_SOCKOPT_CONFIG, &config, sizeof(config));
-	if (err)
 		goto free;
 
 	err = kernel_accept(sock, &newsock, 0);
@@ -565,6 +550,7 @@ static int quic_test_do_sample_server(void)
 		goto free_flip;
 	}
 	pr_info("quic_test: send '%s' on stream %lld\n", msg, sid);
+	msleep(100);
 
 	err = 0;
 free_flip:
