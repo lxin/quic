@@ -124,7 +124,6 @@ static int do_server(struct options *opts)
 	struct quic_transport_param param = {};
 	uint32_t flags = 0, addrlen, len = 0;
 	struct sockaddr_storage ra = {};
-	struct quic_config config = {};
 	struct sockaddr_in la = {};
 	int ret, sockfd, listenfd;
 	struct addrinfo *rp;
@@ -170,14 +169,14 @@ listen:
 	param.grease_quic_bit = 1;
 	param.stateless_reset = 1;
 	param.disable_1rtt_encryption = opts->no_crypt;
-	if (setsockopt(listenfd, SOL_QUIC, QUIC_SOCKOPT_TRANSPORT_PARAM, &param, sizeof(param)))
+	if (setsockopt(listenfd, SOL_QUIC, QUIC_SOCKOPT_TRANSPORT_PARAM, &param, sizeof(param))) {
+		printf("socket setsockopt transport param failed\n");
 		return -1;
-	config.validate_peer_address = 1; /* trigger retry packet sending */
-	if (setsockopt(listenfd, SOL_QUIC, QUIC_SOCKOPT_CONFIG, &config, sizeof(config)))
+	}
+	if (setsockopt(listenfd, SOL_QUIC, QUIC_SOCKOPT_ALPN, alpn, strlen(alpn))) {
+		printf("socket setsockopt alpn failed\n");
 		return -1;
-
-	if (setsockopt(listenfd, SOL_QUIC, QUIC_SOCKOPT_ALPN, alpn, strlen(alpn)))
-		return -1;
+	}
 
 	if (listen(listenfd, 1)) {
 		printf("socket listen failed\n");
@@ -222,7 +221,7 @@ loop:
 		printf("send %d %d\n", ret, errno);
 		return -1;
 	}
-	sleep(1);
+	quic_recvmsg(sockfd, &rcv_msg, sizeof(rcv_msg), &sid, &flags);
 	close(sockfd);
 	printf("CLOSE DONE\n");
 
@@ -255,7 +254,6 @@ static int do_client(struct options *opts)
 
 	if (rp->ai_family == AF_INET6) {
 		struct quic_transport_param param = {};
-		struct quic_config config = {};
 		struct sockaddr_in6 ra = {};
 
 		sockfd = socket(AF_INET6, SOCK_DGRAM, IPPROTO_QUIC);
@@ -270,12 +268,10 @@ static int do_client(struct options *opts)
 
 		param.disable_1rtt_encryption = opts->no_crypt;
 		if (setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_TRANSPORT_PARAM,
-			       &param, sizeof(param)))
+			       &param, sizeof(param))) {
+			printf("socket setsockopt transport param failed\n");
 			return -1;
-		config.version = 5; /* invalid version to trigger version negotiation */
-		if (setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_CONFIG,
-			       &config, sizeof(config)))
-			return -1;
+		}
 
 		if (connect(sockfd, (struct sockaddr *)&ra, sizeof(ra))) {
 			printf("socket connect failed\n");
