@@ -146,7 +146,7 @@ the QUIC handshake, see
 
 ### Kernel Consumer Test:
     Packages Required:
-    - glib2-devel / glib-2.0-dev
+    - glib2-devel / libglib2.0-dev
     - libnl3-devel / libnl-genl-3-dev
     - keyutils keyutils-libs-devel / libkeyutils-dev
 
@@ -179,6 +179,74 @@ the QUIC handshake, see
 
     # cd /home/lxin/quic
     # sudo make check tests=tlshd (optional, run some tests for tlshd)
+
+### QUIC Interoperability Test:
+    Requirements:
+    - cmake flex bison byacc ninja-build
+    - python3-pip docker docker-compose
+    - libgcrypt-devel / libgcrypt20-dev
+    - c-ares-devel / libc-ares-dev
+    - glib2-devel / libglib2.0-dev
+    - libpcap-devel / libpcap-dev
+
+    Build latest wireshark:
+    # cd /home/lxin
+    # git clone https://github.com/wireshark/wireshark.git
+    # cd wireshark/
+    # cmake -GNinja -DBUILD_wireshark=0 -DBUILD_qtshark=0 -DBUILD_editcap=1 \
+      -DBUILD_capinfos=0 -DBUILD_text2pcap=0 -DBUILD_rawshark=0 -DBUILD_sdjournal=0 \
+      -DBUILD_sshdump=0 -DBUILD_ciscodump=0 -DBUILD_sharkd=0 -DENABLE_STATIC=1 \
+      -DENABLE_PLUGINS=0 -DENABLE_LIBXML2=0 -DENABLE_BROTLI=0 -DENABLE_GNUTLS=1 .
+    # ninja
+    # sudo ninja install
+
+    Build test image:
+    # cd /home/lxin
+    # git clone https://github.com/quic-interop/quic-network-simulator.git
+    # cd quic-network-simulator/
+    # cp -r /home/lxin/quic/tests/interop linuxquic
+    # CLIENT="linuxquic" SERVER="linuxquic" docker compose build
+    # docker image ls linuxquic
+      REPOSITORY   TAG       IMAGE ID       CREATED          SIZE
+      linuxquic    latest    3329ae030c62   52 seconds ago   568MB
+
+    Run tests:
+    # cd /home/lxin
+    # git clone https://github.com/quic-interop/quic-interop-runner.git
+    # cd quic-interop-runner/
+    # pip3 install -r requirements.txt
+    # cat implementations.json
+      {
+        "linuxquic": {
+          "image": "linuxquic:latest",
+          "url": "https://github.com/lxin/quic",
+          "role": "both"
+        },
+        "ngtcp2": {
+          "image": "ghcr.io/ngtcp2/ngtcp2-interop:latest",
+          "url": "https://github.com/ngtcp2/ngtcp2",
+          "role": "both"
+        }
+      }
+
+You can change implementations.json file to run test cases with more implementations.
+Here it only displays the testing result between linuxquic and ngtcp2:
+
+    # python3 run.py -t onlyTests
+      ...
+      +-----------+----------------------------+----------------------------+
+      |           |           linuxquic        |           ngtcp2           |
+      +-----------+----------------------------+----------------------------+
+      | linuxquic | ✓(H,DC,LR,C20,M,S,R,Z,3,B, | ✓(H,DC,LR,C20,M,S,R,Z,3,B, |
+      |           |   U,E,A,L1,L2,C1,C2,6,V2)  |   U,E,A,L1,L2,C1,C2,6,V2)  |
+      |           |             ?()            |             ?()            |
+      |           |             ✕()            |             ✕()            |
+      +-----------+----------------------------+----------------------------+
+      |   ngtcp2  | ✓(H,DC,LR,C20,M,S,R,Z,3,B, | ✓(H,DC,LR,C20,M,S,R,Z,3,B, |
+      |           |   U,E,A,L1,L2,C1,C2,6,V2)  |   U,E,A,L1,L2,C1,C2,6,V2)  |
+      |           |             ?()            |             ?()            |
+      |           |             ✕()            |             ✕()            |
+      +-----------+----------------------------+----------------------------+
 
 ### HTTP/3 Interoperability Test:
     # cd /home/lxin
