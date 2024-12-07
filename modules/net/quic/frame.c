@@ -1647,11 +1647,13 @@ int quic_frame_set_transport_params_ext(struct sock *sk, struct quic_transport_p
 			if (quic_get_param(&params->max_streams_bidi, &p, &len))
 				return -1;
 			if (params->max_streams_bidi > QUIC_MAX_STREAMS)
-				return -1;
+				params->max_streams_bidi = QUIC_MAX_STREAMS;
 			break;
 		case QUIC_TRANSPORT_PARAM_INITIAL_MAX_STREAMS_UNI:
 			if (quic_get_param(&params->max_streams_uni, &p, &len))
 				return -1;
+			if (params->max_streams_uni > QUIC_MAX_STREAMS)
+				params->max_streams_uni = QUIC_MAX_STREAMS;
 			break;
 		case QUIC_TRANSPORT_PARAM_MAX_IDLE_TIMEOUT:
 			if (quic_get_param(&params->max_idle_timeout, &p, &len))
