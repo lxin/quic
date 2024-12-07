@@ -80,6 +80,8 @@ static void quic_outq_transmit_ctrl(struct sock *sk, u8 level)
 
 	head = &outq->control_list;
 	list_for_each_entry_safe(frame, next, head, list) {
+		if (!frame->level && level)
+			break;
 		if (frame->level != level)
 			continue;
 		if (quic_packet_config(sk, frame->level, frame->path_alt))
@@ -220,6 +222,8 @@ static int quic_outq_transmit_old(struct sock *sk)
 
 	head = &outq->transmitted_list;
 	list_for_each_entry_safe(frame, next, head, list) {
+		if (!frame->level && outq->level)
+			break;
 		if (frame->level != outq->level)
 			continue;
 		if (!quic_crypto_send_ready(quic_crypto(sk, frame->level)))
@@ -786,6 +790,8 @@ void quic_outq_retransmit_mark(struct sock *sk, u8 level, u8 immediate)
 	quic_cong_set_time(cong, now);
 
 	list_for_each_entry_safe(sent, next, &outq->packet_sent_list, list) {
+		if (level && !sent->level)
+			break;
 		if (level != sent->level)
 			continue;
 		if (!immediate && sent->number > seen)
