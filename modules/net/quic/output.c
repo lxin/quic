@@ -360,7 +360,7 @@ void quic_outq_transmitted_tail(struct sock *sk, struct quic_frame *frame)
 			break;
 		}
 offset:
-		if (!pos->offset || frame->offset < pos->offset) {
+		if (frame->offset < pos->offset) {
 			head = &pos->list;
 			break;
 		}
@@ -737,7 +737,7 @@ static void quic_outq_retransmit_frame(struct sock *sk, struct quic_frame *frame
 			break;
 		}
 offset:
-		if (!pos->offset || frame->offset < pos->offset) {
+		if (pos->offset < 0 || frame->offset < pos->offset) {
 			head = &pos->list;
 			break;
 		}

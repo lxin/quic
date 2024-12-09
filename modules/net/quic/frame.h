@@ -107,7 +107,7 @@ struct quic_frame {
 	struct quic_stream *stream;
 	struct list_head list;
 	struct sk_buff *skb;
-	u64 offset;	/* stream/crypto/read offset or first packet number */
+	s64 offset;	/* stream/crypto/read offset or first packet number */
 	u8  *data;
 
 	refcount_t refcnt;

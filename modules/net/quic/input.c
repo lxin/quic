@@ -531,6 +531,7 @@ int quic_inq_event_recv(struct sock *sk, u8 event, void *args)
 	p = quic_put_data(frame->data, &event, 1);
 	quic_put_data(p, args, args_len);
 	frame->event = 1;
+	frame->offset = 0;
 
 	/* always put event ahead of data */
 	list_for_each_entry(pos, head, list) {
@@ -556,6 +557,7 @@ int quic_inq_dgram_recv(struct sock *sk, struct quic_frame *frame)
 	}
 
 	frame->dgram = 1;
+	frame->offset = 0;
 	list_add_tail(&frame->list, &quic_inq(sk)->recv_list);
 	sk->sk_data_ready(sk);
 	return 0;

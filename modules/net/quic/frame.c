@@ -1917,6 +1917,7 @@ struct quic_frame *quic_frame_alloc(u32 size, u8 *data, gfp_t gfp)
 	}
 out:
 	refcount_set(&frame->refcnt, 1);
+	frame->offset = -1;
 	frame->len = (u16)size;
 	return frame;
 }

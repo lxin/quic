@@ -1159,10 +1159,8 @@ static u8 *quic_packet_pack_frames(struct sock *sk, struct sk_buff *skb,
 			quic_frame_put(frame);
 			continue;
 		}
-		if (!frame->skb) {
+		if (frame->offset < 0)
 			frame->offset = number;
-			frame->skb = skb;
-		}
 		quic_outq_transmitted_tail(sk, frame);
 		sent->frame_array[i++] = quic_frame_get(frame);
 	}
