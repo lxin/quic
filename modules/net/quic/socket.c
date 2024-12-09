@@ -135,12 +135,12 @@ struct sock *quic_sock_lookup(struct sk_buff *skb, union quic_addr *sa, union qu
 	if (sk)
 		return sk;
 
-	if (quic_packet_parse_alpn(skb, &alpns))
-		return NULL;
-
 	/* Search for listen socket */
 	head = quic_listen_sock_head(net, ntohs(sa->v4.sin_port));
 	spin_lock(&head->lock);
+
+	if (hlist_empty(&head->head) || quic_packet_parse_alpn(skb, &alpns))
+		goto unlock;
 
 	if (!alpns.len) {
 		sk_for_each(tmp, &head->head) {
