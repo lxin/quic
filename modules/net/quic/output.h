@@ -208,6 +208,7 @@ void quic_outq_encrypted_tail(struct sock *sk, struct sk_buff *skb);
 void quic_outq_transmit_app_close(struct sock *sk);
 void quic_outq_transmit_probe(struct sock *sk);
 
+int quic_outq_stream_append(struct sock *sk, struct quic_msginfo *info, u8 pack);
 void quic_outq_set_param(struct sock *sk, struct quic_transport_param *p);
 void quic_outq_sync_window(struct sock *sk);
 void quic_outq_init(struct sock *sk);

@@ -281,6 +281,39 @@ static void quic_outq_set_owner_w(int len, struct sock *sk)
 	sk_mem_charge(sk, len);
 }
 
+int quic_outq_stream_append(struct sock *sk, struct quic_msginfo *info, u8 pack)
+{
+	struct quic_stream_table *streams = quic_streams(sk);
+	struct quic_outqueue *outq = quic_outq(sk);
+	struct quic_stream *stream = info->stream;
+	struct quic_frame *frame;
+	struct list_head *head;
+	u16 len, bytes;
+
+	head = &outq->stream_list;
+	if (list_empty(head))
+		return 0;
+	frame = list_last_entry(head, struct quic_frame, list);
+	if (frame->stream != stream || frame->nodelay || frame->offset >= 0)
+		return 0;
+
+	len = frame->len;
+	bytes = quic_frame_stream_append(sk, frame, info, pack);
+	if (!bytes || !pack)
+		return bytes;
+
+	outq->stream_list_len += (frame->len - len);
+	if (frame->type & QUIC_STREAM_BIT_FIN &&
+	    stream->send.state == QUIC_STREAM_SEND_STATE_SEND) {
+		if (quic_stream_send_active_id(streams) == stream->id)
+			quic_stream_set_send_active_id(streams, -1);
+		stream->send.state = QUIC_STREAM_SEND_STATE_SENT;
+	}
+	quic_outq_set_owner_w((int)bytes, sk);
+
+	return bytes;
+}
+
 void quic_outq_stream_tail(struct sock *sk, struct quic_frame *frame, bool cork)
 {
 	struct quic_stream_table *streams = quic_streams(sk);

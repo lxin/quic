@@ -744,6 +744,29 @@ static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 	msginfo.flags = sinfo.stream_flags;
 
 	while (iov_iter_count(msginfo.msg) > 0) {
+		if (sk_stream_wspace(sk) < len || !sk_wmem_schedule(sk, len)) {
+			if (delay) {
+				quic_outq_set_force_delay(outq, 0);
+				quic_outq_transmit(sk);
+			}
+			timeo = sock_sndtimeo(sk, msg->msg_flags & MSG_DONTWAIT);
+			err = quic_wait_for_send(sk, 0, timeo, len);
+			if (err) {
+				if (err == -EPIPE)
+					goto err;
+				goto out;
+			}
+		}
+
+		len = quic_outq_stream_append(sk, &msginfo, 0);
+		if (len) {
+			if (!sk_wmem_schedule(sk, len))
+				continue;
+			bytes += quic_outq_stream_append(sk, &msginfo, 1);
+			len = 1;
+			continue;
+		}
+
 		frame = quic_frame_create(sk, QUIC_FRAME_STREAM, &msginfo);
 		if (!frame) {
 			if (!bytes) {
@@ -752,19 +775,15 @@ static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 			}
 			goto out;
 		}
-		if (sk_stream_wspace(sk) < frame->bytes || !sk_wmem_schedule(sk, frame->bytes)) {
-			timeo = sock_sndtimeo(sk, msg->msg_flags & MSG_DONTWAIT);
-			err = quic_wait_for_send(sk, 0, timeo, frame->bytes);
-			if (err) {
-				quic_frame_put(frame);
-				if (err == -EPIPE)
-					goto err;
-				goto out;
-			}
+		len = frame->bytes;
+		if (!sk_wmem_schedule(sk, len)) {
+			quic_frame_put(frame);
+			continue;
 		}
 		bytes += frame->bytes;
 		quic_outq_set_force_delay(outq, delay);
 		quic_outq_stream_tail(sk, frame, delay);
+		len = 1;
 	}
 out:
 	err = bytes;
