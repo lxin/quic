@@ -103,19 +103,29 @@ struct quic_frame_ops {
 	int (*frame_process)(struct sock *sk, struct quic_frame *frame, u8 type);
 };
 
+struct quic_frame_frag {
+	struct quic_frame_frag *next;
+	u16 size;
+	u8 data[];
+};
+
 struct quic_frame {
+	union {
+		struct quic_frame_frag *flist;
+		struct sk_buff *skb;
+	};
 	struct quic_stream *stream;
 	struct list_head list;
-	struct sk_buff *skb;
 	s64 offset;	/* stream/crypto/read offset or first packet number */
 	u8  *data;
 
 	refcount_t refcnt;
 	u16 errcode;
-	u16 bytes;	/* user data bytes */
 	u8  level;
 	u8  type;
-	u16 len;	/* frame length */
+	u16 bytes;	/* user data bytes */
+	u16 size;	/* alloc data size */
+	u16 len;	/* frame length including data in flist */
 
 	u8  transmitted:1;
 	u8  stream_fin:1;

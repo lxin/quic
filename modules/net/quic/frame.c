@@ -86,6 +86,7 @@ static struct quic_frame *quic_frame_ack_create(struct sock *sk, void *data, u8 
 	}
 	frame->type = type;
 	frame->len = (u16)(p - frame->data);
+	frame->size = frame->len;
 	frame->level = (level % QUIC_CRYPTO_EARLY);
 
 	return frame;
@@ -152,8 +153,20 @@ static struct quic_frame *quic_frame_new_token_create(struct sock *sk, void *dat
 	p = quic_put_var(p, tokenlen);
 	p = quic_put_data(p, token, tokenlen);
 	frame->len = (u16)(p - frame->data);
+	frame->size = frame->len;
 
 	return frame;
+}
+
+static struct quic_frame_frag *quic_frame_frag_alloc(u16 size)
+{
+	struct quic_frame_frag *frag;
+
+	frag = kzalloc(sizeof(*frag) + size, GFP_ATOMIC);
+	if (frag)
+		frag->size = size;
+
+	return frag;
 }
 
 /* STREAM Frame {
@@ -167,23 +180,23 @@ static struct quic_frame *quic_frame_new_token_create(struct sock *sk, void *dat
 
 static struct quic_frame *quic_frame_stream_create(struct sock *sk, void *data, u8 type)
 {
-	u32 msg_len, hlen = 1, frame_len, max_frame_len;
+	u32 msg_len, max_frame_len, hlen = 1;
 	struct quic_msginfo *info = data;
+	struct quic_frame_frag *frag;
 	struct quic_stream *stream;
 	struct quic_frame *frame;
 	u8 *p, nodelay = 0;
 
 	if (quic_packet_config(sk, 0, 0))
 		return NULL;
-	max_frame_len = quic_packet_max_payload(quic_packet(sk));
 	stream = info->stream;
 	hlen += quic_var_len(stream->id);
 	if (stream->send.offset) {
 		type |= QUIC_STREAM_BIT_OFF;
 		hlen += quic_var_len(stream->send.offset);
 	}
-
 	type |= QUIC_STREAM_BIT_LEN;
+	max_frame_len = quic_packet_max_payload(quic_packet(sk));
 	hlen += quic_var_len(max_frame_len);
 
 	msg_len = iov_iter_count(info->msg);
@@ -195,27 +208,36 @@ static struct quic_frame *quic_frame_stream_create(struct sock *sk, void *data, 
 		msg_len = max_frame_len - hlen;
 	}
 
-	frame = quic_frame_alloc(msg_len + hlen, NULL, GFP_ATOMIC);
+	frame = quic_frame_alloc(hlen, NULL, GFP_ATOMIC);
 	if (!frame)
 		return NULL;
+	frame->stream = stream;
 
-	frame->nodelay = nodelay;
+	/* attach the data into frag list */
+	frag = quic_frame_frag_alloc(msg_len);
+	if (!frag) {
+		quic_frame_put(frame);
+		return NULL;
+	}
+	if (!quic_frame_copy_from_iter_full(frag->data, msg_len, info->msg)) {
+		quic_frame_put(frame);
+		kfree(frag);
+		return NULL;
+	}
+	frame->flist = frag;
+
+	/* set up stream data header and frame fields */
 	p = quic_put_var(frame->data, type);
 	p = quic_put_var(p, stream->id);
 	if (type & QUIC_STREAM_BIT_OFF)
 		p = quic_put_var(p, stream->send.offset);
 	p = quic_put_var(p, msg_len);
-	frame_len = (u32)(p - frame->data);
 
-	if (!quic_frame_copy_from_iter_full(p, msg_len, info->msg)) {
-		quic_frame_put(frame);
-		return NULL;
-	}
-	frame_len += msg_len;
-	frame->len = (u16)frame_len;
-	frame->bytes = (u16)msg_len;
-	frame->stream = stream;
 	frame->type = type;
+	frame->size = (u16)(p - frame->data);
+	frame->bytes = (u16)msg_len;
+	frame->len = frame->size + frame->bytes;
+	frame->nodelay = nodelay;
 
 	stream->send.offset += msg_len;
 	return frame;
@@ -269,6 +291,7 @@ static struct quic_frame *quic_frame_crypto_create(struct sock *sk, void *data, 
 		p += msg_len;
 		frame->bytes = (u16)msg_len;
 		frame->len = (u16)(p - frame->data);
+		frame->size = frame->len;
 
 		return frame;
 	}
@@ -288,6 +311,7 @@ static struct quic_frame *quic_frame_crypto_create(struct sock *sk, void *data, 
 		return NULL;
 	}
 	frame->len = (u16)(msg_len + hlen);
+	frame->size = frame->len;
 	quic_crypto_inc_send_offset(crypto, msg_len);
 	frame->level = info->level;
 	frame->bytes = (u16)msg_len;
@@ -1341,6 +1365,7 @@ static struct quic_frame *quic_frame_datagram_create(struct sock *sk, void *data
 	frame->bytes = (u16)msg_len;
 	frame_len += msg_len;
 	frame->len = (u16)frame_len;
+	frame->size = frame->len;
 	frame->dgram = 1;
 	return frame;
 }
@@ -1919,15 +1944,25 @@ out:
 	refcount_set(&frame->refcnt, 1);
 	frame->offset = -1;
 	frame->len = (u16)size;
+	frame->size = frame->len;
 	return frame;
 }
 
 static void quic_frame_free(struct quic_frame *frame)
 {
-	if (!frame->type && frame->skb) /* type is 0 on rx path */
+	struct quic_frame_frag *frag, *next;
+
+	if (!frame->type && frame->skb) {/* type is 0 on rx path */
 		kfree_skb(frame->skb);
-	else
-		kfree(frame->data);
+		goto out;
+	}
+
+	for (frag = frame->flist; frag; frag = next) {
+		next = frag->next;
+		kfree(frag);
+	}
+	kfree(frame->data);
+out:
 	kmem_cache_free(quic_frame_cachep, frame);
 }
 

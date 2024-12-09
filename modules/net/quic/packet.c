@@ -1134,6 +1134,7 @@ static u8 *quic_packet_pack_frames(struct sock *sk, struct sk_buff *skb,
 	struct quic_packet *packet = quic_packet(sk);
 	struct quic_path_addr *path = quic_dst(sk);
 	struct quic_frame *frame, *next;
+	struct quic_frame_frag *frag;
 	struct quic_pnspace *space;
 	u8 *p = skb->data + off;
 	s64 number;
@@ -1152,7 +1153,9 @@ static u8 *quic_packet_pack_frames(struct sock *sk, struct sk_buff *skb,
 
 	list_for_each_entry_safe(frame, next, &packet->frame_list, list) {
 		list_del(&frame->list);
-		p = quic_put_data(p, frame->data, frame->len);
+		p = quic_put_data(p, frame->data, frame->size);
+		for (frag = frame->flist; frag; frag = frag->next)
+			p = quic_put_data(p, frag->data, frag->size);
 		pr_debug("%s: num: %llu, type: %u, packet_len: %u, frame_len: %u, level: %u\n",
 			 __func__, number, frame->type, skb->len, frame->len, packet->level);
 		if (!quic_frame_ack_eliciting(frame->type)) {
