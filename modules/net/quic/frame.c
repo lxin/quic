@@ -671,7 +671,6 @@ static int quic_frame_crypto_process(struct sock *sk, struct quic_frame *frame, 
 	err = quic_inq_handshake_recv(sk, nframe);
 	if (err) {
 		frame->errcode = nframe->errcode;
-		quic_inq_rfree((int)nframe->len, sk);
 		quic_frame_put(nframe);
 		return err;
 	}
@@ -729,7 +728,6 @@ static int quic_frame_stream_process(struct sock *sk, struct quic_frame *frame, 
 	err = quic_inq_stream_recv(sk, nframe);
 	if (err) {
 		frame->errcode = nframe->errcode;
-		quic_inq_rfree((int)nframe->len, sk);
 		quic_frame_put(nframe);
 		return err;
 	}
@@ -1380,7 +1378,6 @@ static int quic_frame_datagram_process(struct sock *sk, struct quic_frame *frame
 
 	err = quic_inq_dgram_recv(sk, nframe);
 	if (err) {
-		quic_inq_rfree((int)nframe->len, sk);
 		quic_frame_put(nframe);
 		return err;
 	}

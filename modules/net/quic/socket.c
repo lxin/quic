@@ -909,13 +909,9 @@ static int quic_recvmsg(struct sock *sk, struct msghdr *msg, size_t len, int non
 		put_cmsg(msg, IPPROTO_QUIC, QUIC_STREAM_INFO, sizeof(sinfo), &sinfo);
 		if (msg->msg_flags & MSG_CTRUNC)
 			msg->msg_flags |= sinfo.stream_flags;
-
-		quic_inq_flow_control(sk, stream, freed);
-		if (stream->recv.state == QUIC_STREAM_RECV_STATE_READ)
-			quic_stream_recv_put(quic_streams(sk), stream, quic_is_serv(sk));
 	}
 
-	quic_inq_rfree((int)bytes, sk);
+	quic_inq_data_read(sk, stream, freed, bytes);
 	err = (int)copied;
 out:
 	release_sock(sk);

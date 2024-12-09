@@ -12,7 +12,7 @@
 
 #include "socket.h"
 
-void quic_inq_rfree(int len, struct sock *sk)
+static void quic_inq_rfree(int len, struct sock *sk)
 {
 	if (!len)
 		return;
@@ -21,7 +21,7 @@ void quic_inq_rfree(int len, struct sock *sk)
 	sk_mem_uncharge(sk, len);
 }
 
-void quic_inq_set_owner_r(int len, struct sock *sk)
+static void quic_inq_set_owner_r(int len, struct sock *sk)
 {
 	if (!len)
 		return;
@@ -192,7 +192,7 @@ static void quic_inq_stream_tail(struct sock *sk, struct quic_stream *stream,
 	sk->sk_data_ready(sk);
 }
 
-void quic_inq_flow_control(struct sock *sk, struct quic_stream *stream, u32 bytes)
+static void quic_inq_flow_control(struct sock *sk, struct quic_stream *stream, u32 bytes)
 {
 	struct quic_inqueue *inq = quic_inq(sk);
 	struct quic_frame *frame = NULL;
@@ -258,6 +258,7 @@ int quic_inq_stream_recv(struct sock *sk, struct quic_frame *frame)
 	quic_inq_set_owner_r((int)frame->len, sk);
 	if (sk_rmem_alloc_get(sk) > sk->sk_rcvbuf || !quic_sk_rmem_schedule(sk, frame->len)) {
 		QUIC_INC_STATS(net, QUIC_MIB_FRM_RCVBUFDROP);
+		quic_inq_rfree((int)frame->len, sk);
 		return -ENOBUFS;
 	}
 
@@ -267,10 +268,12 @@ int quic_inq_stream_recv(struct sock *sk, struct quic_frame *frame)
 		if (inq->highest + highest > inq->max_bytes ||
 		    stream->recv.highest + highest > stream->recv.max_bytes) {
 			frame->errcode = QUIC_TRANSPORT_ERROR_FLOW_CONTROL;
+			quic_inq_rfree((int)frame->len, sk);
 			return -ENOBUFS;
 		}
 		if (stream->recv.finalsz && off > stream->recv.finalsz) {
 			frame->errcode = QUIC_TRANSPORT_ERROR_FINAL_SIZE;
+			quic_inq_rfree((int)frame->len, sk);
 			return -EINVAL;
 		}
 	}
@@ -302,6 +305,7 @@ int quic_inq_stream_recv(struct sock *sk, struct quic_frame *frame)
 			if (off < stream->recv.highest ||
 			    (stream->recv.finalsz && stream->recv.finalsz != off)) {
 				frame->errcode = QUIC_TRANSPORT_ERROR_FINAL_SIZE;
+				quic_inq_rfree((int)frame->len, sk);
 				return -EINVAL;
 			}
 			update.id = stream->id;
@@ -416,6 +420,7 @@ int quic_inq_handshake_recv(struct sock *sk, struct quic_frame *frame)
 	if (sk_rmem_alloc_get(sk) > sk->sk_rcvbuf) {
 		QUIC_INC_STATS(sock_net(sk), QUIC_MIB_FRM_RCVBUFDROP);
 		frame->errcode = QUIC_TRANSPORT_ERROR_CRYPTO_BUF_EXCEEDED;
+		quic_inq_rfree((int)frame->len, sk);
 		return -ENOBUFS;
 	}
 	head = &inq->handshake_list;
@@ -546,6 +551,7 @@ int quic_inq_dgram_recv(struct sock *sk, struct quic_frame *frame)
 	quic_inq_set_owner_r((int)frame->len, sk);
 	if (sk_rmem_alloc_get(sk) > sk->sk_rcvbuf || !quic_sk_rmem_schedule(sk, frame->len)) {
 		QUIC_INC_STATS(sock_net(sk), QUIC_MIB_FRM_RCVBUFDROP);
+		quic_inq_rfree((int)frame->len, sk);
 		return -ENOBUFS;
 	}
 
@@ -553,6 +559,16 @@ int quic_inq_dgram_recv(struct sock *sk, struct quic_frame *frame)
 	list_add_tail(&frame->list, &quic_inq(sk)->recv_list);
 	sk->sk_data_ready(sk);
 	return 0;
+}
+
+void quic_inq_data_read(struct sock *sk, struct quic_stream *stream, u32 freed, u32 bytes)
+{
+	if (stream) {
+		quic_inq_flow_control(sk, stream, freed);
+		if (stream->recv.state == QUIC_STREAM_RECV_STATE_READ)
+			quic_stream_recv_put(quic_streams(sk), stream, quic_is_serv(sk));
+	}
+	quic_inq_rfree((int)bytes, sk);
 }
 
 static void quic_inq_decrypted_work(struct work_struct *work)
