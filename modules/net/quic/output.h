@@ -209,8 +209,6 @@ void quic_outq_transmit_app_close(struct sock *sk);
 void quic_outq_transmit_probe(struct sock *sk);
 
 void quic_outq_set_param(struct sock *sk, struct quic_transport_param *p);
-void quic_outq_set_owner_w(int len, struct sock *sk);
-void quic_outq_wfree(int len, struct sock *sk);
 void quic_outq_sync_window(struct sock *sk);
 void quic_outq_init(struct sock *sk);
 void quic_outq_free(struct sock *sk);

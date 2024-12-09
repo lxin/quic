@@ -700,7 +700,6 @@ static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 			bytes += frame->bytes;
 			quic_outq_set_force_delay(outq, delay);
 			quic_outq_ctrl_tail(sk, frame, delay);
-			quic_outq_set_owner_w((int)frame->bytes, sk);
 		}
 		goto out;
 	}
@@ -726,7 +725,6 @@ static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 		bytes += frame->bytes;
 		quic_outq_set_force_delay(outq, delay);
 		quic_outq_dgram_tail(sk, frame, delay);
-		quic_outq_set_owner_w((int)frame->bytes, sk);
 		goto out;
 	}
 
@@ -762,7 +760,6 @@ static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 		bytes += frame->bytes;
 		quic_outq_set_force_delay(outq, delay);
 		quic_outq_stream_tail(sk, frame, delay);
-		quic_outq_set_owner_w((int)frame->bytes, sk);
 	}
 out:
 	err = bytes;

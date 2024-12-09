@@ -258,7 +258,7 @@ int quic_outq_transmit(struct sock *sk)
 	return quic_outq_transmit_flush(sk);
 }
 
-void quic_outq_wfree(int len, struct sock *sk)
+static void quic_outq_wfree(int len, struct sock *sk)
 {
 	if (!len)
 		return;
@@ -271,7 +271,7 @@ void quic_outq_wfree(int len, struct sock *sk)
 		sk->sk_write_space(sk);
 }
 
-void quic_outq_set_owner_w(int len, struct sock *sk)
+static void quic_outq_set_owner_w(int len, struct sock *sk)
 {
 	if (!len)
 		return;
@@ -299,6 +299,7 @@ void quic_outq_stream_tail(struct sock *sk, struct quic_frame *frame, bool cork)
 
 	outq->stream_list_len += frame->len;
 	stream->send.frags++;
+	quic_outq_set_owner_w((int)frame->bytes, sk);
 	list_add_tail(&frame->list, &outq->stream_list);
 	if (!cork)
 		quic_outq_transmit(sk);
@@ -306,6 +307,7 @@ void quic_outq_stream_tail(struct sock *sk, struct quic_frame *frame, bool cork)
 
 void quic_outq_dgram_tail(struct sock *sk, struct quic_frame *frame, bool cork)
 {
+	quic_outq_set_owner_w((int)frame->bytes, sk);
 	list_add_tail(&frame->list, &quic_outq(sk)->datagram_list);
 	if (!cork)
 		quic_outq_transmit(sk);
@@ -330,6 +332,7 @@ void quic_outq_ctrl_tail(struct sock *sk, struct quic_frame *frame, bool cork)
 			}
 		}
 	}
+	quic_outq_set_owner_w((int)frame->bytes, sk);
 	list_add_tail(&frame->list, head);
 	if (!cork)
 		quic_outq_transmit(sk);
