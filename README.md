@@ -215,6 +215,10 @@ the QUIC handshake, see
     # git clone https://github.com/quic-interop/quic-interop-runner.git
     # cd quic-interop-runner/
     # pip3 install -r requirements.txt
+
+You can change implementations.json file to run test cases between different
+implementations. Here displays the testing result between linuxquic and ngtcp2:
+
     # cat implementations.json
       {
         "linuxquic": {
@@ -229,13 +233,10 @@ the QUIC handshake, see
         }
       }
 
-You can change implementations.json file to run test cases with more implementations.
-Here it only displays the testing result between linuxquic and ngtcp2:
-
-    # python3 run.py -t onlyTests
+    # python3 run.py
       ...
       +-----------+----------------------------+----------------------------+
-      |           |           linuxquic        |           ngtcp2           |
+      |           |         linuxquic          |           ngtcp2           |
       +-----------+----------------------------+----------------------------+
       | linuxquic | ✓(H,DC,LR,C20,M,S,R,Z,3,B, | ✓(H,DC,LR,C20,M,S,R,Z,3,B, |
       |           |   U,E,A,L1,L2,C1,C2,6,V2)  |   U,E,A,L1,L2,C1,C2,6,V2)  |
@@ -246,6 +247,58 @@ Here it only displays the testing result between linuxquic and ngtcp2:
       |           |   U,E,A,L1,L2,C1,C2,6,V2)  |   U,E,A,L1,L2,C1,C2,6,V2)  |
       |           |             ?()            |             ?()            |
       |           |             ✕()            |             ✕()            |
+      +-----------+----------------------------+----------------------------+
+
+      +-----------+----------------------------+----------------------------+
+      |           |         linuxquic          |           ngtcp2           |
+      +-----------+----------------------------+----------------------------+
+      | linuxquic |    G: 8970 (± 43) kbps     |    G: 7260 (± 881) kbps    |
+      |           |    C: 4013 (± 172) kbps    |    C: 4383 (± 1298) kbps   |
+      +-----------+----------------------------+----------------------------+
+      |   ngtcp2  |    G: 9060 (± 166) kbps    |    G: 9111 (± 84) kbps     |
+      |           |    C: 4246 (± 46) kbps     |    C: 8423 (± 220) kbps    |
+      +-----------+----------------------------+----------------------------+
+
+As well as the testing result between linuxquic and msquic:
+
+    # cat implementations.json
+      {
+        "linuxquic": {
+          "image": "linuxquic:latest",
+          "url": "https://github.com/lxin/quic",
+          "role": "both"
+        },
+        "msquic": {
+          "image": "ghcr.io/microsoft/msquic/qns:main",
+          "url": "https://github.com/microsoft/msquic",
+          "role": "both"
+        }
+      }
+
+    # python3 run.py
+      ...
+      +-----------+----------------------------+----------------------------+
+      |           |         linuxquic          |          msquic            |
+      +-----------+----------------------------+----------------------------+
+      | linuxquic | ✓(H,DC,LR,C20,M,S,R,Z,3,B, | ✓(H,DC,LR,C20,M,S,B,U,A,   |
+      |           |   U,E,A,L1,L2,C1,C2,6,V2)  |   L1,L2,C1,C2,6,V2)        |
+      |           |             ?()            |          ?(Z,3,E)          |
+      |           |             ✕()            |            ✕(R)            |
+      +-----------+----------------------------+----------------------------+
+      |   msquic  | ✓(H,DC,LR,C20,M,S,B,A,L1,  | ✓(H,DC,LR,C20,M,S,R,B,U,   |
+      |           |   L2,C1,C2,6,V2)           |   L1,L2,C1,C2,6,V2)        |
+      |           |           ?(Z,3,E)         |         ?(Z,3,E,A)         |
+      |           |            ✕(R,U)          |            ✕()             |
+      +-----------+----------------------------+----------------------------+
+
+      +-----------+----------------------------+----------------------------+
+      |           |         linuxquic          |          msquic            |
+      +-----------+----------------------------+----------------------------+
+      | linuxquic |    G: 8845 (± 135) kbps    |    G: 7871 (± 254) kbps    |
+      |           |    C: 3834 (± 161) kbps    |    C: 8148 (± 155) kbps    |
+      +-----------+----------------------------+----------------------------+
+      |   msquic  |    G: 9102 (± 17) kbps     |    G: 9093 (± 1) kbps      |
+      |           |             C              |    C: 6718 (± 424) kbps    |
       +-----------+----------------------------+----------------------------+
 
 ### HTTP/3 Interoperability Test:
