@@ -13,24 +13,24 @@ struct quic_packet {
 	struct list_head frame_list;
 	struct sk_buff *head;
 	u16 frame_len;
-	u16 frames;
-	u16 mss[2];
 	u8 path_alt:2;
 	u8 ipfragok:1;
 	u8 padding:1;
 	u8 overhead;
+	u16 frames;
+	u16 mss[2];
 
 	/* recv */
 	struct quic_conn_id dcid;
 	struct quic_conn_id scid;
 	union quic_addr daddr;
 	union quic_addr saddr;
-	u32 version;
-	u16 errcode;
 	u8 ack_eliciting:1;
 	u8 ack_immediate:1;
 	u8 non_probing:1;
 	u8 has_sack:1;
+	u16 errcode;
+	u32 version;
 
 	/* send and recv */
 	union quic_addr *da;

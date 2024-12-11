@@ -334,7 +334,6 @@ static int quic_connect(struct sock *sk, struct sockaddr *addr, int addr_len)
 	struct quic_conn_id conn_id, *active;
 	union quic_addr *sa;
 	int err = -EINVAL;
-	u32 mss, window;
 
 	lock_sock(sk);
 	if (!quic_is_closed(sk) || addr_len < (int)quic_addr_len(sk))
@@ -345,11 +344,6 @@ static int quic_connect(struct sock *sk, struct sockaddr *addr, int addr_len)
 	if (err < 0)
 		goto out;
 	quic_set_sk_addr(sk, quic_addr(addr), false);
-
-	mss = quic_packet_mss(packet);
-	window = clamp(mss * 10, mss * 2, 14720U);
-	quic_cong_set_window(quic_cong(sk), window);
-	quic_outq_sync_window(sk);
 
 	sa = quic_path_addr(path, 0);
 	if (!sa->v4.sin_port) { /* auto bind */
@@ -1101,7 +1095,7 @@ static int quic_sock_set_config(struct sock *sk, struct quic_config *c, u32 len)
 	}
 	if (c->version) {
 		config->version = c->version;
-		packet->version = c->version;
+		quic_packet_set_version(packet, c->version);
 	}
 	if (c->congestion_control_algo)
 		config->congestion_control_algo = c->congestion_control_algo;
@@ -1202,7 +1196,6 @@ static int quic_accept_sock_init(struct sock *sk, struct quic_request_sock *req)
 	struct quic_conn_id conn_id;
 	struct sk_buff_head tmpq;
 	struct sk_buff *skb;
-	u32 mss, window;
 	int err;
 
 	lock_sock(sk);
@@ -1211,11 +1204,6 @@ static int quic_accept_sock_init(struct sock *sk, struct quic_request_sock *req)
 	if (err < 0)
 		goto out;
 	quic_set_sk_addr(sk, quic_addr(&req->da.sa), false);
-
-	mss = quic_packet_mss(packet);
-	window = clamp(mss * 10, mss * 2, 14720U);
-	quic_cong_set_window(quic_cong(sk), window);
-	quic_outq_sync_window(sk);
 
 	quic_conn_id_generate(&conn_id);
 	err = quic_conn_id_add(quic_source(sk), &conn_id, 0, sk);

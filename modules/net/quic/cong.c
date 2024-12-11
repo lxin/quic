@@ -216,7 +216,6 @@ static void cubic_cong_avoid(struct quic_cong *cong, u32 bytes)
 static void cubic_recovery(struct quic_cong *cong)
 {
 	struct quic_cubic *cubic = quic_cong_priv(cong);
-	u32 min_cwnd;
 
 	cong->recovery_time = cong->time;
 	cubic->epoch_start = U32_MAX;
@@ -225,9 +224,8 @@ static void cubic_recovery(struct quic_cong *cong)
 	else
 		cubic->w_last_max = cong->window;
 
-	min_cwnd = 2 * cong->mss;
 	cong->ssthresh = cong->window * 7 / 10;
-	cong->ssthresh = max(cong->ssthresh, min_cwnd);
+	cong->ssthresh = max(cong->ssthresh, cong->min_window);
 	cong->window = cong->ssthresh;
 }
 
@@ -242,7 +240,7 @@ static void quic_cubic_on_packet_lost(struct quic_cong *cong, u32 time, u32 byte
 		pr_debug("%s: permanent congestion, cwnd: %u, ssthresh: %u\n",
 			 __func__, cong->window, cong->ssthresh);
 		cong->min_rtt_valid = 0;
-		cong->window = cong->mss * 2;
+		cong->window = cong->min_window;
 		cong->state = QUIC_CONG_SLOW_START;
 		return;
 	}
@@ -381,7 +379,7 @@ static void quic_reno_on_packet_lost(struct quic_cong *cong, u32 time, u32 bytes
 		pr_debug("%s: permanent congestion, cwnd: %u, ssthresh: %u\n",
 			 __func__, cong->window, cong->ssthresh);
 		cong->min_rtt_valid = 0;
-		cong->window = cong->mss * 2;
+		cong->window = cong->min_window;
 		cong->state = QUIC_CONG_SLOW_START;
 		return;
 	}
@@ -404,7 +402,7 @@ static void quic_reno_on_packet_lost(struct quic_cong *cong, u32 time, u32 bytes
 
 	cong->recovery_time = cong->time;
 	cong->state = QUIC_CONG_RECOVERY_PERIOD;
-	cong->ssthresh = max(cong->window >> 1U, cong->mss * 2);
+	cong->ssthresh = max(cong->window >> 1U, cong->min_window);
 	cong->window = cong->ssthresh;
 }
 
@@ -455,7 +453,7 @@ static void quic_reno_on_process_ecn(struct quic_cong *cong)
 
 	cong->recovery_time = cong->time;
 	cong->state = QUIC_CONG_RECOVERY_PERIOD;
-	cong->ssthresh = max(cong->window >> 1U, cong->mss * 2);
+	cong->ssthresh = max(cong->window >> 1U, cong->min_window);
 	cong->window = cong->ssthresh;
 }
 
@@ -501,7 +499,7 @@ EXPORT_SYMBOL_GPL(quic_cong_on_process_ecn);
 
 static void quic_cong_pto_update(struct quic_cong *cong)
 {
-	u32 pto  = cong->smoothed_rtt + cong->rttvar * 4;
+	u32 pto = cong->smoothed_rtt + cong->rttvar * 4;
 
 	cong->pto = clamp(pto, QUIC_RTO_MIN, QUIC_RTO_MAX);
 

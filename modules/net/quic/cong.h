@@ -8,9 +8,9 @@
  *    Xin Long <lucien.xin@gmail.com>
  */
 
-#define QUIC_RTT_INIT		333000
-#define QUIC_RTO_MIN		100000
-#define QUIC_RTO_MAX		6000000
+#define QUIC_RTT_INIT		333000U
+#define QUIC_RTO_MIN		100000U
+#define QUIC_RTO_MAX		6000000U
 
 enum quic_cong_state {
 	QUIC_CONG_SLOW_START,
@@ -32,6 +32,7 @@ struct quic_cong {
 	u32 time; /* current time cache */
 
 	u32 max_window;
+	u32 min_window;
 	u32 ssthresh;
 	u32 window;
 	u32 mss;
@@ -61,14 +62,16 @@ static inline void quic_cong_set_time(struct quic_cong *cong, u32 time)
 	cong->time = time;
 }
 
-static inline void quic_cong_set_window(struct quic_cong *cong, u32 window)
-{
-	cong->window = window;
-}
-
 static inline void quic_cong_set_mss(struct quic_cong *cong, u32 mss)
 {
+	if (cong->mss == mss)
+		return;
+
 	cong->mss = mss;
+	cong->min_window = max(min(mss * 10, 14720U), mss * 2);
+
+	if (cong->window < cong->min_window)
+		cong->window = cong->min_window;
 }
 
 static inline void *quic_cong_priv(struct quic_cong *cong)

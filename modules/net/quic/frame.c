@@ -887,7 +887,7 @@ static int quic_frame_ack_process(struct sock *sk, struct quic_frame *frame, u8 
 			return -EINVAL;
 		if (quic_pnspace_set_ecn_count(space, ecn_count)) {
 			quic_cong_on_process_ecn(cong);
-			quic_outq_sync_window(sk);
+			quic_outq_sync_window(sk, quic_cong_window(cong));
 		}
 	}
 

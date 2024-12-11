@@ -479,6 +479,8 @@ static int quic_test_do_ticket_server(void)
 	}
 	pr_info("quic_test: send '%s' on stream %lld\n", msg, sid);
 
+	flags = 0;
+	quic_test_recvmsg(newsock, msg, sizeof(msg) - 1, &sid, &flags);
 	err = 0;
 free_flip:
 	__fput_sync(priv.filp);
@@ -550,8 +552,9 @@ static int quic_test_do_sample_server(void)
 		goto free_flip;
 	}
 	pr_info("quic_test: send '%s' on stream %lld\n", msg, sid);
-	msleep(100);
 
+	flags = 0;
+	quic_test_recvmsg(newsock, msg, sizeof(msg) - 1, &sid, &flags);
 	err = 0;
 free_flip:
 	fput(priv.filp);

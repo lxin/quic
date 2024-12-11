@@ -611,7 +611,7 @@ void quic_outq_transmitted_sack(struct sock *sk, u8 level, s64 largest, s64 smal
 			quic_crypto_set_key_update_time(crypto, pto * 2);
 		}
 		quic_cong_on_packet_acked(cong, sent->sent_time, sent->frame_len, sent->number);
-		quic_outq_sync_window(sk);
+		quic_outq_sync_window(sk, quic_cong_window(cong));
 
 		acked += sent->frame_len;
 		list_del(&sent->list);
@@ -719,13 +719,11 @@ out:
 	quic_timer_reset(sk, QUIC_TIMER_LOSS, time);
 }
 
-void quic_outq_sync_window(struct sock *sk)
+void quic_outq_sync_window(struct sock *sk, u32 window)
 {
 	struct quic_outqueue *outq = quic_outq(sk);
-	struct quic_cong *cong = quic_cong(sk);
-	u32 window = quic_cong_window(cong);
 
-	if (window == outq->window)
+	if (outq->window == window)
 		return;
 	outq->window = window;
 
@@ -847,7 +845,7 @@ void quic_outq_retransmit_mark(struct sock *sk, u8 level, u8 immediate)
 		quic_pnspace_dec_inflight(space, sent->frame_len);
 
 		quic_cong_on_packet_lost(cong, time, sent->frame_len, sent->number);
-		quic_outq_sync_window(sk);
+		quic_outq_sync_window(sk, quic_cong_window(cong));
 
 		list_del(&sent->list);
 		kfree(sent);

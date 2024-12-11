@@ -1414,13 +1414,15 @@ void quic_packet_mss_update(struct sock *sk, u32 mss)
 {
 	struct quic_packet *packet = quic_packet(sk);
 	struct quic_outqueue *outq = quic_outq(sk);
+	struct quic_cong *cong = quic_cong(sk);
 	u32 max_udp, mss_dgram;
 
 	max_udp = quic_outq_max_udp(outq);
 	if (max_udp && mss > max_udp)
 		mss = max_udp;
 	packet->mss[0] = (u16)mss;
-	quic_cong_set_mss(quic_cong(sk), packet->mss[0] - packet->taglen[0]);
+	quic_cong_set_mss(cong, packet->mss[0] - packet->taglen[0]);
+	quic_outq_sync_window(sk, quic_cong_window(cong));
 
 	mss_dgram = quic_outq_max_dgram(outq);
 	if (!mss_dgram)
