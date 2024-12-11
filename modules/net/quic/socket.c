@@ -652,12 +652,12 @@ static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 	u8 delay = !!(msg->msg_flags & MSG_MORE);
 	struct quic_handshake_info hinfo = {};
 	struct quic_stream_info sinfo = {};
+	int err = 0, bytes = 0, len = 1;
 	struct quic_msginfo msginfo;
 	struct quic_crypto *crypto;
 	struct quic_stream *stream;
 	struct quic_frame *frame;
 	bool has_hinfo = false;
-	int err = 0, bytes = 0;
 	long timeo;
 
 	lock_sock(sk);
@@ -686,10 +686,14 @@ static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 				}
 				goto out;
 			}
-			if (sk_stream_wspace(sk) < frame->bytes ||
-			    !sk_wmem_schedule(sk, frame->bytes)) {
+			len = frame->bytes;
+			if (sk_stream_wspace(sk) < len || !sk_wmem_schedule(sk, len)) {
+				if (delay) {
+					quic_outq_set_force_delay(outq, 0);
+					quic_outq_transmit(sk);
+				}
 				timeo = sock_sndtimeo(sk, msg->msg_flags & MSG_DONTWAIT);
-				err = quic_wait_for_send(sk, 0, timeo, frame->bytes);
+				err = quic_wait_for_send(sk, 0, timeo, len);
 				if (err) {
 					quic_frame_put(frame);
 					if (err == -EPIPE)
@@ -714,9 +718,10 @@ static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 			err = -EINVAL;
 			goto err;
 		}
-		if (sk_stream_wspace(sk) < frame->bytes || !sk_wmem_schedule(sk, frame->bytes)) {
+		len = frame->bytes;
+		if (sk_stream_wspace(sk) < len || !sk_wmem_schedule(sk, len)) {
 			timeo = sock_sndtimeo(sk, msg->msg_flags & MSG_DONTWAIT);
-			err = quic_wait_for_send(sk, 0, timeo, frame->bytes);
+			err = quic_wait_for_send(sk, 0, timeo, len);
 			if (err) {
 				quic_frame_put(frame);
 				goto err;

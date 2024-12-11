@@ -262,8 +262,8 @@ static struct quic_frame *quic_frame_handshake_done_create(struct sock *sk, void
 
 static struct quic_frame *quic_frame_crypto_create(struct sock *sk, void *data, u8 type)
 {
+	u32 msg_len, max_frame_len, hlen = 1;
 	struct quic_msginfo *info = data;
-	u32 msg_len, hlen, max_frame_len;
 	struct quic_crypto *crypto;
 	struct quic_frame *frame;
 	u64 offset;
@@ -276,13 +276,17 @@ static struct quic_frame *quic_frame_crypto_create(struct sock *sk, void *data, 
 	msg_len = iov_iter_count(info->msg);
 
 	if (!info->level) {
-		if (msg_len > max_frame_len)
+		offset = 0;
+		hlen += quic_var_len(offset);
+		hlen += quic_var_len(max_frame_len);
+		if (msg_len > max_frame_len - hlen)
 			return NULL;
-		frame = quic_frame_alloc(msg_len + 8, NULL, GFP_ATOMIC);
+
+		frame = quic_frame_alloc(msg_len + hlen, NULL, GFP_ATOMIC);
 		if (!frame)
 			return NULL;
 		p = quic_put_var(frame->data, type);
-		p = quic_put_var(p, 0);
+		p = quic_put_var(p, offset);
 		p = quic_put_var(p, msg_len);
 		if (!quic_frame_copy_from_iter_full(p, msg_len, info->msg)) {
 			quic_frame_put(frame);
@@ -296,10 +300,12 @@ static struct quic_frame *quic_frame_crypto_create(struct sock *sk, void *data, 
 		return frame;
 	}
 
-	if (msg_len > max_frame_len)
-		msg_len = max_frame_len;
 	offset = quic_crypto_send_offset(crypto);
-	hlen = 1 + quic_var_len(msg_len) + quic_var_len(offset);
+	hlen += quic_var_len(offset);
+	hlen += quic_var_len(max_frame_len);
+	if (msg_len > max_frame_len - hlen)
+		msg_len = max_frame_len - hlen;
+
 	frame = quic_frame_alloc(msg_len + hlen, NULL, GFP_ATOMIC);
 	if (!frame)
 		return NULL;
@@ -310,11 +316,13 @@ static struct quic_frame *quic_frame_crypto_create(struct sock *sk, void *data, 
 		quic_frame_put(frame);
 		return NULL;
 	}
-	frame->len = (u16)(msg_len + hlen);
-	frame->size = frame->len;
-	quic_crypto_inc_send_offset(crypto, msg_len);
-	frame->level = info->level;
+	p += msg_len;
 	frame->bytes = (u16)msg_len;
+	frame->len = (u16)(p - frame->data);
+	frame->size = frame->len;
+
+	frame->level = info->level;
+	quic_crypto_inc_send_offset(crypto, msg_len);
 	return frame;
 }
 
