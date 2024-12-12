@@ -221,7 +221,10 @@ loop:
 		printf("send %d %d\n", ret, errno);
 		return -1;
 	}
+
+	flags = 0;
 	quic_recvmsg(sockfd, &rcv_msg, sizeof(rcv_msg), &sid, &flags);
+
 	close(sockfd);
 	printf("CLOSE DONE\n");
 

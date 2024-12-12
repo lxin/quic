@@ -17,11 +17,12 @@ daemon_stop()
 daemon_run()
 {
 	$@ > /dev/null 2>&1 &
-	sleep 1
+	sleep 2
 }
 
 cleanup()
 {
+	exit_code=$?
 	tc qdisc del dev lo root netem loss 20% > /dev/null 2>&1
 	pkill func_test > /dev/null 2>&1
 	pkill perf_test > /dev/null 2>&1
@@ -32,6 +33,7 @@ cleanup()
 	pkill http3_test > /dev/null 2>&1
 	rmmod quic_sample_test > /dev/null 2>&1
 	rmmod quic > /dev/null 2>&1
+	exit $exit_code
 }
 
 start_tests()

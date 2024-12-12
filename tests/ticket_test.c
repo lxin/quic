@@ -398,7 +398,9 @@ static int do_server(int argc, char *argv[])
 	}
 	printf("send '%s' on stream %d\n", msg, (int)sid);
 
-	sleep(1);
+	flags = 0;
+	quic_recvmsg(sockfd, msg, sizeof(msg) - 1, &sid, &flags);
+
 	close(sockfd);
 	close(listenfd);
 	return 0;

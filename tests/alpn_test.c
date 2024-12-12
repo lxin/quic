@@ -88,19 +88,21 @@ static int do_client_alpn(char *ip, int port, char *alpn, int preferred_port)
 	}
 	printf("recv: \"%s\", len: %d\n", msg, ret);
 
+	sleep(1);
 	len = sizeof(sa);
 	ret = getpeername(sockfd, (struct sockaddr *)&sa, &len);
 	if (ret == -1) {
 		printf("socket getpeername error %d\n", errno);
 		return -1;
 	}
-
 	printf("PEER PORT: %d\n", get_port(&sa));
 	if (get_port(&sa) != preferred_port) {
 		printf("preferred port: %d\n", preferred_port);
 		return -1;
 	}
-	/* do not close(sockfd) on purpose */
+
+	sleep(1);
+	close(sockfd);
 	return 0;
 }
 
@@ -265,6 +267,8 @@ static int do_server(int argc, char *argv[])
 			return -1;
 		}
 		printf("send %d\n", ret);
+
+		sleep(1);
 		ret = getsockname(sockfd, (struct sockaddr *)&sa, &addrlen);
 		if (ret == -1) {
 			printf("socket getsockname error %d\n", errno);
@@ -275,9 +279,10 @@ static int do_server(int argc, char *argv[])
 			printf("preferred port: %d\n", preferred_port);
 			//return -1;
 		}
-		/* do not close(sockfd) on purpose */
+
+		recv(sockfd, msg, sizeof(msg), 0);
+		close(sockfd);
 	}
-	sleep(1);
 	close(listenfd);
 	return 0;
 }
