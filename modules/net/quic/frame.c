@@ -323,7 +323,7 @@ int quic_frame_stream_append(struct sock *sk, struct quic_frame *frame,
 static struct quic_frame *quic_frame_handshake_done_create(struct sock *sk, void *data, u8 type)
 {
 	struct quic_frame *frame;
-	u8 *p, buf[10];
+	u8 *p, buf[4];
 	u32 frame_len;
 
 	p = quic_put_var(buf, type);
@@ -410,7 +410,7 @@ static struct quic_frame *quic_frame_retire_conn_id_create(struct sock *sk, void
 	struct quic_conn_id *active;
 	struct quic_frame *frame;
 	u64 *seqno = data;
-	u8 *p, buf[10];
+	u8 *p, buf[12];
 	u32 frame_len;
 
 	p = quic_put_var(buf, type);
@@ -470,7 +470,7 @@ static struct quic_frame *quic_frame_new_conn_id_create(struct sock *sk, void *d
 
 static struct quic_frame *quic_frame_path_response_create(struct sock *sk, void *data, u8 type)
 {
-	u8 *p, buf[10], *entropy = data;
+	u8 *p, buf[12], *entropy = data;
 	struct quic_frame *frame;
 	u32 frame_len;
 
@@ -516,7 +516,7 @@ static struct quic_frame *quic_frame_reset_stream_create(struct sock *sk, void *
 	struct quic_errinfo *info = data;
 	struct quic_stream *stream;
 	struct quic_frame *frame;
-	u8 *p, buf[20];
+	u8 *p, buf[28];
 	u32 frame_len;
 
 	stream = quic_stream_find(streams, info->stream_id);
@@ -545,7 +545,7 @@ static struct quic_frame *quic_frame_stop_sending_create(struct sock *sk, void *
 {
 	struct quic_errinfo *info = data;
 	struct quic_frame *frame;
-	u8 *p, buf[10];
+	u8 *p, buf[20];
 	u32 frame_len;
 
 	p = quic_put_var(buf, type);
@@ -565,7 +565,7 @@ static struct quic_frame *quic_frame_max_data_create(struct sock *sk, void *data
 {
 	struct quic_inqueue *inq = data;
 	struct quic_frame *frame;
-	u8 *p, buf[10];
+	u8 *p, buf[12];
 	u32 frame_len;
 
 	p = quic_put_var(buf, type);
@@ -584,7 +584,7 @@ static struct quic_frame *quic_frame_max_stream_data_create(struct sock *sk, voi
 {
 	struct quic_stream *stream = data;
 	struct quic_frame *frame;
-	u8 *p, buf[10];
+	u8 *p, buf[20];
 	u32 frame_len;
 
 	p = quic_put_var(buf, type);
@@ -604,7 +604,7 @@ static struct quic_frame *quic_frame_max_streams_uni_create(struct sock *sk, voi
 {
 	struct quic_frame *frame;
 	u64 *max = data;
-	u8 *p, buf[10];
+	u8 *p, buf[12];
 	u32 frame_len;
 
 	p = quic_put_var(buf, type);
@@ -623,7 +623,7 @@ static struct quic_frame *quic_frame_max_streams_bidi_create(struct sock *sk, vo
 {
 	struct quic_frame *frame;
 	u64 *max = data;
-	u8 *p, buf[10];
+	u8 *p, buf[12];
 	u32 frame_len;
 
 	p = quic_put_var(buf, type);
@@ -671,7 +671,7 @@ static struct quic_frame *quic_frame_data_blocked_create(struct sock *sk, void *
 {
 	struct quic_outqueue *outq = data;
 	struct quic_frame *frame;
-	u8 *p, buf[10];
+	u8 *p, buf[12];
 	u32 frame_len;
 
 	p = quic_put_var(buf, type);
@@ -691,7 +691,7 @@ static struct quic_frame *quic_frame_stream_data_blocked_create(struct sock *sk,
 {
 	struct quic_stream *stream = data;
 	struct quic_frame *frame;
-	u8 *p, buf[10];
+	u8 *p, buf[20];
 	u32 frame_len;
 
 	p = quic_put_var(buf, type);
@@ -713,7 +713,7 @@ static struct quic_frame *quic_frame_streams_blocked_uni_create(struct sock *sk,
 {
 	struct quic_frame *frame;
 	s64 *max = data;
-	u8 *p, buf[10];
+	u8 *p, buf[12];
 	u32 frame_len;
 
 	p = quic_put_var(buf, type);
@@ -733,7 +733,7 @@ static struct quic_frame *quic_frame_streams_blocked_bidi_create(struct sock *sk
 {
 	struct quic_frame *frame;
 	s64 *max = data;
-	u8 *p, buf[10];
+	u8 *p, buf[12];
 	u32 frame_len;
 
 	p = quic_put_var(buf, type);
