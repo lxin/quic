@@ -288,18 +288,18 @@ int quic_outq_stream_append(struct sock *sk, struct quic_msginfo *info, u8 pack)
 	struct quic_stream *stream = info->stream;
 	struct quic_frame *frame;
 	struct list_head *head;
-	u16 len, bytes;
+	int len, bytes;
 
 	head = &outq->stream_list;
 	if (list_empty(head))
-		return 0;
+		return -1;
 	frame = list_last_entry(head, struct quic_frame, list);
 	if (frame->stream != stream || frame->nodelay || frame->offset >= 0)
-		return 0;
+		return -1;
 
 	len = frame->len;
 	bytes = quic_frame_stream_append(sk, frame, info, pack);
-	if (!bytes || !pack)
+	if (bytes < 0 || !pack)
 		return bytes;
 
 	outq->stream_list_len += (frame->len - len);

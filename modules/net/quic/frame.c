@@ -222,17 +222,19 @@ static struct quic_frame *quic_frame_stream_create(struct sock *sk, void *data, 
 	frame->stream = stream;
 
 	/* attach the data into frag list */
-	frag = quic_frame_frag_alloc(msg_len);
-	if (!frag) {
-		quic_frame_put(frame);
-		return NULL;
+	if (msg_len) {
+		frag = quic_frame_frag_alloc(msg_len);
+		if (!frag) {
+			quic_frame_put(frame);
+			return NULL;
+		}
+		if (!quic_frame_copy_from_iter_full(frag->data, msg_len, info->msg)) {
+			quic_frame_put(frame);
+			kfree(frag);
+			return NULL;
+		}
+		frame->flist = frag;
 	}
-	if (!quic_frame_copy_from_iter_full(frag->data, msg_len, info->msg)) {
-		quic_frame_put(frame);
-		kfree(frag);
-		return NULL;
-	}
-	frame->flist = frag;
 
 	/* set up stream data header and frame fields */
 	p = quic_put_var(frame->data, type);
@@ -267,7 +269,7 @@ int quic_frame_stream_append(struct sock *sk, struct quic_frame *frame,
 	max_frame_len = quic_packet_max_payload(quic_packet(sk));
 	hlen += quic_var_len(max_frame_len);
 	if (max_frame_len - hlen <= frame->bytes)
-		return 0;
+		return -1;
 
 	msg_len = iov_iter_count(info->msg);
 	if (msg_len <= sk_stream_wspace(sk)) {
@@ -289,17 +291,21 @@ int quic_frame_stream_append(struct sock *sk, struct quic_frame *frame,
 		return msg_len;
 
 	/* attach the data into frag list */
-	frag = quic_frame_frag_alloc(msg_len);
-	if (!frag)
-		return 0;
-	if (!quic_frame_copy_from_iter_full(frag->data, msg_len, info->msg)) {
-		kfree(frag);
-		return 0;
-	}
-	for (pos = frame->flist; pos; pos = pos->next) {
-		if (!pos->next) {
+	if (msg_len) {
+		frag = quic_frame_frag_alloc(msg_len);
+		if (!frag)
+			return -1;
+		if (!quic_frame_copy_from_iter_full(frag->data, msg_len, info->msg)) {
+			kfree(frag);
+			return -1;
+		}
+		if (frame->flist) {
+			pos = frame->flist;
+			while (pos->next)
+				pos = pos->next;
 			pos->next = frag;
-			break;
+		} else {
+			frame->flist = frag;
 		}
 	}
 

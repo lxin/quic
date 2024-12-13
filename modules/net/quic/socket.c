@@ -737,7 +737,7 @@ static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 	msginfo.msg = &msg->msg_iter;
 	msginfo.flags = sinfo.stream_flags;
 
-	while (iov_iter_count(msginfo.msg) > 0) {
+	do {
 		if (sk_stream_wspace(sk) < len || !sk_wmem_schedule(sk, len)) {
 			if (delay) {
 				quic_outq_set_force_delay(outq, 0);
@@ -753,7 +753,7 @@ static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 		}
 
 		len = quic_outq_stream_append(sk, &msginfo, 0);
-		if (len) {
+		if (len >= 0) {
 			if (!sk_wmem_schedule(sk, len))
 				continue;
 			bytes += quic_outq_stream_append(sk, &msginfo, 1);
@@ -778,7 +778,7 @@ static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 		quic_outq_set_force_delay(outq, delay);
 		quic_outq_stream_tail(sk, frame, delay);
 		len = 1;
-	}
+	} while (iov_iter_count(msginfo.msg) > 0);
 out:
 	err = bytes;
 err:
