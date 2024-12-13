@@ -161,14 +161,29 @@ static inline bool quic_frame_non_probing(u8 type)
 	       type != QUIC_FRAME_PATH_RESPONSE && type != QUIC_FRAME_PATH_CHALLENGE;
 }
 
+static inline bool quic_frame_data_blocked(u8 type)
+{
+	return type == QUIC_FRAME_DATA_BLOCKED;
+}
+
+static inline bool quic_frame_reset_stream(u8 type)
+{
+	return type == QUIC_FRAME_RESET_STREAM;
+}
+
+static inline bool quic_frame_stream_data_blocked(u8 type)
+{
+	return type == QUIC_FRAME_STREAM_DATA_BLOCKED;
+}
+
+static inline bool quic_frame_stream(u8 type)
+{
+	return type >= QUIC_FRAME_STREAM && type < QUIC_FRAME_MAX_DATA;
+}
+
 static inline bool quic_frame_sack(u8 type)
 {
 	return type == QUIC_FRAME_ACK || type == QUIC_FRAME_ACK_ECN;
-}
-
-static inline bool quic_frame_crypto(u8 type)
-{
-	return type == QUIC_FRAME_CRYPTO;
 }
 
 static inline bool quic_frame_ping(u8 type)

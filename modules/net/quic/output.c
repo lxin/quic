@@ -517,8 +517,9 @@ static void quic_outq_psent_sack_frames(struct sock *sk, struct quic_packet_sent
 		quic_frame_put(frame);
 
 		stream = frame->stream;
-		if (frame->bytes) {
-			if (stream && !(--stream->send.frags) &&
+		if (quic_frame_stream(frame->type)) {
+			stream->send.frags--;
+			if (!stream->send.frags &&
 			    stream->send.state == QUIC_STREAM_SEND_STATE_SENT) {
 				update.id = stream->id;
 				update.state = QUIC_STREAM_SEND_STATE_RECVD;
@@ -528,7 +529,7 @@ static void quic_outq_psent_sack_frames(struct sock *sk, struct quic_packet_sent
 				quic_stream_send_put(streams, stream, quic_is_serv(sk));
 				sk->sk_write_space(sk);
 			}
-		} else if (frame->type == QUIC_FRAME_RESET_STREAM) {
+		} else if (quic_frame_reset_stream(frame->type)) {
 			update.id = stream->id;
 			update.state = QUIC_STREAM_SEND_STATE_RESET_RECVD;
 			update.errcode = stream->send.errcode;
@@ -537,9 +538,9 @@ static void quic_outq_psent_sack_frames(struct sock *sk, struct quic_packet_sent
 			stream->send.state = update.state;
 			quic_stream_send_put(streams, stream, quic_is_serv(sk));
 			sk->sk_write_space(sk);
-		} else if (frame->type == QUIC_FRAME_STREAM_DATA_BLOCKED) {
+		} else if (quic_frame_stream_data_blocked(frame->type)) {
 			stream->send.data_blocked = 0;
-		} else if (frame->type == QUIC_FRAME_DATA_BLOCKED) {
+		} else if (quic_frame_data_blocked(frame->type)) {
 			outq->data_blocked = 0;
 		}
 
@@ -743,7 +744,7 @@ static void quic_outq_retransmit_frame(struct sock *sk, struct quic_frame *frame
 	struct list_head *head;
 
 	head = &outq->control_list;
-	if (frame->bytes && !quic_frame_crypto(frame->type)) {
+	if (quic_frame_stream(frame->type)) {
 		head = &outq->stream_list;
 
 		frame->stream->send.bytes -= frame->bytes;
