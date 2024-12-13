@@ -349,7 +349,7 @@ int quic_inq_stream_recv(struct sock *sk, struct quic_frame *frame)
 	return 0;
 }
 
-void quic_inq_stream_purge(struct sock *sk, struct quic_stream *stream)
+void quic_inq_stream_list_purge(struct sock *sk, struct quic_stream *stream)
 {
 	struct list_head *head = &quic_inq(sk)->stream_list;
 	struct quic_frame *frame, *next;
@@ -567,8 +567,10 @@ void quic_inq_data_read(struct sock *sk, struct quic_stream *stream, u32 freed, 
 {
 	if (stream) {
 		quic_inq_flow_control(sk, stream, freed);
-		if (stream->recv.state == QUIC_STREAM_RECV_STATE_READ)
+		if (stream->recv.state == QUIC_STREAM_RECV_STATE_READ) {
+			quic_inq_stream_list_purge(sk, stream);
 			quic_stream_recv_put(quic_streams(sk), stream, quic_is_serv(sk));
+		}
 	}
 	quic_inq_rfree((int)bytes, sk);
 }

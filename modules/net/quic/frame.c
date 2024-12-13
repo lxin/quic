@@ -1099,7 +1099,7 @@ static int quic_frame_reset_stream_process(struct sock *sk, struct quic_frame *f
 
 	stream->recv.state = update.state;
 	stream->recv.finalsz = update.finalsz;
-	quic_inq_stream_purge(sk, stream);
+	quic_inq_stream_list_purge(sk, stream);
 	quic_stream_recv_put(streams, stream, quic_is_serv(sk));
 out:
 	return (int)(frame->len - len);
