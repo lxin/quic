@@ -1551,7 +1551,7 @@ static int quic_sock_set_crypto_secret(struct sock *sk, struct quic_crypto_secre
 			list_add_tail(&frame->list, &list);
 			frame = quic_frame_create(sk, QUIC_FRAME_HANDSHAKE_DONE, NULL);
 			if (!frame) {
-				quic_outq_frame_list_purge(sk, &list);
+				quic_frame_list_purge(&list);
 				return -ENOMEM;
 			}
 			list_add_tail(&frame->list, &list);
@@ -1578,7 +1578,7 @@ static int quic_sock_set_crypto_secret(struct sock *sk, struct quic_crypto_secre
 		if (!frame) {
 			while (seqno)
 				quic_conn_id_remove(quic_source(sk), seqno--);
-			quic_outq_frame_list_purge(sk, &list);
+			quic_frame_list_purge(&list);
 			return -ENOMEM;
 		}
 		list_add_tail(&frame->list, &list);
@@ -1642,7 +1642,7 @@ static int quic_sock_set_connection_id(struct sock *sk,
 		frame = quic_frame_create(sk, QUIC_FRAME_RETIRE_CONNECTION_ID, &first);
 		if (!frame) {
 			quic_conn_id_set_active(id_set, old);
-			quic_outq_frame_list_purge(sk, &list);
+			quic_frame_list_purge(&list);
 			return -ENOMEM;
 		}
 		list_add_tail(&frame->list, &list);
