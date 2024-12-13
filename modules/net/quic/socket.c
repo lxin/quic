@@ -861,15 +861,17 @@ static int quic_recvmsg(struct sock *sk, struct msghdr *msg, size_t len, int non
 		off = (u32)frame->offset;
 		flen = (u32)frame->len;
 		copy = min((u32)(flen - off), (u32)(len - copied));
-		copy = copy_to_iter(frame->data + off, copy, &msg->msg_iter);
-		if (!copy) {
-			if (!copied) {
-				err = -EFAULT;
-				goto out;
+		if (copy) {
+			copy = copy_to_iter(frame->data + off, copy, &msg->msg_iter);
+			if (!copy) {
+				if (!copied) {
+					err = -EFAULT;
+					goto out;
+				}
+				break;
 			}
-			break;
+			copied += copy;
 		}
-		copied += copy;
 		fin = frame->stream_fin;
 		event = frame->event;
 		dgram = frame->dgram;

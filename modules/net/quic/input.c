@@ -250,7 +250,9 @@ int quic_inq_stream_recv(struct sock *sk, struct quic_frame *frame)
 	struct list_head *head;
 	struct quic_frame *pos;
 
-	if (stream->recv.offset >= offset + frame->len) { /* dup */
+	if (stream->recv.offset >= offset + frame->len &&
+	    (stream->recv.state == QUIC_STREAM_RECV_STATE_SIZE_KNOWN ||
+	     !frame->stream_fin)) { /* dup */
 		quic_frame_put(frame);
 		return 0;
 	}
@@ -295,7 +297,8 @@ int quic_inq_stream_recv(struct sock *sk, struct quic_frame *frame)
 				head = &pos->list;
 				break;
 			}
-			if (pos->offset + pos->len >= offset + frame->len) { /* dup */
+			if (pos->offset + pos->len >= offset + frame->len &&
+			    (pos->stream_fin || !frame->stream_fin)) { /* dup */
 				quic_inq_rfree((int)frame->len, sk);
 				quic_frame_put(frame);
 				return 0;
@@ -339,7 +342,9 @@ int quic_inq_stream_recv(struct sock *sk, struct quic_frame *frame)
 			break;
 		list_del(&frame->list);
 		stream->recv.frags--;
-		if (frame->offset + frame->len <= stream->recv.offset) { /* dup */
+		if (stream->recv.offset >= frame->offset + frame->len &&
+		    (stream->recv.state == QUIC_STREAM_RECV_STATE_RECVD ||
+		     !frame->stream_fin)) { /* dup */
 			quic_inq_rfree((int)frame->len, sk);
 			quic_frame_put(frame);
 			continue;
