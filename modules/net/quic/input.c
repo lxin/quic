@@ -192,21 +192,26 @@ static void quic_inq_stream_tail(struct sock *sk, struct quic_stream *stream,
 	sk->sk_data_ready(sk);
 }
 
+#define QUIC_INQ_RWND_SHIFT	4
+
 static void quic_inq_flow_control(struct sock *sk, struct quic_stream *stream, u32 bytes)
 {
+	struct quic_packet *packet = quic_packet(sk);
 	struct quic_inqueue *inq = quic_inq(sk);
 	struct quic_frame *frame = NULL;
-	u32 window;
+	u32 mss, window;
 
 	if (!bytes)
 		return;
 
+	mss = quic_packet_mss(packet);
 	stream->recv.bytes += bytes;
 	inq->bytes += bytes;
 
 	/* recv flow control */
-	if (inq->max_bytes - inq->bytes < inq->window / 2) {
-		window = inq->window;
+	window = inq->window;
+	if (inq->bytes + window - inq->max_bytes >=
+	    max(mss, (window >> QUIC_INQ_RWND_SHIFT))) {
 		if (quic_under_memory_pressure(sk))
 			window >>= 1;
 		inq->max_bytes = inq->bytes + window;
@@ -215,8 +220,9 @@ static void quic_inq_flow_control(struct sock *sk, struct quic_stream *stream, u
 			quic_outq_ctrl_tail(sk, frame, true);
 	}
 
-	if (stream->recv.max_bytes - stream->recv.bytes < stream->recv.window / 2) {
-		window = stream->recv.window;
+	window = stream->recv.window;
+	if (stream->recv.bytes + window - stream->recv.max_bytes >=
+	    max(mss, (window >> QUIC_INQ_RWND_SHIFT))) {
 		if (quic_under_memory_pressure(sk))
 			window >>= 1;
 		stream->recv.max_bytes = stream->recv.bytes + window;
