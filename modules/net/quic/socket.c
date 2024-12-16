@@ -202,9 +202,9 @@ static void quic_transport_param_init(struct sock *sk)
 	param->active_connection_id_limit = QUIC_CONN_ID_LIMIT;
 	param->max_idle_timeout = QUIC_DEF_IDLE_TIMEOUT;
 	param->max_data = (u64)QUIC_PATH_MAX_PMTU * 32;
-	param->max_stream_data_bidi_local = (u64)QUIC_PATH_MAX_PMTU * 4;
-	param->max_stream_data_bidi_remote = (u64)QUIC_PATH_MAX_PMTU * 4;
-	param->max_stream_data_uni = (u64)QUIC_PATH_MAX_PMTU * 4;
+	param->max_stream_data_bidi_local = (u64)QUIC_PATH_MAX_PMTU * 16;
+	param->max_stream_data_bidi_remote = (u64)QUIC_PATH_MAX_PMTU * 16;
+	param->max_stream_data_uni = (u64)QUIC_PATH_MAX_PMTU * 16;
 	param->max_streams_bidi = QUIC_DEF_STREAMS;
 	param->max_streams_uni = QUIC_DEF_STREAMS;
 
@@ -1017,17 +1017,20 @@ static int quic_param_check_and_copy(struct quic_transport_param *p,
 		param->max_data = p->max_data;
 	}
 	if (p->max_stream_data_bidi_local) {
-		if (p->max_stream_data_bidi_local > param->max_data)
+		if (p->max_stream_data_bidi_local > param->max_data ||
+		    p->max_stream_data_bidi_local < QUIC_PATH_MAX_PMTU)
 			return -EINVAL;
 		param->max_stream_data_bidi_local = p->max_stream_data_bidi_local;
 	}
 	if (p->max_stream_data_bidi_remote) {
-		if (p->max_stream_data_bidi_remote > param->max_data)
+		if (p->max_stream_data_bidi_remote > param->max_data ||
+		    p->max_stream_data_bidi_remote < QUIC_PATH_MAX_PMTU)
 			return -EINVAL;
 		param->max_stream_data_bidi_remote = p->max_stream_data_bidi_remote;
 	}
 	if (p->max_stream_data_uni) {
-		if (p->max_stream_data_uni > param->max_data)
+		if (p->max_stream_data_uni > param->max_data ||
+		    p->max_stream_data_uni < QUIC_PATH_MAX_PMTU)
 			return -EINVAL;
 		param->max_stream_data_uni = p->max_stream_data_uni;
 	}
