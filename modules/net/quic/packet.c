@@ -759,22 +759,19 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb)
 				active = quic_conn_id_active(quic_dest(sk));
 				quic_conn_id_update(active, packet->scid.data, packet->scid.len);
 			}
-			/* in case userspace doesn't send any packets, use SACK
-			 * timer to send these SACK frames out.
-			 */
 			quic_pnspace_set_need_sack(space, 1);
 			quic_pnspace_set_path_alt(space, 0);
-			if (!quic_inq_need_sack(inq)) {
-				quic_timer_reset(sk, QUIC_TIMER_SACK, quic_inq_max_ack_delay(inq));
-				quic_inq_set_need_sack(inq, 1);
-			}
 		}
 		cb->resume = 0;
 		skb_reset_transport_header(skb);
 	}
-
-	if (!quic_inq_need_sack(inq)) /* delay sack timer is reused as idle timer */
-		quic_timer_reset(sk, QUIC_TIMER_IDLE, quic_inq_max_idle_timeout(inq));
+	/* in case userspace doesn't send any packets, use SACK
+	 * timer to send these SACK frames out.
+	 */
+	if (!quic_inq_need_sack(inq)) {
+		quic_timer_reset(sk, QUIC_TIMER_SACK, quic_inq_max_ack_delay(inq));
+		quic_inq_set_need_sack(inq, 1);
+	}
 
 	consume_skb(skb);
 	return 0;
@@ -858,11 +855,15 @@ static int quic_packet_app_process_done(struct sock *sk, struct sk_buff *skb)
 	quic_pnspace_set_path_alt(space, cb->path_alt);
 
 out:
-	consume_skb(skb);
-	if (!quic_inq_need_sack(inq)) /* delay sack timer is reused as idle timer */
-		quic_timer_reset(sk, QUIC_TIMER_IDLE, quic_inq_max_idle_timeout(inq));
-	if (quic_is_established(sk))
+	if (quic_is_established(sk)) {
+		if (!quic_inq_need_sack(inq)) /* delay sack timer is reused as idle timer */
+			quic_timer_reset(sk, QUIC_TIMER_IDLE, quic_inq_max_idle_timeout(inq));
 		quic_outq_transmit(sk);
+	} else if (!quic_inq_need_sack(inq)) {
+		quic_inq_set_need_sack(inq, 1);
+		quic_timer_reset(sk, QUIC_TIMER_SACK, quic_inq_max_ack_delay(inq));
+	}
+	consume_skb(skb);
 	return 0;
 }
 
