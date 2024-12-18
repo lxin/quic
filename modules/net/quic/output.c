@@ -552,7 +552,7 @@ static void quic_outq_psent_sack_frames(struct sock *sk, struct quic_packet_sent
 	quic_outq_wfree(acked, sk);
 }
 
-static void quic_outq_path_confirm(struct sock *sk,  s64 largest, s64 smallest)
+static void quic_outq_path_confirm(struct sock *sk, u8 level, s64 largest, s64 smallest)
 {
 	struct quic_outqueue *outq = quic_outq(sk);
 	struct quic_path_addr *path = quic_dst(sk);
@@ -560,7 +560,7 @@ static void quic_outq_path_confirm(struct sock *sk,  s64 largest, s64 smallest)
 	bool raise_timer, complete;
 	u32 pathmtu;
 
-	if (quic_path_validated(path))
+	if (quic_path_validated(path) || level == QUIC_CRYPTO_HANDSHAKE)
 		outq->pto_count = 0;
 
 	if (!quic_path_pl_confirm(path, largest, smallest))
@@ -585,7 +585,7 @@ void quic_outq_transmitted_sack(struct sock *sk, u8 level, s64 largest, s64 smal
 	struct quic_packet_sent *sent, *next;
 	u32 pto, acked = 0;
 
-	quic_outq_path_confirm(sk, largest, smallest);
+	quic_outq_path_confirm(sk, level, largest, smallest);
 	pr_debug("%s: largest: %llu, smallest: %llu\n", __func__, largest, smallest);
 
 	list_for_each_entry_safe_reverse(sent, next, &outq->packet_sent_list, list) {
