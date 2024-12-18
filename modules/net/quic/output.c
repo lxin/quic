@@ -437,6 +437,9 @@ void quic_outq_transmit_probe(struct sock *sk)
 	if (!quic_is_established(sk))
 		return;
 
+	if (quic_packet_config(sk, QUIC_CRYPTO_APP, 0))
+		return;
+
 	frame = quic_frame_create(sk, QUIC_FRAME_PING, &probe_size);
 	if (frame) {
 		number = quic_pnspace_next_pn(space);
@@ -893,6 +896,9 @@ void quic_outq_transmit_pto(struct sock *sk)
 	outq->single = 1;
 	outq->level = level;
 	if (quic_outq_transmit(sk) || quic_outq_transmit_old(sk))
+		goto out;
+
+	if (quic_packet_config(sk, level, 0))
 		goto out;
 
 	frame = quic_frame_create(sk, QUIC_FRAME_PING, &probe_size);

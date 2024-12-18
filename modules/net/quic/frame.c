@@ -99,9 +99,6 @@ static struct quic_frame *quic_frame_ping_create(struct sock *sk, void *data, u8
 	u32 *probe_size = data;
 	u32 frame_len = 1;
 
-	if (quic_packet_config(sk, 0, 0))
-		return NULL;
-
 	if (*probe_size > packet->overhead)
 		frame_len = *probe_size - packet->overhead;
 
@@ -187,8 +184,6 @@ static struct quic_frame *quic_frame_stream_create(struct sock *sk, void *data, 
 	struct quic_frame *frame;
 	u8 *p, nodelay = 0;
 
-	if (quic_packet_config(sk, 0, 0))
-		return NULL;
 	stream = info->stream;
 	hlen += quic_var_len(stream->id);
 	if (stream->send.offset) {
@@ -352,8 +347,6 @@ static struct quic_frame *quic_frame_crypto_create(struct sock *sk, void *data, 
 	u64 offset;
 	u8 *p;
 
-	if (quic_packet_config(sk, info->level, 0))
-		return NULL;
 	max_frame_len = quic_packet_max_payload(quic_packet(sk));
 	crypto = quic_crypto(sk, info->level);
 	msg_len = iov_iter_count(info->msg);
@@ -500,9 +493,10 @@ static struct quic_frame *quic_frame_path_challenge_create(struct sock *sk, void
 	u32 frame_len;
 	u8 *p;
 
-	if (quic_packet_config(sk, 0, 0))
+	if (quic_packet_config(sk, QUIC_CRYPTO_APP, 0))
 		return NULL;
-	frame_len = QUIC_MIN_UDP_PAYLOAD - QUIC_TAG_LEN - packet->overhead;
+
+	frame_len = QUIC_MIN_UDP_PAYLOAD - packet->overhead;
 	get_random_bytes(quic_path_entropy(path), 8);
 
 	frame = quic_frame_alloc(frame_len, NULL, GFP_ATOMIC);

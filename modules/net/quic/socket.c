@@ -659,6 +659,11 @@ static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 	if (err)
 		goto err;
 
+	if (quic_packet_config(sk, hinfo.crypto_level, 0)) {
+		err = -ENETUNREACH;
+		goto err;
+	}
+
 	if (has_hinfo) {
 		if (hinfo.crypto_level >= QUIC_CRYPTO_EARLY) {
 			err = -EINVAL;
