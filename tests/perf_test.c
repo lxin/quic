@@ -16,6 +16,8 @@
 #define ALPN_LEN	20
 #define TOT_LEN		1 * 1024 * 1024 * 1024
 
+#define SECONDS		1000000
+
 char snd_msg[SND_MSG_LEN];
 char rcv_msg[RCV_MSG_LEN];
 char alpn[ALPN_LEN] = "sample";
@@ -168,6 +170,7 @@ static int do_server(struct options *opts)
 listen:
 	param.grease_quic_bit = 1;
 	param.stateless_reset = 1;
+	param.max_idle_timeout = 120 * SECONDS;
 	param.disable_1rtt_encryption = opts->no_crypt;
 	if (setsockopt(listenfd, SOL_QUIC, QUIC_SOCKOPT_TRANSPORT_PARAM, &param, sizeof(param))) {
 		printf("socket setsockopt transport param failed\n");
@@ -242,6 +245,7 @@ static uint64_t get_now_time()
 
 static int do_client(struct options *opts)
 {
+	struct quic_transport_param param = {};
 	struct sockaddr_in ra = {};
 	uint32_t len = 0, flags;
 	struct addrinfo *rp;
@@ -256,7 +260,6 @@ static int do_client(struct options *opts)
 	}
 
 	if (rp->ai_family == AF_INET6) {
-		struct quic_transport_param param = {};
 		struct sockaddr_in6 ra = {};
 
 		sockfd = socket(AF_INET6, SOCK_DGRAM, IPPROTO_QUIC);
@@ -265,16 +268,16 @@ static int do_client(struct options *opts)
 			return -1;
 		}
 
-		ra.sin6_family = AF_INET6;
-		ra.sin6_port = htons(atoi(opts->port));
-		inet_pton(AF_INET6, opts->addr, &ra.sin6_addr);
-
+		param.max_idle_timeout = 120 * SECONDS;
 		param.disable_1rtt_encryption = opts->no_crypt;
-		if (setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_TRANSPORT_PARAM,
-			       &param, sizeof(param))) {
+		if (setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_TRANSPORT_PARAM, &param, sizeof(param))) {
 			printf("socket setsockopt transport param failed\n");
 			return -1;
 		}
+
+		ra.sin6_family = AF_INET6;
+		ra.sin6_port = htons(atoi(opts->port));
+		inet_pton(AF_INET6, opts->addr, &ra.sin6_addr);
 
 		if (connect(sockfd, (struct sockaddr *)&ra, sizeof(ra))) {
 			printf("socket connect failed\n");
@@ -286,6 +289,13 @@ static int do_client(struct options *opts)
 	sockfd = socket(AF_INET, SOCK_DGRAM, IPPROTO_QUIC);
 	if (sockfd < 0) {
 		printf("socket create failed\n");
+		return -1;
+	}
+
+	param.max_idle_timeout = 120 * SECONDS;
+	param.disable_1rtt_encryption = opts->no_crypt;
+	if (setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_TRANSPORT_PARAM, &param, sizeof(param))) {
+		printf("socket setsockopt transport param failed\n");
 		return -1;
 	}
 
