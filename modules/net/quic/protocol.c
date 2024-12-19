@@ -119,15 +119,17 @@ static void quic_v6_lower_xmit(struct sock *sk, struct sk_buff *skb, union quic_
 {
 	struct quic_crypto_cb *cb = QUIC_CRYPTO_CB(skb);
 	u8 tc = (inet6_sk(sk)->tclass | cb->ecn), ttl;
-	struct dst_entry *dst = sk_dst_get(sk);
+	struct dst_entry *dst;
 
+	pr_debug("%s: skb: %p, len: %d, num: %llu, %pI6c:%d -> %pI6c:%d\n", __func__,
+		 skb, skb->len, cb->number, &sa->v6.sin6_addr, ntohs(sa->v6.sin6_port),
+		 &da->v6.sin6_addr, ntohs(da->v6.sin6_port));
+
+	dst = sk_dst_get(sk);
 	if (!dst) {
 		kfree_skb(skb);
 		return;
 	}
-	pr_debug("%s: skb: %p, len: %d, num: %llu, %pI6c:%d -> %pI6c:%d\n", __func__,
-		 skb, skb->len, cb->number, &sa->v6.sin6_addr, ntohs(sa->v6.sin6_port),
-		 &da->v6.sin6_addr, ntohs(da->v6.sin6_port));
 
 	ttl = (u8)ip6_dst_hoplimit(dst);
 	udp_tunnel6_xmit_skb(dst, sk, skb, NULL, &sa->v6.sin6_addr, &da->v6.sin6_addr, tc,

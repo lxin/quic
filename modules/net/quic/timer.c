@@ -16,7 +16,6 @@ void quic_timer_sack_handler(struct sock *sk)
 	struct quic_inqueue *inq = quic_inq(sk);
 	struct quic_connection_close *close;
 	u8 buf[100] = {};
-	u32 timeout;
 
 	if (quic_is_closed(sk))
 		return;
@@ -30,8 +29,7 @@ void quic_timer_sack_handler(struct sock *sk)
 		quic_outq_transmit(sk);
 		quic_inq_set_need_sack(inq, 0);
 
-		timeout = quic_inq_max_idle_timeout(inq);
-		quic_timer_start(sk, QUIC_TIMER_SACK, timeout);
+		quic_timer_start(sk, QUIC_TIMER_IDLE, quic_inq_max_idle_timeout(inq));
 		return;
 	}
 
