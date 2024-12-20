@@ -226,6 +226,8 @@ static int quic_outq_transmit_old(struct sock *sk)
 			break;
 		if (frame->level != outq->level)
 			continue;
+		if (!quic_frame_retransmittable(frame->type))
+			continue;
 		if (!quic_crypto_send_ready(quic_crypto(sk, frame->level)))
 			break;
 		if (quic_packet_config(sk, frame->level, frame->path_alt))
