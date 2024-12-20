@@ -881,7 +881,7 @@ void quic_outq_transmit_pto(struct sock *sk)
 	struct quic_outqueue *outq = quic_outq(sk);
 	struct quic_frame *frame;
 	u32 time, probe_size = 0;
-	u8 level, valid;
+	u8 level;
 
 	time = quic_outq_get_loss_time(sk, &level);
 	if (time) {
@@ -900,10 +900,6 @@ void quic_outq_transmit_pto(struct sock *sk)
 
 	if (quic_packet_config(sk, level, 0))
 		goto out;
-
-	valid = quic_path_validated(quic_dst(sk));
-	if (!quic_is_serv(sk) && !valid)
-		probe_size = QUIC_MIN_UDP_PAYLOAD;
 
 	frame = quic_frame_create(sk, QUIC_FRAME_PING, &probe_size);
 	if (frame) {
