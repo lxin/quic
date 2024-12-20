@@ -391,13 +391,24 @@ static void quic_inq_list_purge(struct sock *sk, struct list_head *head)
 
 static void quic_inq_handshake_tail(struct sock *sk, struct quic_frame *frame)
 {
+	struct quic_crypto *crypto = quic_crypto(sk, frame->level);
 	struct quic_inqueue *inq = quic_inq(sk);
 	struct list_head *head;
 	struct quic_frame *pos;
+	u64 overlap;
 
-	head = &inq->recv_list;
+	overlap = quic_crypto_recv_offset(crypto) - frame->offset;
+	if (overlap) {
+		quic_inq_rfree((int)frame->len, sk);
+		frame->data += overlap;
+		frame->len -= overlap;
+		quic_inq_set_owner_r((int)frame->len, sk);
+		frame->offset += overlap;
+	}
+	quic_crypto_inc_recv_offset(crypto, frame->len);
 
 	/* always put handshake msg ahead of data and event */
+	head = &inq->recv_list;
 	list_for_each_entry(pos, head, list) {
 		if (!pos->level) {
 			head = &pos->list;
@@ -423,17 +434,20 @@ int quic_inq_handshake_recv(struct sock *sk, struct quic_frame *frame)
 	crypto_offset = quic_crypto_recv_offset(crypto);
 	pr_debug("%s: recv_offset: %llu, offset: %llu, level: %u, len: %u\n",
 		 __func__, crypto_offset, offset, level, frame->len);
-	if (offset < crypto_offset) { /* dup */
+
+	if (crypto_offset >= offset + frame->len) { /* dup */
 		quic_frame_put(frame);
 		return 0;
 	}
+
 	quic_inq_set_owner_r((int)frame->len, sk);
-	if (sk_rmem_alloc_get(sk) > sk->sk_rcvbuf) {
+	if (sk_rmem_alloc_get(sk) > sk->sk_rcvbuf || !quic_sk_rmem_schedule(sk, frame->len)) {
 		QUIC_INC_STATS(sock_net(sk), QUIC_MIB_FRM_RCVBUFDROP);
 		frame->errcode = QUIC_TRANSPORT_ERROR_CRYPTO_BUF_EXCEEDED;
 		quic_inq_rfree((int)frame->len, sk);
 		return -ENOBUFS;
 	}
+
 	head = &inq->handshake_list;
 	if (offset > crypto_offset) {
 		list_for_each_entry(pos, head, list) {
@@ -447,7 +461,7 @@ int quic_inq_handshake_recv(struct sock *sk, struct quic_frame *frame)
 				head = &pos->list;
 				break;
 			}
-			if (pos->offset == offset) { /* dup */
+			if (pos->offset + pos->len >= offset + frame->len) { /* dup */
 				quic_inq_rfree((int)frame->len, sk);
 				quic_frame_put(frame);
 				return 0;
@@ -458,7 +472,6 @@ int quic_inq_handshake_recv(struct sock *sk, struct quic_frame *frame)
 	}
 
 	quic_inq_handshake_tail(sk, frame);
-	quic_crypto_inc_recv_offset(crypto, frame->len);
 
 	list_for_each_entry_safe(frame, pos, head, list) {
 		if (frame->level < level)
@@ -468,9 +481,12 @@ int quic_inq_handshake_recv(struct sock *sk, struct quic_frame *frame)
 		if (frame->offset > quic_crypto_recv_offset(crypto))
 			break;
 		list_del(&frame->list);
-
+		if (quic_crypto_recv_offset(crypto) >= frame->offset + frame->len) { /* dup */
+			quic_inq_rfree((int)frame->len, sk);
+			quic_frame_put(frame);
+			continue;
+		}
 		quic_inq_handshake_tail(sk, frame);
-		quic_crypto_inc_recv_offset(crypto, frame->len);
 	}
 	return 0;
 }
