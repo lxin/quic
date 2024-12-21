@@ -1,0 +1,70 @@
+name: interop
+
+on: [ push, pull_request, workflow_dispatch ]
+
+jobs:
+  interop:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get -y install make autoconf automake libtool pkg-config \
+               gnutls-dev linux-headers-$(uname -r)
+          sudo apt-get -y install cmake flex bison byacc ninja-build python3-pip \
+               libgcrypt20-dev libc-ares-dev libglib2.0-dev libpcap-dev
+
+      - name: Checkout linuxquic
+        uses: actions/checkout@v4
+      - name: Install quic module from linuxquic
+        run: |
+          ./autogen.sh
+          ./configure --prefix=/usr
+          make -C modules
+          sudo make -C modules install
+
+      # wireshark
+      - name: Checkout wireshark
+        uses: actions/checkout@v4
+        with:
+          repository: wireshark/wireshark
+          path: wireshark
+      - name: Install wireshark
+        run: |
+          cd wireshark
+          cmake -GNinja -DBUILD_wireshark=0 -DBUILD_qtshark=0 -DBUILD_editcap=1 \
+                -DBUILD_capinfos=0 -DBUILD_text2pcap=0 -DBUILD_rawshark=0 -DBUILD_sdjournal=0 \
+                -DBUILD_sshdump=0 -DBUILD_ciscodump=0 -DBUILD_sharkd=0 -DENABLE_STATIC=1 \
+                -DENABLE_PLUGINS=0 -DENABLE_LIBXML2=0 -DENABLE_BROTLI=0 -DENABLE_GNUTLS=1 .
+          ninja
+          sudo ninja install
+          cd ../
+
+      # quic-interop-runner
+      - name: Checkout quic-interop-runner
+        uses: actions/checkout@v4
+        with:
+          repository: quic-interop/quic-interop-runner
+          path: quic-interop-runner
+      - name: Install quic-interop-runner
+        run: |
+          cd quic-interop-runner
+          pip3 install -r requirements.txt
+          cd ../
+
+      - name: Run interop tests with ngtcp2 from quic-interop-runner
+        run: |
+          cd quic-interop-runner
+          echo '{' | tee ./implementations.json
+          echo '  "linuxquic": {' | tee -a ./implementations.json
+          echo '    "image": "quay.io/lxin/linuxquic-interop:latest",' | tee -a ./implementations.json
+          echo '    "url": "https://github.com/lxin/quic",' | tee -a ./implementations.json
+          echo '    "role": "both"' | tee -a ./implementations.json
+          echo '  },' | tee -a ./implementations.json
+          echo '  "ngtcp2": {' | tee -a ./implementations.json
+          echo '    "image": "ghcr.io/ngtcp2/ngtcp2-interop:latest",' | tee -a ./implementations.json
+          echo '    "url": "https://github.com/ngtcp2/ngtcp2",' | tee -a ./implementations.json
+          echo '    "role": "both"' | tee -a ./implementations.json
+          echo '  }' | tee -a ./implementations.json
+          echo '}' | tee -a ./implementations.json
+          python3 run.py

@@ -1,0 +1,79 @@
+name: check
+
+on: [ push, pull_request, workflow_dispatch ]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get -y install make autoconf automake libtool pkg-config \
+               gnutls-dev libglib2.0-dev libnl-genl-3-dev keyutils libkeyutils-dev \
+               linux-headers-$(uname -r)
+
+      - name: Checkout linuxquic
+        uses: actions/checkout@v4
+      - name: Install quic module and libquic from linuxquic
+        run: |
+          ./autogen.sh
+          ./configure --prefix=/usr
+          make
+          sudo make install
+
+      # nghttp3
+      - name: Checkout nghttp3
+        uses: actions/checkout@v4
+        with:
+          repository: ngtcp2/nghttp3
+          submodules: recursive
+          path: nghttp3
+      - name: Install nghttp3
+        run: |
+          cd nghttp3
+          autoreconf -i
+          ./configure --prefix=/usr/
+          make
+          sudo make install
+          cd ../
+
+      # ktls-utils
+      - name: Checkout ktls-utils
+        uses: actions/checkout@v4
+        with:
+          repository: oracle/ktls-utils
+          path: ktls-utils
+      - name: Install ktls-utils
+        run: |
+          cd ktls-utils
+          ./autogen.sh
+          ./configure --with-systemd
+          make
+          sudo make install
+          cd ../
+      - name: Start tlshd from ktls-utils
+        run: |
+          echo "[debug]" | sudo tee /etc/tlshd.conf
+          echo "loglevel=0" | sudo tee -a /etc/tlshd.conf
+          echo "tls=0" | sudo tee -a /etc/tlshd.conf
+          echo "nl=0" | sudo tee -a /etc/tlshd.conf
+          echo "" | sudo tee -a /etc/tlshd.conf
+          echo "[authenticate]" | sudo tee -a /etc/tlshd.conf
+          echo "keyrings=quic" | sudo tee -a /etc/tlshd.conf
+          echo "" | sudo tee -a /etc/tlshd.conf
+          echo "[authenticate.client]" | sudo tee -a /etc/tlshd.conf
+          echo "x509.truststore= $(pwd)/tests/keys/ca-cert.pem" | sudo tee -a /etc/tlshd.conf
+          echo "x509.certificate=$(pwd)/tests/keys/client-cert.pem" | sudo tee -a /etc/tlshd.conf
+          echo "x509.private_key=$(pwd)/tests/keys/client-key.pem" | sudo tee -a /etc/tlshd.conf
+          echo "" | sudo tee -a /etc/tlshd.conf
+          echo "[authenticate.server]" | sudo tee -a /etc/tlshd.conf
+          echo "x509.truststore= $(pwd)/tests/keys/ca-cert.pem" | sudo tee -a /etc/tlshd.conf
+          echo "x509.certificate=$(pwd)/tests/keys/server-cert.pem" | sudo tee -a /etc/tlshd.conf
+          echo "x509.private_key=$(pwd)/tests/keys/server-key.pem" | sudo tee -a /etc/tlshd.conf
+          sudo systemctl enable --now tlshd
+
+      - name: Run selftests from linuxquic
+        run: |
+          sudo ip link set lo mtu 1500
+          sudo make check
