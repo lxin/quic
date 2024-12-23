@@ -837,7 +837,8 @@ int quic_crypto_get_retry_tag(struct quic_crypto *crypto, struct sk_buff *skb,
 	if (err)
 		return err;
 
-	pseudo_retry = quic_crypto_aead_mem_alloc(tfm, 128, &iv, &req, &sg, 1);
+	plen = 1 + odcid->len + skb->len - 16;
+	pseudo_retry = quic_crypto_aead_mem_alloc(tfm, plen + 16, &iv, &req, &sg, 1);
 	if (!pseudo_retry)
 		return -ENOMEM;
 
@@ -845,7 +846,6 @@ int quic_crypto_get_retry_tag(struct quic_crypto *crypto, struct sk_buff *skb,
 	p = quic_put_int(p, odcid->len, 1);
 	p = quic_put_data(p, odcid->data, odcid->len);
 	p = quic_put_data(p, skb->data, skb->len - 16);
-	plen = (u32)(p - pseudo_retry);
 	sg_init_one(sg, pseudo_retry, plen + 16);
 
 	memcpy(iv, QUIC_RETRY_NONCE_V1, 12);
@@ -856,7 +856,7 @@ int quic_crypto_get_retry_tag(struct quic_crypto *crypto, struct sk_buff *skb,
 	aead_request_set_crypt(req, sg, sg, 0, iv);
 	err = crypto_aead_encrypt(req);
 	if (!err)
-		memcpy(tag, pseudo_retry + plen, 16);
+		memcpy(tag, p, 16);
 	kfree(pseudo_retry);
 	return err;
 }
