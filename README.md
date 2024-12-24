@@ -15,7 +15,6 @@ There are several compelling reasons for implementing in-kernel QUIC:
   requests to relevant applications across different processes based on ALPN.
 - Minimizing data duplication by utilizing zero-copy techniques like sendfile().
 - Facilitating the crypto offloading in NICs to further enhance performance.
-- Addressing interoperability issues from the variety of userland QUIC implementations.
 
 ## Implementation
 
@@ -43,7 +42,7 @@ in [ktls-utils](https://github.com/oracle/ktls-utils) will handle the handshake 
       +------+  +------+     Applications
       +--------------------------------------------+
       |            libquic (gnutls)                |
-      |  {quic_handshake_server/client/param()}    |
+      |       {quic_handshake_server/client()}     |
       +--------------------------------------------+        +------------------+
        {send/recvmsg()}       {set/getsockopt()}            |tlshd (ktls-utils)|
        [CMSG handshake_info]  [SOCKOPT_CRYPTO_SECRET]       +------------------+
@@ -109,13 +108,12 @@ in [ktls-utils](https://github.com/oracle/ktls-utils) will handle the handshake 
 
 ## INSTALL
 
-### Build QUIC Kernel Module and Libquic:
-Both QUIC Kernel Module and Libquic can be built and installed simply by the commands below:
+Both QUIC Kernel Module and Libquic will be built and installed simply by the commands below:
 
     Packages Required: (kernel_version >= 5.14)
     - make autoconf automake libtool pkg-config
-    - gnutls-devel / gnutls-dev
-    - kernel-devel / linux-headers-$(uname -r)
+    - gnutls-devel kernel-devel (yum)
+      gnutls-dev linux-headers-$(uname -r) (apt-get)
 
     # cd /home/lxin
     # git clone https://github.com/lxin/quic.git
@@ -126,9 +124,10 @@ Both QUIC Kernel Module and Libquic can be built and installed simply by the com
     # sudo make install
     # sudo make check (optional, run selftests)
 
-For these who want to integrate QUIC modules into kernel source code (e.g. /home/lxin/net-next/),
-follow the instruction below to build and install kernel first, then the commands
-above will skip QUIC modules building and use the one provided by kernel.
+NOTE: For these who want to integrate QUIC modules into kernel source code
+(e.g. /home/lxin/net-next/), follow the instruction below to build and install
+kernel first, then the commands above will skip QUIC modules building and use
+the one provided by kernel.
 
     # cp -r modules/include modules/net /home/lxin/net-next
     # cd /home/lxin/net-next/
@@ -142,13 +141,15 @@ above will skip QUIC modules building and use the one provided by kernel.
 
 Also libquic is not necessary if you're able to use raw socket APIs and gnutls APIs to complete
 the QUIC handshake, see
-[Raw Socket APIs with more Control](https://github.com/lxin/quic#raw-socket-apis-with-more-control)
+[Raw Socket APIs with more Control](https://github.com/lxin/quic#raw-socket-apis-with-more-control).
 
-### Kernel Consumer Test:
+## USE CASES
+
+### Kernel Consumers with ktls-utils:
     Packages Required:
-    - glib2-devel / libglib2.0-dev
-    - libnl3-devel / libnl-genl-3-dev
-    - keyutils keyutils-libs-devel / libkeyutils-dev
+    - keyutils
+    - glib2-devel libnl3-devel keyutils-libs-devel (yum)
+      libglib2.0-dev libnl-genl-3-dev libkeyutils-dev (apt-get)
 
     # cd /home/lxin
     # git clone https://github.com/oracle/ktls-utils
@@ -174,20 +175,50 @@ the QUIC handshake, see
       x509.certificate=/home/lxin/quic/tests/keys/server-cert.pem
       x509.private_key=/home/lxin/quic/tests/keys/server-key.pem
 
-    # sudo systemctl enable tlshd
-    # sudo systemctl restart tlshd
+    # sudo systemctl enable --now tlshd
 
     # cd /home/lxin/quic
     # sudo make check tests=tlshd (optional, run some tests for tlshd)
 
-### QUIC Interoperability Test:
-    Requirements:
+After tlshd service is started, Kernel Consumers can use these user APIs
+from kernel space, see [Use in Kernel Space](https://github.com/lxin/quic/#use-in-kernel-space).
+
+### HTTP/3 Client with Curl:
+    # cd /home/lxin
+    # git clone --recurse-submodules https://github.com/ngtcp2/nghttp3.git
+    # cd nghttp3
+    # autoreconf -i
+    # ./configure --prefix=/usr/
+    # make
+    # sudo make install
+
+    # cd /home/lxin/quic
+    # sudo make check tests=http3 (optional, run some tests for http3)
+
+Moritz Buhl has made curl http3 work over linuxquic:
+
+    # git clone https://github.com/moritzbuhl/curl.git -b linux_curl
+    # cd curl
+    # autoreconf -i
+    # ./configure --prefix=/usr/ --with-gnutls --with-linux-quic --with-nghttp3
+    # make -j$(nproc)
+    # sudo make install
+
+The test can be done with curl:
+
+    # curl --http3-only --ipv4 https://cloudflare-quic.com/
+    # curl --http3-only --ipv4 https://facebook.com/
+    # curl --http3-only --ipv4 https://litespeedtech.com/
+    # curl --http3-only --ipv4 https://nghttp2.org:4433/
+    # curl --http3-only --ipv4 https://outlook.office.com/
+    # curl --http3-only --ipv4 https://www.google.com/
+
+### QUIC Interop Test with quic-interop-runner:
+    Packages Required:
     - cmake flex bison byacc ninja-build
     - python3-pip docker docker-compose
-    - libgcrypt-devel / libgcrypt20-dev
-    - c-ares-devel / libc-ares-dev
-    - glib2-devel / libglib2.0-dev
-    - libpcap-devel / libpcap-dev
+    - libgcrypt-devel c-ares-devel glib2-devel libpcap-devel (yum)
+      libgcrypt20-dev libc-ares-dev libglib2.0-dev libpcap-dev (apt-get)
 
     Build latest wireshark:
     # cd /home/lxin
@@ -200,15 +231,15 @@ the QUIC handshake, see
     # ninja
     # sudo ninja install
 
-    Build test image:
+    Build test image (Optional):
     # cd /home/lxin
     # git clone https://github.com/quic-interop/quic-network-simulator.git
     # cd quic-network-simulator/
-    # cp -r /home/lxin/quic/tests/interop linuxquic
-    # CLIENT="linuxquic" SERVER="linuxquic" docker compose build
-    # docker image ls linuxquic
-      REPOSITORY   TAG       IMAGE ID       CREATED          SIZE
-      linuxquic    latest    3329ae030c62   52 seconds ago   568MB
+    # cp -r /home/lxin/quic/tests/interop linuxquic-interop
+    # CLIENT="linuxquic-interop" SERVER="linuxquic-interop" docker compose build
+    # docker image ls linuxquic-interop
+      REPOSITORY           TAG       IMAGE ID       CREATED          SIZE
+      linuxquic-interop    latest    3329ae030c62   52 seconds ago   568MB
 
     Run tests:
     # cd /home/lxin
@@ -222,7 +253,7 @@ implementations. Here displays the testing result between linuxquic and ngtcp2:
     # cat implementations.json
       {
         "linuxquic": {
-          "image": "linuxquic:latest",
+          "image": "quay.io/lxin/linuxquic-interop:latest",
           "url": "https://github.com/lxin/quic",
           "role": "both"
         },
@@ -264,7 +295,7 @@ As well as the testing result between linuxquic and msquic:
     # cat implementations.json
       {
         "linuxquic": {
-          "image": "linuxquic:latest",
+          "image": "quay.io/lxin/linuxquic-interop:latest",
           "url": "https://github.com/lxin/quic",
           "role": "both"
         },
@@ -301,36 +332,7 @@ As well as the testing result between linuxquic and msquic:
       |           |             C              |    C: 6718 (± 424) kbps    |
       +-----------+----------------------------+----------------------------+
 
-### HTTP/3 Interoperability Test:
-    # cd /home/lxin
-    # git clone https://github.com/ngtcp2/nghttp3.git
-    # cd nghttp3
-    # git submodule update --init
-    # autoreconf -i
-    # ./configure --prefix=/usr/
-    # make
-    # sudo make install
-
-    # cd /home/lxin/quic
-    # sudo make check tests=http3 (optional, run some tests for http3)
-
-The test can also be done with curl (Moritz Buhl has made curl http3 work over linux QUIC):
-
-    # git clone https://github.com/moritzbuhl/curl.git -b linux_curl
-    # cd curl
-    # autoreconf -i
-    # ./configure --prefix=/usr/ --with-gnutls --with-linux-quic --with-nghttp3
-    # make -j$(nproc)
-    # sudo make install
-
-    # curl --http3-only --ipv4 https://cloudflare-quic.com/
-    # curl --http3-only --ipv4 https://facebook.com/
-    # curl --http3-only --ipv4 https://litespeedtech.com/
-    # curl --http3-only --ipv4 https://nghttp2.org:4433/
-    # curl --http3-only --ipv4 https://outlook.office.com/
-    # curl --http3-only --ipv4 https://www.google.com/
-
-### Performance Test:
+### Performance Test with iperf:
     # git clone https://github.com/lxin/iperf.git
     # cd iperf/
     # ./bootstrap.sh
@@ -387,7 +389,7 @@ gap between QUIC and kTLS, QUIC with disable_1rtt_encryption and TCP is caused b
 - QUIC has an extra encryption for header protection.
 - QUIC has a longer header for the stream DATA.
 
-## USAGE
+## USER APIS
 
 Similar to TCP and SCTP, a typical server and client use the following system
 call sequence to communicate:
@@ -468,7 +470,7 @@ QUIC handshake functions, and they may copy and reuse some code from libquic.
 ### Use in Kernel Space
 
 NOTE: tlshd service must be installed and started, see
-[Kernel Consumer Test](https://github.com/lxin/quic#kernel-consumer-test)),
+[Kernel Consumers with ktls-utils](https://github.com/lxin/quic#kernel-consumers-with-ktls-utils),
 as it receives and handles the kernel handshake request for kernel sockets.
 
 In kernel space, the use is pretty much like TCP sockets, except a extra handshake up-call.
