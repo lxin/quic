@@ -185,6 +185,10 @@ The `msg_flags` field of the `msghdr` structure returned from the kernel
 may be set to:
 
 .IP \[bu] 4
+.B `MSG_EOR`:
+Indicates that the received data is read completely.
+
+.IP \[bu] 4
 .B `MSG_DATAGRAM`:
 Indicates that the received data is an unreliable datagram.
 
@@ -264,6 +268,9 @@ Opens the next unidirectional stream.
 .IP \[bu] 4
 .B `MSG_STREAM_DONTWAIT`:
 Opens the stream without blocking.
+.IP \[bu] 4
+.B `MSG_STREAM_SNDBLOCK`:
+Send streams blocked when no capacity.
 .RE
 
 .TP
@@ -857,6 +864,7 @@ struct quic_config {
   uint32_t payload_cipher_type;
   uint8_t  receive_session_ticket;
   uint8_t  certificate_request;
+  uint8_t  stream_data_nodelay;
 };
 .fi
 .IP "version"
@@ -938,6 +946,14 @@ from the client. Options include:
 `1`: REQUEST
 .IP \[bu] 4
 `2`: REQUIRE
+.RE
+.IP "stream_data_nodelay"
+Disable the Nagle algorithm. Options include:
+.RS 8
+.IP \[bu] 4
+`0`: Enable the Nagle algorithm (default)
+.IP \[bu] 4
+`!0`: Disable the Nagle algorithm
 .RE
 .RE
 
