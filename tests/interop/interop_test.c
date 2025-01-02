@@ -684,7 +684,7 @@ static int http3_read_data(struct http_ctx *ctx, nghttp3_conn *httpconn, int soc
 	while (1) {
 		flags |= MSG_DONTWAIT;
 		ret = quic_recvmsg(sockfd, ctx->buf, sizeof(ctx->buf), &stream_id, &flags);
-		if (ret <= 0) {
+		if (ret < 0) {
 			if (errno == EAGAIN || errno == EWOULDBLOCK)
 				return 0;
 			return -1;
@@ -1447,7 +1447,7 @@ static int http09_run_loop(struct http_ctx *ctx)
 		while (1) {
 			flags = MSG_DONTWAIT;
 			ret = quic_recvmsg(sockfd, ctx->buf, sizeof(ctx->buf), &stream_id, &flags);
-			if (ret <= 0) {
+			if (ret < 0) {
 				if (errno == EAGAIN || errno == EWOULDBLOCK)
 					break;
 				if (ctx->is_serv && errno == ENOTCONN)
