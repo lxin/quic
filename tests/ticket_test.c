@@ -259,6 +259,10 @@ static int server_handshake(int sockfd, const char *pkey, const char *cert, cons
 	if (ret)
 		goto err_session;
 
+	ret = gnutls_record_set_max_early_data_size(session, 0xffffffffu);
+	if (ret)
+		goto err_session;
+
 	ret = gnutls_priority_set_direct(session, QUIC_PRIORITY, NULL);
 	if (ret)
 		goto err_session;

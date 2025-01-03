@@ -15,7 +15,7 @@
 static int http_log_level = LOG_INFO;
 
 #define QUIC_PRIORITY_CHACHA20 \
-	"NORMAL:-VERS-ALL:+VERS-TLS1.3:+PSK:-CIPHER-ALL:" \
+	"NORMAL:-VERS-ALL:+VERS-TLS1.3:+PSK:+ECDHE-PSK:-CIPHER-ALL:" \
 	"+CHACHA20-POLY1305:-GROUP-ALL:+GROUP-SECP256R1:" \
 	"+GROUP-X25519:+GROUP-SECP384R1:+GROUP-SECP521R1:" \
 	"%DISABLE_TLS13_COMPAT_MODE"
@@ -506,6 +506,10 @@ static int http_server_handshake(int sockfd, const char *pkey, const char *cert,
 		goto err_session;
 
 	ret = gnutls_session_ticket_enable_server(session, &skey);
+	if (ret)
+		goto err_session;
+
+	ret = gnutls_record_set_max_early_data_size(session, 0xffffffffu);
 	if (ret)
 		goto err_session;
 
