@@ -117,16 +117,6 @@ static inline u8 quic_crypto_send_ready(struct quic_crypto *crypto)
 	return crypto->send_ready;
 }
 
-static inline void quic_crypto_set_key_pending(struct quic_crypto *crypto, u8 pending)
-{
-	crypto->key_pending = pending;
-}
-
-static inline void quic_crypto_set_key_update_send_time(struct quic_crypto *crypto, u32 send_time)
-{
-	crypto->key_update_send_time = send_time;
-}
-
 static inline void quic_crypto_set_key_update_time(struct quic_crypto *crypto, u32 key_update_time)
 {
 	crypto->key_update_time = key_update_time;

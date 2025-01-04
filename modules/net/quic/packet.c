@@ -786,7 +786,6 @@ err:
 static int quic_packet_app_process_done(struct sock *sk, struct sk_buff *skb)
 {
 	struct quic_pnspace *space = quic_pnspace(sk, QUIC_CRYPTO_APP);
-	struct quic_crypto *crypto = quic_crypto(sk, QUIC_CRYPTO_APP);
 	struct quic_stream_table *streams = quic_streams(sk);
 	struct quic_crypto_cb *cb = QUIC_CRYPTO_CB(skb);
 	struct quic_packet *packet = quic_packet(sk);
@@ -795,7 +794,6 @@ static int quic_packet_app_process_done(struct sock *sk, struct sk_buff *skb)
 	struct quic_inqueue *inq = quic_inq(sk);
 	s64 max_bidi = 0, max_uni = 0;
 	struct quic_frame *frame;
-	u8 key_phase;
 
 	quic_pnspace_inc_ecn_count(space, quic_get_msg_ecn(sk, skb));
 
@@ -809,13 +807,6 @@ static int quic_packet_app_process_done(struct sock *sk, struct sk_buff *skb)
 		if (quic_outq_pref_addr(outq) &&
 		    (cb->path_alt & QUIC_PATH_ALT_SRC))
 			quic_sock_change_saddr(sk, NULL, 0);
-	}
-
-	if (cb->key_update) {
-		key_phase = cb->key_phase;
-		quic_crypto_set_key_pending(crypto, 0);
-		quic_crypto_set_key_update_send_time(crypto, 0);
-		quic_inq_event_recv(sk, QUIC_EVENT_KEY_UPDATE, &key_phase);
 	}
 
 	if (packet->has_sack) {
@@ -877,8 +868,8 @@ static int quic_packet_app_process(struct sock *sk, struct sk_buff *skb)
 	struct quichdr *hdr = quic_hdr(skb);
 	struct net *net = sock_net(sk);
 	struct quic_frame frame = {};
+	u8 taglen, key_phase;
 	int err = -EINVAL;
-	u8 taglen;
 
 	WARN_ON(!skb_set_owner_sk_safe(skb, sk));
 
@@ -912,8 +903,17 @@ static int quic_packet_app_process(struct sock *sk, struct sk_buff *skb)
 		if (!quic_packet_stateless_reset_process(sk, skb))
 			return 0;
 		QUIC_INC_STATS(net, QUIC_MIB_PKT_DECDROP);
+		if (cb->key_update) {
+			key_phase = cb->key_phase;
+			quic_inq_event_recv(sk, QUIC_EVENT_KEY_UPDATE, &key_phase);
+			goto err;
+		}
 		packet->errcode = cb->errcode;
 		goto err;
+	}
+	if (cb->key_update) {
+		key_phase = cb->key_phase;
+		quic_inq_event_recv(sk, QUIC_EVENT_KEY_UPDATE, &key_phase);
 	}
 	if (!cb->resume)
 		QUIC_INC_STATS(net, QUIC_MIB_PKT_DECFASTPATHS);

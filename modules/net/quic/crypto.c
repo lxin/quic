@@ -530,6 +530,7 @@ int quic_crypto_decrypt(struct quic_crypto *crypto, struct sk_buff *skb)
 	struct quic_crypto_cb *cb = QUIC_CRYPTO_CB(skb);
 	u8 *iv, cha, ccm, phase;
 	int err = 0;
+	u32 time;
 
 	if (cb->resume) {
 		quic_crypto_get_header(skb);
@@ -551,24 +552,39 @@ int quic_crypto_decrypt(struct quic_crypto *crypto, struct sk_buff *skb)
 			cb->errcode = QUIC_TRANSPORT_ERROR_KEY_UPDATE;
 			return err;
 		}
+		cb->key_update = 1;
 	}
 
 	phase = cb->key_phase;
 	iv = crypto->rx_iv[phase];
 	ccm = quic_crypto_is_cipher_ccm(crypto);
 	err = quic_crypto_payload_decrypt(crypto->rx_tfm[phase], skb, iv, ccm);
-	if (err)
+	if (err) {
+		if (err == -EINPROGRESS)
+			return err;
+		/* When using the old keys can not decrypt the packets, the peer might
+		 * start another key_update. Thus, clear the last key_pending so that
+		 * next packets will trigger the new key-update.
+		 */
+		if (crypto->key_pending && cb->key_phase != crypto->key_phase) {
+			crypto->key_pending = 0;
+			crypto->key_update_time = 0;
+		}
 		return err;
+	}
 
 out:
 	/* An endpoint MUST retain old keys until it has successfully unprotected a
 	 * packet sent using the new keys. An endpoint SHOULD retain old keys for
 	 * some time after unprotecting a packet sent using the new keys.
 	 */
-	if (cb->key_phase == crypto->key_phase &&
-	    crypto->key_pending && crypto->key_update_send_time &&
-	    jiffies_to_usecs(jiffies) - crypto->key_update_send_time >= crypto->key_update_time)
-		cb->key_update = 1;
+	if (crypto->key_pending && cb->key_phase == crypto->key_phase) {
+		time = crypto->key_update_send_time;
+		if (time && jiffies_to_usecs(jiffies) - time >= crypto->key_update_time) {
+			crypto->key_pending = 0;
+			crypto->key_update_time = 0;
+		}
+	}
 	return err;
 }
 EXPORT_SYMBOL_GPL(quic_crypto_decrypt);
