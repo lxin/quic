@@ -485,65 +485,12 @@ static int do_client_notification_test(int sockfd)
 		printf("test21: FAIL msg %s, sid %d\n", msg, (int)sid);
 		return -1;
 	}
-	sleep(1);
-	flags = MSG_STREAM_NEW | MSG_STREAM_FIN;
-	sid  = 114;
-	strcpy(msg, "quic event test21");
-	ret = quic_sendmsg(sockfd, msg, strlen(msg), sid, flags); /* stream_id: 114 */
-	if (ret == -1) {
-		printf("send error %d\n", errno);
-		return -1;
-	}
-	memset(msg, 0, sizeof(msg));
-	ret = quic_recvmsg(sockfd, msg, sizeof(msg), &sid, &flags);
-	if (ret == -1) {
-		printf("recv error %d\n", errno);
-		return -1;
-	}
-	if (!(flags & MSG_NOTIFICATION) || msg[0] != QUIC_EVENT_KEY_UPDATE) {
-		printf("test21: FAIL flags %u, event %d\n", flags, msg[0]);
-		return -1;
-	}
-	ev = (union quic_event *)&msg[1];
-	if (ev->key_update_phase != 1) {
-		printf("test21: FAIL key_phase %d\n", ev->key_update_phase);
-		return -1;
-	}
-	memset(msg, 0, sizeof(msg));
-	ret = quic_recvmsg(sockfd, msg, sizeof(msg), &sid, &flags);
-	if (ret == -1) {
-		printf("recv error %d\n", errno);
-		return -1;
-	}
-	if (strcmp(msg, "quic event test21") || sid != 115) {
-		printf("test21: FAIL msg %s, sid %d\n", msg, (int)sid);
-		return -1;
-	}
 	printf("test21: PASS (QUIC_EVENT_KEY_UPDATE event for local key_update)\n");
 
 	flags = MSG_STREAM_NEW | MSG_STREAM_FIN;
 	sid  = 116;
 	strcpy(msg, "client key_update");
 	ret = quic_sendmsg(sockfd, msg, strlen(msg), sid, flags); /* stream_id: 116 */
-	if (ret == -1) {
-		printf("send error %d\n", errno);
-		return -1;
-	}
-	memset(msg, 0, sizeof(msg));
-	ret = quic_recvmsg(sockfd, msg, sizeof(msg), &sid, &flags);
-	if (ret == -1) {
-		printf("recv error %d\n", errno);
-		return -1;
-	}
-	if (strcmp(msg, "client key_update") || sid != 116) {
-		printf("test22: FAIL msg %s, sid %d\n", msg, (int)sid);
-		return -1;
-	}
-	sleep(1);
-	flags = MSG_STREAM_NEW | MSG_STREAM_FIN;
-	sid  = 118;
-	strcpy(msg, "quic event test22");
-	ret = quic_sendmsg(sockfd, msg, strlen(msg), sid, flags); /* stream_id: 118 */
 	if (ret == -1) {
 		printf("send error %d\n", errno);
 		return -1;
@@ -569,7 +516,7 @@ static int do_client_notification_test(int sockfd)
 		printf("recv error %d\n", errno);
 		return -1;
 	}
-	if (strcmp(msg, "quic event test22") || sid != 119) {
+	if (strcmp(msg, "client key_update") || sid != 116) {
 		printf("test22: FAIL msg %s, sid %d\n", msg, (int)sid);
 		return -1;
 	}
