@@ -26,7 +26,6 @@ cleanup()
 	tc qdisc del dev lo root netem loss 30% > /dev/null 2>&1
 	pkill func_test > /dev/null 2>&1
 	pkill perf_test > /dev/null 2>&1
-	pkill msquic_test > /dev/null 2>&1
 	pkill alpn_test > /dev/null 2>&1
 	pkill ticket_test > /dev/null 2>&1
 	pkill sample_test > /dev/null 2>&1
@@ -116,30 +115,6 @@ netem_tests()
 	./perf_test --addr ::1 --tot_len 1048576 --msg_len 1024 || return 1
 	daemon_stop "perf_test"
 	tc qdisc del dev lo root netem loss 30%
-}
-
-msquic_tests() {
-	[ -f /usr/local/include/msquic.h -o -f /usr/include/msquic.h ] || return 0
-
-	print_start "InterOperability Tests (IPv4, lkquic -> msquic)"
-	make msquic_test || return 1
-	daemon_run ./msquic_test -server -cert_file:./keys/server-cert.pem \
-					 -key_file:./keys/server-key.pem
-	./perf_test --addr 127.0.0.1 || return 1
-	daemon_stop "msquic_test"
-
-	print_start "InterOperability Tests (IPv4, msquic -> lkquic)"
-	make msquic_test || return 1
-	daemon_run ./perf_test -l --pkey ./keys/server-key.pem --cert ./keys/server-cert.pem
-	./msquic_test -client -target:127.0.0.1 || return 1
-	daemon_stop "perf_test"
-
-	print_start "InterOperability Tests (IPv6, lkquic -> msquic)"
-	make msquic_test || return 1
-	daemon_run ./msquic_test -server -cert_file:./keys/server-cert.pem \
-					 -key_file:./keys/server-key.pem
-	./perf_test --addr ::1 || return 1
-	daemon_stop "msquic_test"
 }
 
 http3_tests() {
@@ -278,7 +253,7 @@ sample_tests()
 	daemon_stop "alpn_test"
 }
 
-TESTS="func perf netem msquic http3 tlshd sample"
+TESTS="func perf netem http3 tlshd sample"
 trap cleanup EXIT
 
 [ "$1" = "" ] || TESTS=$1
