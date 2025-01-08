@@ -684,8 +684,17 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb)
 	while (skb->len > 0) {
 		hshdr = quic_hshdr(skb);
 		if (!hshdr->form) { /* handle it later when setting 1RTT key */
+			/* treat it as a padding if dcid does not match */
+			if (packet->dcid.len > skb->len - 1 ||
+			    memcmp(packet->dcid.data, skb->data + 1, packet->dcid.len)) {
+				if (!quic_path_validated(path))
+					quic_path_inc_ampl_rcvlen(path, skb->len);
+				break;
+			}
 			cb->number_offset = 0;
-			return quic_packet_process(sk, skb);
+			quic_packet_process(sk, skb);
+			skb = NULL;
+			break;
 		}
 		if (quic_packet_handshake_header_process(sk, skb)) {
 			QUIC_INC_STATS(net, QUIC_MIB_PKT_INVHDRDROP);
