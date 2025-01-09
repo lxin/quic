@@ -816,7 +816,7 @@ static int quic_frame_stream_process(struct sock *sk, struct quic_frame *frame, 
 		err = PTR_ERR(stream);
 		if (err == -EAGAIN)
 			frame->errcode = QUIC_TRANSPORT_ERROR_STREAM_LIMIT;
-		else if (err != -ENOMEM)
+		else if (err != -ENOSTR)
 			frame->errcode = QUIC_TRANSPORT_ERROR_STREAM_STATE;
 		goto out;
 	}

@@ -292,6 +292,12 @@ struct quic_stream *quic_stream_recv_get(struct quic_stream_table *streams, s64 
 	if (stream)
 		return stream;
 
+	if (quic_stream_id_local(stream_id, is_serv)) {
+		if (quic_stream_id_send_closed(streams, stream_id))
+			return ERR_PTR(-ENOSTR);
+		return ERR_PTR(-EINVAL);
+	}
+
 	if (quic_stream_id_recv_closed(streams, stream_id))
 		return ERR_PTR(-ENOSTR);
 
@@ -300,7 +306,7 @@ struct quic_stream *quic_stream_recv_get(struct quic_stream_table *streams, s64 
 
 	stream = quic_stream_recv_create(streams, stream_id, is_serv);
 	if (!stream)
-		return ERR_PTR(-ENOMEM);
+		return ERR_PTR(-ENOSTR);
 	return stream;
 }
 
