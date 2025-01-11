@@ -1615,6 +1615,9 @@ static void *http09_process(void *arg)
 	struct http_ctx *ctx = arg;
 	long ret;
 
+	if (ctx->testcase == IOP_ZERORTT)
+		usleep(500000);
+
 	ret = http_server_accept_socket(ctx->sockfd, ctx->pkey_file, ctx->cert_file,
 					"hq-interop", ctx->testcase);
 	if (ret < 0) {
