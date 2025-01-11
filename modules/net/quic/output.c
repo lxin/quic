@@ -65,17 +65,19 @@ static void quic_outq_transmit_ctrl(struct sock *sk, u8 level)
 
 	if (quic_pnspace_need_sack(space)) {
 		frame = quic_frame_create(sk, QUIC_FRAME_ACK, &level);
-		if (frame) {
+		while (frame) {
 			frame->path_alt = quic_pnspace_path_alt(space);
 			if (quic_packet_config(sk, frame->level, frame->path_alt) ||
-			    quic_outq_limit_check(sk, frame->type, frame->len) ||
-			    !quic_packet_tail(sk, frame)) {
+			    quic_outq_limit_check(sk, frame->type, frame->len)) {
 				quic_frame_put(frame);
 				return;
 			}
-			/* clear it only if the sack frame can be sent */
-			quic_pnspace_set_need_sack(space, 0);
-		}
+			if (quic_packet_tail(sk, frame)) {
+				quic_pnspace_set_need_sack(space, 0);
+				break;
+			}
+			outq->count += quic_packet_create(sk);
+		};
 	}
 
 	head = &outq->control_list;
