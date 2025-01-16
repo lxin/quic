@@ -86,7 +86,6 @@ out:
 void quic_timer_path_handler(struct sock *sk)
 {
 	struct quic_path_addr *path;
-	struct quic_packet *packet;
 	struct quic_frame *frame;
 	u8 cnt, probe = 1;
 	u32 timeout;
@@ -95,7 +94,6 @@ void quic_timer_path_handler(struct sock *sk)
 		return;
 
 	timeout = quic_cong_pto(quic_cong(sk)) * 3;
-	packet = quic_packet(sk);
 	path = quic_src(sk);
 	cnt = quic_path_sent_cnt(path);
 	if (cnt) {
