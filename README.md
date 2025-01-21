@@ -401,7 +401,7 @@ call sequence to communicate:
                                        listen(listenfd)
     connect(sockfd)
     quic_client_handshake(sockfd)
-                                       sockfd = accecpt(listenfd)
+                                       sockfd = accept(listenfd)
                                        quic_server_handshake(sockfd, cert)
 
     sendmsg(sockfd)                    recvmsg(sockfd)
