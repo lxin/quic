@@ -175,8 +175,8 @@ static void quic_packet_get_addrs(struct sock *sk, struct sk_buff *skb)
 
 	packet->sa = &packet->saddr;
 	packet->da = &packet->daddr;
-	quic_get_msg_addr(sk, packet->sa, skb, 0);
-	quic_get_msg_addr(sk, packet->da, skb, 1);
+	quic_get_msg_addr(packet->sa, skb, 0);
+	quic_get_msg_addr(packet->da, skb, 1);
 }
 
 /* Retry Packet {
@@ -205,13 +205,13 @@ static struct sk_buff *quic_packet_retry_create(struct sock *sk)
 	struct sk_buff *skb;
 
 	quic_put_int(token, 1, 1); /* retry token flag */
-	if (quic_crypto_generate_token(crypto, packet->da, quic_addr_len(sk),
+	if (quic_crypto_generate_token(crypto, packet->da, sizeof(*packet->da),
 				       &packet->dcid, token, &tokenlen))
 		return NULL;
 
 	quic_conn_id_generate(&dcid); /* new dcid for retry */
 	len = 1 + QUIC_VERSION_LEN + 1 + packet->scid.len + 1 + dcid.len + tokenlen + 16;
-	hlen = quic_encap_len(sk) + MAX_HEADER;
+	hlen = quic_encap_len(packet->da) + MAX_HEADER;
 	skb = alloc_skb(hlen + len, GFP_ATOMIC);
 	if (!skb)
 		return NULL;
@@ -278,7 +278,7 @@ static struct sk_buff *quic_packet_version_create(struct sock *sk)
 
 	len = 1 + QUIC_VERSION_LEN + 1 + packet->scid.len + 1 + packet->dcid.len +
 	      QUIC_VERSION_LEN * 2;
-	hlen = quic_encap_len(sk) + MAX_HEADER;
+	hlen = quic_encap_len(packet->da) + MAX_HEADER;
 	skb = alloc_skb(hlen + len, GFP_ATOMIC);
 	if (!skb)
 		return NULL;
@@ -339,7 +339,7 @@ static struct sk_buff *quic_packet_stateless_reset_create(struct sock *sk)
 		return NULL;
 
 	len = 64;
-	hlen = quic_encap_len(sk) + MAX_HEADER;
+	hlen = quic_encap_len(packet->da) + MAX_HEADER;
 	skb = alloc_skb(hlen + len, GFP_ATOMIC);
 	if (!skb)
 		return NULL;
@@ -406,7 +406,6 @@ static int quic_packet_listen_process(struct sock *sk, struct sk_buff *skb)
 	int err = 0;
 
 	/* set af_ops for now in case sk_family != addr.v4.sin_family */
-	quic_set_af_ops(sk, quic_af_ops_get_skb(skb));
 	quic_packet_get_addrs(sk, skb);
 	if (quic_request_sock_exists(sk))
 		goto enqueue;
@@ -462,7 +461,7 @@ static int quic_packet_listen_process(struct sock *sk, struct sk_buff *skb)
 			goto out;
 		}
 		crypto = quic_crypto(sk, QUIC_CRYPTO_INITIAL);
-		err = quic_crypto_verify_token(crypto, packet->da, quic_addr_len(sk),
+		err = quic_crypto_verify_token(crypto, packet->da, sizeof(*packet->da),
 					       &odcid, token.data, token.len);
 		if (err) {
 			errcode = QUIC_TRANSPORT_ERROR_INVALID_TOKEN;
@@ -491,7 +490,6 @@ enqueue:
 	quic_inq_backlog_tail(sk, skb);
 	sk->sk_data_ready(sk);
 out:
-	quic_set_af_ops(sk, quic_af_ops_get(sk->sk_family));
 	return err;
 }
 
@@ -749,7 +747,7 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb)
 		if (err)
 			goto err;
 
-		quic_pnspace_inc_ecn_count(space, quic_get_msg_ecn(sk, skb));
+		quic_pnspace_inc_ecn_count(space, quic_get_msg_ecn(skb));
 
 		if (packet->has_sack) {
 			quic_outq_retransmit_mark(sk, packet->level, 0);
@@ -803,7 +801,7 @@ static int quic_packet_app_process_done(struct sock *sk, struct sk_buff *skb)
 	struct quic_inqueue *inq = quic_inq(sk);
 	s64 max_bidi = 0, max_uni = 0;
 
-	quic_pnspace_inc_ecn_count(space, quic_get_msg_ecn(sk, skb));
+	quic_pnspace_inc_ecn_count(space, quic_get_msg_ecn(skb));
 
 	/* connection migration check: an endpoint only changes the address to which
 	 * it sends packets in response to the highest-numbered non-probing packet.
@@ -811,7 +809,7 @@ static int quic_packet_app_process_done(struct sock *sk, struct sk_buff *skb)
 	if (packet->non_probing && cb->number == quic_pnspace_max_pn_seen(space)) {
 		if (!quic_conn_id_disable_active_migration(quic_dest(sk)) &&
 		    (cb->path_alt & QUIC_PATH_ALT_DST))
-			quic_sock_change_daddr(sk, packet->da, quic_addr_len(sk));
+			quic_sock_change_daddr(sk, packet->da, sizeof(packet->da));
 		if (quic_outq_pref_addr(outq) &&
 		    (cb->path_alt & QUIC_PATH_ALT_SRC))
 			quic_sock_change_saddr(sk, NULL, 0);
@@ -1280,7 +1278,7 @@ static struct sk_buff *quic_packet_handshake_create(struct sock *sk)
 		}
 	}
 
-	hlen = quic_encap_len(sk) + MAX_HEADER;
+	hlen = quic_encap_len(packet->da) + MAX_HEADER;
 	skb = alloc_skb(hlen + len + packet->taglen[1], GFP_ATOMIC);
 	if (!skb) {
 		kfree(sent);
@@ -1389,7 +1387,7 @@ static struct sk_buff *quic_packet_app_create(struct sock *sk)
 	}
 
 	len = packet->len;
-	hlen = quic_encap_len(sk) + MAX_HEADER;
+	hlen = quic_encap_len(packet->da) + MAX_HEADER;
 	skb = alloc_skb(hlen + len + packet->taglen[0], GFP_ATOMIC);
 	if (!skb) {
 		kfree(sent);
@@ -1453,7 +1451,7 @@ int quic_packet_route(struct sock *sk)
 		return err;
 
 	pmtu = min_t(u32, dst_mtu(__sk_dst_get(sk)), QUIC_PATH_MAX_PMTU);
-	quic_packet_mss_update(sk, pmtu - quic_encap_len(sk));
+	quic_packet_mss_update(sk, pmtu - quic_encap_len(packet->da));
 
 	if (!quic_path_sent_cnt(s) && !quic_path_sent_cnt(d)) {
 		quic_path_pl_reset(d);
@@ -1464,7 +1462,7 @@ int quic_packet_route(struct sock *sk)
 
 int quic_packet_config(struct sock *sk, u8 level, u8 path_alt)
 {
-	struct quic_conn_id_set *id_set = quic_dest(sk);
+	struct quic_conn_id_set *dest = quic_dest(sk), *source = quic_source(sk);
 	struct quic_packet *packet = quic_packet(sk);
 	struct quic_config *c = quic_config(sk);
 	u32 hlen = sizeof(struct quichdr);
@@ -1477,11 +1475,10 @@ int quic_packet_config(struct sock *sk, u8 level, u8 path_alt)
 	packet->padding = 0;
 	packet->frames = 0;
 	hlen += QUIC_PACKET_NUMBER_LEN; /* packet number */
-	hlen += quic_conn_id_active(id_set)->len;
+	hlen += quic_conn_id_active(dest)->len;
 	if (level) {
 		hlen += 1;
-		id_set = quic_source(sk);
-		hlen += 1 + quic_conn_id_active(id_set)->len;
+		hlen += 1 + quic_conn_id_active(source)->len;
 		if (level == QUIC_CRYPTO_INITIAL)
 			hlen += quic_var_len(quic_token(sk)->len) + quic_token(sk)->len;
 		hlen += QUIC_VERSION_LEN; /* version */
@@ -1491,7 +1488,11 @@ int quic_packet_config(struct sock *sk, u8 level, u8 path_alt)
 	packet->len = (u16)hlen;
 	packet->overhead = (u8)hlen;
 	packet->level = level;
-	packet->path_alt = path_alt;
+
+	if (packet->path_alt != path_alt) {
+		__sk_dst_reset(sk);
+		packet->path_alt = path_alt;
+	}
 
 	if (quic_packet_route(sk) < 0)
 		return -1;

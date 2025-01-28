@@ -31,8 +31,8 @@ bool quic_request_sock_exists(struct sock *sk)
 	struct quic_request_sock *req;
 
 	list_for_each_entry(req, quic_reqs(sk), list) {
-		if (!memcmp(&req->sa, packet->sa, quic_addr_len(sk)) &&
-		    !memcmp(&req->da, packet->da, quic_addr_len(sk)))
+		if (!memcmp(&req->sa, packet->sa, sizeof(req->sa)) &&
+		    !memcmp(&req->da, packet->da, sizeof(req->da)))
 			return true;
 	}
 	return false;
@@ -99,23 +99,13 @@ out:
 	return ret;
 }
 
-static bool quic_has_bind_any(struct sock *sk)
-{
-	union quic_addr *sa, a = {};
-
-	sa = quic_path_addr(quic_src(sk), 0);
-	a.v4.sin_family = sa->v4.sin_family;
-	a.v4.sin_port = sa->v4.sin_port;
-
-	return quic_cmp_sk_addr(sk, sa, &a);
-}
-
 struct sock *quic_sock_lookup(struct sk_buff *skb, union quic_addr *sa, union quic_addr *da)
 {
 	struct net *net = dev_net(skb->dev);
 	struct quic_data alpns = {}, alpn;
 	struct sock *sk = NULL, *tmp;
 	struct quic_hash_head *head;
+	union quic_addr *a;
 	u64 length;
 	u32 len;
 	u8 *p;
@@ -147,11 +137,11 @@ struct sock *quic_sock_lookup(struct sk_buff *skb, union quic_addr *sa, union qu
 			/* alpns.data != NULL means TLS parse succeed but no ALPN was found,
 			 * in such case it only matches the sock with no ALPN set.
 			 */
+			a = quic_path_addr(quic_src(tmp), 0);
 			if (net == sock_net(tmp) && quic_is_listen(tmp) &&
-			    quic_cmp_sk_addr(tmp, quic_path_addr(quic_src(tmp), 0), sa) &&
-			    (!alpns.data || !quic_alpn(tmp)->len)) {
+			    quic_cmp_sk_addr(tmp, a, sa) && (!alpns.data || !quic_alpn(tmp)->len)) {
 				sk = tmp;
-				if (!quic_has_bind_any(sk))
+				if (!quic_is_any_addr(a))
 					break;
 			}
 		}
@@ -162,11 +152,11 @@ struct sock *quic_sock_lookup(struct sk_buff *skb, union quic_addr *sa, union qu
 		quic_get_int(&p, &len, &length, 1);
 		quic_data(&alpn, p, length);
 		sk_for_each(tmp, &head->head) {
+			a = quic_path_addr(quic_src(tmp), 0);
 			if (net == sock_net(tmp) && quic_is_listen(tmp) &&
-			    quic_cmp_sk_addr(tmp, quic_path_addr(quic_src(tmp), 0), sa) &&
-			    quic_data_has(quic_alpn(tmp), &alpn)) {
+			    quic_cmp_sk_addr(tmp, a, sa) && quic_data_has(quic_alpn(tmp), &alpn)) {
 				sk = tmp;
-				if (!quic_has_bind_any(sk))
+				if (!quic_is_any_addr(a))
 					break;
 			}
 		}
@@ -226,19 +216,17 @@ static void quic_config_init(struct sock *sk)
 
 static int quic_init_sock(struct sock *sk)
 {
-	u32 len, i;
+	u32 i;
 
 	sk->sk_destruct = inet_sock_destruct;
 	sk->sk_write_space = quic_write_space;
 	sock_set_flag(sk, SOCK_USE_WRITE_QUEUE);
 
-	quic_set_af_ops(sk, quic_af_ops_get(sk->sk_family));
 	quic_conn_id_set_init(quic_source(sk), 1);
 	quic_conn_id_set_init(quic_dest(sk), 0);
 
-	len = quic_addr_len(sk);
-	quic_path_addr_init(quic_src(sk), (u8)len, 1);
-	quic_path_addr_init(quic_dst(sk), (u8)len, 0);
+	quic_path_addr_init(quic_src(sk), 1);
+	quic_path_addr_init(quic_dst(sk), 0);
 
 	quic_transport_param_init(sk);
 	quic_config_init(sk);
@@ -292,19 +280,18 @@ static void quic_destroy_sock(struct sock *sk)
 static int quic_bind(struct sock *sk, struct sockaddr *addr, int addr_len)
 {
 	struct quic_path_addr *path = quic_src(sk);
-	union quic_addr *a;
+	union quic_addr *sa, a;
 	int err = 0;
 
 	lock_sock(sk);
 
-	a = quic_path_addr(path, 0);
-	if (a->v4.sin_port || addr_len < (int)quic_addr_len(sk) ||
-	    addr->sa_family != sk->sk_family) {
+	sa = quic_path_addr(path, 0);
+	if (sa->v4.sin_port || quic_get_user_addr(sk, &a, addr, addr_len)) {
 		err = -EINVAL;
 		goto out;
 	}
 
-	quic_path_addr_set(path, quic_addr(addr), 0);
+	quic_path_addr_set(path, &a, 0);
 	err = quic_path_set_bind_port(sk, path, 0);
 	if (err) {
 		quic_path_addr_free(sk, path, 0);
@@ -315,7 +302,7 @@ static int quic_bind(struct sock *sk, struct sockaddr *addr, int addr_len)
 		quic_path_addr_free(sk, path, 0);
 		goto out;
 	}
-	quic_set_sk_addr(sk, a, true);
+	quic_set_sk_addr(sk, &a, true);
 
 out:
 	release_sock(sk);
@@ -324,26 +311,25 @@ out:
 
 static int quic_connect(struct sock *sk, struct sockaddr *addr, int addr_len)
 {
+	struct quic_conn_id_set *dest = quic_dest(sk), *source = quic_source(sk);
 	struct quic_crypto *crypto = quic_crypto(sk, QUIC_CRYPTO_INITIAL);
-	struct quic_conn_id_set *source = quic_source(sk);
-	struct quic_conn_id_set *dest = quic_dest(sk);
 	struct quic_packet *packet = quic_packet(sk);
 	struct quic_path_addr *path = quic_src(sk);
 	struct quic_outqueue *outq = quic_outq(sk);
 	struct quic_inqueue *inq = quic_inq(sk);
 	struct quic_conn_id conn_id, *active;
-	union quic_addr *sa;
+	union quic_addr *sa, a;
 	int err = -EINVAL;
 
 	lock_sock(sk);
-	if (!quic_is_closed(sk) || addr_len < (int)quic_addr_len(sk))
+	if (!quic_is_closed(sk) || quic_get_user_addr(sk, &a, addr, addr_len))
 		goto out;
 
-	quic_path_addr_set(quic_dst(sk), quic_addr(addr), 0);
+	quic_path_addr_set(quic_dst(sk), &a, 0);
 	err = quic_packet_route(sk);
 	if (err < 0)
 		goto out;
-	quic_set_sk_addr(sk, quic_addr(addr), false);
+	quic_set_sk_addr(sk, &a, false);
 
 	sa = quic_path_addr(path, 0);
 	if (!sa->v4.sin_port) { /* auto bind */
@@ -421,7 +407,7 @@ static int quic_hash(struct sock *sk)
 	head = quic_listen_sock_head(net, ntohs(sa->v4.sin_port));
 	spin_lock(&head->lock);
 
-	any = quic_has_bind_any(sk);
+	any = quic_is_any_addr(sa);
 	sk_for_each(nsk, &head->head) {
 		if (net == sock_net(nsk) && quic_is_listen(nsk) &&
 		    !quic_path_cmp(quic_src(nsk), 0, sa)) {
@@ -1168,11 +1154,11 @@ static int quic_copy_sock(struct sock *nsk, struct sock *sk, struct quic_request
 	inet_sk(nsk)->pmtudisc = inet_sk(sk)->pmtudisc;
 
 	skb_queue_walk_safe(quic_inq_backlog_list(inq), skb, tmp) {
-		quic_get_msg_addr(nsk, &da, skb, 0);
-		quic_get_msg_addr(nsk, &sa, skb, 1);
+		quic_get_msg_addr(&da, skb, 0);
+		quic_get_msg_addr(&sa, skb, 1);
 
-		if (!memcmp(&req->sa, &da, quic_addr_len(nsk)) &&
-		    !memcmp(&req->da, &sa, quic_addr_len(nsk))) {
+		if (!memcmp(&req->sa, &da, sizeof(da)) &&
+		    !memcmp(&req->da, &sa, sizeof(sa))) {
 			__skb_unlink(skb, quic_inq_backlog_list(inq));
 			quic_inq_backlog_tail(nsk, skb);
 		}
@@ -1276,7 +1262,7 @@ static struct sock *quic_accept(struct sock *sk, int flags, int *errp, bool kern
 		goto out;
 	req = quic_request_sock_dequeue(sk);
 
-	nsk = sk_alloc(sock_net(sk), req->sa.v4.sin_family, GFP_KERNEL, sk->sk_prot, kern);
+	nsk = sk_alloc(sock_net(sk), sk->sk_family, GFP_KERNEL, sk->sk_prot, kern);
 	if (!nsk) {
 		err = -ENOMEM;
 		goto out;
@@ -1292,7 +1278,7 @@ static struct sock *quic_accept(struct sock *sk, int flags, int *errp, bool kern
 	err = quic_copy_sock(nsk, sk, req);
 	if (err)
 		goto free;
-	err = nsk->sk_prot->bind(nsk, &req->sa.sa, (int)quic_addr_len(nsk));
+	err = nsk->sk_prot->bind(nsk, &req->sa.sa, sizeof(req->sa));
 	if (err)
 		goto free;
 
@@ -1376,10 +1362,6 @@ int quic_sock_change_saddr(struct sock *sk, union quic_addr *addr, u32 len)
 		quic_outq_set_pref_addr(outq, 0);
 		goto out;
 	}
-
-	if (len != quic_addr_len(sk) ||
-	    quic_addr_family(sk) != addr->sa.sa_family)
-		return -EINVAL;
 
 	if (!quic_is_established(sk)) { /* set preferred address param */
 		if (!quic_is_serv(sk))
@@ -1837,7 +1819,7 @@ static int quic_setsockopt(struct sock *sk, int level, int optname,
 			   sockptr_t optval, unsigned int optlen)
 {
 	if (level != SOL_QUIC)
-		return quic_af_ops(sk)->setsockopt(sk, level, optname, optval, optlen);
+		return quic_common_setsockopt(sk, level, optname, optval, optlen);
 
 	return quic_do_setsockopt(sk, optname, optval, optlen);
 }
@@ -2138,7 +2120,7 @@ static int quic_getsockopt(struct sock *sk, int level, int optname,
 			   char __user *optval, int __user *optlen)
 {
 	if (level != SOL_QUIC)
-		return quic_af_ops(sk)->getsockopt(sk, level, optname, optval, optlen);
+		return quic_common_getsockopt(sk, level, optname, optval, optlen);
 
 	return quic_do_getsockopt(sk, optname, USER_SOCKPTR(optval), USER_SOCKPTR(optlen));
 }

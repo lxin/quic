@@ -1024,13 +1024,14 @@ void quic_outq_encrypted_tail(struct sock *sk, struct sk_buff *skb)
 
 void quic_outq_set_param(struct sock *sk, struct quic_transport_param *p)
 {
+	struct quic_packet *packet = quic_packet(sk);
 	struct quic_outqueue *outq = quic_outq(sk);
 	struct quic_inqueue *inq = quic_inq(sk);
 	u32 remote_idle, local_idle, pmtu;
 
 	outq->max_datagram_frame_size = p->max_datagram_frame_size;
 	pmtu = min_t(u32, dst_mtu(__sk_dst_get(sk)), QUIC_PATH_MAX_PMTU);
-	quic_packet_mss_update(sk, pmtu - quic_encap_len(sk));
+	quic_packet_mss_update(sk, pmtu - quic_encap_len(packet->da));
 
 	outq->max_udp_payload_size = p->max_udp_payload_size;
 	outq->ack_delay_exponent = p->ack_delay_exponent;

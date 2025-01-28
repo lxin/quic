@@ -33,7 +33,6 @@ static void quic_inq_set_owner_r(int len, struct sock *sk)
 int quic_rcv(struct sk_buff *skb)
 {
 	struct quic_crypto_cb *cb = QUIC_CRYPTO_CB(skb);
-	struct quic_addr_family_ops *af_ops;
 	struct net *net = dev_net(skb->dev);
 	struct quic_conn_id *conn_id;
 	union quic_addr daddr, saddr;
@@ -42,7 +41,6 @@ int quic_rcv(struct sk_buff *skb)
 	u8 *dcid;
 
 	skb_pull(skb, skb_transport_offset(skb));
-	af_ops = quic_af_ops_get_skb(skb);
 
 	if (skb->len < sizeof(struct quichdr))
 		goto err;
@@ -56,8 +54,8 @@ int quic_rcv(struct sk_buff *skb)
 		}
 	}
 	if (!sk) {
-		af_ops->get_msg_addr(&daddr, skb, 0);
-		af_ops->get_msg_addr(&saddr, skb, 1);
+		quic_get_msg_addr(&daddr, skb, 0);
+		quic_get_msg_addr(&saddr, skb, 1);
 		sk = quic_sock_lookup(skb, &daddr, &saddr);
 		if (!sk)
 			goto err;
@@ -85,32 +83,33 @@ err:
 
 void quic_rcv_err_pmtu(struct sock *sk)
 {
-	u32 taglen = quic_packet_taglen(quic_packet(sk));
+	struct quic_packet *packet = quic_packet(sk);
+	struct quic_path_addr *path = quic_dst(sk);
 	struct quic_config *c = quic_config(sk);
-	struct quic_path_addr *s = quic_src(sk);
-	struct quic_path_addr *d = quic_dst(sk);
+	u32 pathmtu, info, taglen;
 	struct dst_entry *dst;
-	u32 pathmtu, info;
 	bool reset_timer;
 
 	if (!ip_sk_accept_pmtu(sk))
 		return;
 
-	info = min_t(u32, quic_path_mtu_info(d), QUIC_PATH_MAX_PMTU);
-	if (!c->plpmtud_probe_interval || quic_path_sent_cnt(s) || quic_path_sent_cnt(d)) {
+	info = min_t(u32, quic_path_mtu_info(path), QUIC_PATH_MAX_PMTU);
+	if (!c->plpmtud_probe_interval ||
+	    quic_path_sent_cnt(quic_src(sk)) || quic_path_sent_cnt(path)) {
 		if (quic_packet_route(sk) < 0)
 			return;
 
 		dst = __sk_dst_get(sk);
 		dst->ops->update_pmtu(dst, sk, NULL, info, true);
-		quic_packet_mss_update(sk, info - quic_encap_len(sk));
+		quic_packet_mss_update(sk, info - quic_encap_len(packet->da));
 		quic_outq_retransmit_mark(sk, QUIC_CRYPTO_APP, 1);
 		quic_outq_update_loss_timer(sk);
 		quic_outq_transmit(sk);
 		return;
 	}
-	info = info - quic_encap_len(sk) - taglen;
-	pathmtu = quic_path_pl_toobig(d, info, &reset_timer);
+	taglen = quic_packet_taglen(packet);
+	info = info - quic_encap_len(packet->da) - taglen;
+	pathmtu = quic_path_pl_toobig(path, info, &reset_timer);
 	if (reset_timer)
 		quic_timer_reset(sk, QUIC_TIMER_PATH, c->plpmtud_probe_interval);
 	if (pathmtu)
@@ -119,17 +118,14 @@ void quic_rcv_err_pmtu(struct sock *sk)
 
 int quic_rcv_err(struct sk_buff *skb)
 {
-	struct quic_addr_family_ops *af_ops;
 	union quic_addr daddr, saddr;
 	struct quic_path_addr *path;
 	struct sock *sk = NULL;
 	int ret = 0;
 	u32 info;
 
-	af_ops = quic_af_ops_get_skb(skb);
-
-	af_ops->get_msg_addr(&saddr, skb, 0);
-	af_ops->get_msg_addr(&daddr, skb, 1);
+	quic_get_msg_addr(&saddr, skb, 0);
+	quic_get_msg_addr(&daddr, skb, 1);
 	sk = quic_sock_lookup(skb, &daddr, &saddr);
 	if (!sk)
 		return -ENOENT;
@@ -138,7 +134,7 @@ int quic_rcv_err(struct sk_buff *skb)
 	if (quic_is_listen(sk))
 		goto out;
 
-	if (quic_get_mtu_info(sk, skb, &info))
+	if (quic_get_mtu_info(skb, &info))
 		goto out;
 
 	ret = 1; /* processed with common mtud */

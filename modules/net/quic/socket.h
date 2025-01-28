@@ -81,7 +81,6 @@ struct quic_sock {
 	struct list_head		reqs;
 	struct quic_path_src		src;
 	struct quic_path_dst		dst;
-	struct quic_addr_family_ops	*af_ops; /* inet4 or inet6 */
 
 	struct quic_conn_id_set		source;
 	struct quic_conn_id_set		dest;
@@ -111,16 +110,6 @@ struct quic6_sock {
 static inline struct quic_sock *quic_sk(const struct sock *sk)
 {
 	return (struct quic_sock *)sk;
-}
-
-static inline void quic_set_af_ops(struct sock *sk, struct quic_addr_family_ops *af_ops)
-{
-	quic_sk(sk)->af_ops = af_ops;
-}
-
-static inline struct quic_addr_family_ops *quic_af_ops(const struct sock *sk)
-{
-	return quic_sk(sk)->af_ops;
 }
 
 static inline struct quic_path_addr *quic_src(const struct sock *sk)

@@ -110,7 +110,6 @@ static void quic_udp_sock_put(struct quic_udp_sock *us)
 static struct quic_udp_sock *quic_udp_sock_lookup(struct sock *sk, union quic_addr *a)
 {
 	struct quic_udp_sock *tmp, *us = NULL;
-	struct quic_addr_family_ops *af_ops;
 	struct net *net = sock_net(sk);
 	struct quic_hash_head *head;
 
@@ -120,8 +119,7 @@ static struct quic_udp_sock *quic_udp_sock_lookup(struct sock *sk, union quic_ad
 		if (net != sock_net(tmp->sk))
 			continue;
 
-		af_ops = quic_af_ops_get(tmp->sk->sk_family);
-		if (af_ops->cmp_sk_addr(sk, &tmp->addr, a)) {
+		if (quic_cmp_sk_addr(tmp->sk, &tmp->addr, a)) {
 			us = quic_udp_sock_get(tmp);
 			break;
 		}
@@ -216,15 +214,16 @@ void quic_path_addr_free(struct sock *sk, struct quic_path_addr *path, bool alt)
 {
 	struct quic_path_src *src;
 
-	if (!path->udp_bind)
-		goto out;
+	if (!path->udp_bind) {
+		memset(&path->addr[path->active ^ alt], 0, sizeof(union quic_addr));
+		return;
+	}
 
 	src = (struct quic_path_src *)path;
 	quic_udp_sock_put(src->udp_sk[path->active ^ alt]);
 	src->udp_sk[path->active ^ alt] = NULL;
 	quic_path_put_bind_port(sk, &src->port[path->active ^ alt]);
-out:
-	memset(&path->addr[path->active ^ alt], 0, path->addr_len);
+	memset(&path->addr[path->active ^ alt], 0, sizeof(union quic_addr));
 }
 
 void quic_path_free(struct sock *sk, struct quic_path_addr *path)

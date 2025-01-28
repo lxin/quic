@@ -71,7 +71,7 @@ struct quic_path_dst {
 
 static inline void quic_path_addr_set(struct quic_path_addr *a, union quic_addr *addr, bool alt)
 {
-	memcpy(&a->addr[a->active ^ alt], addr, a->addr_len);
+	memcpy(&a->addr[a->active ^ alt], addr, sizeof(*addr));
 }
 
 static inline union quic_addr *quic_path_addr(struct quic_path_addr *a, bool alt)
@@ -89,15 +89,14 @@ static inline struct quic_bind_port *quic_path_port(struct quic_path_addr *a, bo
 	return &((struct quic_path_src *)a)->port[a->active ^ alt];
 }
 
-static inline void quic_path_addr_init(struct quic_path_addr *a, u8 addr_len, u8 udp_bind)
+static inline void quic_path_addr_init(struct quic_path_addr *a, u8 udp_bind)
 {
-	a->addr_len = addr_len;
 	a->udp_bind = udp_bind;
 }
 
 static inline int quic_path_cmp(struct quic_path_addr *a, bool alt, union quic_addr *addr)
 {
-	return memcmp(addr, quic_path_addr(a, alt), a->addr_len);
+	return memcmp(addr, quic_path_addr(a, alt), sizeof(*addr));
 }
 
 static inline u16 quic_path_probe_size(struct quic_path_addr *a)
