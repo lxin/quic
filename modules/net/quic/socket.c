@@ -1449,7 +1449,7 @@ static int quic_sock_set_token(struct sock *sk, void *data, u32 len)
 
 static int quic_sock_set_session_ticket(struct sock *sk, u8 *data, u32 len)
 {
-	if (!len || len > 4096)
+	if (len < 64 || len > 4096)
 		return -EINVAL;
 
 	return quic_data_dup(quic_ticket(sk), data, len);
@@ -1879,26 +1879,21 @@ static int quic_sock_get_token(struct sock *sk, u32 len, sockptr_t optval, sockp
 static int quic_sock_get_session_ticket(struct sock *sk, u32 len,
 					sockptr_t optval, sockptr_t optlen)
 {
+	u8 *ticket = quic_ticket(sk)->data, key[64];
+	u32 ticket_len = quic_ticket(sk)->len;
 	struct quic_crypto *crypto;
-	u32 ticket_len, addr_len;
-	u8 *ticket, key[64];
 	union quic_addr da;
 
-	if (quic_is_serv(sk)) { /* get ticket_key for server */
+	if (quic_is_serv(sk) && !ticket_len) {
 		crypto = quic_crypto(sk, QUIC_CRYPTO_INITIAL);
-		addr_len = quic_addr_len(sk);
-		memcpy(&da, quic_path_addr(quic_dst(sk), 0), addr_len);
+		memcpy(&da, quic_path_addr(quic_dst(sk), 0), sizeof(da));
 		da.v4.sin_port = 0;
-		if (quic_crypto_generate_session_ticket_key(crypto, &da, addr_len, key, 64))
+		if (quic_crypto_generate_session_ticket_key(crypto, &da, sizeof(da), key, 64))
 			return -EINVAL;
 		ticket = key;
 		ticket_len = 64;
-		goto out;
 	}
 
-	ticket_len = quic_ticket(sk)->len;
-	ticket = quic_ticket(sk)->data;
-out:
 	if (len < ticket_len)
 		return -EINVAL;
 	len = ticket_len;
