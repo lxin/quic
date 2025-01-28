@@ -263,11 +263,11 @@ struct quic_stream *quic_stream_send_get(struct quic_stream_table *streams, s64 
 		return stream;
 	}
 
-	if (!(flags & MSG_STREAM_NEW))
-		return ERR_PTR(-EINVAL);
-
 	if (quic_stream_id_send_closed(streams, stream_id))
 		return ERR_PTR(-ENOSTR);
+
+	if (!(flags & MSG_STREAM_NEW))
+		return ERR_PTR(-EINVAL);
 
 	if (quic_stream_id_send_exceeds(streams, stream_id) ||
 	    quic_stream_id_send_overflow(streams, stream_id))
@@ -275,7 +275,7 @@ struct quic_stream *quic_stream_send_get(struct quic_stream_table *streams, s64 
 
 	stream = quic_stream_send_create(streams, stream_id, is_serv);
 	if (!stream)
-		return ERR_PTR(-ENOMEM);
+		return ERR_PTR(-ENOSTR);
 	streams->send.active_stream_id = stream_id;
 	return stream;
 }

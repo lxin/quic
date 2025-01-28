@@ -1071,7 +1071,7 @@ static int quic_frame_reset_stream_process(struct sock *sk, struct quic_frame *f
 		err = PTR_ERR(stream);
 		if (err == -EAGAIN)
 			frame->errcode = QUIC_TRANSPORT_ERROR_STREAM_LIMIT;
-		else if (err != -ENOMEM)
+		else if (err != -ENOSTR)
 			frame->errcode = QUIC_TRANSPORT_ERROR_STREAM_STATE;
 		goto out;
 	}
@@ -1120,7 +1120,7 @@ static int quic_frame_stop_sending_process(struct sock *sk, struct quic_frame *f
 		err = PTR_ERR(stream);
 		if (err == -EAGAIN)
 			frame->errcode = QUIC_TRANSPORT_ERROR_STREAM_LIMIT;
-		else if (err != -ENOMEM)
+		else if (err != -ENOSTR)
 			frame->errcode = QUIC_TRANSPORT_ERROR_STREAM_STATE;
 		return err;
 	}
@@ -1176,7 +1176,7 @@ static int quic_frame_max_stream_data_process(struct sock *sk, struct quic_frame
 		err = PTR_ERR(stream);
 		if (err == -EAGAIN)
 			frame->errcode = QUIC_TRANSPORT_ERROR_STREAM_LIMIT;
-		else if (err != -ENOMEM)
+		else if (err != -ENOSTR)
 			frame->errcode = QUIC_TRANSPORT_ERROR_STREAM_STATE;
 		return err;
 	}
@@ -1322,7 +1322,7 @@ static int quic_frame_stream_data_blocked_process(struct sock *sk, struct quic_f
 		err = PTR_ERR(stream);
 		if (err == -EAGAIN)
 			frame->errcode = QUIC_TRANSPORT_ERROR_STREAM_LIMIT;
-		else if (err != -ENOMEM)
+		else if (err != -ENOSTR)
 			frame->errcode = QUIC_TRANSPORT_ERROR_STREAM_STATE;
 		goto out;
 	}

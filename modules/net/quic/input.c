@@ -221,7 +221,8 @@ static void quic_inq_flow_control(struct sock *sk, struct quic_stream *stream, u
 	}
 
 	window = stream->recv.window;
-	if (stream->recv.bytes + window - stream->recv.max_bytes >=
+	if (stream->recv.state < QUIC_STREAM_RECV_STATE_RECVD &&
+	    stream->recv.bytes + window - stream->recv.max_bytes >=
 	    max(mss, (window >> QUIC_INQ_RWND_SHIFT))) {
 		if (quic_under_memory_pressure(sk))
 			window >>= 1;

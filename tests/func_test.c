@@ -1923,7 +1923,7 @@ static int do_client_stream_test(int sockfd)
 	errinfo.stream_id = 414;
 	errinfo.errcode = 1;
 	ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_STREAM_RESET, &errinfo, optlen);
-	if (ret != -1 || errno != EINVAL) {
+	if (ret != -1 || errno != ENOSTR) {
 		printf("test30: FAIL ret %d, error %d\n", ret, errno);
 		return -1;
 	}
@@ -2023,7 +2023,7 @@ static int do_client_stream_test(int sockfd)
 	flags = 0;
 	strcpy(msg, "test35");
 	ret = quic_sendmsg(sockfd, msg, strlen(msg), sid, flags);
-	if (ret != -1 || errno != EINVAL) {
+	if (ret != -1 || errno != ENOSTR) {
 		printf("test35: FAIL ret %d, error %d\n", ret, errno);
 		return -1;
 	}
@@ -2032,7 +2032,7 @@ static int do_client_stream_test(int sockfd)
 	flags = MSG_STREAM_FIN;
 	strcpy(msg, "test36");
 	ret = quic_sendmsg(sockfd, msg, strlen(msg), sid, flags);
-	if (ret != -1 || errno != EINVAL) {
+	if (ret != -1 || errno != ENOSTR) {
 		printf("test36: FAIL ret %d, error %d\n", ret, errno);
 		return -1;
 	}
