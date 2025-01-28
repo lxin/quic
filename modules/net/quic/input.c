@@ -198,8 +198,8 @@ static void quic_inq_flow_control(struct sock *sk, struct quic_stream *stream, u
 {
 	struct quic_packet *packet = quic_packet(sk);
 	struct quic_inqueue *inq = quic_inq(sk);
-	struct quic_frame *frame = NULL;
 	u32 mss, window;
+	u8 frame = 0;
 
 	if (!bytes)
 		return;
@@ -215,9 +215,8 @@ static void quic_inq_flow_control(struct sock *sk, struct quic_stream *stream, u
 		if (quic_under_memory_pressure(sk))
 			window >>= 1;
 		inq->max_bytes = inq->bytes + window;
-		frame = quic_frame_create(sk, QUIC_FRAME_MAX_DATA, inq);
-		if (frame)
-			quic_outq_ctrl_tail(sk, frame, true);
+		if (!quic_outq_transmit_frame(sk, QUIC_FRAME_MAX_DATA, inq, 0, true))
+			frame = 1;
 	}
 
 	window = stream->recv.window;
@@ -227,9 +226,8 @@ static void quic_inq_flow_control(struct sock *sk, struct quic_stream *stream, u
 		if (quic_under_memory_pressure(sk))
 			window >>= 1;
 		stream->recv.max_bytes = stream->recv.bytes + window;
-		frame = quic_frame_create(sk, QUIC_FRAME_MAX_STREAM_DATA, stream);
-		if (frame)
-			quic_outq_ctrl_tail(sk, frame, true);
+		if (!quic_outq_transmit_frame(sk, QUIC_FRAME_MAX_STREAM_DATA, stream, 0, true))
+			frame = 1;
 	}
 
 	if (frame)

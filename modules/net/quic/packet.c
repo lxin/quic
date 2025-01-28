@@ -375,25 +375,22 @@ static int quic_packet_stateless_reset_transmit(struct sock *sk)
 
 static int quic_packet_refuse_close_transmit(struct sock *sk, u32 errcode)
 {
+	struct quic_path_addr *d = quic_dst(sk), *s = quic_src(sk);
 	struct quic_conn_id_set *source = quic_source(sk);
 	struct quic_packet *packet = quic_packet(sk);
+	u8 level = QUIC_CRYPTO_INITIAL;
 	struct quic_conn_id *active;
-	struct quic_frame *frame;
 
 	active = quic_conn_id_active(source);
 	quic_conn_id_update(active, packet->dcid.data, packet->dcid.len);
-	quic_path_addr_set(quic_src(sk), packet->sa, 1);
-	quic_path_addr_set(quic_dst(sk), packet->da, 1);
+	quic_path_addr_set(s, packet->sa, 1);
+	quic_path_addr_set(d, packet->da, 1);
 
 	if (quic_packet_version_change(sk, active, packet->version))
 		return -EINVAL;
 	quic_outq_set_close_errcode(quic_outq(sk), errcode);
-	frame = quic_frame_create(sk, QUIC_FRAME_CONNECTION_CLOSE, NULL);
-	if (frame) {
-		frame->level = QUIC_CRYPTO_INITIAL;
-		frame->path_alt = (QUIC_PATH_ALT_SRC | QUIC_PATH_ALT_DST);
-		quic_outq_ctrl_tail(sk, frame, false);
-	}
+	quic_outq_transmit_frame(sk, QUIC_FRAME_CONNECTION_CLOSE, &level,
+				 (QUIC_PATH_ALT_SRC | QUIC_PATH_ALT_DST), false);
 	return 0;
 }
 
@@ -805,7 +802,6 @@ static int quic_packet_app_process_done(struct sock *sk, struct sk_buff *skb)
 	struct quic_outqueue *outq = quic_outq(sk);
 	struct quic_inqueue *inq = quic_inq(sk);
 	s64 max_bidi = 0, max_uni = 0;
-	struct quic_frame *frame;
 
 	quic_pnspace_inc_ecn_count(space, quic_get_msg_ecn(sk, skb));
 
@@ -830,16 +826,12 @@ static int quic_packet_app_process_done(struct sock *sk, struct sk_buff *skb)
 		quic_path_inc_ampl_rcvlen(path, skb->len);
 
 	if (quic_stream_max_streams_update(streams, &max_uni, &max_bidi)) {
-		if (max_uni) {
-			frame = quic_frame_create(sk, QUIC_FRAME_MAX_STREAMS_UNI, &max_uni);
-			if (frame)
-				quic_outq_ctrl_tail(sk, frame, true);
-		}
-		if (max_bidi) {
-			frame = quic_frame_create(sk, QUIC_FRAME_MAX_STREAMS_BIDI, &max_bidi);
-			if (frame)
-				quic_outq_ctrl_tail(sk, frame, true);
-		}
+		if (max_uni)
+			quic_outq_transmit_frame(sk, QUIC_FRAME_MAX_STREAMS_UNI,
+						 &max_uni, 0, true);
+		if (max_bidi)
+			quic_outq_transmit_frame(sk, QUIC_FRAME_MAX_STREAMS_BIDI,
+						 &max_bidi, 0, true);
 	}
 
 	if (!packet->ack_eliciting)
@@ -980,7 +972,7 @@ out:
 err:
 	pr_debug("%s: failed, num: %llu, len: %d, err: %d\n",
 		 __func__, cb->number, skb->len, err);
-	quic_outq_transmit_close(sk, frame.type, packet->errcode, 0);
+	quic_outq_transmit_close(sk, packet->errframe, packet->errcode, 0);
 	kfree_skb(skb);
 	return err;
 }

@@ -98,6 +98,11 @@ struct quic_msginfo {
 	u8 level;
 };
 
+struct quic_probeinfo {
+	u16 size;
+	u8 level;
+};
+
 struct quic_frame_ops {
 	struct quic_frame *(*frame_create)(struct sock *sk, void *data, u8 type);
 	int (*frame_process)(struct sock *sk, struct quic_frame *frame, u8 type);

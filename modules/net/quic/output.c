@@ -124,16 +124,15 @@ static void quic_outq_transmit_dgram(struct sock *sk, u8 level)
 static int quic_outq_flow_control(struct sock *sk, struct quic_stream *stream, u16 bytes)
 {
 	struct quic_outqueue *outq = quic_outq(sk);
-	struct quic_frame *frame = NULL;
-	u8 blocked = 0;
+	u8 blocked = 0, frame = 0;
 
 	/* send flow control */
 	if (stream->send.bytes + bytes > stream->send.max_bytes) {
 		if (!stream->send.data_blocked &&
 		    stream->send.last_max_bytes < stream->send.max_bytes) {
-			frame = quic_frame_create(sk, QUIC_FRAME_STREAM_DATA_BLOCKED, stream);
-			if (frame)
-				quic_outq_ctrl_tail(sk, frame, true);
+			if (!quic_outq_transmit_frame(sk, QUIC_FRAME_STREAM_DATA_BLOCKED, stream,
+						      0, true))
+				frame = 1;
 			stream->send.last_max_bytes = stream->send.max_bytes;
 			stream->send.data_blocked = 1;
 		}
@@ -141,9 +140,8 @@ static int quic_outq_flow_control(struct sock *sk, struct quic_stream *stream, u
 	}
 	if (outq->bytes + bytes > outq->max_bytes) {
 		if (!outq->data_blocked && outq->last_max_bytes < outq->max_bytes) {
-			frame = quic_frame_create(sk, QUIC_FRAME_DATA_BLOCKED, outq);
-			if (frame)
-				quic_outq_ctrl_tail(sk, frame, true);
+			if (!quic_outq_transmit_frame(sk, QUIC_FRAME_DATA_BLOCKED, outq, 0, true))
+				frame = 1;
 			outq->last_max_bytes = outq->max_bytes;
 			outq->data_blocked = 1;
 		}
@@ -430,12 +428,12 @@ void quic_outq_packet_sent_tail(struct sock *sk, struct quic_packet_sent *sent)
 
 void quic_outq_transmit_probe(struct sock *sk)
 {
-	struct quic_path_dst *d = (struct quic_path_dst *)quic_dst(sk);
 	struct quic_pnspace *space = quic_pnspace(sk, QUIC_CRYPTO_APP);
 	u32 taglen = quic_packet_taglen(quic_packet(sk));
-	u32 pathmtu, probe_size = d->pl.probe_size;
+	struct quic_path_addr *path = quic_dst(sk);
 	struct quic_config *c = quic_config(sk);
-	struct quic_frame *frame;
+	struct quic_probeinfo info;
+	u32 pathmtu;
 	s64 number;
 
 	if (!quic_is_established(sk))
@@ -444,12 +442,11 @@ void quic_outq_transmit_probe(struct sock *sk)
 	if (quic_packet_config(sk, QUIC_CRYPTO_APP, 0))
 		return;
 
-	frame = quic_frame_create(sk, QUIC_FRAME_PING, &probe_size);
-	if (frame) {
+	info.size = quic_path_probe_size(path);
+	info.level = QUIC_CRYPTO_APP;
+	if (!quic_outq_transmit_frame(sk, QUIC_FRAME_PING, &info, 0, false)) {
 		number = quic_pnspace_next_pn(space);
-		quic_outq_ctrl_tail(sk, frame, false);
-
-		pathmtu = quic_path_pl_send(quic_dst(sk), number);
+		pathmtu = quic_path_pl_send(path, number);
 		if (pathmtu)
 			quic_packet_mss_update(sk, pathmtu + taglen);
 	}
@@ -461,7 +458,6 @@ void quic_outq_transmit_close(struct sock *sk, u8 type, u32 errcode, u8 level)
 {
 	struct quic_outqueue *outq = quic_outq(sk);
 	struct quic_connection_close close = {};
-	struct quic_frame *frame;
 
 	if (!errcode)
 		return;
@@ -473,11 +469,7 @@ void quic_outq_transmit_close(struct sock *sk, u8 type, u32 errcode, u8 level)
 	quic_outq_set_close_errcode(outq, errcode);
 	quic_outq_set_close_frame(outq, type);
 
-	frame = quic_frame_create(sk, QUIC_FRAME_CONNECTION_CLOSE, NULL);
-	if (frame) {
-		frame->level = level;
-		quic_outq_ctrl_tail(sk, frame, false);
-	}
+	quic_outq_transmit_frame(sk, QUIC_FRAME_CONNECTION_CLOSE, &level, 0, false);
 	quic_set_state(sk, QUIC_SS_CLOSED);
 }
 
@@ -486,7 +478,6 @@ void quic_outq_transmit_app_close(struct sock *sk)
 	u32 errcode = QUIC_TRANSPORT_ERROR_APPLICATION;
 	u8 type = QUIC_FRAME_CONNECTION_CLOSE, level;
 	struct quic_outqueue *outq = quic_outq(sk);
-	struct quic_frame *frame;
 
 	if (quic_is_established(sk)) {
 		level = QUIC_CRYPTO_APP;
@@ -497,13 +488,8 @@ void quic_outq_transmit_app_close(struct sock *sk)
 	} else {
 		return;
 	}
-
 	/* send close frame only when it's NOT idle timeout or closed by peer */
-	frame = quic_frame_create(sk, type, NULL);
-	if (frame) {
-		frame->level = level;
-		quic_outq_ctrl_tail(sk, frame, false);
-	}
+	quic_outq_transmit_frame(sk, type, &level, 0, false);
 }
 
 static void quic_outq_psent_sack_frames(struct sock *sk, struct quic_packet_sent *sent)
@@ -883,8 +869,8 @@ void quic_outq_retransmit_list(struct sock *sk, struct list_head *head)
 void quic_outq_transmit_pto(struct sock *sk)
 {
 	struct quic_outqueue *outq = quic_outq(sk);
-	struct quic_frame *frame;
-	u32 time, probe_size = 0;
+	struct quic_probeinfo info;
+	u32 time;
 	u8 level;
 
 	time = quic_outq_get_loss_time(sk, &level);
@@ -905,11 +891,9 @@ void quic_outq_transmit_pto(struct sock *sk)
 	if (quic_packet_config(sk, level, 0))
 		goto out;
 
-	frame = quic_frame_create(sk, QUIC_FRAME_PING, &probe_size);
-	if (frame) {
-		frame->level = level;
-		quic_outq_ctrl_tail(sk, frame, false);
-	}
+	info.size = 0;
+	info.level = level;
+	quic_outq_transmit_frame(sk, QUIC_FRAME_PING, &info, 0, false);
 
 out:
 	outq->level = 0;
@@ -978,6 +962,19 @@ void quic_outq_stream_list_purge(struct sock *sk, struct quic_stream *stream)
 		quic_frame_put(frame);
 	}
 	quic_outq_wfree(bytes, sk);
+}
+
+int quic_outq_transmit_frame(struct sock *sk, u8 type, void *data, u8 path_alt, u8 cork)
+{
+	struct quic_frame *frame;
+
+	frame = quic_frame_create(sk, type, data);
+	if (!frame)
+		return -ENOMEM;
+
+	frame->path_alt = path_alt;
+	quic_outq_ctrl_tail(sk, frame, cork);
+	return 0;
 }
 
 static void quic_outq_encrypted_work(struct work_struct *work)

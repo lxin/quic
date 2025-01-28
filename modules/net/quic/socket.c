@@ -602,7 +602,6 @@ static struct quic_stream *quic_sock_send_stream(struct sock *sk, struct quic_st
 	struct quic_stream_table *streams = quic_streams(sk);
 	u8 type = QUIC_FRAME_STREAMS_BLOCKED_BIDI;
 	struct quic_stream *stream;
-	struct quic_frame *frame;
 	long timeo;
 	int err;
 
@@ -625,10 +624,8 @@ static struct quic_stream *quic_sock_send_stream(struct sock *sk, struct quic_st
 		if (sinfo->stream_id & QUIC_STREAM_TYPE_UNI_MASK)
 			type = QUIC_FRAME_STREAMS_BLOCKED_UNI;
 
-		frame = quic_frame_create(sk, type, &sinfo->stream_id);
-		if (!frame)
+		if (quic_outq_transmit_frame(sk, type, &sinfo->stream_id, 0, false))
 			return ERR_PTR(-ENOMEM);
-		quic_outq_ctrl_tail(sk, frame, false);
 	}
 
 	timeo = sock_sndtimeo(sk, sinfo->stream_flags & MSG_STREAM_DONTWAIT);
@@ -1431,13 +1428,9 @@ err:
 
 static int quic_sock_set_token(struct sock *sk, void *data, u32 len)
 {
-	struct quic_frame *frame;
-
 	if (quic_is_serv(sk)) {
-		frame = quic_frame_create(sk, QUIC_FRAME_NEW_TOKEN, NULL);
-		if (!frame)
+		if (quic_outq_transmit_frame(sk, QUIC_FRAME_NEW_TOKEN, NULL, 0, false))
 			return -ENOMEM;
-		quic_outq_ctrl_tail(sk, frame, false);
 		return 0;
 	}
 
@@ -1638,12 +1631,10 @@ static int quic_sock_set_connection_id(struct sock *sk,
 	}
 
 	if (!info->dest) {
-		frame = quic_frame_create(sk, QUIC_FRAME_NEW_CONNECTION_ID, &number);
-		if (!frame) {
+		if (quic_outq_transmit_frame(sk, QUIC_FRAME_NEW_CONNECTION_ID, &number, 0, false)) {
 			quic_conn_id_set_active(id_set, old);
 			return -ENOMEM;
 		}
-		quic_outq_ctrl_tail(sk, frame, false);
 		return 0;
 	}
 
@@ -1719,7 +1710,6 @@ static int quic_sock_stream_stop_sending(struct sock *sk, struct quic_errinfo *i
 {
 	struct quic_stream_table *streams = quic_streams(sk);
 	struct quic_stream *stream;
-	struct quic_frame *frame;
 
 	if (len != sizeof(*info) || !quic_is_established(sk))
 		return -EINVAL;
@@ -1731,12 +1721,7 @@ static int quic_sock_stream_stop_sending(struct sock *sk, struct quic_errinfo *i
 	if (stream->recv.state >= QUIC_STREAM_RECV_STATE_RECVD)
 		return -EINVAL;
 
-	frame = quic_frame_create(sk, QUIC_FRAME_STOP_SENDING, info);
-	if (!frame)
-		return -ENOMEM;
-
-	quic_outq_ctrl_tail(sk, frame, false);
-	return 0;
+	return quic_outq_transmit_frame(sk, QUIC_FRAME_STOP_SENDING, info, 0, false);
 }
 
 static int quic_sock_set_event(struct sock *sk, struct quic_event_option *event, u32 len)

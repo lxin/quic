@@ -189,6 +189,8 @@ void quic_outq_stream_tail(struct sock *sk, struct quic_frame *frame, bool cork)
 void quic_outq_dgram_tail(struct sock *sk, struct quic_frame *frame, bool cork);
 void quic_outq_ctrl_tail(struct sock *sk, struct quic_frame *frame, bool cork);
 void quic_outq_transmit_pto(struct sock *sk);
+
+int quic_outq_transmit_frame(struct sock *sk, u8 type, void *data, u8 path_alt, u8 cork);
 int quic_outq_transmit(struct sock *sk);
 
 void quic_outq_transmitted_sack(struct sock *sk, u8 level, s64 largest,

@@ -100,6 +100,11 @@ static inline int quic_path_cmp(struct quic_path_addr *a, bool alt, union quic_a
 	return memcmp(addr, quic_path_addr(a, alt), a->addr_len);
 }
 
+static inline u16 quic_path_probe_size(struct quic_path_addr *a)
+{
+	return ((struct quic_path_dst *)a)->pl.probe_size;
+}
+
 static inline u8 quic_path_ecn_probes(struct quic_path_addr *a)
 {
 	return ((struct quic_path_dst *)a)->ecn_probes;
