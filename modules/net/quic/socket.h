@@ -268,7 +268,4 @@ struct quic_request_sock *quic_request_sock_dequeue(struct sock *sk);
 int quic_accept_sock_exists(struct sock *sk, struct sk_buff *skb);
 bool quic_request_sock_exists(struct sock *sk);
 
-int quic_sock_change_saddr(struct sock *sk, union quic_addr *addr, u32 len);
-int quic_sock_change_daddr(struct sock *sk, union quic_addr *addr, u32 len);
-
 #endif /* __net_quic_h__ */

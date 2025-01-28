@@ -489,22 +489,23 @@ static struct quic_frame *quic_frame_path_response_create(struct sock *sk, void 
 static struct quic_frame *quic_frame_path_challenge_create(struct sock *sk, void *data, u8 type)
 {
 	struct quic_packet *packet = quic_packet(sk);
-	struct quic_path_addr *path = data;
+	struct quic_outqueue *outq = quic_outq(sk);
 	struct quic_frame *frame;
+	u8 *p, *entropy;
 	u32 frame_len;
-	u8 *p;
 
 	if (quic_packet_config(sk, QUIC_CRYPTO_APP, 0))
 		return NULL;
 
 	frame_len = QUIC_MIN_UDP_PAYLOAD - packet->overhead;
-	get_random_bytes(quic_path_entropy(path), 8);
+	entropy = quic_outq_path_entropy(outq);
+	get_random_bytes(entropy, 8);
 
 	frame = quic_frame_alloc(frame_len, NULL, GFP_ATOMIC);
 	if (!frame)
 		return NULL;
 	p = quic_put_var(frame->data, type);
-	p = quic_put_data(p, quic_path_entropy(path), 8);
+	p = quic_put_data(p, entropy, 8);
 	memset(p, 0, frame_len - 1 - 8);
 	frame->padding = 1;
 
@@ -899,6 +900,7 @@ static int quic_frame_ack_process(struct sock *sk, struct quic_frame *frame, u8 
 static int quic_frame_new_conn_id_process(struct sock *sk, struct quic_frame *frame, u8 type)
 {
 	struct quic_conn_id_set *id_set = quic_dest(sk);
+	struct quic_outqueue *outq = quic_outq(sk);
 	u64 seqno, prior, length, first;
 	u8 *p = frame->data, *token;
 	struct quic_conn_id dcid;
@@ -935,6 +937,9 @@ static int quic_frame_new_conn_id_process(struct sock *sk, struct quic_frame *fr
 					     frame->path_alt, true))
 			return -ENOMEM;
 	}
+
+	if (quic_outq_path_new_connid(outq))
+		quic_outq_probe_path(sk, quic_outq_path_alt(outq), true);
 
 	len -= (length + 16);
 	return (int)(frame->len - len);
@@ -1001,6 +1006,8 @@ static int quic_frame_new_token_process(struct sock *sk, struct quic_frame *fram
 
 static int quic_frame_handshake_done_process(struct sock *sk, struct quic_frame *frame, u8 type)
 {
+	struct quic_path_addr *path = quic_dst(sk);
+
 	if (quic_is_serv(sk)) {
 		frame->errcode = QUIC_TRANSPORT_ERROR_PROTOCOL_VIOLATION;
 		return -EINVAL;
@@ -1009,9 +1016,12 @@ static int quic_frame_handshake_done_process(struct sock *sk, struct quic_frame 
 	quic_outq_transmitted_sack(sk, QUIC_CRYPTO_INITIAL, QUIC_PN_MAP_MAX_PN, 0, -1, 0);
 	quic_outq_transmitted_sack(sk, QUIC_CRYPTO_HANDSHAKE, QUIC_PN_MAP_MAX_PN, 0, -1, 0);
 
-	if (quic_outq_pref_addr(quic_outq(sk)))
-		quic_sock_change_daddr(sk, NULL, 0);
-	return 0; /* no content */
+	if (!quic_path_pref_addr(path))
+		return 0;
+
+	quic_outq_probe_path(sk, QUIC_PATH_ALT_DST, true);
+	quic_path_set_pref_addr(path, 0);
+	return 0;
 }
 
 static int quic_frame_padding_process(struct sock *sk, struct quic_frame *frame, u8 type)
@@ -1372,21 +1382,16 @@ out:
 
 static int quic_frame_path_response_process(struct sock *sk, struct quic_frame *frame, u8 type)
 {
-	struct quic_path_addr *path;
 	u32 len = frame->len;
 	u8 entropy[8];
 
 	if (len < 8)
 		return -EINVAL;
+
 	memcpy(entropy, frame->data, 8);
 
-	path = quic_src(sk); /* source address validation */
-	if (!memcmp(quic_path_entropy(path), entropy, 8) && quic_path_sent_cnt(path))
-		quic_outq_validate_path(sk, frame, path);
-
-	path = quic_dst(sk); /* dest address validation */
-	if (!memcmp(quic_path_entropy(path), entropy, 8) && quic_path_sent_cnt(path))
-		quic_outq_validate_path(sk, frame, path);
+	if (!quic_outq_change_path(sk, frame->path_alt, entropy))
+		frame->path_alt = 0;
 
 	len -= 8;
 	return (int)(frame->len - len);
@@ -1672,10 +1677,11 @@ int quic_frame_set_transport_params_ext(struct sock *sk, struct quic_transport_p
 	struct quic_conn_id_set *id_set = quic_dest(sk);
 	struct quic_packet *packet = quic_packet(sk);
 	struct quic_outqueue *outq = quic_outq(sk);
+	struct quic_path_addr *path = quic_dst(sk);
 	struct quic_conn_id *active, conn_id;
 	u32 versions[16] = {packet->version};
 	u8 *p = data, count = 1, token[16];
-	union quic_addr addr = {};
+	union quic_addr addr;
 	u64 type, valuelen;
 
 	params->max_udp_payload_size = QUIC_MAX_UDP_PAYLOAD;
@@ -1815,12 +1821,12 @@ int quic_frame_set_transport_params_ext(struct sock *sk, struct quic_transport_p
 				return -1;
 			if (quic_frame_get_address(&addr, &conn_id, token, &p, &len, sk))
 				return -1;
-			if (!addr.v4.sin_port)
-				break;
 			if (quic_conn_id_add(id_set, &conn_id, 1, token))
 				return -1;
-			quic_outq_set_pref_addr(outq, 1);
-			quic_path_addr_set(quic_dst(sk), &addr, 1);
+			if (addr.v4.sin_port) {
+				quic_path_set_pref_addr(path, 1);
+				quic_path_addr_set(path, &addr, 1);
+			}
 			break;
 		default:
 			/* Ignore unknown parameter */
@@ -1882,6 +1888,7 @@ int quic_frame_get_transport_params_ext(struct sock *sk, struct quic_transport_p
 {
 	struct quic_conn_id_set *id_set = quic_source(sk);
 	struct quic_outqueue *outq = quic_outq(sk);
+	struct quic_path_addr *path = quic_src(sk);
 	struct quic_conn_id *scid, conn_id;
 	struct quic_crypto *crypto;
 	u8 *p = data, token[16];
@@ -1904,7 +1911,7 @@ int quic_frame_get_transport_params_ext(struct sock *sk, struct quic_transport_p
 			param_id = QUIC_TRANSPORT_PARAM_RETRY_SOURCE_CONNECTION_ID;
 			p = quic_frame_put_conn_id(p, param_id, quic_outq_retry_dcid(outq));
 		}
-		if (quic_outq_pref_addr(outq)) {
+		if (quic_path_pref_addr(path)) {
 			quic_conn_id_generate(&conn_id);
 			if (quic_crypto_generate_stateless_reset_token(crypto, conn_id.data,
 								       conn_id.len, token, 16))
@@ -1912,7 +1919,7 @@ int quic_frame_get_transport_params_ext(struct sock *sk, struct quic_transport_p
 			if (quic_conn_id_add(id_set, &conn_id, 1, sk))
 				return -1;
 			param_id = QUIC_TRANSPORT_PARAM_PREFERRED_ADDRESS;
-			p = quic_frame_put_address(p, param_id, quic_path_addr(quic_src(sk), 1),
+			p = quic_frame_put_address(p, param_id, quic_path_addr(path, 1),
 						   &conn_id, token, sk);
 		}
 	}

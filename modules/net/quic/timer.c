@@ -85,48 +85,31 @@ out:
 
 void quic_timer_path_handler(struct sock *sk)
 {
-	struct quic_path_addr *path;
-	struct quic_frame *frame;
-	u8 cnt, probe = 1;
-	u32 timeout;
+	struct quic_path_addr *d = quic_dst(sk), *s = quic_src(sk);
+	struct quic_outqueue *outq = quic_outq(sk);
+	u8 cnt, path_alt;
 
 	if (quic_is_closed(sk))
 		return;
 
-	timeout = quic_cong_pto(quic_cong(sk)) * 3;
-	path = quic_src(sk);
-	cnt = quic_path_sent_cnt(path);
-	if (cnt) {
-		probe = 0;
-		if (cnt >= 5) {
-			quic_path_set_sent_cnt(path, 0);
-			return;
-		}
-		frame = quic_frame_create(sk, QUIC_FRAME_PATH_CHALLENGE, path);
-		if (frame)
-			quic_outq_ctrl_tail(sk, frame, false);
-		quic_path_set_sent_cnt(path, cnt + 1);
-		quic_timer_start(sk, QUIC_TIMER_PATH, timeout);
+	cnt = quic_outq_path_sent_cnt(outq);
+	if (!cnt)
+		return quic_outq_transmit_probe(sk);
+
+	path_alt = quic_outq_path_alt(outq);
+	if (cnt >= 5) {
+		quic_outq_set_path_sent_cnt(outq, 0);
+		if (path_alt & QUIC_PATH_ALT_DST)
+			quic_path_addr_free(sk, d, 1);
+		if (path_alt & QUIC_PATH_ALT_SRC)
+			quic_path_addr_free(sk, s, 1);
+		quic_outq_set_path_alt(outq, 0);
+		return;
 	}
 
-	path = quic_dst(sk);
-	cnt = quic_path_sent_cnt(path);
-	if (cnt) {
-		probe = 0;
-		if (cnt >= 5) {
-			quic_path_set_sent_cnt(path, 0);
-			quic_path_swap_active(path);
-			return;
-		}
-		frame = quic_frame_create(sk, QUIC_FRAME_PATH_CHALLENGE, path);
-		if (frame)
-			quic_outq_ctrl_tail(sk, frame, false);
-		quic_path_set_sent_cnt(path, cnt + 1);
-		quic_timer_start(sk, QUIC_TIMER_PATH, timeout);
-	}
-
-	if (probe)
-		quic_outq_transmit_probe(sk);
+	quic_outq_set_path_sent_cnt(outq, cnt + 1);
+	quic_timer_start(sk, QUIC_TIMER_PATH, quic_cong_pto(quic_cong(sk)) * 3);
+	quic_outq_transmit_frame(sk, QUIC_FRAME_PATH_CHALLENGE, NULL, path_alt, false);
 }
 
 static void quic_timer_path_timeout(struct timer_list *t)

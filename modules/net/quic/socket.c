@@ -1317,91 +1317,41 @@ static void quic_close(struct sock *sk, long timeout)
 	sk_common_release(sk);
 }
 
-int quic_sock_change_daddr(struct sock *sk, union quic_addr *addr, u32 len)
-{
-	struct quic_path_addr *path = quic_dst(sk);
-	u8 cnt = quic_path_sent_cnt(path);
-	struct quic_frame *frame;
-
-	if (cnt)
-		return -EINVAL;
-	quic_path_swap_active(path);
-
-	if (!addr) {
-		quic_outq_set_pref_addr(quic_outq(sk), 0);
-		goto out;
-	}
-	quic_path_addr_set(path, addr, 1);
-
-out:
-	quic_set_sk_ecn(sk, 0); /* clear ecn during path migration */
-	frame = quic_frame_create(sk, QUIC_FRAME_PATH_CHALLENGE, path);
-	if (frame)
-		quic_outq_ctrl_tail(sk, frame, false);
-
-	quic_path_pl_reset(path);
-	quic_path_set_sent_cnt(path, cnt + 1);
-	quic_timer_reset(sk, QUIC_TIMER_PATH, (u64)quic_cong_pto(quic_cong(sk)) * 3);
-	return 0;
-}
-
-int quic_sock_change_saddr(struct sock *sk, union quic_addr *addr, u32 len)
+static int quic_sock_connection_migrate(struct sock *sk, struct sockaddr *addr, int addr_len)
 {
 	struct quic_conn_id_set *id_set = quic_source(sk);
 	struct quic_path_addr *path = quic_src(sk);
 	struct quic_outqueue *outq = quic_outq(sk);
-	u8 cnt = quic_path_sent_cnt(path);
-	struct quic_frame *frame;
-	u64 number;
+	union quic_addr a;
 	int err;
 
-	if (cnt)
+	if (quic_get_user_addr(sk, &a, addr, addr_len))
 		return -EINVAL;
 
-	if (!addr) {
-		quic_outq_set_pref_addr(outq, 0);
-		goto out;
-	}
-
 	if (!quic_is_established(sk)) { /* set preferred address param */
-		if (!quic_is_serv(sk))
+		if (!quic_is_serv(sk) || quic_conn_id_disable_active_migration(id_set))
 			return -EINVAL;
-		quic_outq_set_pref_addr(outq, 1);
-		quic_path_addr_set(path, addr, 1);
+		quic_path_set_pref_addr(path, 1);
+		quic_path_addr_set(path, &a, 1);
 		return 0;
 	}
 
-	if (quic_conn_id_disable_active_migration(id_set))
+	if (a.sa.sa_family != quic_path_addr(path, 0)->sa.sa_family)
+		return -EINVAL;
+	if (quic_outq_path_alt(outq))
 		return -EINVAL;
 
-	quic_path_addr_set(path, addr, 1);
+	quic_path_addr_set(path, &a, 1);
 	err = quic_path_set_bind_port(sk, path, 1);
 	if (err)
 		goto err;
 	err = quic_path_set_udp_sock(sk, path, 1);
 	if (err)
 		goto err;
-
-	number = quic_conn_id_first_number(quic_source(sk)) + 1;
-	frame = quic_frame_create(sk, QUIC_FRAME_NEW_CONNECTION_ID, &number);
-	if (!frame) {
-		err = -ENOMEM;
+	err = quic_outq_probe_path(sk, QUIC_PATH_ALT_SRC, false);
+	if (err)
 		goto err;
-	}
-	frame->path_alt = QUIC_PATH_ALT_SRC;
-	quic_outq_ctrl_tail(sk, frame, true);
 
-out:
-	quic_set_sk_ecn(sk, 0); /* clear ecn during path migration */
-	frame = quic_frame_create(sk, QUIC_FRAME_PATH_CHALLENGE, path);
-	if (frame) {
-		frame->path_alt = QUIC_PATH_ALT_SRC;
-		quic_outq_ctrl_tail(sk, frame, false);
-	}
-
-	quic_path_pl_reset(quic_dst(sk));
-	quic_path_set_sent_cnt(path, cnt + 1);
-	quic_timer_reset(sk, QUIC_TIMER_PATH, (u64)quic_cong_pto(quic_cong(sk)) * 3);
 	return 0;
 err:
 	quic_path_addr_free(sk, path, 1);
@@ -1522,7 +1472,7 @@ static int quic_sock_set_crypto_secret(struct sock *sk, struct quic_crypto_secre
 						   QUIC_PN_MAP_MAX_PN, 0, -1, 0);
 			quic_outq_transmitted_sack(sk, QUIC_CRYPTO_HANDSHAKE,
 						   QUIC_PN_MAP_MAX_PN, 0, -1, 0);
-			if (quic_outq_pref_addr(outq)) {
+			if (quic_path_pref_addr(path)) {
 				err = quic_path_set_bind_port(sk, path, 1);
 				if (err)
 					return err;
@@ -1583,8 +1533,8 @@ static int quic_sock_set_crypto_secret(struct sock *sk, struct quic_crypto_secre
 static int quic_sock_set_connection_id(struct sock *sk,
 				       struct quic_connection_id_info *info, u32 len)
 {
+	struct quic_conn_id_set *id_set = quic_source(sk);
 	struct quic_conn_id *active, *old;
-	struct quic_conn_id_set *id_set;
 	struct quic_frame *frame, *tmp;
 	u64 number, first, last;
 	struct list_head list;
@@ -1592,9 +1542,16 @@ static int quic_sock_set_connection_id(struct sock *sk,
 	if (len < sizeof(*info) || !quic_is_established(sk))
 		return -EINVAL;
 
-	id_set = info->dest ? quic_dest(sk) : quic_source(sk);
+	if (info->dest) {
+		id_set = quic_dest(sk);
+		if (id_set->alt)
+			return -EAGAIN;
+	}
 	old = quic_conn_id_active(id_set);
 	if (info->active) {
+		active = quic_conn_id_active(id_set);
+		if (info->active <= quic_conn_id_number(active))
+			return -EINVAL;
 		active = quic_conn_id_find(id_set, info->active);
 		if (!active)
 			return -EINVAL;
@@ -1777,7 +1734,7 @@ static int quic_do_setsockopt(struct sock *sk, int optname, sockptr_t optval, un
 		retval = quic_sock_set_connection_close(sk, kopt, optlen);
 		break;
 	case QUIC_SOCKOPT_CONNECTION_MIGRATION:
-		retval = quic_sock_change_saddr(sk, kopt, optlen);
+		retval = quic_sock_connection_migrate(sk, kopt, optlen);
 		break;
 	case QUIC_SOCKOPT_KEY_UPDATE:
 		retval = quic_crypto_key_update(quic_crypto(sk, QUIC_CRYPTO_APP));

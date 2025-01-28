@@ -20,8 +20,6 @@ struct quic_bind_port {
 	struct hlist_node node;
 	unsigned short port;
 	struct net *net;
-	u8 retry:1;
-	u8 serv:1;
 };
 
 struct quic_udp_sock {
@@ -34,10 +32,7 @@ struct quic_udp_sock {
 
 struct quic_path_addr {
 	union quic_addr addr[2];
-	u8 entropy[8];
-	u8 addr_len;
-	u8 sent_cnt;
-
+	u8 pref_addr:1;
 	u8 udp_bind:1;
 	u8 active:1;
 };
@@ -154,24 +149,19 @@ static inline void quic_path_set_validated(struct quic_path_addr *a, u8 validate
 	((struct quic_path_dst *)a)->validated = validated;
 }
 
-static inline u8 quic_path_sent_cnt(struct quic_path_addr *a)
+static inline u8 quic_path_pref_addr(struct quic_path_addr *a)
 {
-	return a->sent_cnt;
+	return a->pref_addr;
 }
 
-static inline void quic_path_set_sent_cnt(struct quic_path_addr *a, u8 cnt)
+static inline void quic_path_set_pref_addr(struct quic_path_addr *a, u8 pref_addr)
 {
-	a->sent_cnt = cnt;
+	a->pref_addr = pref_addr;
 }
 
 static inline void quic_path_swap_active(struct quic_path_addr *a)
 {
 	a->active = !a->active;
-}
-
-static inline u8 *quic_path_entropy(struct quic_path_addr *a)
-{
-	return a->entropy;
 }
 
 static inline u8 quic_path_udp_bind(struct quic_path_addr *a)

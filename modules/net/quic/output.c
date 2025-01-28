@@ -903,38 +903,127 @@ out:
 	quic_outq_update_loss_timer(sk);
 }
 
-void quic_outq_validate_path(struct sock *sk, struct quic_frame *frame,
-			     struct quic_path_addr *path)
+void quic_outq_free_path(struct sock *sk)
 {
-	u8 local = quic_path_udp_bind(path), path_alt = QUIC_PATH_ALT_DST;
+	struct quic_outqueue *outq = quic_outq(sk);
+
+	if (!outq->path_alt || !outq->path_swap)
+		return;
+
+	if (outq->path_alt & QUIC_PATH_ALT_DST)
+		quic_path_addr_free(sk, quic_dst(sk), 1);
+	if (outq->path_alt & QUIC_PATH_ALT_SRC)
+		quic_path_addr_free(sk, quic_src(sk), 1);
+
+	outq->path_alt = 0;
+	outq->path_swap = 0;
+	quic_conn_id_clear_alt(quic_dest(sk));
+}
+
+int quic_outq_probe_path(struct sock *sk, u8 path_alt, u8 cork)
+{
+	struct quic_conn_id_set *dest = quic_dest(sk), *source = quic_source(sk);
+	struct quic_path_addr *path = quic_src(sk);
+	struct quic_outqueue *outq = quic_outq(sk);
+	union quic_addr *a;
+	u64 number;
+
+	if (outq->path_alt && !outq->path_new_connid)
+		return 0;
+
+	if (path_alt & QUIC_PATH_ALT_DST) {
+		if (quic_conn_id_disable_active_migration(dest))
+			return -EINVAL;
+	} else {
+		if (quic_conn_id_disable_active_migration(source))
+			return -EINVAL;
+	}
+
+	if (!quic_conn_id_select_alt(dest)) {
+		if (outq->path_new_connid)
+			return -EINVAL;
+
+		number = quic_conn_id_first_number(dest);
+		if (quic_outq_transmit_frame(sk, QUIC_FRAME_RETIRE_CONNECTION_ID, &number, 0, cork))
+			return -ENOMEM;
+
+		outq->path_alt = path_alt;
+		outq->path_new_connid = 1;
+		return 0;
+	}
+
+	if (path_alt == QUIC_PATH_ALT_DST) {
+		if (quic_packet_config(sk, 0, path_alt | QUIC_PATH_ALT_SRC))
+			return -EINVAL;
+
+		a = quic_path_addr(path, 1);
+		a->v4.sin_port = quic_path_addr(path, 0)->v4.sin_port;
+		if (quic_path_cmp(path, 0, a)) {
+			a->v4.sin_port = 0;
+			if (quic_path_set_bind_port(sk, path, 1)) {
+				quic_path_addr_free(sk, path, 1);
+				return -EINVAL;
+			}
+			if (quic_path_set_udp_sock(sk, path, 1)) {
+				quic_path_addr_free(sk, path, 1);
+				return -EINVAL;
+			}
+			path_alt |= QUIC_PATH_ALT_SRC;
+		} else { /* no need to change src addr */
+			memset(a, 0, sizeof(*a));
+		}
+	}
+
+	quic_set_sk_ecn(sk, 0); /* clear ecn during path migration */
+	quic_outq_transmit_frame(sk, QUIC_FRAME_PATH_CHALLENGE, NULL, path_alt, cork);
+
+	outq->path_sent_cnt = 1;
+	outq->path_alt = path_alt;
+	outq->path_new_connid = 0;
+	quic_timer_reset(sk, QUIC_TIMER_PATH, (u64)quic_cong_pto(quic_cong(sk)) * 3);
+	return 0;
+}
+
+int quic_outq_change_path(struct sock *sk, u8 path_alt, u8 *entropy)
+{
+	struct quic_path_addr *d = quic_dst(sk), *s = quic_src(sk);
+	struct quic_conn_id_set *id_set = quic_dest(sk);
 	struct quic_outqueue *outq = quic_outq(sk);
 	struct quic_config *c = quic_config(sk);
 	struct quic_frame *pos;
-	struct list_head *head;
+	u8 local;
 
-	quic_inq_event_recv(sk, QUIC_EVENT_CONNECTION_MIGRATION, &local);
+	if (memcmp(quic_outq_path_entropy(outq), entropy, 8) ||
+	    !quic_outq_path_sent_cnt(outq) || outq->path_alt != path_alt)
+		return -EINVAL;
 
-	if (local) {
-		quic_path_swap_active(path);
-		path_alt = QUIC_PATH_ALT_SRC;
-	} else {
-		quic_path_set_validated(path, 1);
+	if (path_alt & QUIC_PATH_ALT_SRC) {
+		local = 1;
+		quic_path_swap_active(s);
+		quic_set_sk_addr(sk, quic_path_addr(s, 0), 1);
+		quic_inq_event_recv(sk, QUIC_EVENT_CONNECTION_MIGRATION, &local);
 	}
-	quic_path_addr_free(sk, path, 1);
-	quic_set_sk_addr(sk, quic_path_addr(path, 0), local);
-	quic_path_set_sent_cnt(path, 0);
+
+	if (path_alt & QUIC_PATH_ALT_DST) {
+		local = 0;
+		quic_path_pl_reset(d);
+		quic_path_swap_active(d);
+		quic_set_sk_addr(sk, quic_path_addr(d, 0), 0);
+		quic_inq_event_recv(sk, QUIC_EVENT_CONNECTION_MIGRATION, &local);
+	}
+
+	list_for_each_entry(pos, &outq->control_list, list)
+		pos->path_alt &= ~path_alt;
+
+	list_for_each_entry(pos, &outq->transmitted_list, list)
+		pos->path_alt &= ~path_alt;
+
+	outq->path_swap = 1;
+	outq->path_sent_cnt = 0;
+	quic_conn_id_swap_active(id_set);
 	quic_timer_stop(sk, QUIC_TIMER_PATH);
 	quic_timer_reset(sk, QUIC_TIMER_PATH, c->plpmtud_probe_interval);
-
-	head = &outq->control_list;
-	list_for_each_entry(pos, head, list)
-		pos->path_alt &= ~path_alt;
-
-	head = &outq->transmitted_list;
-	list_for_each_entry(pos, head, list)
-		pos->path_alt &= ~path_alt;
-
-	frame->path_alt &= ~path_alt;
+	return 0;
 }
 
 void quic_outq_stream_list_purge(struct sock *sk, struct quic_stream *stream)

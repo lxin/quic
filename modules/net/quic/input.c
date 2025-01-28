@@ -84,6 +84,7 @@ err:
 void quic_rcv_err_pmtu(struct sock *sk)
 {
 	struct quic_packet *packet = quic_packet(sk);
+	struct quic_outqueue *outq = quic_outq(sk);
 	struct quic_path_addr *path = quic_dst(sk);
 	struct quic_config *c = quic_config(sk);
 	u32 pathmtu, info, taglen;
@@ -94,8 +95,7 @@ void quic_rcv_err_pmtu(struct sock *sk)
 		return;
 
 	info = min_t(u32, quic_path_mtu_info(path), QUIC_PATH_MAX_PMTU);
-	if (!c->plpmtud_probe_interval ||
-	    quic_path_sent_cnt(quic_src(sk)) || quic_path_sent_cnt(path)) {
+	if (!c->plpmtud_probe_interval || quic_outq_path_sent_cnt(outq)) {
 		if (quic_packet_route(sk) < 0)
 			return;
 

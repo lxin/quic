@@ -36,7 +36,6 @@ struct quic_outqueue {
 	u8 grease_quic_bit:1;
 	u8 data_blocked:1;
 	u8 force_delay:1;
-	u8 pref_addr:1;
 	u8 single:1;
 	u8 retry:1;
 	u8 serv:1;
@@ -51,6 +50,12 @@ struct quic_outqueue {
 	 * when the corresponding crypto is ready for send.
 	 */
 	u8 data_level;
+	/* path migration related */
+	u8 path_entropy[8];
+	u8 path_sent_cnt;
+	u8 path_new_connid:1;
+	u8 path_swap:1;
+	u8 path_alt:2;
 };
 
 static inline void quic_outq_inc_inflight(struct quic_outqueue *outq, u32 len)
@@ -170,33 +175,55 @@ static inline void quic_outq_set_data_level(struct quic_outqueue *outq, u8 level
 	outq->data_level = level;
 }
 
-static inline void quic_outq_set_pref_addr(struct quic_outqueue *outq, u8 pref_addr)
-{
-	outq->pref_addr = pref_addr;
-}
-
-static inline u8 quic_outq_pref_addr(struct quic_outqueue *outq)
-{
-	return outq->pref_addr;
-}
-
 static inline void quic_outq_set_force_delay(struct quic_outqueue *outq, u8 delay)
 {
 	outq->force_delay = !!delay;
+}
+
+static inline u8 quic_outq_path_new_connid(struct quic_outqueue *outq)
+{
+	return outq->path_new_connid;
+}
+
+static inline u8 quic_outq_path_alt(struct quic_outqueue *outq)
+{
+	return outq->path_alt;
+}
+
+static inline void quic_outq_set_path_alt(struct quic_outqueue *outq, u8 path_alt)
+{
+	outq->path_alt = path_alt;
+}
+
+static inline u8 quic_outq_path_sent_cnt(struct quic_outqueue *outq)
+{
+	return outq->path_sent_cnt;
+}
+
+static inline void quic_outq_set_path_sent_cnt(struct quic_outqueue *outq, u8 cnt)
+{
+	outq->path_sent_cnt = cnt;
+}
+
+static inline u8 *quic_outq_path_entropy(struct quic_outqueue *outq)
+{
+	return outq->path_entropy;
 }
 
 void quic_outq_stream_tail(struct sock *sk, struct quic_frame *frame, bool cork);
 void quic_outq_dgram_tail(struct sock *sk, struct quic_frame *frame, bool cork);
 void quic_outq_ctrl_tail(struct sock *sk, struct quic_frame *frame, bool cork);
 void quic_outq_transmit_pto(struct sock *sk);
+void quic_outq_free_path(struct sock *sk);
 
 int quic_outq_transmit_frame(struct sock *sk, u8 type, void *data, u8 path_alt, u8 cork);
+int quic_outq_stream_append(struct sock *sk, struct quic_msginfo *info, u8 pack);
+int quic_outq_change_path(struct sock *sk, u8 path_alt, u8 *entropy);
+int quic_outq_probe_path(struct sock *sk, u8 path_alt, u8 cork);
 int quic_outq_transmit(struct sock *sk);
 
 void quic_outq_transmitted_sack(struct sock *sk, u8 level, s64 largest,
 				s64 smallest, s64 ack_largest, u32 ack_delay);
-void quic_outq_validate_path(struct sock *sk, struct quic_frame *frame,
-			     struct quic_path_addr *path);
 void quic_outq_packet_sent_tail(struct sock *sk, struct quic_packet_sent *info);
 void quic_outq_transmitted_tail(struct sock *sk, struct quic_frame *frame);
 void quic_outq_retransmit_list(struct sock *sk, struct list_head *head);
@@ -205,12 +232,10 @@ void quic_outq_update_loss_timer(struct sock *sk);
 
 void quic_outq_transmit_close(struct sock *sk, u8 frame, u32 errcode, u8 level);
 void quic_outq_stream_list_purge(struct sock *sk, struct quic_stream *stream);
-void quic_outq_frame_list_purge(struct sock *sk, struct list_head *head);
 void quic_outq_encrypted_tail(struct sock *sk, struct sk_buff *skb);
 void quic_outq_transmit_app_close(struct sock *sk);
 void quic_outq_transmit_probe(struct sock *sk);
 
-int quic_outq_stream_append(struct sock *sk, struct quic_msginfo *info, u8 pack);
 void quic_outq_set_param(struct sock *sk, struct quic_transport_param *p);
 void quic_outq_sync_window(struct sock *sk, u32 window);
 void quic_outq_init(struct sock *sk);

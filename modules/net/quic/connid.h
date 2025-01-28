@@ -40,6 +40,7 @@ struct quic_dest_conn_id {
 
 struct quic_conn_id_set {
 	struct quic_common_conn_id *active;
+	struct quic_common_conn_id *alt;
 	struct list_head head;
 	u32 entry_size;
 	u32 max_count;
@@ -72,6 +73,34 @@ static inline void quic_conn_id_update(struct quic_conn_id *conn_id, u8 *data, u
 {
 	memcpy(conn_id->data, data, len);
 	conn_id->len = (u8)len;
+}
+
+static inline bool quic_conn_id_select_alt(struct quic_conn_id_set *id_set)
+{
+	if (id_set->alt)
+		return true;
+	if (id_set->active->number == quic_conn_id_last_number(id_set))
+		return false;
+	id_set->alt = list_next_entry(id_set->active, list);
+	return true;
+}
+
+static inline void quic_conn_id_clear_alt(struct quic_conn_id_set *id_set)
+{
+	id_set->alt = NULL;
+}
+
+static inline void quic_conn_id_swap_active(struct quic_conn_id_set *id_set)
+{
+	void *active = id_set->active;
+
+	id_set->active = id_set->alt;
+	id_set->alt = active;
+}
+
+static inline struct quic_conn_id *quic_conn_id_choose(struct quic_conn_id_set *id_set, u8 alt)
+{
+	return (alt && id_set->alt) ? &id_set->alt->id : &id_set->active->id;
 }
 
 static inline u8 quic_conn_id_disable_active_migration(struct quic_conn_id_set *id_set)
