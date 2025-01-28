@@ -1076,16 +1076,9 @@ static int do_client_connection_test(int sockfd)
 	}
 	printf("test15: PASS (connection migration is done)\n");
 
-	optlen = sizeof(info);
-	info.dest = 0;
-	ret = getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_CONNECTION_ID, &info, &optlen);
-	if (ret == -1 || info.active != 12) {
-		printf("teset16: FAIL ret %d, source %u\n", ret, info.active);
-		return -1;
-	}
 	info.dest = 1;
 	ret = getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_CONNECTION_ID, &info, &optlen);
-	if (ret == -1 || info.active != 11) {
+	if (ret == -1 || info.active != 12) {
 		printf("teset16: FAIL ret %d, dest %u\n", ret, info.active);
 		return -1;
 	}
@@ -1128,7 +1121,7 @@ static int do_client_connection_test(int sockfd)
 	optlen = sizeof(info);
 	info.dest = 1;
 	ret = getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_CONNECTION_ID, &info, &optlen);
-	if (ret == -1 || info.active != 12) {
+	if (ret == -1 || info.active != 13) {
 		printf("teset20: FAIL ret %d, dest %u, source %u\n", ret, info.dest, info.prior_to);
 		return -1;
 	}

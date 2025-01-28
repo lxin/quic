@@ -32,6 +32,7 @@ static int http_log_level = LOG_INFO;
 #define IOP_ZERORTT				10
 #define IOP_V2					11
 #define IOP_ECN					12
+#define IOP_CONNECTIONMIGRATION			13
 
 struct http_req {
 	char			user_agent[32];
@@ -366,7 +367,7 @@ static int http_client_setup_socket(char *host, char *port, int testcase)
 		goto err_free;
 	}
 
-	sockfd = socket(rp->ai_family, SOCK_DGRAM, IPPROTO_QUIC);
+	sockfd = socket(PF_INET6, SOCK_DGRAM, IPPROTO_QUIC);
 	if (sockfd < 0) {
 		http_log_error("socket create failed\n");
 		goto err_free;
@@ -430,7 +431,7 @@ static int http_server_setup_socket(char *host, char *port, char *alpn, int test
 		goto err_free;
 	}
 
-	listenfd = socket(rp->ai_family, SOCK_DGRAM, IPPROTO_QUIC);
+	listenfd = socket(PF_INET6, SOCK_DGRAM, IPPROTO_QUIC);
 	if (listenfd < 0) {
 		http_log_error("socket create failed\n");
 		goto err_free;
@@ -548,9 +549,39 @@ err:
 static int http_server_accept_socket(int sockfd, const char *pkey_file, const char *cert_file,
 				     char *alpn, int testcase)
 {
+	struct sockaddr_storage sa = {};
+	char host[16], port[16];
+	struct addrinfo *res;
+	unsigned int addrlen;
 	unsigned int keylen;
 	uint8_t key[64];
 	int ret;
+
+	if (testcase == IOP_ZERORTT)
+		usleep(500000);
+
+	if (testcase == IOP_CONNECTIONMIGRATION) {
+		addrlen = sizeof(sa);
+		if (getsockname(sockfd, (struct sockaddr *)&sa, &addrlen)) {
+			http_log_error("socket getsockname error %d\n", errno);
+			return -1;
+		}
+
+		strcpy(host, "server4");
+		if (sa.ss_family == AF_INET)
+			strcpy(host, "server6");
+		sprintf(port, "%d", ntohs(((struct sockaddr_in *)&sa)->sin_port));
+		if (getaddrinfo(host, port, NULL, &res)) {
+			http_log_error("getaddrinfo error\n");
+			return -1;
+		}
+
+		if (setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_CONNECTION_MIGRATION,
+			       res->ai_addr, res->ai_addrlen)) {
+			http_log_error("socket setsockopt migration error %d\n", errno);
+			return -1;
+		}
+	}
 
 	keylen = sizeof(key);
 	if (getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_SESSION_TICKET, key, &keylen)) {
@@ -1604,6 +1635,7 @@ static int http09_client(char *urls, const char *sess_file, const char *tp_file,
 	if (http09_run_loop(ctx))
 		ret = -errno;
 free:
+	sleep(1);
 	close(sockfd);
 out:
 	free(ctx);
@@ -1614,9 +1646,6 @@ static void *http09_process(void *arg)
 {
 	struct http_ctx *ctx = arg;
 	long ret;
-
-	if (ctx->testcase == IOP_ZERORTT)
-		usleep(500000);
 
 	ret = http_server_accept_socket(ctx->sockfd, ctx->pkey_file, ctx->cert_file,
 					"hq-interop", ctx->testcase);
@@ -1701,30 +1730,32 @@ static int iop_get_testcase(char *testcase)
 {
 	if (!testcase)
 		return 0;
-	if(!strcmp(testcase, "chacha20"))
+	if (!strcmp(testcase, "chacha20"))
 		return IOP_CHACHA20;
-	if(!strcmp(testcase, "handshake"))
+	if (!strcmp(testcase, "handshake"))
 		return IOP_HANDSHAKE;
-	if(!strcmp(testcase, "http3"))
+	if (!strcmp(testcase, "http3"))
 		return IOP_HTTP3;
-	if(!strcmp(testcase, "keyupdate"))
+	if (!strcmp(testcase, "keyupdate"))
 		return IOP_KEYUPDATE;
-	if(!strcmp(testcase, "multiconnect"))
+	if (!strcmp(testcase, "multiconnect"))
 		return IOP_MULTICONNECT;
-	if(!strcmp(testcase, "resumption"))
+	if (!strcmp(testcase, "resumption"))
 		return IOP_RESUMPTION;
-	if(!strcmp(testcase, "retry"))
+	if (!strcmp(testcase, "retry"))
 		return IOP_RETRY;
-	if(!strcmp(testcase, "transfer"))
+	if (!strcmp(testcase, "transfer"))
 		return IOP_TRANSFER;
 	if (!strcmp(testcase, "versionnegotiation"))
 		return IOP_VERSIONNEGOTIATION;
-	if(!strcmp(testcase, "zerortt"))
+	if (!strcmp(testcase, "zerortt"))
 		return IOP_ZERORTT;
-	if(!strcmp(testcase, "v2"))
+	if (!strcmp(testcase, "v2"))
 		return IOP_V2;
-	if(!strcmp(testcase, "ecn"))
+	if (!strcmp(testcase, "ecn"))
 		return IOP_ECN;
+	if (!strcmp(testcase, "connectionmigration"))
+		return IOP_CONNECTIONMIGRATION;
 	return 0;
 }
 

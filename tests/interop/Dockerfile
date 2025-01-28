@@ -13,8 +13,8 @@ RUN cd quic && ./autogen.sh && \
     install -m 644 modules/include/uapi/linux/quic.h /usr/include/linux && \
     ./configure --prefix=/usr && make -j$(nproc) && make install && cd ..
 
-RUN cp quic/tests/interop/interop_test.c . && \
-    gcc interop_test.c -o interop_test -lnghttp3 -lquic -lgnutls && \
+COPY interop_test.c interop_test.c
+RUN gcc interop_test.c -o interop_test -lnghttp3 -lquic -lgnutls && \
     rm -rf quic interop_test.c
 
 COPY run_endpoint.sh .

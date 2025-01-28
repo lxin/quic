@@ -42,9 +42,27 @@ static void set_port(struct sockaddr_storage *sas, unsigned short port)
 		((struct sockaddr_in6 *)sas)->sin6_port = htons(port);
 }
 
-static int do_client_alpn(char *ip, int port, char *alpn, int preferred_port)
+static void print_address(char *info, struct sockaddr_storage *sas)
 {
-	struct sockaddr_storage sa = {};
+	struct sockaddr_in6 *sain6 = (struct sockaddr_in6 *)sas;
+	struct sockaddr_in *sain = (struct sockaddr_in *)sas;
+	char ip_str[INET6_ADDRSTRLEN];
+	int port;
+
+	if (sas->ss_family == AF_INET) {
+		inet_ntop(AF_INET, &(sain->sin_addr), ip_str, INET_ADDRSTRLEN);
+		port = ntohs(sain->sin_port);
+		printf("%s: %s:%d\n", info, ip_str, port);
+		return;
+	}
+	inet_ntop(AF_INET6, &(sain6->sin6_addr), ip_str, INET6_ADDRSTRLEN);
+	port = ntohs(sain6->sin6_port);
+	printf("%s: %s:%d\n", info, ip_str, port);
+}
+
+static int do_client_alpn(char *ip, int port, char *alpn, char *preferred_addr, int preferred_port)
+{
+	struct sockaddr_storage sa = {}, pa = {};
 	char port_string[16];
 	unsigned int len;
 	int ret, sockfd;
@@ -58,7 +76,14 @@ static int do_client_alpn(char *ip, int port, char *alpn, int preferred_port)
 		return -1;
 	}
 
-	sockfd = socket(sa.ss_family, SOCK_DGRAM, IPPROTO_QUIC);
+	sprintf(port_string, "%d", preferred_port);
+	rc = parse_address(preferred_addr, port_string, &pa);
+	if (rc != NULL) {
+		printf("parse address failed: %s\n", rc);
+		return -1;
+	}
+
+	sockfd = socket(AF_INET6, SOCK_DGRAM, IPPROTO_QUIC);
 	if (sockfd < 0) {
 		printf("socket create failed\n");
 		return -1;
@@ -89,15 +114,16 @@ static int do_client_alpn(char *ip, int port, char *alpn, int preferred_port)
 	printf("recv: \"%s\", len: %d\n", msg, ret);
 
 	sleep(1);
+	memset(&sa, 0, sizeof(sa));
 	len = sizeof(sa);
 	ret = getpeername(sockfd, (struct sockaddr *)&sa, &len);
 	if (ret == -1) {
 		printf("socket getpeername error %d\n", errno);
 		return -1;
 	}
-	printf("PEER PORT: %d\n", get_port(&sa));
-	if (get_port(&sa) != preferred_port) {
-		printf("preferred port: %d\n", preferred_port);
+	print_address("PEER IP:PORT", &sa);
+	if (memcmp(&sa, &pa, sizeof(sa))) {
+		print_address("EXPECTED IP:PORT", &pa);
 		return -1;
 	}
 
@@ -108,21 +134,22 @@ static int do_client_alpn(char *ip, int port, char *alpn, int preferred_port)
 
 static int do_client(int argc, char *argv[])
 {
-	char *ip;
+	char *ip, *pref;
 	int port;
 
 	if (argc < 3) {
-		printf("%s client <PEER ADDR> <PEER PORT>\n", argv[0]);
+		printf("%s client <PEER ADDR> <PEER PORT> [PREF ADDR]\n", argv[0]);
 		return 0;
 	}
 
-	port = atoi(argv[3]);
 	ip = argv[2];
-	if (do_client_alpn(ip, port, "smbd", port + 1))
+	pref = argv[4];
+	port = atoi(argv[3]);
+	if (do_client_alpn(ip, port, "smbd", pref, port + 1))
 		return -1;
-	if (do_client_alpn(ip, port, "h3", port + 2))
+	if (do_client_alpn(ip, port, "h3", pref, port + 2))
 		return -1;
-	if (do_client_alpn(ip, port, "ksmbd", port + 3))
+	if (do_client_alpn(ip, port, "ksmbd", pref, port + 3))
 		return -1;
 
 	return 0;
@@ -180,9 +207,9 @@ err:
 
 static int do_server(int argc, char *argv[])
 {
+	struct sockaddr_storage sa = {}, pa = {};
 	char alpns[20] = "smbd, h3, ksmbd";
 	int listenfd, sockfd, ret, i = 0;
-	struct sockaddr_storage sa = {};
 	unsigned int addrlen, len;
 	int preferred_port;
 	char msg[50] = {};
@@ -190,7 +217,7 @@ static int do_server(int argc, char *argv[])
 
 	if (argc < 5) {
 		printf("%s server <LOCAL ADDR> <LOCAL PORT> <PRIVATE_KEY_FILE> "
-		       "<CERTIFICATE_FILE>\n", argv[0]);
+		       "<CERTIFICATE_FILE> [PREF ADDR]\n", argv[0]);
 		return 0;
 	}
 
@@ -200,7 +227,7 @@ static int do_server(int argc, char *argv[])
 		return -1;
 	}
 
-	listenfd = socket(sa.ss_family, SOCK_DGRAM, IPPROTO_QUIC);
+	listenfd = socket(AF_INET6, SOCK_DGRAM, IPPROTO_QUIC);
 	if (listenfd < 0) {
 		printf("socket create failed\n");
 		return -1;
@@ -239,8 +266,16 @@ static int do_server(int argc, char *argv[])
 			return -1;
 		}
 		preferred_port = get_port(&sa) + i;
-		set_port(&sa, preferred_port); /* you can also change addr */
-		ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_CONNECTION_MIGRATION, &sa, addrlen);
+		if (argv[6]) {
+			rc = parse_address(argv[6], "0", &pa);
+			if (rc != NULL) {
+				printf("parse address failed: %s\n", rc);
+				return -1;
+			}
+			addrlen = sizeof(pa);
+		}
+		set_port(&pa, preferred_port); /* you can also change addr */
+		ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_CONNECTION_MIGRATION, &pa, addrlen);
 		if (ret == -1) {
 			printf("socket setsockopt migration error %d\n", errno);
 			return -1;
@@ -269,15 +304,16 @@ static int do_server(int argc, char *argv[])
 		printf("send %d\n", ret);
 
 		sleep(1);
+		memset(&sa, 0, sizeof(sa));
 		ret = getsockname(sockfd, (struct sockaddr *)&sa, &addrlen);
 		if (ret == -1) {
 			printf("socket getsockname error %d\n", errno);
 			return -1;
 		}
-		printf("LOCAL PORT %d\n", get_port(&sa));
-		if (preferred_port != get_port(&sa)) {
-			printf("preferred port: %d\n", preferred_port);
-			//return -1;
+		print_address("LOCAL IP:PORT: ", &sa);
+		if (memcmp(&sa, &pa, sizeof(sa))) {
+			print_address("EXPECTED IP:PORT: ", &pa);
+			return -1;
 		}
 
 		recv(sockfd, msg, sizeof(msg), 0);

@@ -23,6 +23,8 @@ daemon_run()
 cleanup()
 {
 	exit_code=$?
+	ip -6 addr del ::2/128 dev lo > /dev/null 2>&1
+	ip addr del 127.0.0.2/8 dev lo > /dev/null 2>&1
 	tc qdisc del dev lo root netem loss 30% > /dev/null 2>&1
 	pkill func_test > /dev/null 2>&1
 	pkill perf_test > /dev/null 2>&1
@@ -235,25 +237,52 @@ tlshd_tests()
 	daemon_stop "ticket_test"
 }
 
-sample_tests()
+alpn_tests()
+{
+	print_start "ALPN and Preferred Address Tests (IPv4 -> IPv6)"
+	daemon_run ./alpn_test server 0.0.0.0 1234 ./keys/server-key.pem ./keys/server-cert.pem ::1
+	./alpn_test client 127.0.0.1 1234 ::1 || return 1
+	daemon_stop "alpn_test"
+
+	print_start "ALPN and Preferred Address Tests (IPv6 -> IPv4)"
+	daemon_run ./alpn_test server :: 1234 ./keys/server-key.pem ./keys/server-cert.pem 127.0.0.1
+	./alpn_test client ::1 1234 127.0.0.1 || return 1
+	daemon_stop "alpn_test"
+
+	print_start "ALPN and Preferred Address Tests (IPv4 -> IPv4)"
+	ip addr add 127.0.0.2/8 dev lo
+	daemon_run ./alpn_test server 0.0.0.0 1234 ./keys/server-key.pem ./keys/server-cert.pem \
+		127.0.0.2
+	./alpn_test client 127.0.0.1 1234 127.0.0.2 || return 1
+	ip addr del 127.0.0.2/8 dev lo
+	daemon_stop "alpn_test"
+
+	print_start "ALPN and Preferred Address Tests (IPv6 -> IPv6)"
+	ip -6 addr add ::2/128 dev lo
+	daemon_run ./alpn_test server :: 1234 ./keys/server-key.pem ./keys/server-cert.pem ::2
+	./alpn_test client ::1 1234 ::2 || return 1
+	ip -6 addr del ::2/128 dev lo
+	daemon_stop "alpn_test"
+}
+
+ticket_tests()
 {
 	print_start "Session Resumption Tests"
 	daemon_run ./ticket_test server 0.0.0.0 1234 ./keys/server-key.pem ./keys/server-cert.pem
 	./ticket_test client 127.0.0.1 1234 || return 1
 	daemon_stop "ticket_test"
+}
 
+sample_tests()
+{
 	print_start "Sample Tests"
 	daemon_run ./sample_test server 0.0.0.0 1234 ./keys/server-key.pem ./keys/server-cert.pem
 	./sample_test client 127.0.0.1 1234 none none || return 1
 	daemon_stop "sample_test"
 
-	print_start "ALPN and Preferred Address Tests"
-	daemon_run ./alpn_test server 0.0.0.0 1234 ./keys/server-key.pem ./keys/server-cert.pem
-	./alpn_test client 127.0.0.1 1234 || return 1
-	daemon_stop "alpn_test"
 }
 
-TESTS="func perf netem http3 tlshd sample"
+TESTS="func perf netem http3 tlshd alpn ticket sample"
 trap cleanup EXIT
 
 [ "$1" = "" ] || TESTS=$1
