@@ -159,7 +159,7 @@ static int quic_outq_delay_check(struct sock *sk, u8 level, u8 nodelay)
 	struct quic_outqueue *outq = quic_outq(sk);
 	u64 pacing_time;
 
-	if (level) /* do not delay for early data */
+	if (level || outq->close_frame) /* do not delay for early data or closing sockets */
 		return 0;
 
 	/* pacing control */
@@ -482,6 +482,8 @@ void quic_outq_transmit_app_close(struct sock *sk)
 	if (quic_is_established(sk)) {
 		level = QUIC_CRYPTO_APP;
 		type = QUIC_FRAME_CONNECTION_CLOSE_APP;
+		outq->close_frame = type;
+		quic_outq_transmit(sk); /* flush data before closing */
 	} else if (quic_is_establishing(sk)) {
 		level = QUIC_CRYPTO_INITIAL;
 		quic_outq_set_close_errcode(outq, errcode);
