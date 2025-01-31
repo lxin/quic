@@ -956,28 +956,29 @@ static int quic_frame_retire_conn_id_process(struct sock *sk, struct quic_frame 
 
 	if (!quic_get_var(&p, &len, &seqno))
 		return -EINVAL;
+
 	first = quic_conn_id_first_number(id_set);
-	if (seqno < first) /* dup */
-		goto out;
 	last  = quic_conn_id_last_number(id_set);
-	if (seqno != first || seqno == last) {
-		frame->errcode = QUIC_TRANSPORT_ERROR_PROTOCOL_VIOLATION;
-		return -EINVAL;
+	if (seqno >= first) {
+		if (seqno >= last) {
+			frame->errcode = QUIC_TRANSPORT_ERROR_PROTOCOL_VIOLATION;
+			return -EINVAL;
+		}
+
+		quic_conn_id_remove(id_set, seqno);
+		first = quic_conn_id_first_number(id_set);
+		info.prior_to = first;
+		active = quic_conn_id_active(id_set);
+		info.active = quic_conn_id_number(active);
+		quic_inq_event_recv(sk, QUIC_EVENT_CONNECTION_ID, &info);
 	}
 
-	quic_conn_id_remove(id_set, seqno);
-	info.prior_to =  quic_conn_id_first_number(id_set);
-	active = quic_conn_id_active(id_set);
-	info.active = quic_conn_id_number(active);
-	quic_inq_event_recv(sk, QUIC_EVENT_CONNECTION_ID, &info);
-
-	if (last - seqno >= quic_conn_id_max_count(id_set))
-		goto out;
-	seqno++;
-	if (quic_outq_transmit_frame(sk, QUIC_FRAME_NEW_CONNECTION_ID, &seqno,
-				     frame->path_alt, true))
-		return -ENOMEM;
-out:
+	seqno = last + 1;
+	for (; seqno <= quic_conn_id_max_count(id_set) + first - 1; seqno++) {
+		if (quic_outq_transmit_frame(sk, QUIC_FRAME_NEW_CONNECTION_ID, &first,
+					     frame->path_alt, true))
+			return -ENOMEM;
+	}
 	return (int)(frame->len - len);
 }
 
