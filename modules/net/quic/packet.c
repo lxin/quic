@@ -671,14 +671,12 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb)
 	struct quic_conn_id *active;
 	struct quic_crypto *crypto;
 	struct quic_pnspace *space;
-	struct quichshdr *hshdr;
 	int err = -EINVAL;
 
 	WARN_ON(!skb_set_owner_sk_safe(skb, sk));
 
 	while (skb->len > 0) {
-		hshdr = quic_hshdr(skb);
-		if (!hshdr->form) { /* handle it later when setting 1RTT key */
+		if (!quic_hshdr(skb)->form) { /* handle it later when setting 1RTT key */
 			/* treat it as a padding if dcid does not match */
 			if (packet->dcid.len > skb->len - 1 ||
 			    memcmp(packet->dcid.data, skb->data + 1, packet->dcid.len)) {
@@ -716,7 +714,7 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb)
 		}
 		if (!cb->resume)
 			QUIC_INC_STATS(net, QUIC_MIB_PKT_DECFASTPATHS);
-		if (hshdr->reserved) {
+		if (quic_hshdr(skb)->reserved) {
 			QUIC_INC_STATS(net, QUIC_MIB_PKT_INVHDRDROP);
 			packet->errcode = QUIC_TRANSPORT_ERROR_PROTOCOL_VIOLATION;
 			goto err;
@@ -863,11 +861,9 @@ static int quic_packet_app_process(struct sock *sk, struct sk_buff *skb)
 	struct quic_path_addr *d = quic_dst(sk), *s = quic_src(sk);
 	struct quic_crypto_cb *cb = QUIC_CRYPTO_CB(skb);
 	struct quic_packet *packet = quic_packet(sk);
-	struct quic_cong *cong = quic_cong(sk);
-	struct quichdr *hdr = quic_hdr(skb);
 	struct net *net = sock_net(sk);
-	struct quic_frame frame = {};
 	struct quic_conn_id *conn_id;
+	struct quic_frame frame = {};
 	u8 taglen, key_phase;
 	int err = -EINVAL;
 	u64 number;
@@ -875,7 +871,7 @@ static int quic_packet_app_process(struct sock *sk, struct sk_buff *skb)
 	WARN_ON(!skb_set_owner_sk_safe(skb, sk));
 
 	quic_packet_reset(packet);
-	if (!hdr->fixed && !quic_inq_grease_quic_bit(quic_inq(sk))) {
+	if (!quic_hdr(skb)->fixed && !quic_inq_grease_quic_bit(quic_inq(sk))) {
 		QUIC_INC_STATS(net, QUIC_MIB_PKT_INVHDRDROP);
 		goto err;
 	}
@@ -922,7 +918,7 @@ static int quic_packet_app_process(struct sock *sk, struct sk_buff *skb)
 	}
 	if (!cb->resume)
 		QUIC_INC_STATS(net, QUIC_MIB_PKT_DECFASTPATHS);
-	if (hdr->reserved) {
+	if (quic_hdr(skb)->reserved) {
 		QUIC_INC_STATS(net, QUIC_MIB_PKT_INVHDRDROP);
 		packet->errcode = QUIC_TRANSPORT_ERROR_PROTOCOL_VIOLATION;
 		goto err;
@@ -960,7 +956,7 @@ static int quic_packet_app_process(struct sock *sk, struct sk_buff *skb)
 		goto err;
 	}
 
-	quic_cong_set_time(cong, cb->time);
+	quic_cong_set_time(quic_cong(sk), cb->time);
 	frame.data = skb->data + cb->number_offset + cb->number_len;
 	frame.len = cb->length - cb->number_len - taglen;
 	frame.path_alt = cb->path_alt;
@@ -1069,7 +1065,6 @@ static int quic_packet_get_alpn(struct quic_data *alpn, u8 *p, u32 len)
 int quic_packet_parse_alpn(struct sk_buff *skb, struct quic_data *alpn)
 {
 	struct quic_crypto_cb *cb = QUIC_CRYPTO_CB(skb);
-	struct quichshdr *hdr = quic_hshdr(skb);
 	struct net *net = dev_net(skb->dev);
 	u8 *p = skb->data, *data, type;
 	u32 len = skb->len, version;
@@ -1079,13 +1074,13 @@ int quic_packet_parse_alpn(struct sk_buff *skb, struct quic_data *alpn)
 	u64 offset, length;
 	int err = -EINVAL;
 
-	if (!hdr->form) /* send stateless reset later */
+	if (!quic_hshdr(skb)->form) /* send stateless reset later */
 		return 0;
 	if (quic_packet_get_version_and_connid(&packet, &version, &p, &len))
 		return -EINVAL;
 	if (!quic_packet_compatible_versions(version)) /* send version negotiation later */
 		return 0;
-	type = quic_packet_version_get_type(version, hdr->type);
+	type = quic_packet_version_get_type(version, quic_hshdr(skb)->type);
 	if (type != QUIC_PACKET_INITIAL) /* send stateless reset later */
 		return 0;
 	if (quic_packet_get_token(&token, &p, &len))
