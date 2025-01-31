@@ -79,10 +79,15 @@ static inline bool quic_conn_id_select_alt(struct quic_conn_id_set *id_set)
 {
 	if (id_set->alt)
 		return true;
-	if (id_set->active->number == quic_conn_id_last_number(id_set))
-		return false;
-	id_set->alt = list_next_entry(id_set->active, list);
-	return true;
+	if (id_set->active->number != quic_conn_id_last_number(id_set)) {
+		id_set->alt = list_next_entry(id_set->active, list);
+		return true;
+	}
+	if (id_set->active->number == quic_conn_id_first_number(id_set)) {
+		id_set->alt = id_set->active;
+		return true;
+	}
+	return false;
 }
 
 static inline void quic_conn_id_clear_alt(struct quic_conn_id_set *id_set)
@@ -149,8 +154,9 @@ int quic_conn_id_add(struct quic_conn_id_set *id_set, struct quic_conn_id *conn_
 bool quic_conn_id_token_exists(struct quic_conn_id_set *id_set, u8 *token);
 void quic_conn_id_remove(struct quic_conn_id_set *id_set, u32 number);
 
-struct quic_conn_id *quic_conn_id_lookup(struct net *net, u8 *scid, u32 len);
+struct quic_conn_id *quic_conn_id_get(struct quic_conn_id_set *id_set, u8 *scid, u32 len);
 struct quic_conn_id *quic_conn_id_find(struct quic_conn_id_set *id_set, u32 number);
+struct quic_conn_id *quic_conn_id_lookup(struct net *net, u8 *scid, u32 len);
 
 void quic_conn_id_set_param(struct quic_conn_id_set *id_set, struct quic_transport_param *p);
 void quic_conn_id_set_init(struct quic_conn_id_set *id_set, bool source);

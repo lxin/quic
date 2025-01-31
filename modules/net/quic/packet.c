@@ -867,6 +867,7 @@ static int quic_packet_app_process(struct sock *sk, struct sk_buff *skb)
 	struct quichdr *hdr = quic_hdr(skb);
 	struct net *net = sock_net(sk);
 	struct quic_frame frame = {};
+	struct quic_conn_id *conn_id;
 	u8 taglen, key_phase;
 	int err = -EINVAL;
 	u64 number;
@@ -885,8 +886,12 @@ static int quic_packet_app_process(struct sock *sk, struct sk_buff *skb)
 	}
 
 	/* Do decryption */
-	if (!cb->number_offset)
-		cb->number_offset = (u8)(quic_conn_id_active(source)->len + sizeof(*hdr));
+	if (!cb->number_offset) {
+		conn_id = quic_conn_id_get(source, skb->data + 1, skb->len - 1);
+		if (!conn_id)
+			goto err;
+		cb->number_offset = conn_id->len + 1;
+	}
 	cb->length = (u16)(skb->len - cb->number_offset);
 	cb->number_max = quic_pnspace_max_pn_seen(space);
 
