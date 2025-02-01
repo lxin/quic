@@ -167,14 +167,11 @@ void quic_conn_id_remove(struct quic_conn_id_set *id_set, u32 number)
 	list_for_each_entry_safe(common, tmp, list, list) {
 		if (common->number <= number) {
 			if (id_set->active == common)
-				id_set->active = NULL;
+				id_set->active = tmp;
 			quic_conn_id_del(common);
 			id_set->count--;
 		}
 	}
-
-	if (!id_set->active)
-		id_set->active = list_first_entry(list, struct quic_common_conn_id, list);
 }
 
 struct quic_conn_id *quic_conn_id_find(struct quic_conn_id_set *id_set, u32 number)

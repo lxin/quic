@@ -1403,7 +1403,6 @@ static int quic_sock_set_transport_params_ext(struct sock *sk, u8 *p, u32 len)
 
 static int quic_sock_set_crypto_secret(struct sock *sk, struct quic_crypto_secret *secret, u32 len)
 {
-	struct quic_conn_id_set *id_set = quic_source(sk);
 	struct quic_packet *packet = quic_packet(sk);
 	struct quic_path_addr *path = quic_src(sk);
 	struct quic_outqueue *outq = quic_outq(sk);
@@ -1414,8 +1413,6 @@ static int quic_sock_set_crypto_secret(struct sock *sk, struct quic_crypto_secre
 	struct quic_crypto *crypto;
 	struct sk_buff_head tmpq;
 	struct sk_buff *skb;
-	u64 prior = 0;
-	u32 seqno;
 	int err;
 
 	if (len != sizeof(*secret))
@@ -1507,22 +1504,8 @@ static int quic_sock_set_crypto_secret(struct sock *sk, struct quic_crypto_secre
 
 	/* app send key is ready */
 	quic_outq_set_data_level(outq, QUIC_CRYPTO_APP);
-	seqno = quic_conn_id_last_number(id_set) + 1;
-	for (; seqno <= quic_conn_id_max_count(id_set) + prior - 1; seqno++) {
-		frame = quic_frame_create(sk, QUIC_FRAME_NEW_CONNECTION_ID, &prior);
-		if (!frame) {
-			while (seqno)
-				quic_conn_id_remove(quic_source(sk), seqno--);
-			quic_frame_list_purge(&list);
-			return -ENOMEM;
-		}
-		list_add_tail(&frame->list, &list);
-	}
-	list_for_each_entry_safe(frame, tmp, &list, list) {
-		list_del(&frame->list);
-		quic_outq_ctrl_tail(sk, frame, true);
-	}
-
+	if (quic_outq_transmit_new_conn_id(sk, 0, 0, true))
+		return -ENOMEM;
 	if (quic_crypto_recv_ready(crypto)) {
 		quic_set_state(sk, QUIC_SS_ESTABLISHED);
 		quic_timer_reset(sk, QUIC_TIMER_PATH, c->plpmtud_probe_interval);
@@ -1570,7 +1553,7 @@ static int quic_sock_set_connection_id(struct sock *sk,
 	}
 
 	if (!info->dest) {
-		if (quic_outq_transmit_frame(sk, QUIC_FRAME_NEW_CONNECTION_ID, &number, 0, false)) {
+		if (quic_outq_transmit_new_conn_id(sk, number, 0, false)) {
 			quic_conn_id_set_active(id_set, old);
 			return -ENOMEM;
 		}
