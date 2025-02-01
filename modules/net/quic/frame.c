@@ -933,9 +933,9 @@ static int quic_frame_new_conn_id_process(struct sock *sk, struct quic_frame *fr
 	if (err)
 		return err;
 
-	for (; first < prior; first++) {
-		if (quic_outq_transmit_frame(sk, QUIC_FRAME_RETIRE_CONNECTION_ID, &first,
-					     frame->path_alt, true))
+	if (prior > first) {
+		prior--;
+		if (quic_outq_transmit_retire_conn_id(sk, prior, frame->path_alt, true))
 			return -ENOMEM;
 	}
 

@@ -1501,9 +1501,7 @@ static int quic_sock_set_connection_id(struct sock *sk,
 {
 	struct quic_conn_id_set *id_set = quic_source(sk);
 	struct quic_conn_id *active, *old;
-	struct quic_frame *frame, *tmp;
 	u64 number, first, last;
-	struct list_head list;
 
 	if (len < sizeof(*info) || !quic_is_established(sk))
 		return -EINVAL;
@@ -1543,22 +1541,11 @@ static int quic_sock_set_connection_id(struct sock *sk,
 		return 0;
 	}
 
-	INIT_LIST_HEAD(&list);
-	for (; first < number; first++) {
-		frame = quic_frame_create(sk, QUIC_FRAME_RETIRE_CONNECTION_ID, &first);
-		if (!frame) {
-			quic_conn_id_set_active(id_set, old);
-			quic_frame_list_purge(&list);
-			return -ENOMEM;
-		}
-		list_add_tail(&frame->list, &list);
+	number--;
+	if (quic_outq_transmit_retire_conn_id(sk, number, 0, false)) {
+		quic_conn_id_set_active(id_set, old);
+		return -ENOMEM;
 	}
-
-	list_for_each_entry_safe(frame, tmp, &list, list) {
-		list_del(&frame->list);
-		quic_outq_ctrl_tail(sk, frame, true);
-	}
-	quic_outq_transmit(sk);
 
 	return 0;
 }

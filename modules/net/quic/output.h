@@ -217,6 +217,7 @@ void quic_outq_free_path(struct sock *sk, struct quic_conn_id *conn_id);
 void quic_outq_transmit_pto(struct sock *sk);
 
 int quic_outq_transmit_frame(struct sock *sk, u8 type, void *data, u8 path_alt, u8 cork);
+int quic_outq_transmit_retire_conn_id(struct sock *sk, u64 prior, u8 path_alt, u8 cork);
 int quic_outq_transmit_new_conn_id(struct sock *sk, u64 prior, u8 path_alt, u8 cork);
 int quic_outq_stream_append(struct sock *sk, struct quic_msginfo *info, u8 pack);
 int quic_outq_change_path(struct sock *sk, u8 path_alt, u8 *entropy);

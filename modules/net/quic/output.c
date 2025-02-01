@@ -1086,6 +1086,21 @@ int quic_outq_transmit_new_conn_id(struct sock *sk, u64 prior, u8 path_alt, u8 c
 	return 0;
 }
 
+int quic_outq_transmit_retire_conn_id(struct sock *sk, u64 prior, u8 path_alt, u8 cork)
+{
+	struct quic_conn_id_set *id_set = quic_dest(sk);
+	u64 seqno;
+
+	for (seqno = quic_conn_id_first_number(id_set); seqno <= prior; seqno++) {
+		if (quic_outq_transmit_frame(sk, QUIC_FRAME_RETIRE_CONNECTION_ID, &seqno,
+					     path_alt, cork))
+			return -ENOMEM;
+	}
+	if (!cork)
+		quic_outq_transmit(sk);
+	return 0;
+}
+
 static void quic_outq_encrypted_work(struct work_struct *work)
 {
 	struct quic_sock *qs = container_of(work, struct quic_sock, outq.work);
