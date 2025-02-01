@@ -213,8 +213,8 @@ static inline u8 *quic_outq_path_entropy(struct quic_outqueue *outq)
 void quic_outq_stream_tail(struct sock *sk, struct quic_frame *frame, bool cork);
 void quic_outq_dgram_tail(struct sock *sk, struct quic_frame *frame, bool cork);
 void quic_outq_ctrl_tail(struct sock *sk, struct quic_frame *frame, bool cork);
+void quic_outq_free_path(struct sock *sk, struct quic_conn_id *conn_id);
 void quic_outq_transmit_pto(struct sock *sk);
-void quic_outq_free_path(struct sock *sk);
 
 int quic_outq_transmit_frame(struct sock *sk, u8 type, void *data, u8 path_alt, u8 cork);
 int quic_outq_transmit_new_conn_id(struct sock *sk, u64 prior, u8 path_alt, u8 cork);

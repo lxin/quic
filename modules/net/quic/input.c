@@ -49,7 +49,7 @@ int quic_rcv(struct sk_buff *skb)
 		dcid = (u8 *)quic_hdr(skb) + 1;
 		conn_id = quic_conn_id_lookup(net, dcid, skb->len - 1);
 		if (conn_id) {
-			cb->number_offset = conn_id->len + sizeof(struct quichdr);
+			cb->conn_id = conn_id;
 			sk = quic_conn_id_sk(conn_id);
 		}
 	}

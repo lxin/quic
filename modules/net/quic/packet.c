@@ -806,7 +806,7 @@ static int quic_packet_app_process_done(struct sock *sk, struct sk_buff *skb)
 	if (cb->path_alt)
 		quic_outq_probe_path(sk, cb->path_alt, true);
 	else if (packet->non_probing && cb->number == quic_pnspace_max_pn_seen(space))
-		quic_outq_free_path(sk);
+		quic_outq_free_path(sk, cb->conn_id);
 
 	if (!quic_path_validated(path))
 		quic_path_inc_ampl_rcvlen(path, skb->len);
@@ -862,7 +862,6 @@ static int quic_packet_app_process(struct sock *sk, struct sk_buff *skb)
 	struct quic_crypto_cb *cb = QUIC_CRYPTO_CB(skb);
 	struct quic_packet *packet = quic_packet(sk);
 	struct net *net = sock_net(sk);
-	struct quic_conn_id *conn_id;
 	struct quic_frame frame = {};
 	u8 taglen, key_phase;
 	int err = -EINVAL;
@@ -882,12 +881,12 @@ static int quic_packet_app_process(struct sock *sk, struct sk_buff *skb)
 	}
 
 	/* Do decryption */
-	if (!cb->number_offset) {
-		conn_id = quic_conn_id_get(source, skb->data + 1, skb->len - 1);
-		if (!conn_id)
+	if (!cb->conn_id) {
+		cb->conn_id = quic_conn_id_get(source, skb->data + 1, skb->len - 1);
+		if (!cb->conn_id)
 			goto err;
-		cb->number_offset = conn_id->len + 1;
 	}
+	cb->number_offset = cb->conn_id->len + 1;
 	cb->length = (u16)(skb->len - cb->number_offset);
 	cb->number_max = quic_pnspace_max_pn_seen(space);
 
@@ -950,7 +949,8 @@ static int quic_packet_app_process(struct sock *sk, struct sk_buff *skb)
 		cb->path_alt |= QUIC_PATH_ALT_DST;
 	}
 
-	if (cb->path_alt && !quic_conn_id_select_alt(dest)) {
+	if (cb->path_alt &&
+	    !quic_conn_id_select_alt(dest, cb->conn_id == quic_conn_id_active(source))) {
 		number = quic_conn_id_first_number(dest);
 		quic_outq_transmit_frame(sk, QUIC_FRAME_RETIRE_CONNECTION_ID, &number, 0, false);
 		goto err;

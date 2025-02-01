@@ -11,8 +11,9 @@
 #include <linux/crypto.h>
 
 struct quic_crypto_cb {
+	void (*crypto_done)(struct sk_buff *skb, int err);
 	union {
-		void (*crypto_done)(struct sk_buff *skb, int err);
+		struct quic_conn_id *conn_id;
 		struct sk_buff *last;
 	};
 	s64 number_max;

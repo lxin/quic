@@ -75,10 +75,14 @@ static inline void quic_conn_id_update(struct quic_conn_id *conn_id, u8 *data, u
 	conn_id->len = (u8)len;
 }
 
-static inline bool quic_conn_id_select_alt(struct quic_conn_id_set *id_set)
+static inline bool quic_conn_id_select_alt(struct quic_conn_id_set *id_set, bool active)
 {
 	if (id_set->alt)
 		return true;
+	if (active) {
+		id_set->alt = id_set->active;
+		return true;
+	}
 	if (id_set->active->number != quic_conn_id_last_number(id_set)) {
 		id_set->alt = list_next_entry(id_set->active, list);
 		return true;
@@ -90,9 +94,9 @@ static inline bool quic_conn_id_select_alt(struct quic_conn_id_set *id_set)
 	return false;
 }
 
-static inline void quic_conn_id_clear_alt(struct quic_conn_id_set *id_set)
+static inline void quic_conn_id_set_alt(struct quic_conn_id_set *id_set, struct quic_conn_id *alt)
 {
-	id_set->alt = NULL;
+	id_set->alt = (struct quic_common_conn_id *)alt;
 }
 
 static inline void quic_conn_id_swap_active(struct quic_conn_id_set *id_set)

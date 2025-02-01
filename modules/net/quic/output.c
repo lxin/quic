@@ -905,8 +905,9 @@ out:
 	quic_outq_update_loss_timer(sk);
 }
 
-void quic_outq_free_path(struct sock *sk)
+void quic_outq_free_path(struct sock *sk, struct quic_conn_id *conn_id)
 {
+	struct quic_conn_id_set *dest = quic_dest(sk), *source = quic_source(sk);
 	struct quic_outqueue *outq = quic_outq(sk);
 
 	if (!outq->path_alt || !outq->path_swap)
@@ -919,7 +920,8 @@ void quic_outq_free_path(struct sock *sk)
 
 	outq->path_alt = 0;
 	outq->path_swap = 0;
-	quic_conn_id_clear_alt(quic_dest(sk));
+	quic_conn_id_set_alt(dest, NULL);
+	quic_conn_id_set_active(source, conn_id);
 }
 
 int quic_outq_probe_path(struct sock *sk, u8 path_alt, u8 cork)
@@ -941,7 +943,7 @@ int quic_outq_probe_path(struct sock *sk, u8 path_alt, u8 cork)
 			return -EINVAL;
 	}
 
-	if (!quic_conn_id_select_alt(dest)) {
+	if (!quic_conn_id_select_alt(dest, false)) {
 		if (outq->path_new_connid)
 			return -EINVAL;
 
