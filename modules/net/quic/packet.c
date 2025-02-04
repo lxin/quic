@@ -842,7 +842,7 @@ static int quic_packet_app_process_done(struct sock *sk, struct sk_buff *skb)
 
 out:
 	if (quic_is_established(sk)) {
-		if (!quic_inq_need_sack(inq)) /* delay sack timer is reused as idle timer */
+		if (!quic_inq_need_sack(inq))
 			quic_timer_reset(sk, QUIC_TIMER_IDLE, quic_inq_max_idle_timeout(inq));
 		quic_outq_transmit(sk);
 	} else if (!quic_inq_need_sack(inq)) {
@@ -1141,6 +1141,7 @@ static u8 *quic_packet_pack_frames(struct sock *sk, struct sk_buff *skb,
 	struct quic_crypto_cb *cb = QUIC_CRYPTO_CB(skb);
 	struct quic_packet *packet = quic_packet(sk);
 	struct quic_path_addr *path = quic_dst(sk);
+	struct quic_outqueue *outq = quic_outq(sk);
 	struct quic_frame *frame, *next;
 	struct quic_frame_frag *frag;
 	struct quic_pnspace *space;
@@ -1178,6 +1179,9 @@ static u8 *quic_packet_pack_frames(struct sock *sk, struct sk_buff *skb,
 
 	if (quic_is_serv(sk) && !quic_path_validated(path))
 		quic_path_inc_ampl_sndlen(path, (u16)skb->len + quic_packet_taglen(packet));
+
+	if (quic_is_established(sk) && !quic_outq_path_alt(outq))
+		quic_timer_reset(sk, QUIC_TIMER_PATH, (u64)quic_cong_pto(quic_cong(sk)) * 3);
 
 	if (!sent)
 		return p;
@@ -1442,7 +1446,6 @@ int quic_packet_route(struct sock *sk)
 {
 	struct quic_path_addr *d = quic_dst(sk), *s = quic_src(sk);
 	struct quic_packet *packet = quic_packet(sk);
-	struct quic_outqueue *outq = quic_outq(sk);
 	struct quic_config *c = quic_config(sk);
 	u32 pmtu;
 	int err;
@@ -1455,11 +1458,8 @@ int quic_packet_route(struct sock *sk)
 
 	pmtu = min_t(u32, dst_mtu(__sk_dst_get(sk)), QUIC_PATH_MAX_PMTU);
 	quic_packet_mss_update(sk, pmtu - quic_encap_len(packet->da));
-
-	if (!quic_outq_path_sent_cnt(outq)) {
-		quic_path_pl_reset(d);
-		quic_timer_reset(sk, QUIC_TIMER_PATH, c->plpmtud_probe_interval);
-	}
+	quic_path_pl_reset(d);
+	quic_timer_reset(sk, QUIC_TIMER_PMTU, c->plpmtud_probe_interval);
 	return 0;
 }
 

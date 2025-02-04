@@ -1408,6 +1408,7 @@ static int quic_sock_set_crypto_secret(struct sock *sk, struct quic_crypto_secre
 	struct quic_outqueue *outq = quic_outq(sk);
 	struct quic_inqueue *inq = quic_inq(sk);
 	struct quic_config *c = quic_config(sk);
+	struct quic_cong *cong = quic_cong(sk);
 	struct quic_crypto *crypto;
 	struct sk_buff_head tmpq;
 	struct sk_buff *skb;
@@ -1448,7 +1449,8 @@ static int quic_sock_set_crypto_secret(struct sock *sk, struct quic_crypto_secre
 			return -ENOMEM;
 		if (quic_crypto_recv_ready(crypto)) {
 			quic_set_state(sk, QUIC_SS_ESTABLISHED);
-			quic_timer_reset(sk, QUIC_TIMER_PATH, c->plpmtud_probe_interval);
+			quic_timer_start(sk, QUIC_TIMER_PMTU, c->plpmtud_probe_interval);
+			quic_timer_start(sk, QUIC_TIMER_PATH, (u64)quic_cong_pto(cong) * 3);
 		}
 		return 0;
 	}
@@ -1491,7 +1493,8 @@ static int quic_sock_set_crypto_secret(struct sock *sk, struct quic_crypto_secre
 	/* enter established only when both send and recv keys are ready */
 	if (quic_crypto_send_ready(crypto)) {
 		quic_set_state(sk, QUIC_SS_ESTABLISHED);
-		quic_timer_reset(sk, QUIC_TIMER_PATH, c->plpmtud_probe_interval);
+		quic_timer_start(sk, QUIC_TIMER_PMTU, c->plpmtud_probe_interval);
+		quic_timer_start(sk, QUIC_TIMER_PATH, (u64)quic_cong_pto(cong) * 3);
 	}
 	return 0;
 }
@@ -2066,6 +2069,10 @@ static void quic_release_cb(struct sock *sk)
 	}
 	if (flags & QUIC_F_PATH_DEFERRED) {
 		quic_timer_path_handler(sk);
+		__sock_put(sk);
+	}
+	if (flags & QUIC_F_PMTU_DEFERRED) {
+		quic_timer_pmtu_handler(sk);
 		__sock_put(sk);
 	}
 	if (flags & QUIC_F_TSQ_DEFERRED) {

@@ -451,7 +451,7 @@ void quic_outq_transmit_probe(struct sock *sk)
 			quic_packet_mss_update(sk, pathmtu + taglen);
 	}
 
-	quic_timer_reset(sk, QUIC_TIMER_PATH, c->plpmtud_probe_interval);
+	quic_timer_reset(sk, QUIC_TIMER_PMTU, c->plpmtud_probe_interval);
 }
 
 void quic_outq_transmit_close(struct sock *sk, u8 type, u32 errcode, u8 level)
@@ -567,7 +567,7 @@ static void quic_outq_path_confirm(struct sock *sk, u8 level, s64 largest, s64 s
 	if (!complete)
 		quic_outq_transmit_probe(sk);
 	if (raise_timer) /* reuse probe timer as raise timer */
-		quic_timer_reset(sk, QUIC_TIMER_PATH, (u64)c->plpmtud_probe_interval * 30);
+		quic_timer_reset(sk, QUIC_TIMER_PMTU, (u64)c->plpmtud_probe_interval * 30);
 }
 
 void quic_outq_transmitted_sack(struct sock *sk, u8 level, s64 largest, s64 smallest,
@@ -978,12 +978,12 @@ int quic_outq_probe_path(struct sock *sk, u8 path_alt, u8 cork)
 		}
 	}
 
-	quic_set_sk_ecn(sk, 0); /* clear ecn during path migration */
-	quic_outq_transmit_frame(sk, QUIC_FRAME_PATH_CHALLENGE, NULL, path_alt, cork);
-
 	outq->path_sent_cnt = 1;
 	outq->path_alt = path_alt;
 	outq->path_new_connid = 0;
+
+	quic_set_sk_ecn(sk, 0); /* clear ecn during path migration */
+	quic_outq_transmit_frame(sk, QUIC_FRAME_PATH_CHALLENGE, NULL, path_alt, cork);
 	quic_timer_reset(sk, QUIC_TIMER_PATH, (u64)quic_cong_pto(quic_cong(sk)) * 3);
 	return 0;
 }
@@ -993,7 +993,6 @@ int quic_outq_change_path(struct sock *sk, u8 path_alt, u8 *entropy)
 	struct quic_path_addr *d = quic_dst(sk), *s = quic_src(sk);
 	struct quic_conn_id_set *id_set = quic_dest(sk);
 	struct quic_outqueue *outq = quic_outq(sk);
-	struct quic_config *c = quic_config(sk);
 	struct quic_frame *pos;
 	u8 local;
 
@@ -1010,7 +1009,6 @@ int quic_outq_change_path(struct sock *sk, u8 path_alt, u8 *entropy)
 
 	if (path_alt & QUIC_PATH_ALT_DST) {
 		local = 0;
-		quic_path_pl_reset(d);
 		quic_path_swap_active(d);
 		quic_set_sk_addr(sk, quic_path_addr(d, 0), 0);
 		quic_inq_event_recv(sk, QUIC_EVENT_CONNECTION_MIGRATION, &local);
@@ -1025,8 +1023,6 @@ int quic_outq_change_path(struct sock *sk, u8 path_alt, u8 *entropy)
 	outq->path_swap = 1;
 	outq->path_sent_cnt = 0;
 	quic_conn_id_swap_active(id_set);
-	quic_timer_stop(sk, QUIC_TIMER_PATH);
-	quic_timer_reset(sk, QUIC_TIMER_PATH, c->plpmtud_probe_interval);
 	return 0;
 }
 

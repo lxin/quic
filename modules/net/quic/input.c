@@ -111,7 +111,7 @@ void quic_rcv_err_pmtu(struct sock *sk)
 	info = info - quic_encap_len(packet->da) - taglen;
 	pathmtu = quic_path_pl_toobig(path, info, &reset_timer);
 	if (reset_timer)
-		quic_timer_reset(sk, QUIC_TIMER_PATH, c->plpmtud_probe_interval);
+		quic_timer_reset(sk, QUIC_TIMER_PMTU, c->plpmtud_probe_interval);
 	if (pathmtu)
 		quic_packet_mss_update(sk, pathmtu + taglen);
 }

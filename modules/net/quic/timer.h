@@ -12,6 +12,7 @@ enum {
 	QUIC_TIMER_LOSS,
 	QUIC_TIMER_SACK,
 	QUIC_TIMER_PATH,
+	QUIC_TIMER_PMTU,
 	QUIC_TIMER_PACE,
 	QUIC_TIMER_MAX,
 	QUIC_TIMER_IDLE = QUIC_TIMER_SACK,
@@ -39,3 +40,4 @@ void quic_timer_loss_handler(struct sock *sk);
 void quic_timer_pace_handler(struct sock *sk);
 void quic_timer_path_handler(struct sock *sk);
 void quic_timer_sack_handler(struct sock *sk);
+void quic_timer_pmtu_handler(struct sock *sk);
