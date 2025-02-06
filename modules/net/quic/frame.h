@@ -141,17 +141,22 @@ struct quic_frame {
 	u8  event:1;
 };
 
+static inline bool quic_frame_path_probing(u8 type)
+{
+	return type == QUIC_FRAME_PATH_RESPONSE || type == QUIC_FRAME_PATH_CHALLENGE ||
+	       type == QUIC_FRAME_ACK || type == QUIC_FRAME_ACK_ECN;
+}
+
 static inline bool quic_frame_ack_eliciting(u8 type)
 {
-	return type != QUIC_FRAME_ACK && type != QUIC_FRAME_ACK_ECN &&
-	       type != QUIC_FRAME_PADDING && type != QUIC_FRAME_PATH_RESPONSE &&
-	       type != QUIC_FRAME_CONNECTION_CLOSE && type != QUIC_FRAME_CONNECTION_CLOSE_APP;
+	return type != QUIC_FRAME_CONNECTION_CLOSE && type != QUIC_FRAME_CONNECTION_CLOSE_APP &&
+	       type != QUIC_FRAME_PADDING && !quic_frame_path_probing(type);
 }
 
 static inline bool quic_frame_retransmittable(u8 type)
 {
-	return type != QUIC_FRAME_PING && type != QUIC_FRAME_PATH_CHALLENGE &&
-	       type != QUIC_FRAME_DATAGRAM && type != QUIC_FRAME_DATAGRAM_LEN;
+	return type != QUIC_FRAME_DATAGRAM && type != QUIC_FRAME_DATAGRAM_LEN &&
+	       type != QUIC_FRAME_PING;
 }
 
 static inline bool quic_frame_ack_immediate(u8 type)
@@ -163,8 +168,7 @@ static inline bool quic_frame_ack_immediate(u8 type)
 static inline bool quic_frame_non_probing(u8 type)
 {
 	return type != QUIC_FRAME_NEW_CONNECTION_ID && type != QUIC_FRAME_PADDING &&
-	       type != QUIC_FRAME_PATH_RESPONSE && type != QUIC_FRAME_PATH_CHALLENGE &&
-	       type != QUIC_FRAME_ACK && type != QUIC_FRAME_ACK_ECN;
+	       !quic_frame_path_probing(type);
 }
 
 static inline bool quic_frame_data_blocked(u8 type)

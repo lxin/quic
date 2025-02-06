@@ -64,20 +64,9 @@ static void quic_outq_transmit_ctrl(struct sock *sk, u8 level)
 		return;
 
 	if (quic_pnspace_need_sack(space)) {
-		frame = quic_frame_create(sk, QUIC_FRAME_ACK, &level);
-		while (frame) {
-			frame->path_alt = quic_pnspace_path_alt(space);
-			if (quic_packet_config(sk, frame->level, frame->path_alt) ||
-			    quic_outq_limit_check(sk, frame->type, frame->len)) {
-				quic_frame_put(frame);
-				return;
-			}
-			if (quic_packet_tail(sk, frame)) {
-				quic_pnspace_set_need_sack(space, 0);
-				break;
-			}
-			outq->count += quic_packet_create(sk);
-		};
+		if (!quic_outq_transmit_frame(sk, QUIC_FRAME_ACK, &level,
+					      quic_pnspace_path_alt(space), true))
+			quic_pnspace_set_need_sack(space, 0);
 	}
 
 	head = &outq->control_list;
@@ -353,8 +342,8 @@ void quic_outq_ctrl_tail(struct sock *sk, struct quic_frame *frame, bool cork)
 	struct list_head *head = &quic_outq(sk)->control_list;
 	struct quic_frame *pos;
 
-	if (frame->level) { /* prioritize handshake frames */
-		list_for_each_entry(pos, head, list) {
+	list_for_each_entry(pos, head, list) {
+		if (frame->level) {
 			if (!pos->level) {
 				head = &pos->list;
 				break;
@@ -366,7 +355,14 @@ void quic_outq_ctrl_tail(struct sock *sk, struct quic_frame *frame, bool cork)
 				break;
 			}
 		}
+		if (quic_frame_path_probing(frame->type)) {
+			head = &pos->list;
+			break;
+		}
+		if (!frame->level)
+			break;
 	}
+
 	quic_outq_set_owner_w((int)frame->bytes, sk);
 	list_add_tail(&frame->list, head);
 	if (!cork)
@@ -1020,6 +1016,7 @@ int quic_outq_change_path(struct sock *sk, u8 path_alt, u8 *entropy)
 	list_for_each_entry(pos, &outq->transmitted_list, list)
 		pos->path_alt &= ~path_alt;
 
+	__sk_dst_reset(sk);
 	outq->path_swap = 1;
 	outq->path_sent_cnt = 0;
 	quic_conn_id_swap_active(id_set);
