@@ -1635,7 +1635,6 @@ static int http09_client(char *urls, const char *sess_file, const char *tp_file,
 	if (http09_run_loop(ctx))
 		ret = -errno;
 free:
-	sleep(1);
 	close(sockfd);
 out:
 	free(ctx);
