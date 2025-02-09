@@ -440,8 +440,8 @@ void quic_outq_transmit_probe(struct sock *sk)
 
 	info.size = quic_path_probe_size(path);
 	info.level = QUIC_CRYPTO_APP;
+	number = quic_pnspace_next_pn(space);
 	if (!quic_outq_transmit_frame(sk, QUIC_FRAME_PING, &info, 0, false)) {
-		number = quic_pnspace_next_pn(space);
 		pathmtu = quic_path_pl_send(path, number);
 		if (pathmtu)
 			quic_packet_mss_update(sk, pathmtu + taglen);
