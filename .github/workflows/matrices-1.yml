@@ -1,0 +1,38 @@
+name: matrices-1
+on: [ workflow_dispatch ]
+
+jobs:
+  matrix-builder:
+    runs-on: self-hosted
+    name: Affected stacks
+    outputs:
+      matrix: ${{ steps.extend.outputs.matrix }}
+    steps:
+      - id: setup-matrix
+        uses: druzsan/setup-matrix@v1
+        with:
+          matrix: |
+            os: ubuntu-latest windows-latest macos-latest,
+            python-version: 3.8 3.9 3.10
+            arch: arm64 amd64
+
+      - uses: cloudposse/github-action-matrix-extended@main
+        id: extend
+        with:
+          sort-by: '[.python-version, .os, .arch] | join("-")'
+          group-by: '.arch'
+          nested-matrices-count: '2'
+          matrix: ${{ steps.setup-matrix.outputs.matrix }}
+
+  operation:
+    if: ${{ needs.matrix-builder.outputs.matrix != '{"include":[]}' }}
+    uses: ./.github/workflows/matrices-2.yml
+    needs:
+      - matrix-builder
+    strategy:
+      max-parallel: 1 # This is important to avoid ddos GHA API
+      fail-fast: false # Don't fail fast to avoid locking TF State
+      matrix: ${{ fromJson(needs.matrix-builder.outputs.matrix) }}
+    name: Group (${{ matrix.name }})
+    with:
+      items: ${{ matrix.items }}

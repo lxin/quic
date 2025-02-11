@@ -1,0 +1,22 @@
+name: Reusable workflow for 2 level of nested matrices
+on:
+  workflow_call:
+    inputs:
+      items:
+        description: "Items"
+        required: true
+        type: string
+
+jobs:
+  operation:
+    if: ${{ inputs.items != '{"include":[]}' }}
+    strategy:
+      max-parallel: 10
+      fail-fast: false # Don't fail fast to avoid locking TF State
+      matrix: ${{ fromJson(inputs.items) }}
+    name: Do (${{ matrix.arch }})
+    runs-on: self-hosted
+    steps:
+      - shell: bash
+        run: |
+          echo "Do real work - ${{ matrix.os }} - ${{ matrix.arch }} - ${{ matrix.python-version }}"
