@@ -1114,6 +1114,8 @@ int quic_packet_parse_alpn(struct sk_buff *skb, struct quic_data *alpn)
 	err = -EINVAL;
 	p += cb->number_len;
 	len = cb->length - cb->number_len - QUIC_TAG_LEN;
+	for (; len && !(*p); p++, len--) /* skip the padding frame */
+		;
 	if (!len-- || *p++ != QUIC_FRAME_CRYPTO)
 		goto out;
 	if (!quic_get_var(&p, &len, &offset) || offset)
