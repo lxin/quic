@@ -1007,9 +1007,11 @@ static int quic_packet_get_alpn(struct quic_data *alpn, u8 *p, u32 len)
 
 	if (!quic_get_int(&p, &len, &type, 1) || type != TLS_MT_CLIENT_HELLO)
 		return err;
-	if (!quic_get_int(&p, &len, &length, 3) || length < 35 || length > (u64)len)
+	if (!quic_get_int(&p, &len, &length, 3) || length < 35)
 		return err;
-	len = length - 35;
+	if (len > (u32)length) /* incomplete TLS msg */
+		len = length;
+	len -= 35;
 	p += 35; /* legacy_version + random + legacy_session_id. */
 
 	if (!quic_get_int(&p, &len, &length, 2) || length > (u64)len) /* cipher_suites */
@@ -1024,14 +1026,17 @@ static int quic_packet_get_alpn(struct quic_data *alpn, u8 *p, u32 len)
 	p += length;
 
 	/* TLS Extensions */
-	if (!quic_get_int(&p, &len, &length, 2) || length > (u64)len)
+	if (!quic_get_int(&p, &len, &length, 2))
 		return err;
-	len = length;
+	if (len > (u32)length)
+		len = length;
 	while (len > 4) {
 		if (!quic_get_int(&p, &len, &type, 2))
 			break;
-		if (!quic_get_int(&p, &len, &length, 2) || length > (u64)len)
+		if (!quic_get_int(&p, &len, &length, 2))
 			break;
+		if (len < (u32)length) /* incomplete TLS extensions */
+			return 0;
 		if (type == TLS_EXT_alpn) {
 			len = length;
 			found = 1;
