@@ -1116,7 +1116,6 @@ int quic_packet_parse_alpn(struct sk_buff *skb, struct quic_data *alpn)
 	cb->resume = 1;
 
 	/* QUIC CRYPTO frame */
-	err = -EINVAL;
 	p += cb->number_len;
 	len = cb->length - cb->number_len - QUIC_TAG_LEN;
 	for (; len && !(*p); p++, len--) /* skip the padding frame */
