@@ -1147,10 +1147,10 @@ void quic_outq_set_param(struct sock *sk, struct quic_transport_param *p)
 	u32 remote_idle, local_idle, pmtu;
 
 	outq->max_datagram_frame_size = p->max_datagram_frame_size;
+	outq->max_udp_payload_size = p->max_udp_payload_size;
 	pmtu = min_t(u32, dst_mtu(__sk_dst_get(sk)), QUIC_PATH_MAX_PMTU);
 	quic_packet_mss_update(sk, pmtu - quic_encap_len(packet->da));
 
-	outq->max_udp_payload_size = p->max_udp_payload_size;
 	outq->ack_delay_exponent = p->ack_delay_exponent;
 	outq->max_idle_timeout = p->max_idle_timeout;
 	outq->max_ack_delay = p->max_ack_delay;
