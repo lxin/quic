@@ -1658,6 +1658,8 @@ static void *http09_process(void *arg)
 		ret = -errno;
 
 out:
+	close(ctx->sockfd);
+	free(ctx);
 	return (void *)ret;
 }
 
