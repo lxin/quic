@@ -114,7 +114,7 @@ struct sock *quic_sock_lookup(struct sk_buff *skb, union quic_addr *sa, union qu
 	head = quic_sock_head(net, sa, da);
 	spin_lock(&head->lock);
 	sk_for_each(tmp, &head->head) {
-		if (net == sock_net(tmp) &&
+		if (net == sock_net(tmp) && !quic_is_closed(tmp) &&
 		    !quic_path_cmp(quic_src(tmp), 0, sa) &&
 		    !quic_path_cmp(quic_dst(tmp), 0, da)) {
 			sk = tmp;
@@ -391,7 +391,7 @@ static int quic_hash(struct sock *sk)
 		spin_lock(&head->lock);
 
 		sk_for_each(nsk, &head->head) {
-			if (net == sock_net(nsk) &&
+			if (net == sock_net(nsk) && !quic_is_closed(nsk) &&
 			    !quic_path_cmp(quic_src(nsk), 0, sa) &&
 			    !quic_path_cmp(quic_dst(nsk), 0, da)) {
 				spin_unlock(&head->lock);
