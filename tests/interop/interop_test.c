@@ -550,8 +550,6 @@ static int http_server_accept_socket(int sockfd, const char *pkey_file, const ch
 				     char *alpn, int testcase)
 {
 	struct sockaddr_storage sa = {};
-	char host[16], port[16];
-	struct addrinfo *res;
 	unsigned int addrlen;
 	unsigned int keylen;
 	uint8_t key[64];
@@ -567,17 +565,9 @@ static int http_server_accept_socket(int sockfd, const char *pkey_file, const ch
 			return -1;
 		}
 
-		strcpy(host, "server4");
-		if (sa.ss_family == AF_INET)
-			strcpy(host, "server6");
-		sprintf(port, "%d", ntohs(((struct sockaddr_in *)&sa)->sin_port));
-		if (getaddrinfo(host, port, NULL, &res)) {
-			http_log_error("getaddrinfo error\n");
-			return -1;
-		}
-
+		((struct sockaddr_in *)&sa)->sin_port = htons(4443);
 		if (setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_CONNECTION_MIGRATION,
-			       res->ai_addr, res->ai_addrlen)) {
+			       &sa, sizeof(sa))) {
 			http_log_error("socket setsockopt migration error %d\n", errno);
 			return -1;
 		}
