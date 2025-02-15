@@ -1855,13 +1855,13 @@ static u8 *quic_frame_put_version_info(u8 *p, u16 id, u32 version)
 	if (!versions)
 		return p;
 
-	for (i = 0; versions[i]; i++)
+	for (i = 1; versions[i]; i++)
 		len += 4;
 	p = quic_put_var(p, id);
 	p = quic_put_var(p, len);
 	p = quic_put_int(p, version, 4);
 
-	for (i = 0; versions[i]; i++)
+	for (i = 1; versions[i]; i++)
 		p = quic_put_int(p, versions[i], 4);
 
 	return p;

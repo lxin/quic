@@ -17,10 +17,10 @@
 
 #define QUIC_VERSION_NUM	2
 
-static u32 quic_versions[QUIC_VERSION_NUM][3] = {
+static u32 quic_versions[QUIC_VERSION_NUM][4] = {
 	/* version,	compatible versions */
-	{ QUIC_VERSION_V1,	QUIC_VERSION_V2,	0 },
-	{ QUIC_VERSION_V2,	QUIC_VERSION_V1,	0 },
+	{ QUIC_VERSION_V1,	QUIC_VERSION_V2,	QUIC_VERSION_V1,	0 },
+	{ QUIC_VERSION_V2,	QUIC_VERSION_V2,	QUIC_VERSION_V1,	0 },
 };
 
 u32 *quic_packet_compatible_versions(u32 version)
