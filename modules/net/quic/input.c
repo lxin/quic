@@ -94,7 +94,7 @@ void quic_rcv_err_pmtu(struct sock *sk)
 	if (!ip_sk_accept_pmtu(sk))
 		return;
 
-	info = min_t(u32, quic_path_mtu_info(path), QUIC_PATH_MAX_PMTU);
+	info = clamp(quic_path_mtu_info(path), QUIC_PATH_MIN_PMTU, QUIC_PATH_MAX_PMTU);
 	if (!c->plpmtud_probe_interval || quic_outq_path_sent_cnt(outq)) {
 		if (quic_packet_route(sk) < 0)
 			return;

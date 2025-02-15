@@ -11,7 +11,8 @@
 #define QUIC_CONN_ID_MAX_LEN	20
 #define QUIC_CONN_ID_DEF_LEN	8
 
-#define QUIC_CONN_ID_LIMIT	7
+#define QUIC_CONN_ID_LIMIT	8
+#define QUIC_CONN_ID_DEF	7
 #define QUIC_CONN_ID_LEAST	2
 
 struct quic_conn_id {

@@ -189,7 +189,7 @@ static void quic_transport_param_init(struct sock *sk)
 	param->max_udp_payload_size = QUIC_MAX_UDP_PAYLOAD;
 	param->ack_delay_exponent = QUIC_DEF_ACK_DELAY_EXPONENT;
 	param->max_ack_delay = QUIC_DEF_ACK_DELAY;
-	param->active_connection_id_limit = QUIC_CONN_ID_LIMIT;
+	param->active_connection_id_limit = QUIC_CONN_ID_DEF;
 	param->max_idle_timeout = QUIC_DEF_IDLE_TIMEOUT;
 	param->max_data = (u64)QUIC_PATH_MAX_PMTU * 32;
 	param->max_stream_data_bidi_local = (u64)QUIC_PATH_MAX_PMTU * 16;
@@ -994,31 +994,28 @@ static int quic_param_check_and_copy(struct quic_transport_param *p,
 		param->max_idle_timeout = p->max_idle_timeout;
 	}
 	if (p->max_datagram_frame_size) {
-		if (p->max_datagram_frame_size < QUIC_MIN_UDP_PAYLOAD ||
-		    p->max_datagram_frame_size > QUIC_MAX_UDP_PAYLOAD)
+		if (p->max_datagram_frame_size < QUIC_PATH_MIN_PMTU ||
+		    p->max_datagram_frame_size > QUIC_PATH_MAX_PMTU)
 			return -EINVAL;
 		param->max_datagram_frame_size = p->max_datagram_frame_size;
 	}
 	if (p->max_data) {
-		if (p->max_data < (u64)QUIC_PATH_MAX_PMTU * 2)
+		if (p->max_data < QUIC_PATH_MIN_PMTU)
 			return -EINVAL;
 		param->max_data = p->max_data;
 	}
 	if (p->max_stream_data_bidi_local) {
-		if (p->max_stream_data_bidi_local > param->max_data ||
-		    p->max_stream_data_bidi_local < QUIC_PATH_MAX_PMTU)
+		if (p->max_stream_data_bidi_local < QUIC_PATH_MIN_PMTU)
 			return -EINVAL;
 		param->max_stream_data_bidi_local = p->max_stream_data_bidi_local;
 	}
 	if (p->max_stream_data_bidi_remote) {
-		if (p->max_stream_data_bidi_remote > param->max_data ||
-		    p->max_stream_data_bidi_remote < QUIC_PATH_MAX_PMTU)
+		if (p->max_stream_data_bidi_remote < QUIC_PATH_MIN_PMTU)
 			return -EINVAL;
 		param->max_stream_data_bidi_remote = p->max_stream_data_bidi_remote;
 	}
 	if (p->max_stream_data_uni) {
-		if (p->max_stream_data_uni > param->max_data ||
-		    p->max_stream_data_uni < QUIC_PATH_MAX_PMTU)
+		if (p->max_stream_data_uni < QUIC_PATH_MIN_PMTU)
 			return -EINVAL;
 		param->max_stream_data_uni = p->max_stream_data_uni;
 	}
