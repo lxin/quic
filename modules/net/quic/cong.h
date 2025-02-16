@@ -9,7 +9,7 @@
  */
 
 #define QUIC_RTT_INIT		333000U
-#define QUIC_RTO_MIN		100000U
+#define QUIC_RTO_MIN		30000U
 #define QUIC_RTO_MAX		6000000U
 
 enum quic_cong_state {
@@ -41,6 +41,7 @@ struct quic_cong {
 	u64 priv[8];
 
 	u8 min_rtt_valid;
+	u8 is_rtt_set;
 	u8 state;
 };
 

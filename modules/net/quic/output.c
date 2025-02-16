@@ -896,7 +896,7 @@ void quic_outq_transmit_pto(struct sock *sk)
 out:
 	outq->level = 0;
 	outq->single = 0;
-	if (outq->pto_count < 4)
+	if (outq->pto_count < 3)
 		outq->pto_count++;
 	quic_outq_update_loss_timer(sk);
 }
