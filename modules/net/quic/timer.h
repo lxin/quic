@@ -27,6 +27,8 @@ struct quic_timer {
 
 #define QUIC_MIN_PROBE_TIMEOUT	5000000
 
+#define QUIC_MIN_PATH_TIMEOUT	1500000
+
 #define QUIC_MIN_IDLE_TIMEOUT	1000000
 #define QUIC_DEF_IDLE_TIMEOUT	30000000
 
@@ -35,6 +37,8 @@ void quic_timer_start(struct sock *sk, u8 type, u64 timeout);
 void quic_timer_stop(struct sock *sk, u8 type);
 void quic_timer_init(struct sock *sk);
 void quic_timer_free(struct sock *sk);
+
+void quic_timer_reset_path(struct sock *sk);
 
 void quic_timer_loss_handler(struct sock *sk);
 void quic_timer_pace_handler(struct sock *sk);

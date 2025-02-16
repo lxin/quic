@@ -980,7 +980,7 @@ int quic_outq_probe_path(struct sock *sk, u8 path_alt, u8 cork)
 
 	quic_set_sk_ecn(sk, 0); /* clear ecn during path migration */
 	quic_outq_transmit_frame(sk, QUIC_FRAME_PATH_CHALLENGE, NULL, path_alt, cork);
-	quic_timer_reset(sk, QUIC_TIMER_PATH, (u64)quic_cong_pto(quic_cong(sk)) * 3);
+	quic_timer_reset_path(sk);
 	return 0;
 }
 
@@ -1060,6 +1060,7 @@ int quic_outq_transmit_frame(struct sock *sk, u8 type, void *data, u8 path_alt, 
 
 	frame->path_alt = path_alt;
 	quic_outq_ctrl_tail(sk, frame, cork);
+	quic_timer_reset_path(sk);
 	return 0;
 }
 

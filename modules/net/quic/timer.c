@@ -113,7 +113,7 @@ void quic_timer_path_handler(struct sock *sk)
 
 out:
 	quic_outq_transmit_frame(sk, QUIC_FRAME_PATH_CHALLENGE, NULL, path_alt, false);
-	quic_timer_reset(sk, QUIC_TIMER_PATH, (u64)quic_cong_pto(quic_cong(sk)) * 3);
+	quic_timer_reset_path(sk);
 }
 
 static void quic_timer_path_timeout(struct timer_list *t)
@@ -132,6 +132,16 @@ static void quic_timer_path_timeout(struct timer_list *t)
 out:
 	bh_unlock_sock(sk);
 	sock_put(sk);
+}
+
+void quic_timer_reset_path(struct sock *sk)
+{
+	struct quic_cong *cong = quic_cong(sk);
+	u64 timeout = quic_cong_pto(cong) * 3;
+
+	if (timeout < QUIC_MIN_PATH_TIMEOUT)
+		timeout = QUIC_MIN_PATH_TIMEOUT;
+	quic_timer_reset(sk, QUIC_TIMER_PATH, timeout);
 }
 
 void quic_timer_pmtu_handler(struct sock *sk)

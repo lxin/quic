@@ -1187,7 +1187,7 @@ static u8 *quic_packet_pack_frames(struct sock *sk, struct sk_buff *skb,
 		quic_path_inc_ampl_sndlen(path, (u16)skb->len + quic_packet_taglen(packet));
 
 	if (quic_is_established(sk) && !quic_outq_path_alt(outq))
-		quic_timer_reset(sk, QUIC_TIMER_PATH, (u64)quic_cong_pto(quic_cong(sk)) * 3);
+		quic_timer_reset_path(sk);
 
 	if (!sent)
 		return p;
