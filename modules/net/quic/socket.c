@@ -1039,6 +1039,8 @@ static int quic_param_check_and_copy(struct quic_transport_param *p,
 		param->disable_active_migration = p->disable_active_migration;
 	if (p->disable_1rtt_encryption)
 		param->disable_1rtt_encryption = p->disable_1rtt_encryption;
+	if (p->disable_compatible_version)
+		param->disable_compatible_version = p->disable_compatible_version;
 	if (p->grease_quic_bit)
 		param->grease_quic_bit = p->grease_quic_bit;
 	if (p->stateless_reset)
