@@ -1,0 +1,112 @@
+name: interop tests
+on:
+  workflow_call:
+    inputs:
+      clients:
+        description: "clients"
+        required: true
+        type: string
+      servers:
+        description: "servers"
+        required: true
+        type: string
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        client: ${{ fromJson(inputs.clients) }}
+        server: ${{ fromJson(inputs.servers) }}
+    name: (${{ matrix.client }} - ${{ matrix.server }})
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: quic-interop/quic-interop-runner
+      - uses: actions/setup-python@v5
+        with:
+          python-version: 3.8
+      - name: Enable IPv6 support
+        run: sudo modprobe ip6table_filter
+      - run: docker image ls
+      - name: Download quic-network-simulator image
+        uses: actions/download-artifact@v4
+        with:
+          name: images-quic-network-simulator
+      - name: Download quic-interop-iperf-endpoint image
+        uses: actions/download-artifact@v4
+        with:
+          name: images-quic-interop-iperf-endpoint
+      - name: Download ${{ matrix.server }} Docker image
+        uses: actions/download-artifact@v4
+        with:
+          name: image-${{ matrix.server }}
+      - name: Download ${{ matrix.client }} Docker image
+        if: ${{ matrix.server != matrix.client }}
+        uses: actions/download-artifact@v4
+        with:
+          name: image-${{ matrix.client }}
+      - name: Load docker images
+        run: |
+          docker load --input quic-network-simulator.tar.gz
+          docker load --input quic-interop-iperf-endpoint.tar.gz
+          docker load --input ${{ matrix.server }}.tar.gz
+          docker load --input ${{ matrix.client }}.tar.gz
+      - run: docker image ls
+      - name: Install Wireshark
+        run: |
+          sudo add-apt-repository ppa:wireshark-dev/nightly
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends tshark
+      - name: Install Linux QUIC module
+        run: |
+          git clone https://github.com/lxin/quic.git
+          cd quic && sed -i '/LIBGNUTLS/d' configure.ac
+          ./autogen.sh && ./configure --prefix=/usr
+          sudo make -C modules install
+          cd ../ && rm -r quic
+      - name: Install Python packages
+        run: |
+          pip install -U pip
+          pip install -r requirements.txt
+      - name: Run tests
+        env:
+          CRON: "true"
+        run: |
+          jq '.linuxquic //= {"image": "quay.io/lxin/linuxquic-interop:latest", "url": "https://github.com/lxin/quic", "role": "both"}' implementations.json > temp.json
+          mv -f temp.json implementations.json
+          (python run.py --client ${{ matrix.client }} --server ${{ matrix.server }} --log-dir logs --json ${{ matrix.server }}_${{ matrix.client }}_results.json -t onlyTests || true) | tee output.txt
+          mkdir -p logs/${{ matrix.server }}_${{ matrix.client }}
+          mv output.txt logs/${{ matrix.server }}_${{ matrix.client }}/
+      - name: Run measurements
+        env:
+          CRON: "true"
+        run: |
+          python run.py --client ${{ matrix.client }} --server ${{ matrix.server }} --log-dir logs_measurement --json ${{ matrix.server }}_${{ matrix.client }}_measurements.json -t onlyMeasurements || true
+          if [ ! -d "logs_measurement" ]; then exit 0; fi
+          find logs_measurement -depth -name "sim" -type d -exec rm -r "{}" \;
+          find logs_measurement -depth -name "client" -type d -exec rm -r "{}" \;
+          find logs_measurement -depth -name "server" -type d -exec rm -r "{}" \;
+          mv logs_measurement/${{ matrix.server }}_${{ matrix.client }}/* logs/${{ matrix.server }}_${{ matrix.client }}/
+      - name: Upload logs to interop.seemann.io
+        uses: burnett01/rsync-deployments@796cf0d5e4b535745ce49d7429f77cf39e25ef39 # v7.0.1
+        if: ${{ github.event_name == 'schedule' }}
+        with:
+          switches: -avzr --relative
+          path: logs/./${{ matrix.server }}_${{ matrix.client }}/
+          remote_path: ${{ vars.LOG_DIR }}/${{ needs.config.outputs.logname }}
+          remote_host: interop.seemann.io
+          remote_user: ${{ secrets.INTEROP_SEEMANN_IO_USER }}
+          remote_key: ${{ secrets.INTEROP_SEEMANN_IO_SSH_KEY }}
+      - name: Upload result
+        uses: actions/upload-artifact@v4
+        continue-on-error: true
+        with:
+          name: results-${{ matrix.server }}-${{ matrix.client }}
+          if-no-files-found: error
+          path: |
+            ${{ matrix.server }}_${{ matrix.client }}_results.json
+            ${{ matrix.server }}_${{ matrix.client }}_measurements.json

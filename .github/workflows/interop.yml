@@ -1,91 +1,178 @@
 name: interop
-
-on: [ workflow_dispatch ]
+on:
+  workflow_dispatch
 
 jobs:
-  tests:
+  config:
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        testcase: [ onlyTests, onlyMeasurements ]
+    outputs:
+      logname: ${{ steps.set-logname.outputs.logname }}
+      starttime: ${{ steps.set-starttime.outputs.starttime }}
+      servers: ${{ steps.set-servers.outputs.servers }}
+      clients: ${{ steps.set-clients.outputs.clients }}
+      images: ${{ steps.set-images.outputs.images }}
     steps:
-      - name: Install dependencies
+      - name: Set log name
+        id: set-logname
         run: |
-          sudo apt-get update
-          sudo apt-get -y install make autoconf automake libtool pkg-config \
-               gnutls-dev linux-headers-$(uname -r)
-          sudo apt-get -y install cmake flex bison byacc ninja-build python3-pip \
-               libgcrypt20-dev libc-ares-dev libglib2.0-dev libpcap-dev
-
-      - name: Checkout linuxquic
-        uses: actions/checkout@v4
-      - name: Install quic module from linuxquic
+          LOGNAME=$(date -u +"%Y-%m-%dT%H:%M")
+          echo $LOGNAME
+          echo "logname=$LOGNAME" >> $GITHUB_OUTPUT
+      - name: Save start time
+        id: set-starttime
         run: |
-          ./autogen.sh
-          ./configure --prefix=/usr
-          make -C modules
-          sudo make -C modules install
-
-      # wireshark
-      - name: Checkout wireshark
-        uses: actions/checkout@v4
-        with:
-          repository: wireshark/wireshark
-          path: wireshark
-      - name: Install wireshark
-        run: |
-          cd wireshark
-          cmake -GNinja -DBUILD_wireshark=0 -DBUILD_qtshark=0 -DBUILD_editcap=1 \
-                -DBUILD_capinfos=0 -DBUILD_text2pcap=0 -DBUILD_rawshark=0 -DBUILD_sdjournal=0 \
-                -DBUILD_sshdump=0 -DBUILD_ciscodump=0 -DBUILD_sharkd=0 -DENABLE_STATIC=1 \
-                -DENABLE_PLUGINS=0 -DENABLE_LIBXML2=0 -DENABLE_BROTLI=0 -DENABLE_GNUTLS=1 .
-          ninja
-          sudo ninja install
-          cd ../
-
-      # quic-interop-runner
-      - name: Checkout quic-interop-runner
-        uses: actions/checkout@v4
+          STARTTIME=$(date +%s)
+          echo $STARTTIME
+          echo "starttime=$STARTTIME" >> $GITHUB_OUTPUT
+      - uses: actions/checkout@v4
         with:
           repository: quic-interop/quic-interop-runner
-          path: quic-interop-runner
-      - name: Install quic-interop-runner
+      - uses: actions/setup-python@v5
+        with:
+          python-version: 3.8
+      - name: Determine servers
+        id: set-servers
         run: |
-          cd quic-interop-runner
-          pip3 install -r requirements.txt
-          echo '                res = ""' | tee ./result
-          echo '                trs = TestResult.SUCCEEDED' | tee -a ./result
-          echo '                greens = [test.abbreviation() for test in cell if cell[test] is trs]' | tee -a ./result
-          echo '                greens = [greens[i:i + 8] for i in range(0, len(greens), 8)]' | tee -a ./result
-          echo '                for green in greens:' | tee -a ./result
-          echo '                    res += colored(trs.symbol() + "(" + ",".join(green), "green") + ")" + br' | tee -a ./result
-          sed -i '/res = colored(get_letters(TestResult.SUCCEEDED), "green") + br/{r ./result'$'\n''d;}' interop.py
-          cd ../
-
-      - name: Run ${{ matrix.testcase }}
+          jq '.linuxquic //= {"image": "quay.io/lxin/linuxquic-interop:latest", "url": "https://github.com/lxin/quic", "role": "both"}' implementations.json > temp.json
+          mv -f temp.json implementations.json
+          SERVERS=$(jq -c 'with_entries(select(.value.role == "server" or .value.role == "both")) | keys_unsorted' implementations.json)
+          echo $SERVERS
+          echo "servers=$SERVERS" >> $GITHUB_OUTPUT
+      - name: Determine clients
+        id: set-clients
         run: |
-          cd quic-interop-runner
-          echo '{' | tee ./implementations.json
-          echo '  "linuxquic": {' | tee -a ./implementations.json
-          echo '    "image": "quay.io/lxin/linuxquic-interop:latest",' | tee -a ./implementations.json
-          echo '    "url": "https://github.com/lxin/quic",' | tee -a ./implementations.json
-          echo '    "role": "both"' | tee -a ./implementations.json
-          echo '  },' | tee -a ./implementations.json
-          echo '  "ngtcp2": {' | tee -a ./implementations.json
-          echo '    "image": "ghcr.io/ngtcp2/ngtcp2-interop:latest",' | tee -a ./implementations.json
-          echo '    "url": "https://github.com/ngtcp2/ngtcp2",' | tee -a ./implementations.json
-          echo '    "role": "both"' | tee -a ./implementations.json
-          echo '  },' | tee -a ./implementations.json
-          echo '  "quiche": {' | tee -a ./implementations.json
-          echo '    "image": "cloudflare/quiche-qns:latest",' | tee -a ./implementations.json
-          echo '    "url": "https://github.com/cloudflare/quiche",' | tee -a ./implementations.json
-          echo '    "role": "both"' | tee -a ./implementations.json
-          echo '  },' | tee -a ./implementations.json
-          echo '  "msquic": {' | tee -a ./implementations.json
-          echo '    "image": "ghcr.io/microsoft/msquic/qns:main",' | tee -a ./implementations.json
-          echo '    "url": "https://github.com/microsoft/msquic",' | tee -a ./implementations.json
-          echo '    "role": "both"' | tee -a ./implementations.json
-          echo '  }' | tee -a ./implementations.json
-          echo '}' | tee -a ./implementations.json
-          python3 run.py -t ${{ matrix.testcase }} || true
+          CLIENTS=$(jq -c 'with_entries(select(.value.role == "client" or .value.role == "both")) | keys_unsorted' implementations.json)
+          echo $CLIENTS
+          echo "clients=$CLIENTS" >> $GITHUB_OUTPUT
+      - name: Determine Docker images
+        id: set-images
+        run: |
+          IMAGES=$(jq -c 'keys_unsorted' implementations.json)
+          echo $IMAGES
+          echo "images=$IMAGES" >> $GITHUB_OUTPUT
+  docker-pull-tools:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        image: [ 'quic-network-simulator', 'quic-interop-iperf-endpoint' ]
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        repository: quic-interop/quic-interop-runner
+    - name: Pull
+      run: |
+        URL="martenseemann/${{ matrix.image }}"
+        docker pull $URL
+        echo "URL=$URL" >> $GITHUB_ENV
+    - name: Docker inspect
+      run: docker image inspect $URL
+    - name: Save Docker image
+      run: |
+        docker save $URL | gzip --best > ${{ matrix.image }}.tar.gz
+        du -sh ${{ matrix.image }}.tar.gz
+    - name: Upload result
+      uses: actions/upload-artifact@v4
+      with:
+        name: images-${{ matrix.image }}
+        path: ${{ matrix.image }}.tar.gz
+        if-no-files-found: error
+  docker-pull-images:
+    needs: [ config ]
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        image: ${{ fromJson(needs.config.outputs.images) }}
+    name: Pull ${{ matrix.image }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: quic-interop/quic-interop-runner
+      - name: Run docker pull
+        run: |
+          jq '.linuxquic //= {"image": "quay.io/lxin/linuxquic-interop:latest", "url": "https://github.com/lxin/quic", "role": "both"}' implementations.json > temp.json
+          mv -f temp.json implementations.json
+          URL=$(jq -r '.["${{ matrix.image }}"].image' implementations.json)
+          echo $URL
+          docker pull $URL
+          echo "URL=$URL" >> $GITHUB_ENV
+      - name: Docker inspect
+        run: docker image inspect $URL
+      - name: Save Docker image
+        run: |
+          docker save $URL | gzip --best > ${{ matrix.image }}.tar.gz
+          du -sh ${{ matrix.image }}.tar.gz
+      - name: Upload result
+        uses: actions/upload-artifact@v4
+        with:
+          name: image-${{ matrix.image }}
+          path: ${{ matrix.image }}.tar.gz
+          if-no-files-found: error
+  client-tests:
+    uses: ./.github/workflows/interop_tests.yml
+    needs: [ config, docker-pull-tools, docker-pull-images ]
+    name: client group (linuxquic)
+    with:
+      clients: '[ "linuxquic" ]'
+      servers: ${{ needs.config.outputs.servers }}
+  server-tests:
+    uses: ./.github/workflows/interop_tests.yml
+    needs: [ config, docker-pull-tools, docker-pull-images ]
+    name: server group (linuxquic)
+    with:
+      clients: ${{ needs.config.outputs.clients }}
+      servers: '[ "linuxquic" ]'
+  aggregate:
+    needs: [ config, client-tests, server-tests ]
+    runs-on: ubuntu-latest
+    env:
+      LOGNAME: ${{ needs.config.outputs.logname }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: quic-interop/quic-interop-runner
+      - uses: actions/setup-python@v5
+        with:
+          python-version: 3.8
+      - name: Download results
+        uses: actions/download-artifact@v4
+        with:
+          pattern: results-*
+      - name: Aggregate results
+        run: |
+          mv results-*/*.json .
+          python .github/workflows/aggregate.py \
+            --start-time ${{ needs.config.outputs.starttime }} \
+            --server ${{ join(fromJson(needs.config.outputs.servers), ',') }} \
+            --client ${{ join(fromJson(needs.config.outputs.clients), ',') }} \
+            --log-dir=$LOGNAME \
+            --output result.json
+      - name: Print result
+        run: jq '.' result.json
+      - name: Upload result to artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: result-aggregated
+          path: result.json
+      - name: Upload logs to interop.seemann.io
+        uses: burnett01/rsync-deployments@796cf0d5e4b535745ce49d7429f77cf39e25ef39 # v7.0.1
+        if: ${{ github.event_name == 'schedule' }}
+        with:
+          switches: -avzr
+          path: result.json
+          remote_path: ${{ vars.LOG_DIR }}/${{ needs.config.outputs.logname }}/
+          remote_host: interop.seemann.io
+          remote_user: ${{ secrets.INTEROP_SEEMANN_IO_USER }}
+          remote_key: ${{ secrets.INTEROP_SEEMANN_IO_SSH_KEY }}
+      - name: Point interop.seemann.io to the latest result
+        uses: appleboy/ssh-action@7eaf76671a0d7eec5d98ee897acda4f968735a17 # v1.2.0
+        if: ${{ github.event_name == 'schedule' }}
+        with:
+          host: interop.seemann.io
+          username: ${{ secrets.INTEROP_SEEMANN_IO_USER }}
+          key: ${{ secrets.INTEROP_SEEMANN_IO_SSH_KEY }}
+          envs: LOGNAME
+          script: |
+            cd ${{ vars.LOG_DIR }}
+            jq '. += [ "${{ needs.config.outputs.logname }}" ]' logs.json | sponge logs.json
+            rm latest || true
+            ln -s $LOGNAME latest
