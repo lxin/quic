@@ -382,6 +382,8 @@ static int http_client_setup_socket(char *host, char *port, int testcase)
 		goto err_close;
 	}
 
+	if (testcase != IOP_VERSIONNEGOTIATION && testcase != IOP_V2)
+		param.disable_compatible_version = 1;
 	param.grease_quic_bit = 1;
 	param.max_idle_timeout = 180000000;
 	if (setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_TRANSPORT_PARAM, &param, sizeof(param))) {
@@ -555,7 +557,7 @@ static int http_server_accept_socket(int sockfd, const char *pkey_file, const ch
 	uint8_t key[64];
 	int ret;
 
-	if (testcase == IOP_ZERORTT)
+	if (testcase == IOP_ZERORTT || testcase == IOP_RESUMPTION)
 		usleep(500000);
 
 	if (testcase == IOP_CONNECTIONMIGRATION) {
