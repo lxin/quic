@@ -35,7 +35,8 @@ struct quic_crypto_cb {
 	u8 ecn:2;
 };
 
-#define QUIC_CRYPTO_CB(__skb)      ((struct quic_crypto_cb *)&((__skb)->cb[0]))
+#define QUIC_CRYPTO_CB(skb)	((struct quic_crypto_cb *)&((skb)->cb[0]))
+#define quic_udphdr(skb)	((struct udphdr *)((skb)->head + QUIC_CRYPTO_CB(skb)->udph_offset))
 
 #define QUIC_TAG_LEN	16
 #define QUIC_IV_LEN	12

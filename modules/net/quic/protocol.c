@@ -207,7 +207,7 @@ static void quic_v6_seq_dump_addr(struct seq_file *seq, union quic_addr *addr)
 
 static void quic_v4_get_msg_addr(union quic_addr *a, struct sk_buff *skb, bool src)
 {
-	struct udphdr *uh = (struct udphdr *)(skb->head + QUIC_CRYPTO_CB(skb)->udph_offset);
+	struct udphdr *uh = quic_udphdr(skb);
 	struct sockaddr_in *sa = &a->v4;
 
 	a->v4.sin_family = AF_INET;
@@ -223,7 +223,7 @@ static void quic_v4_get_msg_addr(union quic_addr *a, struct sk_buff *skb, bool s
 
 static void quic_v6_get_msg_addr(union quic_addr *a, struct sk_buff *skb, bool src)
 {
-	struct udphdr *uh = (struct udphdr *)(skb->head + QUIC_CRYPTO_CB(skb)->udph_offset);
+	struct udphdr *uh = quic_udphdr(skb);
 	struct sockaddr_in6 *sa = &a->v6;
 
 	a->v6.sin6_family = AF_INET6;

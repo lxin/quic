@@ -599,7 +599,6 @@ static int quic_packet_handshake_header_process(struct sock *sk, struct sk_buff 
 	struct quic_outqueue *outq = quic_outq(sk);
 	u32 len = skb->len, version;
 	struct quic_data token;
-	struct udphdr *uh;
 	u64 length;
 
 	quic_packet_reset(packet);
@@ -622,9 +621,7 @@ static int quic_packet_handshake_header_process(struct sock *sk, struct sk_buff 
 		if (quic_packet_get_token(&token, &p, &len))
 			return -EINVAL;
 		packet->level = QUIC_CRYPTO_INITIAL;
-		uh = (struct udphdr *)(skb->head + cb->udph_offset);
-		if ((!quic_is_serv(sk) && token.len) ||
-		    (quic_is_serv(sk) && ntohs(uh->len) - sizeof(*uh) < QUIC_MIN_UDP_PAYLOAD)) {
+		if (!quic_is_serv(sk) && token.len) {
 			packet->errcode = QUIC_TRANSPORT_ERROR_PROTOCOL_VIOLATION;
 			return -EINVAL;
 		}
@@ -671,6 +668,7 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb)
 	struct quic_conn_id *active;
 	struct quic_crypto *crypto;
 	struct quic_pnspace *space;
+	struct udphdr *uh;
 	int err = -EINVAL;
 
 	WARN_ON(!skb_set_owner_sk_safe(skb, sk));
@@ -759,16 +757,27 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb)
 		}
 		skb_pull(skb, cb->number_offset + cb->length);
 
-		if (packet->ack_eliciting) {
-			if (!is_serv && packet->level == QUIC_CRYPTO_INITIAL) {
-				active = quic_conn_id_active(quic_dest(sk));
-				quic_conn_id_update(active, packet->scid.data, packet->scid.len);
-			}
-			quic_pnspace_set_need_sack(space, 1);
-			quic_pnspace_set_path_alt(space, 0);
-		}
 		cb->resume = 0;
 		skb_reset_transport_header(skb);
+		if (!packet->ack_eliciting)
+			continue;
+
+		quic_pnspace_set_need_sack(space, 1);
+		quic_pnspace_set_path_alt(space, 0);
+
+		if (packet->level == QUIC_CRYPTO_INITIAL) {
+			if (!is_serv) {
+				active = quic_conn_id_active(quic_dest(sk));
+				quic_conn_id_update(active, packet->scid.data, packet->scid.len);
+				continue;
+			}
+			uh = quic_udphdr(skb);
+			if (ntohs(uh->len) - sizeof(*uh) < QUIC_MIN_UDP_PAYLOAD) {
+				packet->errcode = QUIC_TRANSPORT_ERROR_PROTOCOL_VIOLATION;
+				err = -EINVAL;
+				goto err;
+			}
+		}
 	}
 	/* in case userspace doesn't send any packets, use SACK
 	 * timer to send these SACK frames out.
@@ -1280,12 +1289,12 @@ static struct sk_buff *quic_packet_handshake_create(struct sock *sk)
 	}
 
 	len = packet->len;
-	hlen = QUIC_MIN_UDP_PAYLOAD - packet->taglen[1];
-	if (level == QUIC_CRYPTO_INITIAL && len < hlen) {
-		len = hlen;
-		plen = len - packet->len;
-	}
 	if (packet->frames) {
+		hlen = QUIC_MIN_UDP_PAYLOAD - packet->taglen[1];
+		if (level == QUIC_CRYPTO_INITIAL && len < hlen) {
+			len = hlen;
+			plen = len - packet->len;
+		}
 		sent = quic_packet_sent_alloc(packet->frames);
 		if (!sent) {
 			quic_outq_retransmit_list(sk, &packet->frame_list);
