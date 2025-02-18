@@ -651,7 +651,7 @@ static int quic_packet_handshake_header_process(struct sock *sk, struct sk_buff 
 	if (!quic_get_var(&p, &len, &length) || length > (u64)len)
 		return -EINVAL;
 	cb->length = (u16)length;
-	cb->number_offset = (u8)(p - skb->data);
+	cb->number_offset = (u16)(p - skb->data);
 	return 0;
 }
 
@@ -1113,7 +1113,7 @@ int quic_packet_parse_alpn(struct sk_buff *skb, struct quic_data *alpn)
 	err = quic_crypto_initial_keys_install(crypto, &packet.dcid, version, 1);
 	if (err)
 		goto out;
-	cb->number_offset = (u8)(p - skb->data);
+	cb->number_offset = (u16)(p - skb->data);
 	cb->crypto_done = quic_packet_decrypt_done;
 	err = quic_crypto_decrypt(crypto, skb);
 	if (err) {
@@ -1151,7 +1151,7 @@ out:
 #define QUIC_PACKET_LENGTH_LEN	4
 
 static u8 *quic_packet_pack_frames(struct sock *sk, struct sk_buff *skb,
-				   struct quic_packet_sent *sent, u8 off)
+				   struct quic_packet_sent *sent, u16 off)
 {
 	struct quic_crypto_cb *cb = QUIC_CRYPTO_CB(skb);
 	struct quic_packet *packet = quic_packet(sk);
@@ -1278,7 +1278,8 @@ static struct sk_buff *quic_packet_handshake_create(struct sock *sk)
 	u32 len, hlen, plen = 0;
 	struct quichshdr *hdr;
 	struct sk_buff *skb;
-	u8 *p, off;
+	u16 off;
+	u8 *p;
 
 	type = QUIC_PACKET_INITIAL;
 	if (level == QUIC_CRYPTO_HANDSHAKE) {
@@ -1339,7 +1340,7 @@ static struct sk_buff *quic_packet_handshake_create(struct sock *sk)
 		p = quic_put_data(p, quic_token(sk)->data, hlen);
 	}
 
-	off = (u8)(p + QUIC_PACKET_LENGTH_LEN - skb->data);
+	off = (u16)(p + QUIC_PACKET_LENGTH_LEN - skb->data);
 	p = quic_put_int(p, len - off + QUIC_TAG_LEN, QUIC_PACKET_LENGTH_LEN);
 	*(p - 4) |= (QUIC_PACKET_LENGTH_LEN << 5);
 
@@ -1398,7 +1399,7 @@ static struct sk_buff *quic_packet_app_create(struct sock *sk)
 	struct sk_buff *skb;
 	struct quichdr *hdr;
 	u32 len, hlen;
-	u8 off;
+	u16 off;
 
 	if (packet->frames) {
 		sent = quic_packet_sent_alloc(packet->frames);
@@ -1429,7 +1430,7 @@ static struct sk_buff *quic_packet_app_create(struct sock *sk)
 
 	active = quic_conn_id_choose(id_set, packet->path_alt);
 	quic_put_data((u8 *)hdr + 1, active->data, active->len);
-	off = (u8)(active->len + sizeof(struct quichdr));
+	off = (u16)(active->len + sizeof(struct quichdr));
 
 	quic_packet_pack_frames(sk, skb, sent, off);
 	return skb;
