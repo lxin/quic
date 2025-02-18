@@ -324,10 +324,8 @@ static int http_client_handshake(int sockfd, const char *alpns, const char *host
 					ret = -errno;
 				break;
 			}
-			if (count++ == 3) { /* wait for session ticket up to 3 secs */
-				ret = -EINVAL;
+			if (count++ == 3) /* wait for session ticket up to 3 secs */
 				break;
-			}
 			sleep(1);
 		}
 	}
@@ -1175,10 +1173,9 @@ static int http3_client(char *urls, const char *root, int testcase)
 		goto out;
 	}
 
-	if (http_client_handshake(sockfd, "h3", ctx->host, NULL, NULL, testcase)) {
-		ret = errno;
+	ret = http_client_handshake(sockfd, "h3", ctx->host, NULL, NULL, testcase);
+	if (ret)
 		goto free;
-	}
 	http_log_debug("HANDSHAKE DONE\n");
 
 	if (testcase == IOP_KEYUPDATE) {
@@ -1571,10 +1568,9 @@ static int http09_client(char *urls, const char *sess_file, const char *tp_file,
 		}
 	}
 
-	if (http_client_handshake(sockfd, "hq-interop", ctx->host, ctx->buf, sess_file, testcase)) {
-		ret = -errno;
+	ret = http_client_handshake(sockfd, "hq-interop", ctx->host, ctx->buf, sess_file, testcase);
+	if (ret)
 		goto free;
-	}
 	http_log_debug("HANDSHAKE DONE %s\n", url);
 
 	if (testcase == IOP_ZERORTT) { /* save remote transport param */
