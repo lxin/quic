@@ -557,9 +557,6 @@ static int http_server_accept_socket(int sockfd, const char *pkey_file, const ch
 	uint8_t key[64];
 	int ret;
 
-	if (testcase == IOP_ZERORTT || testcase == IOP_RESUMPTION)
-		usleep(500000);
-
 	if (testcase == IOP_CONNECTIONMIGRATION) {
 		addrlen = sizeof(sa);
 		if (getsockname(sockfd, (struct sockaddr *)&sa, &addrlen)) {
@@ -1703,6 +1700,9 @@ static int http09_server(char *host, char *pkey_file, char *cert_file,
 			http_log_error("thread create failed %d %d\n", errno, count);
 			break;
 		}
+
+		if (testcase == IOP_ZERORTT || testcase == IOP_RESUMPTION)
+			sleep(1);
 		count++;
 	}
 
