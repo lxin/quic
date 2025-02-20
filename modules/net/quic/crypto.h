@@ -70,6 +70,7 @@ struct quic_crypto {
 	u32 key_update_time;
 	u32 version;
 
+	u8 ticket_ready:1;
 	u8 key_pending:1;
 	u8 send_ready:1;
 	u8 recv_ready:1;
@@ -117,6 +118,16 @@ static inline u8 quic_crypto_recv_ready(struct quic_crypto *crypto)
 static inline u8 quic_crypto_send_ready(struct quic_crypto *crypto)
 {
 	return crypto->send_ready;
+}
+
+static inline u8 quic_crypto_ticket_ready(struct quic_crypto *crypto)
+{
+	return crypto->ticket_ready;
+}
+
+static inline void quic_crypto_set_ticket_ready(struct quic_crypto *crypto, u8 ready)
+{
+	crypto->ticket_ready = ready;
 }
 
 static inline void quic_crypto_set_key_update_time(struct quic_crypto *crypto, u32 key_update_time)

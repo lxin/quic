@@ -235,6 +235,25 @@ static inline int quic_data_dup(struct quic_data *to, u8 *data, u32 len)
 	return 0;
 }
 
+static inline int quic_data_append(struct quic_data *to, u8 *data, u32 len)
+{
+	u8 *p;
+
+	if (!len)
+		return 0;
+
+	p = kzalloc(to->len + len, GFP_ATOMIC);
+	if (!p)
+		return -ENOMEM;
+	p = quic_put_data(p, to->data, to->len);
+	p = quic_put_data(p, data, len);
+
+	kfree(to->data);
+	to->len = to->len + len;
+	to->data = p - to->len;
+	return 0;
+}
+
 static inline int quic_data_cmp(struct quic_data *d1, struct quic_data *d2)
 {
 	return d1->len != d2->len || memcmp(d1->data, d2->data, d1->len);

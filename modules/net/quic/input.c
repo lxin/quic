@@ -387,10 +387,13 @@ static void quic_inq_list_purge(struct sock *sk, struct list_head *head)
 static void quic_inq_handshake_tail(struct sock *sk, struct quic_frame *frame)
 {
 	struct quic_crypto *crypto = quic_crypto(sk, frame->level);
+	struct quic_data *ticket = quic_ticket(sk);
 	struct quic_inqueue *inq = quic_inq(sk);
+	u64 overlap, type, length;
 	struct list_head *head;
 	struct quic_frame *pos;
-	u64 overlap;
+	u32 len;
+	u8 *p;
 
 	overlap = quic_crypto_recv_offset(crypto) - frame->offset;
 	if (overlap) {
@@ -401,6 +404,24 @@ static void quic_inq_handshake_tail(struct sock *sk, struct quic_frame *frame)
 		frame->offset += overlap;
 	}
 	quic_crypto_inc_recv_offset(crypto, frame->len);
+
+	if (frame->level == QUIC_CRYPTO_APP) {
+		quic_data_append(ticket, frame->data, frame->len);
+		quic_inq_rfree((int)frame->len, sk);
+		quic_frame_put(frame);
+
+		if (ticket->len >= 4) {
+			p = ticket->data;
+			len = ticket->len;
+			quic_get_int(&p, &len, &type, 1);
+			quic_get_int(&p, &len, &length, 3);
+			if (ticket->len >= length + 4) {
+				quic_crypto_set_ticket_ready(crypto, 1);
+				quic_inq_event_recv(sk, QUIC_EVENT_NEW_SESSION_TICKET, ticket);
+			}
+		}
+		return;
+	}
 
 	/* always put handshake msg ahead of data and event */
 	head = &inq->recv_list;

@@ -754,7 +754,6 @@ static struct quic_frame *quic_frame_streams_blocked_bidi_create(struct sock *sk
 
 static int quic_frame_crypto_process(struct sock *sk, struct quic_frame *frame, u8 type)
 {
-	struct quic_data *ticket = quic_ticket(sk);
 	struct quic_frame *nframe;
 	u32 len = frame->len;
 	u8 *p = frame->data;
@@ -765,13 +764,6 @@ static int quic_frame_crypto_process(struct sock *sk, struct quic_frame *frame, 
 		return -EINVAL;
 	if (!quic_get_var(&p, &len, &length) || length > len)
 		return -EINVAL;
-
-	if (!frame->level) {
-		if (quic_data_dup(ticket, p, length))
-			return -ENOMEM;
-		quic_inq_event_recv(sk, QUIC_EVENT_NEW_SESSION_TICKET, ticket);
-		goto out;
-	}
 
 	nframe = quic_frame_alloc(length, p, GFP_ATOMIC);
 	if (!nframe)
@@ -787,7 +779,6 @@ static int quic_frame_crypto_process(struct sock *sk, struct quic_frame *frame, 
 		quic_frame_put(nframe);
 		return err;
 	}
-out:
 	len -= length;
 	return (int)(frame->len - len);
 }
