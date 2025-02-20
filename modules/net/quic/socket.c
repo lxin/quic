@@ -1443,14 +1443,9 @@ static int quic_sock_set_crypto_secret(struct sock *sk, struct quic_crypto_secre
 
 	if (secret->send) { /* app send key is ready */
 		quic_outq_set_data_level(outq, QUIC_CRYPTO_APP);
-		if (quic_outq_transmit_new_conn_id(sk, 0, 0, true))
-			return -ENOMEM;
-		if (quic_crypto_recv_ready(crypto)) {
-			quic_set_state(sk, QUIC_SS_ESTABLISHED);
-			quic_timer_start(sk, QUIC_TIMER_PMTU, c->plpmtud_probe_interval);
-			quic_timer_reset_path(sk);
-		}
-		return 0;
+		if (!quic_crypto_recv_ready(crypto))
+			return 0;
+		goto out;
 	}
 
 	/* app recv key is ready */
@@ -1467,33 +1462,35 @@ static int quic_sock_set_crypto_secret(struct sock *sk, struct quic_crypto_secre
 		quic_packet_process(sk, skb);
 		skb = __skb_dequeue(&tmpq);
 	}
-	if (quic_is_serv(sk)) {
-		/* some implementations don't send ACKs to handshake packets so ACK them manually */
-		quic_outq_transmitted_sack(sk, QUIC_CRYPTO_INITIAL, QUIC_PN_MAP_MAX_PN, 0, -1, 0);
-		quic_outq_transmitted_sack(sk, QUIC_CRYPTO_HANDSHAKE, QUIC_PN_MAP_MAX_PN, 0, -1, 0);
-
-		if (quic_path_pref_addr(path)) {
-			err = quic_path_set_bind_port(sk, path, 1);
-			if (err)
-				return err;
-			err = quic_path_set_udp_sock(sk, path, 1);
-			if (err)
-				return err;
-		}
-
-		if (quic_outq_transmit_frame(sk, QUIC_FRAME_NEW_TOKEN, NULL, 0, true))
-			return -ENOMEM;
-		if (quic_outq_transmit_frame(sk, QUIC_FRAME_HANDSHAKE_DONE, NULL, 0, true))
-			return -ENOMEM;
-		quic_outq_transmit(sk);
-	}
 
 	/* enter established only when both send and recv keys are ready */
-	if (quic_crypto_send_ready(crypto)) {
-		quic_set_state(sk, QUIC_SS_ESTABLISHED);
-		quic_timer_start(sk, QUIC_TIMER_PMTU, c->plpmtud_probe_interval);
-		quic_timer_reset_path(sk);
+	if (!quic_crypto_send_ready(crypto))
+		return 0;
+	if (!quic_is_serv(sk))
+		goto out;
+
+	/* some implementations don't send ACKs to handshake packets so ACK them manually */
+	quic_outq_transmitted_sack(sk, QUIC_CRYPTO_INITIAL, QUIC_PN_MAP_MAX_PN, 0, -1, 0);
+	quic_outq_transmitted_sack(sk, QUIC_CRYPTO_HANDSHAKE, QUIC_PN_MAP_MAX_PN, 0, -1, 0);
+	if (quic_path_pref_addr(path)) {
+		err = quic_path_set_bind_port(sk, path, 1);
+		if (err)
+			return err;
+		err = quic_path_set_udp_sock(sk, path, 1);
+		if (err)
+			return err;
 	}
+
+	if (quic_outq_transmit_frame(sk, QUIC_FRAME_NEW_TOKEN, NULL, 0, true))
+		return -ENOMEM;
+	if (quic_outq_transmit_frame(sk, QUIC_FRAME_HANDSHAKE_DONE, NULL, 0, true))
+		return -ENOMEM;
+out:
+	if (quic_outq_transmit_new_conn_id(sk, 0, 0, false))
+		return -ENOMEM;
+	quic_timer_start(sk, QUIC_TIMER_PMTU, c->plpmtud_probe_interval);
+	quic_set_state(sk, QUIC_SS_ESTABLISHED);
+	quic_timer_reset_path(sk);
 	return 0;
 }
 
