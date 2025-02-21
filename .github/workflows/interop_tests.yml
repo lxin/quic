@@ -62,6 +62,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends tshark
       - name: Install Linux QUIC module
+        if: ${{ matrix.server == 'linuxquic' || matrix.client == 'linuxquic' }}
         run: |
           git clone https://github.com/lxin/quic.git
           cd quic && sed -i '/LIBGNUTLS/d' configure.ac

@@ -1,6 +1,15 @@
 name: interop
 on:
-  workflow_dispatch
+  workflow_dispatch:
+    inputs:
+      implementation:
+        description: "implementation name"
+        required: true
+        default: "linuxquic"
+        type: choice
+        options:
+          - "linuxquic"
+          - "all"
 
 jobs:
   config:
@@ -108,6 +117,7 @@ jobs:
           path: ${{ matrix.image }}.tar.gz
           if-no-files-found: error
   client-tests:
+    if: ${{ github.event.inputs.implementation == 'linuxquic' }}
     uses: ./.github/workflows/interop_tests.yml
     needs: [ config, docker-pull-tools, docker-pull-images ]
     name: client group (linuxquic)
@@ -115,14 +125,28 @@ jobs:
       clients: '[ "linuxquic" ]'
       servers: ${{ needs.config.outputs.servers }}
   server-tests:
+    if: ${{ github.event.inputs.implementation == 'linuxquic' }}
     uses: ./.github/workflows/interop_tests.yml
     needs: [ config, docker-pull-tools, docker-pull-images ]
     name: server group (linuxquic)
     with:
       clients: ${{ needs.config.outputs.clients }}
       servers: '[ "linuxquic" ]'
+  tests:
+    if: ${{ github.event.inputs.implementation == 'all' }}
+    uses: ./.github/workflows/interop_tests.yml
+    needs: [ config, docker-pull-tools, docker-pull-images ]
+    strategy:
+      fail-fast: false
+      matrix:
+        client: ${{ fromJson(needs.config.outputs.clients) }}
+    name: client group (${{ matrix.client }})
+    with:
+      clients: '[ "${{ matrix.client }}" ]'
+      servers: ${{ needs.config.outputs.servers }}
   aggregate:
-    needs: [ config, client-tests, server-tests ]
+    needs: [ config, client-tests, server-tests, tests ]
+    if: always()
     runs-on: ubuntu-latest
     env:
       LOGNAME: ${{ needs.config.outputs.logname }}
