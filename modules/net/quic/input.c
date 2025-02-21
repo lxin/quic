@@ -405,11 +405,24 @@ static void quic_inq_handshake_tail(struct sock *sk, struct quic_frame *frame)
 	}
 	quic_crypto_inc_recv_offset(crypto, frame->len);
 
-	if (frame->level == QUIC_CRYPTO_APP) {
-		quic_data_append(ticket, frame->data, frame->len);
-		quic_inq_rfree((int)frame->len, sk);
-		quic_frame_put(frame);
+	if (frame->level) {
+		/* always put handshake msg ahead of data and event */
+		head = &inq->recv_list;
+		list_for_each_entry(pos, head, list) {
+			if (!pos->level) {
+				head = &pos->list;
+				break;
+			}
+		}
 
+		frame->offset = 0;
+		list_add_tail(&frame->list, head);
+		sk->sk_data_ready(sk);
+		return;
+	}
+
+	if (!quic_crypto_ticket_ready(crypto) && quic_crypto_recv_offset(crypto) <= 4096) {
+		quic_data_append(ticket, frame->data, frame->len);
 		if (ticket->len >= 4) {
 			p = ticket->data;
 			len = ticket->len;
@@ -420,21 +433,9 @@ static void quic_inq_handshake_tail(struct sock *sk, struct quic_frame *frame)
 				quic_inq_event_recv(sk, QUIC_EVENT_NEW_SESSION_TICKET, ticket);
 			}
 		}
-		return;
 	}
-
-	/* always put handshake msg ahead of data and event */
-	head = &inq->recv_list;
-	list_for_each_entry(pos, head, list) {
-		if (!pos->level) {
-			head = &pos->list;
-			break;
-		}
-	}
-
-	frame->offset = 0;
-	list_add_tail(&frame->list, head);
-	sk->sk_data_ready(sk);
+	quic_inq_rfree((int)frame->len, sk);
+	quic_frame_put(frame);
 }
 
 int quic_inq_handshake_recv(struct sock *sk, struct quic_frame *frame)
