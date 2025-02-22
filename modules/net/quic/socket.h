@@ -82,12 +82,11 @@ enum quic_tsq_flags {
 struct quic_sock {
 	struct inet_sock		inet;
 	struct list_head		reqs;
-	struct quic_path_src		src;
-	struct quic_path_dst		dst;
 
 	struct quic_conn_id_set		source;
 	struct quic_conn_id_set		dest;
 	struct quic_stream_table	streams;
+	struct quic_path_group		paths;
 	struct quic_cong		cong;
 	struct quic_crypto		crypto[QUIC_CRYPTO_MAX];
 	struct quic_pnspace		space[QUIC_PNSPACE_MAX];
@@ -113,16 +112,6 @@ struct quic6_sock {
 static inline struct quic_sock *quic_sk(const struct sock *sk)
 {
 	return (struct quic_sock *)sk;
-}
-
-static inline struct quic_path_addr *quic_src(const struct sock *sk)
-{
-	return &quic_sk(sk)->src.a;
-}
-
-static inline struct quic_path_addr *quic_dst(const struct sock *sk)
-{
-	return &quic_sk(sk)->dst.a;
 }
 
 static inline struct quic_packet *quic_packet(const struct sock *sk)
@@ -158,6 +147,11 @@ static inline struct quic_pnspace *quic_pnspace(const struct sock *sk, u8 level)
 static inline struct quic_stream_table *quic_streams(const struct sock *sk)
 {
 	return &quic_sk(sk)->streams;
+}
+
+static inline struct quic_path_group *quic_paths(const struct sock *sk)
+{
+	return &quic_sk(sk)->paths;
 }
 
 static inline void *quic_timer(const struct sock *sk, u8 type)
@@ -212,7 +206,7 @@ static inline struct quic_transport_param *quic_remote(const struct sock *sk)
 
 static inline bool quic_is_serv(const struct sock *sk)
 {
-	return quic_outq(sk)->serv;
+	return quic_path_serv(quic_paths(sk));
 }
 
 static inline bool quic_is_establishing(struct sock *sk)

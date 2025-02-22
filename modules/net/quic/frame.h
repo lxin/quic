@@ -134,11 +134,11 @@ struct quic_frame {
 
 	u8  transmitted:1;
 	u8  stream_fin:1;
-	u8  path_alt:2;	/* bit 1: src, bit 2: dst */
 	u8  nodelay:1;
 	u8  padding:1;
 	u8  dgram:1;
 	u8  event:1;
+	u8  path:1;
 };
 
 static inline bool quic_frame_path_probing(u8 type)

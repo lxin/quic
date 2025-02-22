@@ -428,69 +428,70 @@ void quic_stream_free(struct quic_stream_table *streams)
 	kfree(ht->hash);
 }
 
-void quic_stream_set_param(struct quic_stream_table *streams, struct quic_transport_param *local,
-			   struct quic_transport_param *remote, bool is_serv)
+void quic_stream_set_param(struct quic_stream_table *streams, struct quic_transport_param *p,
+			   bool remote, bool is_serv)
 {
 	u8 type;
 
 	if (remote) {
-		streams->send.max_stream_data_bidi_local = remote->max_stream_data_bidi_local;
-		streams->send.max_stream_data_bidi_remote = remote->max_stream_data_bidi_remote;
-		streams->send.max_stream_data_uni = remote->max_stream_data_uni;
-		streams->send.max_streams_bidi = remote->max_streams_bidi;
-		streams->send.max_streams_uni = remote->max_streams_uni;
-
-		if (is_serv) {
-			type = QUIC_STREAM_TYPE_SERVER_BIDI;
-			streams->send.max_bidi_stream_id =
-				quic_stream_streams_to_id(remote->max_streams_bidi, type);
-			streams->send.next_bidi_stream_id = type;
-
-			type = QUIC_STREAM_TYPE_SERVER_UNI;
-			streams->send.max_uni_stream_id =
-				quic_stream_streams_to_id(remote->max_streams_uni, type);
-			streams->send.next_uni_stream_id = type;
-		} else {
-			type = QUIC_STREAM_TYPE_CLIENT_BIDI;
-			streams->send.max_bidi_stream_id =
-				quic_stream_streams_to_id(remote->max_streams_bidi, type);
-			streams->send.next_bidi_stream_id = type;
-
-			type = QUIC_STREAM_TYPE_CLIENT_UNI;
-			streams->send.max_uni_stream_id =
-				quic_stream_streams_to_id(remote->max_streams_uni, type);
-			streams->send.next_uni_stream_id = type;
-		}
+		streams->send.max_stream_data_bidi_local = p->max_stream_data_bidi_local;
+		streams->send.max_stream_data_bidi_remote = p->max_stream_data_bidi_remote;
+		streams->send.max_stream_data_uni = p->max_stream_data_uni;
+		streams->send.max_streams_bidi = p->max_streams_bidi;
+		streams->send.max_streams_uni = p->max_streams_uni;
 		streams->send.active_stream_id = -1;
-	}
-
-	if (local) {
-		streams->recv.max_stream_data_bidi_local = local->max_stream_data_bidi_local;
-		streams->recv.max_stream_data_bidi_remote = local->max_stream_data_bidi_remote;
-		streams->recv.max_stream_data_uni = local->max_stream_data_uni;
-		streams->recv.max_streams_bidi = local->max_streams_bidi;
-		streams->recv.max_streams_uni = local->max_streams_uni;
 
 		if (is_serv) {
-			type = QUIC_STREAM_TYPE_CLIENT_BIDI;
-			streams->recv.max_bidi_stream_id =
-				quic_stream_streams_to_id(local->max_streams_bidi, type);
-			streams->recv.next_bidi_stream_id = type;
-
-			type = QUIC_STREAM_TYPE_CLIENT_UNI;
-			streams->recv.max_uni_stream_id =
-				quic_stream_streams_to_id(local->max_streams_uni, type);
-			streams->recv.next_uni_stream_id = type;
-		} else {
 			type = QUIC_STREAM_TYPE_SERVER_BIDI;
-			streams->recv.max_bidi_stream_id =
-				quic_stream_streams_to_id(local->max_streams_bidi, type);
-			streams->recv.next_bidi_stream_id = type;
+			streams->send.max_bidi_stream_id =
+				quic_stream_streams_to_id(p->max_streams_bidi, type);
+			streams->send.next_bidi_stream_id = type;
 
 			type = QUIC_STREAM_TYPE_SERVER_UNI;
-			streams->recv.max_uni_stream_id =
-				quic_stream_streams_to_id(local->max_streams_uni, type);
-			streams->recv.next_uni_stream_id = type;
+			streams->send.max_uni_stream_id =
+				quic_stream_streams_to_id(p->max_streams_uni, type);
+			streams->send.next_uni_stream_id = type;
+			return;
 		}
+
+		type = QUIC_STREAM_TYPE_CLIENT_BIDI;
+		streams->send.max_bidi_stream_id =
+			quic_stream_streams_to_id(p->max_streams_bidi, type);
+		streams->send.next_bidi_stream_id = type;
+
+		type = QUIC_STREAM_TYPE_CLIENT_UNI;
+		streams->send.max_uni_stream_id =
+			quic_stream_streams_to_id(p->max_streams_uni, type);
+		streams->send.next_uni_stream_id = type;
+		return;
 	}
+
+	streams->recv.max_stream_data_bidi_local = p->max_stream_data_bidi_local;
+	streams->recv.max_stream_data_bidi_remote = p->max_stream_data_bidi_remote;
+	streams->recv.max_stream_data_uni = p->max_stream_data_uni;
+	streams->recv.max_streams_bidi = p->max_streams_bidi;
+	streams->recv.max_streams_uni = p->max_streams_uni;
+
+	if (is_serv) {
+		type = QUIC_STREAM_TYPE_CLIENT_BIDI;
+		streams->recv.max_bidi_stream_id =
+			quic_stream_streams_to_id(p->max_streams_bidi, type);
+		streams->recv.next_bidi_stream_id = type;
+
+		type = QUIC_STREAM_TYPE_CLIENT_UNI;
+		streams->recv.max_uni_stream_id =
+			quic_stream_streams_to_id(p->max_streams_uni, type);
+		streams->recv.next_uni_stream_id = type;
+		return;
+	}
+
+	type = QUIC_STREAM_TYPE_SERVER_BIDI;
+	streams->recv.max_bidi_stream_id =
+		quic_stream_streams_to_id(p->max_streams_bidi, type);
+	streams->recv.next_bidi_stream_id = type;
+
+	type = QUIC_STREAM_TYPE_SERVER_UNI;
+	streams->recv.max_uni_stream_id =
+		quic_stream_streams_to_id(p->max_streams_uni, type);
+	streams->recv.next_uni_stream_id = type;
 }

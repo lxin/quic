@@ -20,8 +20,6 @@ struct quic_outqueue {
 	u64 window;
 	u64 bytes;
 
-	struct quic_conn_id retry_dcid;
-	struct quic_conn_id orig_dcid;
 	u32 max_datagram_frame_size;
 	u32 max_udp_payload_size;
 	u32 ack_delay_exponent;
@@ -37,8 +35,6 @@ struct quic_outqueue {
 	u8 data_blocked:1;
 	u8 force_delay:1;
 	u8 single:1;
-	u8 retry:1;
-	u8 serv:1;
 
 	u32 close_errcode;
 	u8 *close_phrase;
@@ -50,12 +46,6 @@ struct quic_outqueue {
 	 * when the corresponding crypto is ready for send.
 	 */
 	u8 data_level;
-	/* path migration related */
-	u8 path_entropy[8];
-	u8 path_sent_cnt;
-	u8 path_new_connid:1;
-	u8 path_swap:1;
-	u8 path_alt:2;
 };
 
 static inline void quic_outq_inc_inflight(struct quic_outqueue *outq, u32 len)
@@ -123,16 +113,6 @@ static inline void quic_outq_set_close_phrase(struct quic_outqueue *outq, u8 *ph
 	outq->close_phrase = phrase;
 }
 
-static inline u8 quic_outq_retry(struct quic_outqueue *outq)
-{
-	return outq->retry;
-}
-
-static inline void quic_outq_set_retry(struct quic_outqueue *outq, u8 retry)
-{
-	outq->retry = retry;
-}
-
 static inline u32 quic_outq_max_dgram(struct quic_outqueue *outq)
 {
 	return outq->max_datagram_frame_size;
@@ -141,33 +121,6 @@ static inline u32 quic_outq_max_dgram(struct quic_outqueue *outq)
 static inline u8 quic_outq_grease_quic_bit(struct quic_outqueue *outq)
 {
 	return outq->grease_quic_bit;
-}
-
-static inline struct quic_conn_id *quic_outq_orig_dcid(struct quic_outqueue *outq)
-{
-	return &outq->orig_dcid;
-}
-
-static inline void quic_outq_set_orig_dcid(struct quic_outqueue *outq,
-					   struct quic_conn_id *dcid)
-{
-	outq->orig_dcid = *dcid;
-}
-
-static inline struct quic_conn_id *quic_outq_retry_dcid(struct quic_outqueue *outq)
-{
-	return &outq->retry_dcid;
-}
-
-static inline void quic_outq_set_retry_dcid(struct quic_outqueue *outq,
-					    struct quic_conn_id *dcid)
-{
-	outq->retry_dcid = *dcid;
-}
-
-static inline void quic_outq_set_serv(struct quic_outqueue *outq)
-{
-	outq->serv = 1;
 }
 
 static inline void quic_outq_set_data_level(struct quic_outqueue *outq, u8 level)
@@ -180,48 +133,17 @@ static inline void quic_outq_set_force_delay(struct quic_outqueue *outq, u8 dela
 	outq->force_delay = !!delay;
 }
 
-static inline u8 quic_outq_path_new_connid(struct quic_outqueue *outq)
-{
-	return outq->path_new_connid;
-}
-
-static inline u8 quic_outq_path_alt(struct quic_outqueue *outq)
-{
-	return outq->path_alt;
-}
-
-static inline void quic_outq_set_path_alt(struct quic_outqueue *outq, u8 path_alt)
-{
-	outq->path_alt = path_alt;
-}
-
-static inline u8 quic_outq_path_sent_cnt(struct quic_outqueue *outq)
-{
-	return outq->path_sent_cnt;
-}
-
-static inline void quic_outq_set_path_sent_cnt(struct quic_outqueue *outq, u8 cnt)
-{
-	outq->path_sent_cnt = cnt;
-}
-
-static inline u8 *quic_outq_path_entropy(struct quic_outqueue *outq)
-{
-	return outq->path_entropy;
-}
-
 void quic_outq_stream_tail(struct sock *sk, struct quic_frame *frame, bool cork);
 void quic_outq_dgram_tail(struct sock *sk, struct quic_frame *frame, bool cork);
 void quic_outq_ctrl_tail(struct sock *sk, struct quic_frame *frame, bool cork);
-void quic_outq_free_path(struct sock *sk, struct quic_conn_id *conn_id);
+void quic_outq_update_path(struct sock *sk, u8 path);
 void quic_outq_transmit_pto(struct sock *sk);
 
-int quic_outq_transmit_frame(struct sock *sk, u8 type, void *data, u8 path_alt, u8 cork);
-int quic_outq_transmit_retire_conn_id(struct sock *sk, u64 prior, u8 path_alt, u8 cork);
-int quic_outq_transmit_new_conn_id(struct sock *sk, u64 prior, u8 path_alt, u8 cork);
+int quic_outq_transmit_frame(struct sock *sk, u8 type, void *data, u8 path, u8 cork);
+int quic_outq_transmit_retire_conn_id(struct sock *sk, u64 prior, u8 path, u8 cork);
+int quic_outq_transmit_new_conn_id(struct sock *sk, u64 prior, u8 path, u8 cork);
 int quic_outq_stream_append(struct sock *sk, struct quic_msginfo *info, u8 pack);
-int quic_outq_change_path(struct sock *sk, u8 path_alt, u8 *entropy);
-int quic_outq_probe_path(struct sock *sk, u8 path_alt, u8 cork);
+int quic_outq_probe_path_alt(struct sock *sk, u8 cork);
 int quic_outq_transmit(struct sock *sk);
 
 void quic_outq_transmitted_sack(struct sock *sk, u8 level, s64 largest,

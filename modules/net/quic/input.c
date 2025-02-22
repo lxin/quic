@@ -83,9 +83,8 @@ err:
 
 void quic_rcv_err_pmtu(struct sock *sk)
 {
+	struct quic_path_group *paths = quic_paths(sk);
 	struct quic_packet *packet = quic_packet(sk);
-	struct quic_outqueue *outq = quic_outq(sk);
-	struct quic_path_addr *path = quic_dst(sk);
 	struct quic_config *c = quic_config(sk);
 	u32 pathmtu, info, taglen;
 	struct dst_entry *dst;
@@ -94,8 +93,8 @@ void quic_rcv_err_pmtu(struct sock *sk)
 	if (!ip_sk_accept_pmtu(sk))
 		return;
 
-	info = clamp(quic_path_mtu_info(path), QUIC_PATH_MIN_PMTU, QUIC_PATH_MAX_PMTU);
-	if (!c->plpmtud_probe_interval || quic_outq_path_sent_cnt(outq)) {
+	info = clamp(quic_path_mtu_info(paths), QUIC_PATH_MIN_PMTU, QUIC_PATH_MAX_PMTU);
+	if (!c->plpmtud_probe_interval) {
 		if (quic_packet_route(sk) < 0)
 			return;
 
@@ -109,7 +108,7 @@ void quic_rcv_err_pmtu(struct sock *sk)
 	}
 	taglen = quic_packet_taglen(packet);
 	info = info - quic_encap_len(packet->da) - taglen;
-	pathmtu = quic_path_pl_toobig(path, info, &reset_timer);
+	pathmtu = quic_path_pl_toobig(paths, info, &reset_timer);
 	if (reset_timer)
 		quic_timer_reset(sk, QUIC_TIMER_PMTU, c->plpmtud_probe_interval);
 	if (pathmtu)
@@ -119,7 +118,6 @@ void quic_rcv_err_pmtu(struct sock *sk)
 int quic_rcv_err(struct sk_buff *skb)
 {
 	union quic_addr daddr, saddr;
-	struct quic_path_addr *path;
 	struct sock *sk = NULL;
 	int ret = 0;
 	u32 info;
@@ -138,8 +136,7 @@ int quic_rcv_err(struct sk_buff *skb)
 		goto out;
 
 	ret = 1; /* processed with common mtud */
-	path = quic_dst(sk);
-	quic_path_set_mtu_info(path, info);
+	quic_path_set_mtu_info(quic_paths(sk), info);
 	if (sock_owned_by_user(sk)) {
 		if (!test_and_set_bit(QUIC_MTU_REDUCED_DEFERRED, &sk->sk_tsq_flags))
 			sock_hold(sk);

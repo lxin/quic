@@ -45,7 +45,7 @@ struct quic_pnspace {
 	u64 ecn_count[2][3]; /* ECT_1, ECT_0, CE count of local and peer */
 	u16 pn_map_len;
 	u8  need_sack:1;
-	u8  path_alt:2;
+	u8  sack_path:1;
 
 	u32 max_time_limit;
 	s64 min_pn_seen;
@@ -69,14 +69,14 @@ static inline void quic_pnspace_set_time(struct quic_pnspace *space, u32 time)
 	space->time = time;
 }
 
-static inline void quic_pnspace_set_path_alt(struct quic_pnspace *space, u8 path_alt)
+static inline void quic_pnspace_set_sack_path(struct quic_pnspace *space, u8 path)
 {
-	space->path_alt = path_alt;
+	space->sack_path = path;
 }
 
-static inline u8 quic_pnspace_path_alt(const struct quic_pnspace *space)
+static inline u8 quic_pnspace_sack_path(const struct quic_pnspace *space)
 {
-	return space->path_alt;
+	return space->sack_path;
 }
 
 static inline void quic_pnspace_set_need_sack(struct quic_pnspace *space, u8 need_sack)

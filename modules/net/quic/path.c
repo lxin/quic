@@ -130,17 +130,16 @@ static struct quic_udp_sock *quic_udp_sock_lookup(struct sock *sk, union quic_ad
 	return us;
 }
 
-int quic_path_set_udp_sock(struct sock *sk, struct quic_path_addr *path, bool alt)
+static int quic_path_set_udp_sock(struct sock *sk, struct quic_path_group *paths, u8 path)
 {
-	struct quic_path_src *src = (struct quic_path_src *)path;
 	struct quic_udp_sock *usk;
 
-	usk = quic_udp_sock_lookup(sk, quic_path_addr(path, alt));
+	usk = quic_udp_sock_lookup(sk, quic_path_saddr(paths, path));
 	if (!usk)
 		return -EINVAL;
 
-	quic_udp_sock_put(src->udp_sk[src->a.active ^ alt]);
-	src->udp_sk[src->a.active ^ alt] = usk;
+	quic_udp_sock_put(paths->path[path].udp_sk);
+	paths->path[path].udp_sk = usk;
 	return 0;
 }
 
@@ -158,10 +157,10 @@ static void quic_path_put_bind_port(struct sock *sk, struct quic_bind_port *pp)
 	spin_unlock(&head->lock);
 }
 
-int quic_path_set_bind_port(struct sock *sk, struct quic_path_addr *path, bool alt)
+static int quic_path_set_bind_port(struct sock *sk, struct quic_path_group *paths, u8 path)
 {
-	struct quic_bind_port *port = quic_path_port(path, alt);
-	union quic_addr *addr = quic_path_addr(path, alt);
+	struct quic_bind_port *port = quic_path_bind_port(paths, path);
+	union quic_addr *addr = quic_path_saddr(paths, path);
 	int rover, low, high, remaining;
 	struct net *net = sock_net(sk);
 	struct quic_hash_head *head;
@@ -210,26 +209,76 @@ next:
 	return -EADDRINUSE;
 }
 
-void quic_path_addr_free(struct sock *sk, struct quic_path_addr *path, bool alt)
+int quic_path_bind(struct sock *sk, struct quic_path_group *paths, u8 path)
 {
-	struct quic_path_src *src;
+	int err;
 
-	if (!path->udp_bind) {
-		memset(&path->addr[path->active ^ alt], 0, sizeof(union quic_addr));
+	err = quic_path_set_bind_port(sk, paths, path);
+	if (err)
+		return err;
+	err = quic_path_set_udp_sock(sk, paths, path);
+	if (err)
+		quic_path_free(sk, paths, path);
+	return err;
+}
+
+void quic_path_swap(struct quic_path_group *paths)
+{
+	struct quic_path path = paths->path[0];
+
+	paths->alt_probes = 0;
+	paths->alt_state = QUIC_PATH_ALT_SWAPPED;
+
+	if (paths->path[1].udp_sk) {
+		paths->path[0] = paths->path[1];
+		paths->path[1] = path;
 		return;
 	}
 
-	src = (struct quic_path_src *)path;
-	quic_udp_sock_put(src->udp_sk[path->active ^ alt]);
-	src->udp_sk[path->active ^ alt] = NULL;
-	quic_path_put_bind_port(sk, &src->port[path->active ^ alt]);
-	memset(&path->addr[path->active ^ alt], 0, sizeof(union quic_addr));
+	/* both paths have the same saddr, so swap the daddr only */
+	paths->path[0].daddr = paths->path[1].daddr;
+	paths->path[1].daddr = path.daddr;
 }
 
-void quic_path_free(struct sock *sk, struct quic_path_addr *path)
+void quic_path_free(struct sock *sk, struct quic_path_group *paths, u8 path)
 {
-	quic_path_addr_free(sk, path, 0);
-	quic_path_addr_free(sk, path, 1);
+	paths->alt_probes = 0;
+	paths->alt_state = QUIC_PATH_ALT_NONE;
+
+	memset(quic_path_daddr(paths, path), 0, sizeof(union quic_addr));
+
+	quic_udp_sock_put(paths->path[path].udp_sk);
+	paths->path[path].udp_sk = NULL;
+	quic_path_put_bind_port(sk, quic_path_bind_port(paths, path));
+	memset(quic_path_saddr(paths, path), 0, sizeof(union quic_addr));
+}
+
+int quic_path_detect_alt(struct quic_path_group *paths, union quic_addr *sa, union quic_addr *da)
+{
+	if ((quic_path_cmp_saddr(paths, 0, sa) && !paths->disable_saddr_alt) ||
+	    (quic_path_cmp_daddr(paths, 0, da) && !paths->disable_daddr_alt)) {
+		if (!quic_path_saddr(paths, 1)->v4.sin_port)
+			quic_path_set_saddr(paths, 1, sa);
+
+		if (quic_path_cmp_saddr(paths, 1, sa))
+			return 0;
+
+		if (!quic_path_daddr(paths, 1)->v4.sin_port)
+			quic_path_set_daddr(paths, 1, da);
+
+		return !quic_path_cmp_daddr(paths, 1, da);
+	}
+	return 0;
+}
+
+void quic_path_set_param(struct quic_path_group *paths, struct quic_transport_param *p,
+			 bool remote)
+{
+	if (remote) {
+		paths->disable_saddr_alt = p->disable_active_migration;
+		return;
+	}
+	paths->disable_daddr_alt = p->disable_active_migration;
 }
 
 enum quic_plpmtud_state {
@@ -249,171 +298,165 @@ enum quic_plpmtud_state {
 #define QUIC_PL_BIG_STEP        32
 #define QUIC_PL_MIN_STEP        4
 
-u32 quic_path_pl_send(struct quic_path_addr *a, s64 number)
+u32 quic_path_pl_send(struct quic_path_group *paths, s64 number)
 {
-	struct quic_path_dst *d = (struct quic_path_dst *)a;
 	u32 pathmtu = 0;
 
-	d->pl.number = number;
-	if (d->pl.probe_count < QUIC_MAX_PROBES)
+	paths->pl.number = number;
+	if (paths->pl.probe_count < QUIC_MAX_PROBES)
 		goto out;
 
-	d->pl.probe_count = 0;
-	if (d->pl.state == QUIC_PL_BASE) {
-		if (d->pl.probe_size == QUIC_BASE_PLPMTU) { /* BASE_PLPMTU Confirmation Failed */
-			d->pl.state = QUIC_PL_ERROR; /* Base -> Error */
+	paths->pl.probe_count = 0;
+	if (paths->pl.state == QUIC_PL_BASE) {
+		if (paths->pl.probe_size == QUIC_BASE_PLPMTU) { /* BASE_PLPMTU Confirming Failed */
+			paths->pl.state = QUIC_PL_ERROR; /* Base -> Error */
 
-			d->pl.pmtu = QUIC_BASE_PLPMTU;
-			d->pathmtu = QUIC_BASE_PLPMTU;
-			pathmtu = d->pathmtu;
+			paths->pl.pmtu = QUIC_BASE_PLPMTU;
+			paths->pathmtu = QUIC_BASE_PLPMTU;
+			pathmtu = paths->pathmtu;
 		}
-	} else if (d->pl.state == QUIC_PL_SEARCH) {
-		if (d->pl.pmtu == d->pl.probe_size) { /* Black Hole Detected */
-			d->pl.state = QUIC_PL_BASE;  /* Search -> Base */
-			d->pl.probe_size = QUIC_BASE_PLPMTU;
-			d->pl.probe_high = 0;
+	} else if (paths->pl.state == QUIC_PL_SEARCH) {
+		if (paths->pl.pmtu == paths->pl.probe_size) { /* Black Hole Detected */
+			paths->pl.state = QUIC_PL_BASE;  /* Search -> Base */
+			paths->pl.probe_size = QUIC_BASE_PLPMTU;
+			paths->pl.probe_high = 0;
 
-			d->pl.pmtu = QUIC_BASE_PLPMTU;
-			d->pathmtu = QUIC_BASE_PLPMTU;
-			pathmtu = d->pathmtu;
+			paths->pl.pmtu = QUIC_BASE_PLPMTU;
+			paths->pathmtu = QUIC_BASE_PLPMTU;
+			pathmtu = paths->pathmtu;
 		} else { /* Normal probe failure. */
-			d->pl.probe_high = d->pl.probe_size;
-			d->pl.probe_size = d->pl.pmtu;
+			paths->pl.probe_high = paths->pl.probe_size;
+			paths->pl.probe_size = paths->pl.pmtu;
 		}
-	} else if (d->pl.state == QUIC_PL_COMPLETE) {
-		if (d->pl.pmtu == d->pl.probe_size) { /* Black Hole Detected */
-			d->pl.state = QUIC_PL_BASE;  /* Search Complete -> Base */
-			d->pl.probe_size = QUIC_BASE_PLPMTU;
+	} else if (paths->pl.state == QUIC_PL_COMPLETE) {
+		if (paths->pl.pmtu == paths->pl.probe_size) { /* Black Hole Detected */
+			paths->pl.state = QUIC_PL_BASE;  /* Search Complete -> Base */
+			paths->pl.probe_size = QUIC_BASE_PLPMTU;
 
-			d->pl.pmtu = QUIC_BASE_PLPMTU;
-			d->pathmtu = QUIC_BASE_PLPMTU;
-			pathmtu = d->pathmtu;
+			paths->pl.pmtu = QUIC_BASE_PLPMTU;
+			paths->pathmtu = QUIC_BASE_PLPMTU;
+			pathmtu = paths->pathmtu;
 		}
 	}
 
 out:
-	pr_debug("%s: dst: %p, state: %d, pmtu: %d, size: %d, high: %d\n",
-		 __func__, d, d->pl.state, d->pl.pmtu, d->pl.probe_size, d->pl.probe_high);
-	d->pl.probe_count++;
+	pr_debug("%s: dst: %p, state: %d, pmtu: %d, size: %d, high: %d\n", __func__, paths,
+		 paths->pl.state, paths->pl.pmtu, paths->pl.probe_size, paths->pl.probe_high);
+	paths->pl.probe_count++;
 	return pathmtu;
 }
 
-u32 quic_path_pl_recv(struct quic_path_addr *a, bool *raise_timer, bool *complete)
+u32 quic_path_pl_recv(struct quic_path_group *paths, bool *raise_timer, bool *complete)
 {
-	struct quic_path_dst *d = (struct quic_path_dst *)a;
 	u32 pathmtu = 0;
 
-	pr_debug("%s: dst: %p, state: %d, pmtu: %d, size: %d, high: %d\n",
-		 __func__, d, d->pl.state, d->pl.pmtu, d->pl.probe_size, d->pl.probe_high);
+	pr_debug("%s: dst: %p, state: %d, pmtu: %d, size: %d, high: %d\n", __func__, paths,
+		 paths->pl.state, paths->pl.pmtu, paths->pl.probe_size, paths->pl.probe_high);
 
 	*raise_timer = false;
-	d->pl.number = 0;
-	d->pl.pmtu = d->pl.probe_size;
-	d->pl.probe_count = 0;
-	if (d->pl.state == QUIC_PL_BASE) {
-		d->pl.state = QUIC_PL_SEARCH; /* Base -> Search */
-		d->pl.probe_size += QUIC_PL_BIG_STEP;
-	} else if (d->pl.state == QUIC_PL_ERROR) {
-		d->pl.state = QUIC_PL_SEARCH; /* Error -> Search */
+	paths->pl.number = 0;
+	paths->pl.pmtu = paths->pl.probe_size;
+	paths->pl.probe_count = 0;
+	if (paths->pl.state == QUIC_PL_BASE) {
+		paths->pl.state = QUIC_PL_SEARCH; /* Base -> Search */
+		paths->pl.probe_size += QUIC_PL_BIG_STEP;
+	} else if (paths->pl.state == QUIC_PL_ERROR) {
+		paths->pl.state = QUIC_PL_SEARCH; /* Error -> Search */
 
-		d->pl.pmtu = d->pl.probe_size;
-		d->pathmtu = (u32)d->pl.pmtu;
-		pathmtu = d->pathmtu;
-		d->pl.probe_size += QUIC_PL_BIG_STEP;
-	} else if (d->pl.state == QUIC_PL_SEARCH) {
-		if (!d->pl.probe_high) {
-			if (d->pl.probe_size < QUIC_MAX_PLPMTU) {
-				d->pl.probe_size = (u16)min(d->pl.probe_size + QUIC_PL_BIG_STEP,
-							    QUIC_MAX_PLPMTU);
+		paths->pl.pmtu = paths->pl.probe_size;
+		paths->pathmtu = (u32)paths->pl.pmtu;
+		pathmtu = paths->pathmtu;
+		paths->pl.probe_size += QUIC_PL_BIG_STEP;
+	} else if (paths->pl.state == QUIC_PL_SEARCH) {
+		if (!paths->pl.probe_high) {
+			if (paths->pl.probe_size < QUIC_MAX_PLPMTU) {
+				paths->pl.probe_size =
+					(u16)min(paths->pl.probe_size + QUIC_PL_BIG_STEP,
+						 QUIC_MAX_PLPMTU);
 				*complete = false;
 				return pathmtu;
 			}
-			d->pl.probe_high = QUIC_MAX_PLPMTU;
+			paths->pl.probe_high = QUIC_MAX_PLPMTU;
 		}
-		d->pl.probe_size += QUIC_PL_MIN_STEP;
-		if (d->pl.probe_size >= d->pl.probe_high) {
-			d->pl.probe_high = 0;
-			d->pl.state = QUIC_PL_COMPLETE; /* Search -> Search Complete */
+		paths->pl.probe_size += QUIC_PL_MIN_STEP;
+		if (paths->pl.probe_size >= paths->pl.probe_high) {
+			paths->pl.probe_high = 0;
+			paths->pl.state = QUIC_PL_COMPLETE; /* Search -> Search Complete */
 
-			d->pl.probe_size = d->pl.pmtu;
-			d->pathmtu = (u32)d->pl.pmtu;
-			pathmtu = d->pathmtu;
+			paths->pl.probe_size = paths->pl.pmtu;
+			paths->pathmtu = (u32)paths->pl.pmtu;
+			pathmtu = paths->pathmtu;
 			*raise_timer = true;
 		}
-	} else if (d->pl.state == QUIC_PL_COMPLETE) {
+	} else if (paths->pl.state == QUIC_PL_COMPLETE) {
 		/* Raise probe_size again after 30 * interval in Search Complete */
-		d->pl.state = QUIC_PL_SEARCH; /* Search Complete -> Search */
-		d->pl.probe_size = (u16)min(d->pl.probe_size + QUIC_PL_MIN_STEP,
-					    QUIC_MAX_PLPMTU);
+		paths->pl.state = QUIC_PL_SEARCH; /* Search Complete -> Search */
+		paths->pl.probe_size = (u16)min(paths->pl.probe_size + QUIC_PL_MIN_STEP,
+						QUIC_MAX_PLPMTU);
 	}
 
-	*complete = (d->pl.state == QUIC_PL_COMPLETE);
+	*complete = (paths->pl.state == QUIC_PL_COMPLETE);
 	return pathmtu;
 }
 
-u32 quic_path_pl_toobig(struct quic_path_addr *a, u32 pmtu, bool *reset_timer)
+u32 quic_path_pl_toobig(struct quic_path_group *paths, u32 pmtu, bool *reset_timer)
 {
-	struct quic_path_dst *d = (struct quic_path_dst *)a;
 	u32 pathmtu = 0;
 
-	pr_debug("%s: dst: %p, state: %d, pmtu: %d, size: %d, ptb: %d\n",
-		 __func__, d, d->pl.state, d->pl.pmtu, d->pl.probe_size, pmtu);
+	pr_debug("%s: dst: %p, state: %d, pmtu: %d, size: %d, ptb: %d\n", __func__, paths,
+		 paths->pl.state, paths->pl.pmtu, paths->pl.probe_size, pmtu);
 
 	*reset_timer = false;
-	if (pmtu < QUIC_MIN_PLPMTU || pmtu >= (u32)d->pl.probe_size)
+	if (pmtu < QUIC_MIN_PLPMTU || pmtu >= (u32)paths->pl.probe_size)
 		return pathmtu;
 
-	if (d->pl.state == QUIC_PL_BASE) {
+	if (paths->pl.state == QUIC_PL_BASE) {
 		if (pmtu >= QUIC_MIN_PLPMTU && pmtu < QUIC_BASE_PLPMTU) {
-			d->pl.state = QUIC_PL_ERROR; /* Base -> Error */
+			paths->pl.state = QUIC_PL_ERROR; /* Base -> Error */
 
-			d->pl.pmtu = QUIC_BASE_PLPMTU;
-			d->pathmtu = QUIC_BASE_PLPMTU;
-			pathmtu = d->pathmtu;
+			paths->pl.pmtu = QUIC_BASE_PLPMTU;
+			paths->pathmtu = QUIC_BASE_PLPMTU;
+			pathmtu = paths->pathmtu;
 		}
-	} else if (d->pl.state == QUIC_PL_SEARCH) {
-		if (pmtu >= QUIC_BASE_PLPMTU && pmtu < (u32)d->pl.pmtu) {
-			d->pl.state = QUIC_PL_BASE;  /* Search -> Base */
-			d->pl.probe_size = QUIC_BASE_PLPMTU;
-			d->pl.probe_count = 0;
+	} else if (paths->pl.state == QUIC_PL_SEARCH) {
+		if (pmtu >= QUIC_BASE_PLPMTU && pmtu < (u32)paths->pl.pmtu) {
+			paths->pl.state = QUIC_PL_BASE;  /* Search -> Base */
+			paths->pl.probe_size = QUIC_BASE_PLPMTU;
+			paths->pl.probe_count = 0;
 
-			d->pl.probe_high = 0;
-			d->pl.pmtu = QUIC_BASE_PLPMTU;
-			d->pathmtu = QUIC_BASE_PLPMTU;
-			pathmtu = d->pathmtu;
-		} else if (pmtu > (u32)d->pl.pmtu && pmtu < (u32)d->pl.probe_size) {
-			d->pl.probe_size = (u16)pmtu;
-			d->pl.probe_count = 0;
+			paths->pl.probe_high = 0;
+			paths->pl.pmtu = QUIC_BASE_PLPMTU;
+			paths->pathmtu = QUIC_BASE_PLPMTU;
+			pathmtu = paths->pathmtu;
+		} else if (pmtu > (u32)paths->pl.pmtu && pmtu < (u32)paths->pl.probe_size) {
+			paths->pl.probe_size = (u16)pmtu;
+			paths->pl.probe_count = 0;
 		}
-	} else if (d->pl.state == QUIC_PL_COMPLETE) {
-		if (pmtu >= QUIC_BASE_PLPMTU && pmtu < (u32)d->pl.pmtu) {
-			d->pl.state = QUIC_PL_BASE;  /* Complete -> Base */
-			d->pl.probe_size = QUIC_BASE_PLPMTU;
-			d->pl.probe_count = 0;
+	} else if (paths->pl.state == QUIC_PL_COMPLETE) {
+		if (pmtu >= QUIC_BASE_PLPMTU && pmtu < (u32)paths->pl.pmtu) {
+			paths->pl.state = QUIC_PL_BASE;  /* Complete -> Base */
+			paths->pl.probe_size = QUIC_BASE_PLPMTU;
+			paths->pl.probe_count = 0;
 
-			d->pl.probe_high = 0;
-			d->pl.pmtu = QUIC_BASE_PLPMTU;
-			d->pathmtu = QUIC_BASE_PLPMTU;
-			pathmtu = d->pathmtu;
+			paths->pl.probe_high = 0;
+			paths->pl.pmtu = QUIC_BASE_PLPMTU;
+			paths->pathmtu = QUIC_BASE_PLPMTU;
+			pathmtu = paths->pathmtu;
 			*reset_timer = true;
 		}
 	}
 	return pathmtu;
 }
 
-void quic_path_pl_reset(struct quic_path_addr *a)
+void quic_path_pl_reset(struct quic_path_group *paths)
 {
-	struct quic_path_dst *d = (struct quic_path_dst *)a;
-
-	d->pl.number = 0;
-	d->pl.state = QUIC_PL_BASE;
-	d->pl.pmtu = QUIC_BASE_PLPMTU;
-	d->pl.probe_size = QUIC_BASE_PLPMTU;
+	paths->pl.number = 0;
+	paths->pl.state = QUIC_PL_BASE;
+	paths->pl.pmtu = QUIC_BASE_PLPMTU;
+	paths->pl.probe_size = QUIC_BASE_PLPMTU;
 }
 
-bool quic_path_pl_confirm(struct quic_path_addr *a, s64 largest, s64 smallest)
+bool quic_path_pl_confirm(struct quic_path_group *paths, s64 largest, s64 smallest)
 {
-	struct quic_path_dst *d = (struct quic_path_dst *)a;
-
-	return d->pl.number && d->pl.number >= smallest && d->pl.number <= largest;
+	return paths->pl.number && paths->pl.number >= smallest && paths->pl.number <= largest;
 }

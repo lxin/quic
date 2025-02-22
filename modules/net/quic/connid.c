@@ -204,5 +204,4 @@ void quic_conn_id_set_free(struct quic_conn_id_set *id_set)
 void quic_conn_id_set_param(struct quic_conn_id_set *id_set, struct quic_transport_param *p)
 {
 	id_set->max_count = p->active_connection_id_limit;
-	id_set->disable_active_migration = p->disable_active_migration;
 }

@@ -29,9 +29,9 @@ struct quic_crypto_cb {
 
 	u8 key_update:1;
 	u8 key_phase:1;
-	u8 path_alt:2;
 	u8 backlog:1;
 	u8 resume:1;
+	u8 path:1;
 	u8 ecn:2;
 };
 

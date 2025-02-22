@@ -222,7 +222,7 @@ struct quic_stream *quic_stream_find(struct quic_stream_table *streams, s64 stre
 bool quic_stream_id_send_overflow(struct quic_stream_table *streams, s64 stream_id);
 bool quic_stream_id_send_exceeds(struct quic_stream_table *streams, s64 stream_id);
 
-void quic_stream_set_param(struct quic_stream_table *streams, struct quic_transport_param *local,
-			   struct quic_transport_param *remote, bool is_serv);
+void quic_stream_set_param(struct quic_stream_table *streams, struct quic_transport_param *p,
+			   bool remote, bool is_serv);
 void quic_stream_free(struct quic_stream_table *streams);
 int quic_stream_init(struct quic_stream_table *streams);

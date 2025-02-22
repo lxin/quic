@@ -426,6 +426,9 @@ static void quic_crypto_get_header(struct sk_buff *skb)
 	cb->number_len = hdr->pnl + 1;
 	quic_get_int(&p, &len, &cb->number, cb->number_len);
 	cb->number = quic_get_num(cb->number_max, cb->number, cb->number_len);
+
+	if (cb->number > cb->number_max)
+		cb->number_max = cb->number;
 }
 
 static int quic_crypto_header_decrypt(struct crypto_skcipher *tfm, struct sk_buff *skb, bool chacha)

@@ -46,9 +46,6 @@ struct quic_conn_id_set {
 	u32 entry_size;
 	u32 max_count;
 	u32 count;
-
-	u8 disable_active_migration;
-	u8 pending;
 };
 
 static inline u32 quic_conn_id_first_number(struct quic_conn_id_set *id_set)
@@ -111,11 +108,6 @@ static inline void quic_conn_id_swap_active(struct quic_conn_id_set *id_set)
 static inline struct quic_conn_id *quic_conn_id_choose(struct quic_conn_id_set *id_set, u8 alt)
 {
 	return (alt && id_set->alt) ? &id_set->alt->id : &id_set->active->id;
-}
-
-static inline u8 quic_conn_id_disable_active_migration(struct quic_conn_id_set *id_set)
-{
-	return id_set->disable_active_migration;
 }
 
 static inline u32 quic_conn_id_max_count(struct quic_conn_id_set *id_set)

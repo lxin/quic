@@ -339,7 +339,7 @@ static int quic_v6_get_user_addr(struct sock *sk, union quic_addr *a, struct soc
 
 static void quic_v4_get_pref_addr(struct sock *sk, union quic_addr *addr, u8 **pp, u32 *plen)
 {
-	struct quic_path_addr *path = quic_dst(sk);
+	struct quic_path_group *paths = quic_paths(sk);
 	u8 *p = *pp;
 
 	memcpy(&addr->v4.sin_addr, p, 4);
@@ -350,7 +350,7 @@ static void quic_v4_get_pref_addr(struct sock *sk, union quic_addr *addr, u8 **p
 	p += 2;
 
 	addr->v4.sin_family = AF_INET;
-	if (!quic_path_cmp(path, 0, addr))
+	if (!quic_path_cmp_daddr(paths, 0, addr))
 		memset(addr, 0, sizeof(*addr));
 	*plen -= (p - *pp);
 	*pp = p;
@@ -358,7 +358,7 @@ static void quic_v4_get_pref_addr(struct sock *sk, union quic_addr *addr, u8 **p
 
 static void quic_v6_get_pref_addr(struct sock *sk, union quic_addr *addr, u8 **pp, u32 *plen)
 {
-	struct quic_path_addr *path = quic_dst(sk);
+	struct quic_path_group *paths = quic_paths(sk);
 	u8 *p = *pp;
 
 	p += 4; /* try ipv6 address first */
@@ -371,7 +371,7 @@ static void quic_v6_get_pref_addr(struct sock *sk, union quic_addr *addr, u8 **p
 	if (ipv6_only_sock(sk) ||
 	    addr->v6.sin6_port || !ipv6_addr_any(&addr->v6.sin6_addr)) {
 		addr->v4.sin_family = AF_INET6;
-		if (!quic_path_cmp(path, 0, addr))
+		if (!quic_path_cmp_daddr(paths, 0, addr))
 			memset(addr, 0, sizeof(*addr));
 		*plen -= (p - *pp);
 		*pp = p;
@@ -585,11 +585,11 @@ static int quic_inet_listen(struct socket *sock, int backlog)
 {
 	struct quic_conn_id_set *source, *dest;
 	struct quic_conn_id conn_id, *active;
-	struct quic_path_addr *path;
+	struct quic_path_group *paths;
 	struct quic_crypto *crypto;
 	struct quic_packet *packet;
 	struct sock *sk = sock->sk;
-	union quic_addr *sa;
+	union quic_addr *a;
 	int err = 0;
 
 	lock_sock(sk);
@@ -605,20 +605,13 @@ static int quic_inet_listen(struct socket *sock, int backlog)
 	if (!sk_unhashed(sk))
 		goto out;
 
-	path = quic_src(sk);
-	sa = quic_path_addr(path, 0);
-	if (!sa->v4.sin_port) { /* auto bind */
-		err = quic_path_set_bind_port(sk, path, 0);
-		if (err) {
-			quic_path_addr_free(sk, path, 0);
+	paths = quic_paths(sk);
+	a = quic_path_saddr(paths, 0);
+	if (!a->v4.sin_port) { /* auto bind */
+		err = quic_path_bind(sk, paths, 0);
+		if (err)
 			goto free;
-		}
-		err = quic_path_set_udp_sock(sk, path, 0);
-		if (err) {
-			quic_path_addr_free(sk, path, 0);
-			goto free;
-		}
-		quic_set_sk_addr(sk, sa, true);
+		quic_set_sk_addr(sk, a, true);
 	}
 	quic_conn_id_generate(&conn_id);
 	err = quic_conn_id_add(dest, &conn_id, 0, NULL);
@@ -629,7 +622,7 @@ static int quic_inet_listen(struct socket *sock, int backlog)
 	if (err)
 		goto free;
 	active = quic_conn_id_active(dest);
-	quic_outq_set_serv(quic_outq(sk));
+	quic_path_set_serv(paths);
 
 	err = quic_crypto_initial_keys_install(crypto, active, packet->version, 1);
 	if (err)
@@ -816,6 +809,7 @@ static int quic_seq_show(struct seq_file *seq, void *v)
 {
 	struct net *net = seq_file_net(seq);
 	u32 hash = (u32)(*(loff_t *)v);
+	struct quic_path_group *paths;
 	struct quic_hash_head *head;
 	struct quic_outqueue *outq;
 	struct sock *sk;
@@ -829,9 +823,10 @@ static int quic_seq_show(struct seq_file *seq, void *v)
 		if (net != sock_net(sk))
 			continue;
 
-		quic_seq_dump_addr(seq, quic_path_addr(quic_src(sk), 0));
-		quic_seq_dump_addr(seq, quic_path_addr(quic_dst(sk), 0));
-		quic_seq_dump_addr(seq, quic_path_udp(quic_src(sk), 0));
+		paths = quic_paths(sk);
+		quic_seq_dump_addr(seq, quic_path_saddr(paths, 0));
+		quic_seq_dump_addr(seq, quic_path_daddr(paths, 0));
+		quic_seq_dump_addr(seq, quic_path_uaddr(paths, 0));
 
 		outq = quic_outq(sk);
 		seq_printf(seq, "%d\t%lld\t%d\t%d\t%d\t%d\t%d\t%d\n", sk->sk_state,

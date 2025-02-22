@@ -31,7 +31,7 @@ void quic_timer_sack_handler(struct sock *sk)
 
 	if (quic_inq_need_sack(inq) == 2) {
 		quic_pnspace_set_need_sack(space, 1);
-		quic_pnspace_set_path_alt(space, 0);
+		quic_pnspace_set_sack_path(space, 0);
 	}
 
 	quic_outq_transmit(sk);
@@ -85,34 +85,24 @@ out:
 
 void quic_timer_path_handler(struct sock *sk)
 {
-	struct quic_path_addr *d = quic_dst(sk), *s = quic_src(sk);
-	struct quic_outqueue *outq = quic_outq(sk);
-	u8 cnt, path_alt = 0;
+	struct quic_path_group *paths = quic_paths(sk);
+	u8 path;
 
 	if (quic_is_closed(sk))
 		return;
 
-	cnt = quic_outq_path_sent_cnt(outq);
-	if (!cnt)
+	path = quic_path_alt_state(paths, QUIC_PATH_ALT_PROBING);
+	if (!path)
 		goto out;
 
-	path_alt = quic_outq_path_alt(outq);
-	if (cnt < 5) {
-		quic_outq_set_path_sent_cnt(outq, cnt + 1);
+	if (quic_path_inc_alt_probes(paths) < 3)
 		goto out;
-	}
 
-	quic_outq_set_path_sent_cnt(outq, 0);
-	if (path_alt & QUIC_PATH_ALT_DST)
-		quic_path_addr_free(sk, d, 1);
-	if (path_alt & QUIC_PATH_ALT_SRC)
-		quic_path_addr_free(sk, s, 1);
-
-	path_alt = 0;
-	quic_outq_set_path_alt(outq, path_alt);
+	path = 0;
+	quic_path_free(sk, paths, 1);
 
 out:
-	quic_outq_transmit_frame(sk, QUIC_FRAME_PATH_CHALLENGE, NULL, path_alt, false);
+	quic_outq_transmit_frame(sk, QUIC_FRAME_PATH_CHALLENGE, &path, path, false);
 	quic_timer_reset_path(sk);
 }
 

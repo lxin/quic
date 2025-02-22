@@ -13,9 +13,9 @@ struct quic_packet {
 	struct list_head frame_list;
 	struct sk_buff *head;
 	u16 frame_len;
-	u8 path_alt:2;
 	u8 ipfragok:1;
 	u8 padding:1;
+	u8 path:1;
 	u8 overhead;
 	u16 frames;
 	u16 mss[2];
@@ -131,8 +131,8 @@ static inline void quic_packet_reset(struct quic_packet *packet)
 }
 
 int quic_packet_tail(struct sock *sk, struct quic_frame *frame);
-int quic_packet_config(struct sock *sk, u8 level, u8 path_alt);
 int quic_packet_process(struct sock *sk, struct sk_buff *skb);
+int quic_packet_config(struct sock *sk, u8 level, u8 path);
 
 int quic_packet_xmit(struct sock *sk, struct sk_buff *skb);
 int quic_packet_create(struct sock *sk);
