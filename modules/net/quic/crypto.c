@@ -882,7 +882,7 @@ int quic_crypto_get_retry_tag(struct quic_crypto *crypto, struct sk_buff *skb,
 EXPORT_SYMBOL_GPL(quic_crypto_get_retry_tag);
 
 int quic_crypto_generate_token(struct quic_crypto *crypto, void *addr, u32 addrlen,
-			       struct quic_conn_id *conn_id, u8 *token, u32 *tokenlen)
+			       struct quic_conn_id *conn_id, u8 *token, u32 *tlen)
 {
 	u8 key[16], iv[12], *retry_token, *tx_iv, *p;
 	struct crypto_aead *tfm = crypto->tag_tfm;
@@ -921,7 +921,7 @@ int quic_crypto_generate_token(struct quic_crypto *crypto, void *addr, u32 addrl
 	err = crypto_aead_encrypt(req);
 	if (!err) {
 		memcpy(token, retry_token, len);
-		*tokenlen = len + 1;
+		*tlen = len + 1;
 	}
 	kfree(retry_token);
 	return err;

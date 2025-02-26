@@ -30,12 +30,21 @@ static void quic_inq_set_owner_r(int len, struct sock *sk)
 	sk_mem_charge(sk, len);
 }
 
+static struct sock *quic_rcv_get_sock(struct sock *sk, struct sk_buff *skb)
+{
+	union quic_addr daddr, saddr;
+
+	quic_get_msg_addr(&daddr, skb, 0);
+	quic_get_msg_addr(&saddr, skb, 1);
+
+	return quic_sock_lookup(skb, &daddr, &saddr);
+}
+
 int quic_rcv(struct sk_buff *skb)
 {
 	struct quic_crypto_cb *cb = QUIC_CRYPTO_CB(skb);
 	struct net *net = dev_net(skb->dev);
 	struct quic_conn_id *conn_id;
-	union quic_addr daddr, saddr;
 	struct sock *sk = NULL;
 	int err = -EINVAL;
 	u8 *dcid;
@@ -54,9 +63,7 @@ int quic_rcv(struct sk_buff *skb)
 		}
 	}
 	if (!sk) {
-		quic_get_msg_addr(&daddr, skb, 0);
-		quic_get_msg_addr(&saddr, skb, 1);
-		sk = quic_sock_lookup(skb, &daddr, &saddr);
+		sk = quic_rcv_get_sock(sk, skb);
 		if (!sk)
 			goto err;
 	}
@@ -100,14 +107,14 @@ void quic_rcv_err_pmtu(struct sock *sk)
 
 		dst = __sk_dst_get(sk);
 		dst->ops->update_pmtu(dst, sk, NULL, info, true);
-		quic_packet_mss_update(sk, info - quic_encap_len(packet->da));
+		quic_packet_mss_update(sk, info - packet->hlen);
 		quic_outq_retransmit_mark(sk, QUIC_CRYPTO_APP, 1);
 		quic_outq_update_loss_timer(sk);
 		quic_outq_transmit(sk);
 		return;
 	}
 	taglen = quic_packet_taglen(packet);
-	info = info - quic_encap_len(packet->da) - taglen;
+	info = info - packet->hlen - taglen;
 	pathmtu = quic_path_pl_toobig(paths, info, &reset_timer);
 	if (reset_timer)
 		quic_timer_reset(sk, QUIC_TIMER_PMTU, c->plpmtud_probe_interval);
@@ -117,14 +124,11 @@ void quic_rcv_err_pmtu(struct sock *sk)
 
 int quic_rcv_err(struct sk_buff *skb)
 {
-	union quic_addr daddr, saddr;
 	struct sock *sk = NULL;
 	int ret = 0;
 	u32 info;
 
-	quic_get_msg_addr(&saddr, skb, 0);
-	quic_get_msg_addr(&daddr, skb, 1);
-	sk = quic_sock_lookup(skb, &daddr, &saddr);
+	sk = quic_rcv_get_sock(sk, skb);
 	if (!sk)
 		return -ENOENT;
 

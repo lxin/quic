@@ -30,22 +30,22 @@ struct quic_outqueue {
 	u16 count;
 	u8  level;
 
-	u8 disable_1rtt_encryption:1;
-	u8 grease_quic_bit:1;
-	u8 data_blocked:1;
-	u8 force_delay:1;
-	u8 single:1;
-
-	u32 close_errcode;
-	u8 *close_phrase;
-	u8 close_frame;
-	u8 pto_count;
 	/* Use for 0-RTT/1-RTT DATA (re)transmit,
 	 * as QUIC_CRYPTO_CB(skb)->level is always QUIC_CRYPTO_APP.
 	 * Set this level to QUIC_CRYPTO_EARLY or QUIC_CRYPTO_APP
 	 * when the corresponding crypto is ready for send.
 	 */
 	u8 data_level;
+	u8 *close_phrase;
+	u32 close_errcode;
+	u8 close_frame;
+	u8 pto_count;
+
+	u8 disable_1rtt_encryption:1;
+	u8 grease_quic_bit:1;
+	u8 data_blocked:1;
+	u8 force_delay:1;
+	u8 single:1;
 };
 
 static inline void quic_outq_inc_inflight(struct quic_outqueue *outq, u32 len)

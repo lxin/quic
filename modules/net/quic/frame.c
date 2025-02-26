@@ -137,19 +137,19 @@ static struct quic_frame *quic_frame_new_token_create(struct sock *sk, void *dat
 	struct quic_path_group *paths = quic_paths(sk);
 	struct quic_frame *frame;
 	u8 token[72], *p;
-	u32 tokenlen;
+	u32 tlen;
 
 	quic_put_int(token, 0, 1); /* regular token */
 	if (quic_crypto_generate_token(crypto, quic_path_daddr(paths, 0), sizeof(union quic_addr),
-				       quic_conn_id_active(id_set), token, &tokenlen))
+				       quic_conn_id_active(id_set), token, &tlen))
 		return NULL;
 
-	frame = quic_frame_alloc(tokenlen + 4, NULL, GFP_ATOMIC);
+	frame = quic_frame_alloc(tlen + 4, NULL, GFP_ATOMIC);
 	if (!frame)
 		return NULL;
 	p = quic_put_var(frame->data, type);
-	p = quic_put_var(p, tokenlen);
-	p = quic_put_data(p, token, tokenlen);
+	p = quic_put_var(p, tlen);
+	p = quic_put_data(p, token, tlen);
 	frame->len = (u16)(p - frame->data);
 	frame->size = frame->len;
 

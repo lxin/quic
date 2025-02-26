@@ -31,8 +31,8 @@ bool quic_request_sock_exists(struct sock *sk)
 	struct quic_request_sock *req;
 
 	list_for_each_entry(req, quic_reqs(sk), list) {
-		if (!memcmp(&req->sa, packet->sa, sizeof(req->sa)) &&
-		    !memcmp(&req->da, packet->da, sizeof(req->da)))
+		if (!memcmp(&req->saddr, &packet->saddr, sizeof(req->saddr)) &&
+		    !memcmp(&req->daddr, &packet->daddr, sizeof(req->daddr)))
 			return true;
 	}
 	return false;
@@ -51,11 +51,11 @@ int quic_request_sock_enqueue(struct sock *sk, struct quic_conn_id *odcid, u8 re
 		return -ENOMEM;
 
 	req->version = packet->version;
+	req->daddr = packet->daddr;
+	req->saddr = packet->saddr;
 	req->scid = packet->scid;
 	req->dcid = packet->dcid;
 	req->orig_dcid = *odcid;
-	req->da = packet->daddr;
-	req->sa = packet->saddr;
 	req->retry = retry;
 
 	list_add_tail(&req->list, quic_reqs(sk));
@@ -81,7 +81,7 @@ int quic_accept_sock_exists(struct sock *sk, struct sk_buff *skb)
 	int ret = 0;
 
 	local_bh_disable();
-	nsk = quic_sock_lookup(skb, packet->sa, packet->da);
+	nsk = quic_sock_lookup(skb, &packet->saddr, &packet->daddr);
 	if (nsk == sk)
 		goto out;
 	/* the request sock was just accepted */
@@ -1116,9 +1116,9 @@ static int quic_copy_sock(struct sock *nsk, struct sock *sk, struct quic_request
 {
 	struct quic_crypto *crypto = quic_crypto(sk, QUIC_CRYPTO_APP);
 	struct quic_transport_param *param = quic_local(sk);
+	struct quic_packet *packet = quic_packet(sk);
 	struct quic_inqueue *inq = quic_inq(sk);
 	struct sk_buff *skb, *tmp;
-	union quic_addr sa, da;
 	u32 events, type;
 
 	if (quic_data_dup(quic_alpn(nsk), quic_alpn(sk)->data, quic_alpn(sk)->len))
@@ -1137,11 +1137,9 @@ static int quic_copy_sock(struct sock *nsk, struct sock *sk, struct quic_request
 	inet_sk(nsk)->pmtudisc = inet_sk(sk)->pmtudisc;
 
 	skb_queue_walk_safe(quic_inq_backlog_list(inq), skb, tmp) {
-		quic_get_msg_addr(&da, skb, 0);
-		quic_get_msg_addr(&sa, skb, 1);
-
-		if (!memcmp(&req->sa, &da, sizeof(da)) &&
-		    !memcmp(&req->da, &sa, sizeof(sa))) {
+		quic_packet_get_addrs(packet, skb);
+		if (!memcmp(&req->saddr, &packet->saddr, sizeof(req->saddr)) &&
+		    !memcmp(&req->daddr, &packet->daddr, sizeof(req->daddr))) {
 			__skb_unlink(skb, quic_inq_backlog_list(inq));
 			quic_inq_backlog_tail(nsk, skb);
 		}
@@ -1175,11 +1173,11 @@ static int quic_accept_sock_init(struct sock *sk, struct quic_request_sock *req)
 	int err;
 
 	lock_sock(sk);
-	quic_path_set_daddr(paths, 0, &req->da);
+	quic_path_set_daddr(paths, 0, &req->daddr);
 	err = quic_packet_route(sk);
 	if (err < 0)
 		goto out;
-	quic_set_sk_addr(sk, quic_addr(&req->da.sa), false);
+	quic_set_sk_addr(sk, &req->daddr, false);
 
 	quic_conn_id_generate(&conn_id);
 	err = quic_conn_id_add(quic_source(sk), &conn_id, 0, sk);
@@ -1261,7 +1259,7 @@ static struct sock *quic_accept(struct sock *sk, int flags, int *errp, bool kern
 	err = quic_copy_sock(nsk, sk, req);
 	if (err)
 		goto free;
-	err = nsk->sk_prot->bind(nsk, &req->sa.sa, sizeof(req->sa));
+	err = nsk->sk_prot->bind(nsk, &req->saddr.sa, sizeof(req->saddr));
 	if (err)
 		goto free;
 
@@ -1734,16 +1732,16 @@ static int quic_sock_get_session_ticket(struct sock *sk, u32 len,
 {
 	struct quic_crypto *crypto = quic_crypto(sk, QUIC_CRYPTO_APP);
 	u8 *ticket = quic_ticket(sk)->data, key[64];
-	u32 ticket_len = quic_ticket(sk)->len;
+	u32 tlen = quic_ticket(sk)->len;
 	union quic_addr a;
 
 	if (!quic_is_serv(sk)) {
 		if (!quic_crypto_ticket_ready(crypto))
-			ticket_len = 0;
+			tlen = 0;
 		goto out;
 	}
 
-	if (ticket_len)
+	if (tlen)
 		goto out;
 
 	crypto = quic_crypto(sk, QUIC_CRYPTO_INITIAL);
@@ -1752,11 +1750,11 @@ static int quic_sock_get_session_ticket(struct sock *sk, u32 len,
 	if (quic_crypto_generate_session_ticket_key(crypto, &a, sizeof(a), key, 64))
 		return -EINVAL;
 	ticket = key;
-	ticket_len = 64;
+	tlen = 64;
 out:
-	if (len < ticket_len)
+	if (len < tlen)
 		return -EINVAL;
-	len = ticket_len;
+	len = tlen;
 
 	if (copy_to_sockptr(optlen, &len, sizeof(len)) || copy_to_sockptr(optval, ticket, len))
 		return -EFAULT;

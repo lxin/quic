@@ -151,7 +151,7 @@ int quic_crypto_generate_stateless_reset_token(struct quic_crypto *crypto, void 
 					       u32 len, u8 *key, u32 key_len);
 
 int quic_crypto_generate_token(struct quic_crypto *crypto, void *addr, u32 addrlen,
-			       struct quic_conn_id *conn_id, u8 *token, u32 *tokenlen);
+			       struct quic_conn_id *conn_id, u8 *token, u32 *tlen);
 int quic_crypto_get_retry_tag(struct quic_crypto *crypto, struct sk_buff *skb,
 			      struct quic_conn_id *odcid, u32 version, u8 *tag);
 int quic_crypto_verify_token(struct quic_crypto *crypto, void *addr, u32 addrlen,

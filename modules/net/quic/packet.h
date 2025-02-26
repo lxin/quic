@@ -9,45 +9,41 @@
  */
 
 struct quic_packet {
-	/* send */
-	struct list_head frame_list;
-	struct sk_buff *head;
-	u16 frame_len;
-	u8 ipfragok:1;
-	u8 padding:1;
-	u8 path:1;
-	u8 overhead;
-	u16 frames;
-	u16 mss[2];
-
-	/* recv */
 	struct quic_conn_id dcid;
 	struct quic_conn_id scid;
 	union quic_addr daddr;
 	union quic_addr saddr;
+
+	struct list_head frame_list;
+	struct sk_buff *head;
+	u16 frame_len;
+	u8 taglen[2];
+	u32 version;
+	u8 errframe;
+	u8 overhead;
+	u16 errcode;
+	u16 frames;
+	u16 mss[2];
+	u16 hlen;
+	u16 len;
+
 	u8 ack_eliciting:1;
 	u8 ack_immediate:1;
 	u8 non_probing:1;
 	u8 has_sack:1;
-	u8 errframe;
-	u16 errcode;
-	u32 version;
-
-	/* send and recv */
-	union quic_addr *da;
-	union quic_addr *sa;
-	u8 taglen[2];
+	u8 ipfragok:1;
+	u8 padding:1;
+	u8 path:1;
 	u8 level;
-	u16 len;
 };
 
 struct quic_packet_sent {
 	struct list_head list;
+	u32 sent_time;
 	u16 frame_len;
 	u16 frames;
-	s64 number;
 
-	u32 sent_time;
+	s64 number;
 	u8  level;
 	u8  ecn:2;
 
@@ -138,6 +134,7 @@ int quic_packet_xmit(struct sock *sk, struct sk_buff *skb);
 int quic_packet_create(struct sock *sk);
 int quic_packet_route(struct sock *sk);
 
+void quic_packet_get_addrs(struct quic_packet *packet, struct sk_buff *skb);
 void quic_packet_mss_update(struct sock *sk, u32 mss);
 void quic_packet_flush(struct sock *sk);
 void quic_packet_init(struct sock *sk);

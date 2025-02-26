@@ -45,13 +45,15 @@ enum quic_state {
 
 struct quic_request_sock {
 	struct list_head	list;
-	union quic_addr		da;
-	union quic_addr		sa;
+
 	struct quic_conn_id	dcid;
 	struct quic_conn_id	scid;
+	union quic_addr		daddr;
+	union quic_addr		saddr;
+
 	struct quic_conn_id	orig_dcid;
-	u8			retry;
 	u32			version;
+	u8			retry;
 };
 
 enum quic_tsq_enum {
