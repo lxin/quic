@@ -678,7 +678,7 @@ static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 				err = quic_wait_for_send(sk, 0, timeo, len);
 				if (err) {
 					quic_frame_put(frame);
-					if (err == -EPIPE)
+					if (err == -EPIPE || !bytes)
 						goto err;
 					goto out;
 				}
@@ -734,7 +734,7 @@ static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 			timeo = sock_sndtimeo(sk, msg->msg_flags & MSG_DONTWAIT);
 			err = quic_wait_for_send(sk, 0, timeo, len);
 			if (err) {
-				if (err == -EPIPE)
+				if (err == -EPIPE || !bytes)
 					goto err;
 				goto out;
 			}
