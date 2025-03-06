@@ -178,7 +178,7 @@ static struct quic_frame_frag *quic_frame_frag_alloc(u16 size)
 
 static struct quic_frame *quic_frame_stream_create(struct sock *sk, void *data, u8 type)
 {
-	u32 msg_len, max_frame_len, hlen = 1;
+	u32 msg_len, max_frame_len, wspace, hlen = 1;
 	struct quic_msginfo *info = data;
 	struct quic_frame_frag *frag;
 	struct quic_stream *stream;
@@ -196,7 +196,8 @@ static struct quic_frame *quic_frame_stream_create(struct sock *sk, void *data, 
 	hlen += quic_var_len(max_frame_len);
 
 	msg_len = iov_iter_count(info->msg);
-	if (msg_len <= sk_stream_wspace(sk)) {
+	wspace = quic_outq_wspace(sk, stream);
+	if (msg_len <= wspace) {
 		if (msg_len <= max_frame_len - hlen) {
 			if (info->flags & MSG_STREAM_FIN)
 				type |= QUIC_STREAM_BIT_FIN;
@@ -205,7 +206,7 @@ static struct quic_frame *quic_frame_stream_create(struct sock *sk, void *data, 
 			msg_len = max_frame_len - hlen;
 		}
 	} else {
-		msg_len = sk_stream_wspace(sk);
+		msg_len = wspace;
 		if (msg_len > max_frame_len - hlen) {
 			nodelay = 1;
 			msg_len = max_frame_len - hlen;
@@ -245,16 +246,15 @@ static struct quic_frame *quic_frame_stream_create(struct sock *sk, void *data, 
 	frame->len = frame->size + frame->bytes;
 	frame->nodelay = nodelay;
 
-	stream->send.offset += msg_len;
 	return frame;
 }
 
 int quic_frame_stream_append(struct sock *sk, struct quic_frame *frame,
 			     struct quic_msginfo *info, u8 pack)
 {
+	u32 msg_len, max_frame_len, wspace, hlen = 1;
 	struct quic_stream *stream = info->stream;
 	u8 *p, type = frame->type, nodelay = 0;
-	u32 msg_len, max_frame_len, hlen = 1;
 	struct quic_frame_frag *frag, *pos;
 	u64 offset = 0;
 
@@ -268,7 +268,8 @@ int quic_frame_stream_append(struct sock *sk, struct quic_frame *frame,
 		return -1;
 
 	msg_len = iov_iter_count(info->msg);
-	if (msg_len <= sk_stream_wspace(sk)) {
+	wspace = quic_outq_wspace(sk, stream);
+	if (msg_len <= wspace) {
 		if (msg_len <= max_frame_len - hlen - frame->bytes) {
 			if (info->flags & MSG_STREAM_FIN)
 				type |= QUIC_STREAM_BIT_FIN;
@@ -277,7 +278,7 @@ int quic_frame_stream_append(struct sock *sk, struct quic_frame *frame,
 			msg_len = max_frame_len - hlen - frame->bytes;
 		}
 	} else {
-		msg_len = sk_stream_wspace(sk);
+		msg_len = wspace;
 		if (msg_len > max_frame_len - hlen - frame->bytes) {
 			nodelay = 1;
 			msg_len = max_frame_len - hlen - frame->bytes;
@@ -318,7 +319,6 @@ int quic_frame_stream_append(struct sock *sk, struct quic_frame *frame,
 	frame->len = frame->size + frame->bytes;
 	frame->nodelay = nodelay;
 
-	stream->send.offset += msg_len;
 	return msg_len;
 }
 
@@ -1150,8 +1150,10 @@ static int quic_frame_max_data_process(struct sock *sk, struct quic_frame *frame
 	if (!quic_get_var(&p, &len, &max_bytes))
 		return -EINVAL;
 
-	if (max_bytes >= quic_outq_max_bytes(outq))
+	if (max_bytes >= quic_outq_max_bytes(outq)) {
 		quic_outq_set_max_bytes(outq, max_bytes);
+		sk->sk_write_space(sk);
+	}
 
 	return (int)(frame->len - len);
 }
@@ -1185,6 +1187,7 @@ static int quic_frame_max_stream_data_process(struct sock *sk, struct quic_frame
 		data.id = stream->id;
 		data.max_data = max_bytes;
 		quic_inq_event_recv(sk, QUIC_EVENT_STREAM_MAX_DATA, &data);
+		sk->sk_write_space(sk);
 	}
 
 	return (int)(frame->len - len);

@@ -675,11 +675,11 @@ static __poll_t quic_inet_poll(struct file *file, struct socket *sock, poll_tabl
 	if (quic_is_closed(sk))
 		return mask;
 
-	if (sk_stream_wspace(sk) > 0) {
+	if (sk_stream_wspace(sk) > 0 && quic_outq_wspace(sk, NULL) > 0) {
 		mask |= EPOLLOUT | EPOLLWRNORM;
 	} else {
 		sk_set_bit(SOCKWQ_ASYNC_NOSPACE, sk);
-		if (sk_stream_wspace(sk) > 0)
+		if (sk_stream_wspace(sk) > 0 && quic_outq_wspace(sk, NULL) > 0)
 			mask |= EPOLLOUT | EPOLLWRNORM;
 	}
 	return mask;

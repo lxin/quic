@@ -608,15 +608,8 @@ int quic_inq_dgram_recv(struct sock *sk, struct quic_frame *frame)
 	return 0;
 }
 
-void quic_inq_data_read(struct sock *sk, struct quic_stream *stream, u32 freed, u32 bytes)
+void quic_inq_data_read(struct sock *sk, u32 bytes)
 {
-	if (stream) {
-		quic_inq_flow_control(sk, stream, freed);
-		if (stream->recv.state == QUIC_STREAM_RECV_STATE_READ) {
-			quic_inq_stream_list_purge(sk, stream);
-			quic_stream_recv_put(quic_streams(sk), stream, quic_is_serv(sk));
-		}
-	}
 	quic_inq_rfree((int)bytes, sk);
 }
 

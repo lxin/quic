@@ -110,36 +110,52 @@ static void quic_outq_transmit_dgram(struct sock *sk, u8 level)
 	}
 }
 
-static int quic_outq_flow_control(struct sock *sk, struct quic_stream *stream, u16 bytes)
+int quic_outq_flow_control(struct sock *sk, struct quic_stream *stream, u16 bytes, u8 sndblock)
 {
 	struct quic_outqueue *outq = quic_outq(sk);
-	u8 blocked = 0, frame = 0;
+	u8 frame, blocked = 0, transmit = 0;
 
 	/* send flow control */
 	if (stream->send.bytes + bytes > stream->send.max_bytes) {
-		if (!stream->send.data_blocked &&
-		    stream->send.last_max_bytes < stream->send.max_bytes) {
-			if (!quic_outq_transmit_frame(sk, QUIC_FRAME_STREAM_DATA_BLOCKED, stream,
-						      0, true))
-				frame = 1;
+		blocked = stream->send.data_blocked;
+		if (!blocked && stream->send.last_max_bytes < stream->send.max_bytes) {
+			frame = QUIC_FRAME_STREAM_DATA_BLOCKED;
+			if (sndblock && !quic_outq_transmit_frame(sk, frame, stream, 0, true))
+				transmit = 1;
 			stream->send.last_max_bytes = stream->send.max_bytes;
 			stream->send.data_blocked = 1;
 		}
 		blocked = 1;
 	}
 	if (outq->bytes + bytes > outq->max_bytes) {
-		if (!outq->data_blocked && outq->last_max_bytes < outq->max_bytes) {
-			if (!quic_outq_transmit_frame(sk, QUIC_FRAME_DATA_BLOCKED, outq, 0, true))
-				frame = 1;
+		blocked = outq->data_blocked;
+		if (!blocked && outq->last_max_bytes < outq->max_bytes) {
+			frame = QUIC_FRAME_DATA_BLOCKED;
+			if (sndblock && !quic_outq_transmit_frame(sk, frame, outq, 0, true))
+				transmit = 1;
 			outq->last_max_bytes = outq->max_bytes;
 			outq->data_blocked = 1;
 		}
 		blocked = 1;
 	}
 
-	if (frame)
-		quic_outq_transmit_ctrl(sk, QUIC_CRYPTO_APP);
+	if (transmit)
+		quic_outq_transmit(sk);
+
 	return blocked;
+}
+
+u32 quic_outq_wspace(struct sock *sk, struct quic_stream *stream)
+{
+	struct quic_outqueue *outq = quic_outq(sk);
+	u32 len = outq->max_bytes - outq->bytes;
+
+	if (stream) {
+		len = min_t(u32, len, sk_stream_wspace(sk));
+		len = min_t(u32, len, stream->send.max_bytes - stream->send.bytes);
+	}
+
+	return len;
 }
 
 static int quic_outq_delay_check(struct sock *sk, u8 level, u8 nodelay)
@@ -184,8 +200,6 @@ static void quic_outq_transmit_stream(struct sock *sk, u8 level)
 
 	head = &outq->stream_list;
 	list_for_each_entry_safe(frame, next, head, list) {
-		if (quic_outq_flow_control(sk, frame->stream, frame->bytes))
-			break;
 		if (quic_packet_config(sk, outq->data_level, frame->path))
 			break;
 		if (quic_outq_limit_check(sk, frame->type, frame->len))
@@ -193,8 +207,6 @@ static void quic_outq_transmit_stream(struct sock *sk, u8 level)
 		if (quic_outq_delay_check(sk, outq->data_level, frame->nodelay))
 			break;
 		if (quic_packet_tail(sk, frame)) {
-			frame->stream->send.bytes += frame->bytes;
-			outq->bytes += frame->bytes;
 			outq->stream_list_len -= frame->len;
 			continue;
 		}
@@ -293,13 +305,18 @@ int quic_outq_stream_append(struct sock *sk, struct quic_msginfo *info, u8 pack)
 	if (bytes < 0 || !pack)
 		return bytes;
 
-	outq->stream_list_len += (frame->len - len);
 	if (frame->type & QUIC_STREAM_BIT_FIN &&
 	    stream->send.state == QUIC_STREAM_SEND_STATE_SEND) {
 		if (quic_stream_send_active_id(streams) == stream->id)
 			quic_stream_set_send_active_id(streams, -1);
 		stream->send.state = QUIC_STREAM_SEND_STATE_SENT;
 	}
+
+	stream->send.bytes += bytes;
+	stream->send.offset += bytes;
+
+	outq->bytes += bytes;
+	outq->stream_list_len += (frame->len - len);
 	quic_outq_set_owner_w((int)bytes, sk);
 
 	return bytes;
@@ -321,9 +338,14 @@ void quic_outq_stream_tail(struct sock *sk, struct quic_frame *frame, bool cork)
 		stream->send.state = QUIC_STREAM_SEND_STATE_SENT;
 	}
 
-	outq->stream_list_len += frame->len;
 	stream->send.frags++;
+	stream->send.bytes += frame->bytes;
+	stream->send.offset += frame->bytes;
+
+	outq->bytes += frame->bytes;
+	outq->stream_list_len += frame->len;
 	quic_outq_set_owner_w((int)frame->bytes, sk);
+
 	list_add_tail(&frame->list, &outq->stream_list);
 	if (!cork)
 		quic_outq_transmit(sk);
@@ -738,8 +760,6 @@ static void quic_outq_retransmit_frame(struct sock *sk, struct quic_frame *frame
 	if (quic_frame_stream(frame->type)) {
 		head = &outq->stream_list;
 
-		frame->stream->send.bytes -= frame->bytes;
-		outq->bytes -= frame->bytes;
 		outq->stream_list_len += frame->len;
 	}
 

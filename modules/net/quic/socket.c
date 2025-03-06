@@ -630,6 +630,56 @@ static int quic_wait_for_send(struct sock *sk, u32 flags, u32 len)
 	return err;
 }
 
+static int quic_sock_stream_writable(struct sock *sk, struct quic_stream *stream,
+				     u32 flags, u32 len)
+{
+	if (quic_outq_flow_control(sk, stream, len, flags & MSG_STREAM_SNDBLOCK))
+		return 0;
+	if (sk_stream_wspace(sk) < len || !sk_wmem_schedule(sk, len))
+		return 0;
+	return 1;
+}
+
+static int quic_wait_for_stream_send(struct sock *sk, struct quic_stream *stream, u32 flags,
+				     u32 len)
+{
+	long timeo = sock_sndtimeo(sk, flags & MSG_DONTWAIT);
+	DEFINE_WAIT(wait);
+	int err = 0;
+
+	for (;;) {
+		prepare_to_wait_exclusive(sk_sleep(sk), &wait, TASK_INTERRUPTIBLE);
+		if (quic_is_closed(sk)) {
+			err = -EPIPE;
+			pr_debug("%s: sk closed\n", __func__);
+			break;
+		}
+		if (sk->sk_err) {
+			err = -EPIPE;
+			pr_debug("%s: sk_err: %d\n", __func__, sk->sk_err);
+			break;
+		}
+		if (signal_pending(current)) {
+			err = sock_intr_errno(timeo);
+			break;
+		}
+		if (!timeo) {
+			err = -EAGAIN;
+			if (quic_outq_wspace(sk, stream) < len)
+				err = -ENOSPC;
+			break;
+		}
+		if (quic_sock_stream_writable(sk, stream, flags, len))
+			break;
+
+		release_sock(sk);
+		timeo = schedule_timeout(timeo);
+		lock_sock(sk);
+	}
+	finish_wait(sk_sleep(sk), &wait);
+	return err;
+}
+
 static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 {
 	struct quic_outqueue *outq = quic_outq(sk);
@@ -729,14 +779,15 @@ static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 	msginfo.stream = stream;
 	msginfo.msg = &msg->msg_iter;
 	msginfo.flags = sinfo.stream_flags;
+	flags |= sinfo.stream_flags;
 
 	do {
-		if (sk_stream_wspace(sk) < len || !sk_wmem_schedule(sk, len)) {
+		if (!quic_sock_stream_writable(sk, stream, flags, len)) {
 			if (delay) {
 				quic_outq_set_force_delay(outq, 0);
 				quic_outq_transmit(sk);
 			}
-			err = quic_wait_for_send(sk, flags, len);
+			err = quic_wait_for_stream_send(sk, stream, flags, len);
 			if (err) {
 				if (err == -EPIPE || !bytes)
 					goto err;
@@ -913,9 +964,15 @@ static int quic_recvmsg(struct sock *sk, struct msghdr *msg, size_t len, int non
 		put_cmsg(msg, IPPROTO_QUIC, QUIC_STREAM_INFO, sizeof(sinfo), &sinfo);
 		if (msg->msg_flags & MSG_CTRUNC)
 			msg->msg_flags |= sinfo.stream_flags;
+
+		quic_inq_flow_control(sk, stream, freed);
+		if (stream->recv.state == QUIC_STREAM_RECV_STATE_READ) {
+			quic_inq_stream_list_purge(sk, stream);
+			quic_stream_recv_put(quic_streams(sk), stream, quic_is_serv(sk));
+		}
 	}
 
-	quic_inq_data_read(sk, stream, freed, bytes);
+	quic_inq_data_read(sk, bytes);
 	err = (int)copied;
 out:
 	release_sock(sk);
