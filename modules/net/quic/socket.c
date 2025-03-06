@@ -515,53 +515,43 @@ static int quic_msghdr_parse(struct sock *sk, struct msghdr *msg, struct quic_ha
 	return 0;
 }
 
-static int quic_wait_for_send(struct sock *sk, s64 stream_id, long timeo, u32 msg_len)
+static int quic_wait_for_stream(struct sock *sk, s64 stream_id, u32 flags)
 {
+	long timeo = sock_sndtimeo(sk, flags & MSG_STREAM_DONTWAIT);
 	struct quic_stream_table *streams = quic_streams(sk);
+	DEFINE_WAIT(wait);
+	int err = 0;
 
 	for (;;) {
-		int err = 0, exit = 1;
-		DEFINE_WAIT(wait);
-
 		prepare_to_wait_exclusive(sk_sleep(sk), &wait, TASK_INTERRUPTIBLE);
-		if (!timeo) {
-			err = -EAGAIN;
-			goto out;
+		if (quic_is_closed(sk)) {
+			err = -EPIPE;
+			pr_debug("%s: sk closed\n", __func__);
+			break;
 		}
 		if (sk->sk_err) {
 			err = -EPIPE;
 			pr_debug("%s: sk_err: %d\n", __func__, sk->sk_err);
-			goto out;
+			break;
 		}
 		if (signal_pending(current)) {
 			err = sock_intr_errno(timeo);
-			goto out;
+			break;
 		}
-		if (quic_is_closed(sk)) {
-			err = -EPIPE;
-			pr_debug("%s: sk closed\n", __func__);
-			goto out;
+		if (!timeo) {
+			err = -EAGAIN;
+			break;
 		}
+		if (!quic_stream_id_send_exceeds(streams, stream_id) &&
+		    !quic_stream_id_send_overflow(streams, stream_id))
+			break;
 
-		if (stream_id) {
-			if (!quic_stream_id_send_exceeds(streams, stream_id) &&
-			    !quic_stream_id_send_overflow(streams, stream_id))
-				goto out;
-		} else {
-			if ((int)msg_len <= sk_stream_wspace(sk) &&
-			    sk_wmem_schedule(sk, (int)msg_len))
-				goto out;
-		}
-
-		exit = 0;
 		release_sock(sk);
 		timeo = schedule_timeout(timeo);
 		lock_sock(sk);
-out:
-		finish_wait(sk_sleep(sk), &wait);
-		if (exit)
-			return err;
 	}
+	finish_wait(sk_sleep(sk), &wait);
+	return err;
 }
 
 static struct quic_stream *quic_sock_send_stream(struct sock *sk, struct quic_stream_info *sinfo)
@@ -570,7 +560,6 @@ static struct quic_stream *quic_sock_send_stream(struct sock *sk, struct quic_st
 	struct quic_stream_table *streams = quic_streams(sk);
 	u8 type = QUIC_FRAME_STREAMS_BLOCKED_BIDI;
 	struct quic_stream *stream;
-	long timeo;
 	int err;
 
 	stream = quic_stream_send_get(streams, sinfo->stream_id,
@@ -596,8 +585,7 @@ static struct quic_stream *quic_sock_send_stream(struct sock *sk, struct quic_st
 			return ERR_PTR(-ENOMEM);
 	}
 
-	timeo = sock_sndtimeo(sk, sinfo->stream_flags & MSG_STREAM_DONTWAIT);
-	err = quic_wait_for_send(sk, sinfo->stream_id, timeo, 0);
+	err = quic_wait_for_stream(sk, sinfo->stream_id, sinfo->stream_flags);
 	if (err)
 		return ERR_PTR(err);
 
@@ -605,19 +593,55 @@ static struct quic_stream *quic_sock_send_stream(struct sock *sk, struct quic_st
 				    sinfo->stream_flags, quic_is_serv(sk));
 }
 
+static int quic_wait_for_send(struct sock *sk, u32 flags, u32 len)
+{
+	long timeo = sock_sndtimeo(sk, flags & MSG_DONTWAIT);
+	DEFINE_WAIT(wait);
+	int err = 0;
+
+	for (;;) {
+		prepare_to_wait_exclusive(sk_sleep(sk), &wait, TASK_INTERRUPTIBLE);
+		if (quic_is_closed(sk)) {
+			err = -EPIPE;
+			pr_debug("%s: sk closed\n", __func__);
+			break;
+		}
+		if (sk->sk_err) {
+			err = -EPIPE;
+			pr_debug("%s: sk_err: %d\n", __func__, sk->sk_err);
+			break;
+		}
+		if (signal_pending(current)) {
+			err = sock_intr_errno(timeo);
+			break;
+		}
+		if (!timeo) {
+			err = -EAGAIN;
+			break;
+		}
+		if ((int)len <= sk_stream_wspace(sk) && sk_wmem_schedule(sk, (int)len))
+			break;
+
+		release_sock(sk);
+		timeo = schedule_timeout(timeo);
+		lock_sock(sk);
+	}
+	finish_wait(sk_sleep(sk), &wait);
+	return err;
+}
+
 static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 {
 	struct quic_outqueue *outq = quic_outq(sk);
-	u8 delay = !!(msg->msg_flags & MSG_MORE);
 	struct quic_handshake_info hinfo = {};
 	struct quic_stream_info sinfo = {};
 	int err = 0, bytes = 0, len = 1;
+	bool delay, has_hinfo = false;
 	struct quic_msginfo msginfo;
 	struct quic_crypto *crypto;
 	struct quic_stream *stream;
+	u32 flags = msg->msg_flags;
 	struct quic_frame *frame;
-	bool has_hinfo = false;
-	long timeo;
 
 	lock_sock(sk);
 	err = quic_msghdr_parse(sk, msg, &hinfo, &sinfo, &has_hinfo);
@@ -629,6 +653,7 @@ static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 		goto err;
 	}
 
+	delay = !!(flags & MSG_MORE);
 	if (has_hinfo) {
 		if (hinfo.crypto_level >= QUIC_CRYPTO_EARLY) {
 			err = -EINVAL;
@@ -656,8 +681,7 @@ static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 					quic_outq_set_force_delay(outq, 0);
 					quic_outq_transmit(sk);
 				}
-				timeo = sock_sndtimeo(sk, msg->msg_flags & MSG_DONTWAIT);
-				err = quic_wait_for_send(sk, 0, timeo, len);
+				err = quic_wait_for_send(sk, flags, len);
 				if (err) {
 					quic_frame_put(frame);
 					if (err == -EPIPE || !bytes)
@@ -672,7 +696,7 @@ static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 		goto out;
 	}
 
-	if (msg->msg_flags & MSG_DATAGRAM) {
+	if (flags & MSG_DATAGRAM) {
 		if (!quic_outq_max_dgram(outq)) {
 			err = -EINVAL;
 			goto err;
@@ -684,8 +708,7 @@ static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 		}
 		len = frame->bytes;
 		if (sk_stream_wspace(sk) < len || !sk_wmem_schedule(sk, len)) {
-			timeo = sock_sndtimeo(sk, msg->msg_flags & MSG_DONTWAIT);
-			err = quic_wait_for_send(sk, 0, timeo, len);
+			err = quic_wait_for_send(sk, flags, len);
 			if (err) {
 				quic_frame_put(frame);
 				goto err;
@@ -713,8 +736,7 @@ static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 				quic_outq_set_force_delay(outq, 0);
 				quic_outq_transmit(sk);
 			}
-			timeo = sock_sndtimeo(sk, msg->msg_flags & MSG_DONTWAIT);
-			err = quic_wait_for_send(sk, 0, timeo, len);
+			err = quic_wait_for_send(sk, flags, len);
 			if (err) {
 				if (err == -EPIPE || !bytes)
 					goto err;
@@ -757,46 +779,42 @@ err:
 	return err;
 }
 
-static int quic_wait_for_packet(struct sock *sk, long timeo)
+static int quic_wait_for_packet(struct sock *sk, int nonblock)
 {
 	struct list_head *head = quic_inq_recv_list(quic_inq(sk));
+	long timeo = sock_rcvtimeo(sk, nonblock);
+	DEFINE_WAIT(wait);
+	int err = 0;
 
 	for (;;) {
-		int err = 0, exit = 1;
-		DEFINE_WAIT(wait);
-
-		prepare_to_wait_exclusive(sk_sleep(sk), &wait, TASK_INTERRUPTIBLE);
-
 		if (!list_empty(head))
-			goto out;
-
-		err = sk->sk_err;
-		if (err) {
-			pr_debug("%s: sk_err: %d\n", __func__, err);
-			goto out;
+			break;
+		prepare_to_wait_exclusive(sk_sleep(sk), &wait, TASK_INTERRUPTIBLE);
+		if (quic_is_closed(sk)) {
+			err = -ENOTCONN;
+			pr_debug("%s: sk closed\n", __func__);
+			break;
+		}
+		if (sk->sk_err) {
+			err = -ENOTCONN;
+			pr_debug("%s: sk_err: %d\n", __func__, sk->sk_err);
+			break;
+		}
+		if (signal_pending(current)) {
+			err = sock_intr_errno(timeo);
+			break;
+		}
+		if (!timeo) {
+			err = -EAGAIN;
+			break;
 		}
 
-		err = -ENOTCONN;
-		if (quic_is_closed(sk))
-			goto out;
-
-		err = -EAGAIN;
-		if (!timeo)
-			goto out;
-
-		err = sock_intr_errno(timeo);
-		if (signal_pending(current))
-			goto out;
-
-		exit = 0;
 		release_sock(sk);
 		timeo = schedule_timeout(timeo);
 		lock_sock(sk);
-out:
-		finish_wait(sk_sleep(sk), &wait);
-		if (exit)
-			return err;
 	}
+	finish_wait(sk_sleep(sk), &wait);
+	return err;
 }
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 19, 0)
@@ -816,13 +834,11 @@ static int quic_recvmsg(struct sock *sk, struct msghdr *msg, size_t len, int non
 	struct quic_frame *frame, *next;
 	u8 fin, dgram, level, event = 0;
 	struct list_head *head;
-	long timeo;
 	int err;
 
 	lock_sock(sk);
 
-	timeo = sock_rcvtimeo(sk, nonblock);
-	err = quic_wait_for_packet(sk, timeo);
+	err = quic_wait_for_packet(sk, nonblock);
 	if (err)
 		goto out;
 
@@ -906,40 +922,40 @@ out:
 	return err;
 }
 
-static int quic_wait_for_accept(struct sock *sk, long timeo)
+static int quic_wait_for_accept(struct sock *sk, u32 flags)
 {
+	long timeo = sock_sndtimeo(sk, flags & O_NONBLOCK);
+	struct list_head *head = quic_reqs(sk);
 	DEFINE_WAIT(wait);
 	int err = 0;
 
 	for (;;) {
+		if (!list_empty(head))
+			break;
 		prepare_to_wait_exclusive(sk_sleep(sk), &wait, TASK_INTERRUPTIBLE);
-		if (list_empty(quic_reqs(sk))) {
-			release_sock(sk);
-			timeo = schedule_timeout(timeo);
-			lock_sock(sk);
-		}
-
 		if (!quic_is_listen(sk)) {
 			err = -EINVAL;
+			pr_debug("%s: sk not listening\n", __func__);
 			break;
 		}
-
-		if (!list_empty(quic_reqs(sk))) {
-			err = 0;
+		if (sk->sk_err) {
+			err = -EINVAL;
+			pr_debug("%s: sk_err: %d\n", __func__, sk->sk_err);
 			break;
 		}
-
 		if (signal_pending(current)) {
 			err = sock_intr_errno(timeo);
 			break;
 		}
-
 		if (!timeo) {
 			err = -EAGAIN;
 			break;
 		}
-	}
 
+		release_sock(sk);
+		timeo = schedule_timeout(timeo);
+		lock_sock(sk);
+	}
 	finish_wait(sk_sleep(sk), &wait);
 	return err;
 }
@@ -1228,15 +1244,13 @@ static struct sock *quic_accept(struct sock *sk, int flags, int *errp, bool kern
 	struct quic_request_sock *req = NULL;
 	struct sock *nsk = NULL;
 	int err = -EINVAL;
-	long timeo;
 
 	lock_sock(sk);
 
 	if (!quic_is_listen(sk))
 		goto out;
 
-	timeo = sock_rcvtimeo(sk, flags & O_NONBLOCK);
-	err = quic_wait_for_accept(sk, timeo);
+	err = quic_wait_for_accept(sk, flags);
 	if (err)
 		goto out;
 	req = quic_request_sock_dequeue(sk);
