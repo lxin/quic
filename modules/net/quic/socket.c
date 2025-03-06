@@ -741,6 +741,7 @@ static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 		}
 		len = frame->bytes;
 		if (!sk_wmem_schedule(sk, len)) {
+			iov_iter_revert(msginfo.msg, len);
 			quic_frame_put(frame);
 			continue;
 		}
