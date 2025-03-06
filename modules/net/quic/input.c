@@ -191,7 +191,7 @@ static void quic_inq_stream_tail(struct sock *sk, struct quic_stream *stream,
 
 #define QUIC_INQ_RWND_SHIFT	4
 
-static void quic_inq_flow_control(struct sock *sk, struct quic_stream *stream, u32 bytes)
+void quic_inq_flow_control(struct sock *sk, struct quic_stream *stream, u32 bytes)
 {
 	struct quic_packet *packet = quic_packet(sk);
 	struct quic_inqueue *inq = quic_inq(sk);
@@ -543,26 +543,27 @@ int quic_inq_event_recv(struct sock *sk, u8 event, void *args)
 	case QUIC_EVENT_STREAM_UPDATE:
 		args_len = sizeof(struct quic_stream_update);
 		break;
+	case QUIC_EVENT_STREAM_MAX_DATA:
+		args_len = sizeof(struct quic_stream_max_data);
+		break;
 	case QUIC_EVENT_STREAM_MAX_STREAM:
 		args_len = sizeof(u64);
 		break;
-	case QUIC_EVENT_NEW_SESSION_TICKET:
-	case QUIC_EVENT_NEW_TOKEN:
-		args_len = ((struct quic_data *)args)->len;
-		args = ((struct quic_data *)args)->data;
+	case QUIC_EVENT_CONNECTION_ID:
+		args_len = sizeof(struct quic_connection_id_info);
 		break;
 	case QUIC_EVENT_CONNECTION_CLOSE:
 		args_len = strlen(((struct quic_connection_close *)args)->phrase) + 1 +
 			   sizeof(struct quic_connection_close);
 		break;
+	case QUIC_EVENT_CONNECTION_MIGRATION:
 	case QUIC_EVENT_KEY_UPDATE:
 		args_len = sizeof(u8);
 		break;
-	case QUIC_EVENT_CONNECTION_MIGRATION:
-		args_len = sizeof(u8);
-		break;
-	case QUIC_EVENT_CONNECTION_ID:
-		args_len = sizeof(struct quic_connection_id_info);
+	case QUIC_EVENT_NEW_SESSION_TICKET:
+	case QUIC_EVENT_NEW_TOKEN:
+		args_len = ((struct quic_data *)args)->len;
+		args = ((struct quic_data *)args)->data;
 		break;
 	default:
 		return -EINVAL;
@@ -587,7 +588,6 @@ int quic_inq_event_recv(struct sock *sk, u8 event, void *args)
 	}
 	quic_inq_set_owner_r((int)frame->len, sk);
 	list_add_tail(&frame->list, head);
-	quic_inq(sk)->last_event = frame;
 	sk->sk_data_ready(sk);
 	return 0;
 }

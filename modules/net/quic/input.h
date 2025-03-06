@@ -26,7 +26,6 @@ struct quic_inqueue {
 	u64 window;
 	u64 bytes;
 
-	struct quic_frame *last_event;
 	u32 max_datagram_frame_size;
 	u32 max_udp_payload_size;
 	u32 ack_delay_exponent;
@@ -98,16 +97,6 @@ static inline void quic_inq_set_max_bytes(struct quic_inqueue *inq, u64 bytes)
 static inline u8 quic_inq_grease_quic_bit(struct quic_inqueue *inq)
 {
 	return inq->grease_quic_bit;
-}
-
-static inline struct quic_frame *quic_inq_last_event(struct quic_inqueue *inq)
-{
-	return inq->last_event;
-}
-
-static inline void quic_inq_set_last_event(struct quic_inqueue *inq, struct quic_frame *frame)
-{
-	inq->last_event = frame;
 }
 
 static inline u32 quic_inq_events(struct quic_inqueue *inq)

@@ -150,6 +150,7 @@ struct quic_event_option {
 enum quic_event_type {
 	QUIC_EVENT_NONE,
 	QUIC_EVENT_STREAM_UPDATE,
+	QUIC_EVENT_STREAM_MAX_DATA,
 	QUIC_EVENT_STREAM_MAX_STREAM,
 	QUIC_EVENT_CONNECTION_ID,
 	QUIC_EVENT_CONNECTION_CLOSE,
@@ -184,6 +185,11 @@ struct quic_stream_update {
 	uint64_t finalsz;
 };
 
+struct quic_stream_max_data {
+	int64_t  id;
+	uint64_t max_data;
+};
+
 struct quic_connection_close {
 	uint32_t errcode;
 	uint8_t frame;
@@ -192,6 +198,7 @@ struct quic_connection_close {
 
 union quic_event {
 	struct quic_stream_update update;
+	struct quic_stream_max_data max_data;
 	struct quic_connection_close close;
 	struct quic_connection_id_info info;
 	uint64_t max_stream;

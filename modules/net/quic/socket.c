@@ -809,7 +809,6 @@ static int quic_recvmsg(struct sock *sk, struct msghdr *msg, size_t len, int non
 {
 #endif
 	u32 off, flen, copy, copied = 0, freed = 0, bytes = 0;
-	struct quic_inqueue *inq = quic_inq(sk);
 	struct quic_handshake_info hinfo = {};
 	struct quic_stream_info sinfo = {};
 	struct quic_stream *stream = NULL;
@@ -868,8 +867,6 @@ static int quic_recvmsg(struct sock *sk, struct msghdr *msg, size_t len, int non
 		msg->msg_flags |= MSG_EOR;
 		bytes += flen;
 		if (event) {
-			if (frame == quic_inq_last_event(inq))
-				quic_inq_set_last_event(inq, NULL); /* no more event on list */
 			list_del(&frame->list);
 			quic_frame_put(frame);
 			break;

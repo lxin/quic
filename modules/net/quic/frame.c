@@ -1159,6 +1159,7 @@ static int quic_frame_max_data_process(struct sock *sk, struct quic_frame *frame
 static int quic_frame_max_stream_data_process(struct sock *sk, struct quic_frame *frame, u8 type)
 {
 	struct quic_stream_table *streams = quic_streams(sk);
+	struct quic_stream_max_data data;
 	struct quic_stream *stream;
 	u64 max_bytes, stream_id;
 	u32 len = frame->len;
@@ -1179,8 +1180,12 @@ static int quic_frame_max_stream_data_process(struct sock *sk, struct quic_frame
 		return err;
 	}
 
-	if (max_bytes >= stream->send.max_bytes)
+	if (max_bytes > stream->send.max_bytes) {
 		stream->send.max_bytes = max_bytes;
+		data.id = stream->id;
+		data.max_data = max_bytes;
+		quic_inq_event_recv(sk, QUIC_EVENT_STREAM_MAX_DATA, &data);
+	}
 
 	return (int)(frame->len - len);
 }

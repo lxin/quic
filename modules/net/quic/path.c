@@ -19,6 +19,7 @@
 #include "connid.h"
 #include "stream.h"
 #include "crypto.h"
+#include "frame.h"
 #include "input.h"
 #include "path.h"
 
