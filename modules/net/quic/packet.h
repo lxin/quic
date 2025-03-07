@@ -116,7 +116,6 @@ static inline int quic_packet_empty(struct quic_packet *packet)
 
 static inline void quic_packet_reset(struct quic_packet *packet)
 {
-	packet->len = 0;
 	packet->level = 0;
 	packet->errcode = 0;
 	packet->errframe = 0;

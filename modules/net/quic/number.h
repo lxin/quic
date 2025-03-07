@@ -112,7 +112,7 @@ static inline u8 *quic_put_var(u8 *p, u64 num)
 	union quic_num n;
 
 	if (num < 64) {
-		*p++ = (u8)num;
+		*p++ = (u8)(num & 0xff);
 		return p;
 	}
 	if (num < 16384) {
@@ -139,10 +139,10 @@ static inline u8 *quic_put_int(u8 *p, u64 num, u8 len)
 
 	switch (len) {
 	case 1:
-		*p++ = (u8)num;
+		*p++ = (u8)(num & 0xff);
 		return p;
 	case 2:
-		n.be16 = htons((u16)num);
+		n.be16 = htons((u16)(num & 0xffff));
 		*((__be16 *)p) = n.be16;
 		return p + 2;
 	case 4:
