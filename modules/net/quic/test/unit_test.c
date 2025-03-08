@@ -513,6 +513,8 @@ static void quic_cong_test1(struct kunit *test)
 
 	c.initial_smoothed_rtt = 333000;
 	quic_cong_set_config(&cong, &c);
+	cong.is_rtt_set = 1;
+
 	KUNIT_EXPECT_EQ(test, cong.rttvar, 166500);
 	KUNIT_EXPECT_EQ(test, cong.pto, 999000);
 
@@ -711,6 +713,7 @@ static void quic_cong_test2(struct kunit *test)
 	c.congestion_control_algo = QUIC_CONG_ALG_RENO;
 	c.initial_smoothed_rtt = 333000;
 	quic_cong_set_config(&cong, &c);
+	cong.is_rtt_set = 1;
 
 	KUNIT_EXPECT_EQ(test, cong.mss, 1400);
 	KUNIT_EXPECT_EQ(test, cong.window, 14000);
@@ -874,6 +877,7 @@ static void quic_cong_test3(struct kunit *test)
 	c.congestion_control_algo = QUIC_CONG_ALG_CUBIC;
 	c.initial_smoothed_rtt = 333000;
 	quic_cong_set_config(&cong, &c);
+	cong.is_rtt_set = 1;
 
 	KUNIT_EXPECT_EQ(test, cong.mss, 1400);
 	KUNIT_EXPECT_EQ(test, cong.window, 14000);
