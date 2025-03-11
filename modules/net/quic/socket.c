@@ -468,7 +468,7 @@ static int quic_msghdr_parse(struct sock *sk, struct msghdr *msg, struct quic_ha
 		if (!CMSG_OK(msg, cmsg))
 			return -EINVAL;
 
-		if (cmsg->cmsg_level != IPPROTO_QUIC)
+		if (cmsg->cmsg_level != SOL_QUIC)
 			continue;
 
 		switch (cmsg->cmsg_type) {
@@ -918,7 +918,7 @@ static int quic_recvmsg(struct sock *sk, struct msghdr *msg, size_t len, int non
 			msg->msg_flags |= MSG_NOTIFICATION;
 		} else if (level) {
 			hinfo.crypto_level = level;
-			put_cmsg(msg, IPPROTO_QUIC, QUIC_HANDSHAKE_INFO, sizeof(hinfo), &hinfo);
+			put_cmsg(msg, SOL_QUIC, QUIC_HANDSHAKE_INFO, sizeof(hinfo), &hinfo);
 			if (msg->msg_flags & MSG_CTRUNC) {
 				err = -EINVAL;
 				goto out;
@@ -961,7 +961,7 @@ static int quic_recvmsg(struct sock *sk, struct msghdr *msg, size_t len, int non
 
 	if (stream) {
 		sinfo.stream_id = stream->id;
-		put_cmsg(msg, IPPROTO_QUIC, QUIC_STREAM_INFO, sizeof(sinfo), &sinfo);
+		put_cmsg(msg, SOL_QUIC, QUIC_STREAM_INFO, sizeof(sinfo), &sinfo);
 		if (msg->msg_flags & MSG_CTRUNC)
 			msg->msg_flags |= sinfo.stream_flags;
 

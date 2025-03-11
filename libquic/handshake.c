@@ -167,19 +167,16 @@ void quic_set_log_func(void (*func)(int level, const char *msg))
 ssize_t quic_recvmsg(int sockfd, void *msg, size_t len, int64_t *sid, uint32_t *flags)
 {
 	char incmsg[CMSG_SPACE(sizeof(struct quic_stream_info))];
-	struct quic_stream_info info;
-	struct cmsghdr *cmsg = NULL;
+	struct quic_stream_info *info;
+	struct cmsghdr *cmsg;
 	struct msghdr inmsg;
 	struct iovec iov;
 	ssize_t ret;
 
-	memset(&inmsg, 0, sizeof(inmsg));
-
 	iov.iov_base = msg;
 	iov.iov_len = len;
 
-	inmsg.msg_name = NULL;
-	inmsg.msg_namelen = 0;
+	memset(&inmsg, 0, sizeof(inmsg));
 	inmsg.msg_iov = &iov;
 	inmsg.msg_iovlen = 1;
 	inmsg.msg_control = incmsg;
@@ -192,15 +189,16 @@ ssize_t quic_recvmsg(int sockfd, void *msg, size_t len, int64_t *sid, uint32_t *
 	if (flags)
 		*flags = inmsg.msg_flags;
 
-	for (cmsg = CMSG_FIRSTHDR(&inmsg); cmsg != NULL; cmsg = CMSG_NXTHDR(&inmsg, cmsg))
-		if (IPPROTO_QUIC == cmsg->cmsg_level && QUIC_STREAM_INFO == cmsg->cmsg_type)
-			break;
-	if (cmsg) {
-		memcpy(&info, CMSG_DATA(cmsg), sizeof(struct quic_stream_info));
+	cmsg = CMSG_FIRSTHDR(&inmsg);
+	if (!cmsg)
+		return ret;
+
+	if (SOL_QUIC == cmsg->cmsg_level &&  QUIC_STREAM_INFO == cmsg->cmsg_type) {
+		info = (struct quic_stream_info *)CMSG_DATA(cmsg);
 		if (sid)
-			*sid = info.stream_id;
+			*sid = info->stream_id;
 		if (flags)
-			*flags |= info.stream_flags;
+			*flags |= info->stream_flags;
 	}
 	return ret;
 }
@@ -225,19 +223,18 @@ ssize_t quic_sendmsg(int sockfd, const void *msg, size_t len, int64_t sid, uint3
 	struct cmsghdr *cmsg;
 	struct iovec iov;
 
-	outmsg.msg_name = NULL;
-	outmsg.msg_namelen = 0;
-	outmsg.msg_iov = &iov;
 	iov.iov_base = (void *)msg;
 	iov.iov_len = len;
-	outmsg.msg_iovlen = 1;
 
+	memset(&outmsg, 0, sizeof(outmsg));
+	outmsg.msg_iov = &iov;
+	outmsg.msg_iovlen = 1;
 	outmsg.msg_control = outcmsg;
 	outmsg.msg_controllen = sizeof(outcmsg);
 
 	cmsg = CMSG_FIRSTHDR(&outmsg);
-	cmsg->cmsg_level = IPPROTO_QUIC;
-	cmsg->cmsg_type = 0;
+	cmsg->cmsg_level = SOL_QUIC;
+	cmsg->cmsg_type = QUIC_STREAM_INFO;
 	cmsg->cmsg_len = CMSG_LEN(sizeof(*info));
 
 	outmsg.msg_controllen = cmsg->cmsg_len;
@@ -475,48 +472,40 @@ static int quic_handshake_sendmsg(int sockfd, struct quic_msg *msg)
 	struct msghdr outmsg;
 	struct cmsghdr *cmsg;
 	struct iovec iov;
-	int flags = 0;
 
-	outmsg.msg_name = NULL;
-	outmsg.msg_namelen = 0;
-	outmsg.msg_iov = &iov;
 	iov.iov_base = (void *)msg->data;
 	iov.iov_len = msg->len;
-	outmsg.msg_iovlen = 1;
 
+	memset(&outmsg, 0, sizeof(outmsg));
+	outmsg.msg_iov = &iov;
+	outmsg.msg_iovlen = 1;
 	outmsg.msg_control = outcmsg;
 	outmsg.msg_controllen = sizeof(outcmsg);
-	outmsg.msg_flags = 0;
-	if (msg->next)
-		flags = MSG_MORE;
 
 	cmsg = CMSG_FIRSTHDR(&outmsg);
-	cmsg->cmsg_level = IPPROTO_QUIC;
+	cmsg->cmsg_level = SOL_QUIC;
 	cmsg->cmsg_type = QUIC_HANDSHAKE_INFO;
 	cmsg->cmsg_len = CMSG_LEN(sizeof(*info));
 
 	info = (struct quic_handshake_info *)CMSG_DATA(cmsg);
 	info->crypto_level = msg->level;
 
-	return sendmsg(sockfd, &outmsg, (int)flags);
+	return sendmsg(sockfd, &outmsg, (msg->next ? MSG_MORE : 0));
 }
 
 static int quic_handshake_recvmsg(int sockfd, struct quic_msg *msg)
 {
 	char incmsg[CMSG_SPACE(sizeof(struct quic_handshake_info))];
-	struct quic_handshake_info info;
-	struct cmsghdr *cmsg = NULL;
+	struct quic_handshake_info *info;
+	struct cmsghdr *cmsg;
 	struct msghdr inmsg;
 	struct iovec iov;
 	ssize_t ret;
 
-	memset(&inmsg, 0, sizeof(inmsg));
-
 	iov.iov_base = msg->data;
 	iov.iov_len = msg->len;
 
-	inmsg.msg_name = NULL;
-	inmsg.msg_namelen = 0;
+	memset(&inmsg, 0, sizeof(inmsg));
 	inmsg.msg_iov = &iov;
 	inmsg.msg_iovlen = 1;
 	inmsg.msg_control = incmsg;
@@ -527,12 +516,13 @@ static int quic_handshake_recvmsg(int sockfd, struct quic_msg *msg)
 		return ret;
 	msg->len = ret;
 
-	for (cmsg = CMSG_FIRSTHDR(&inmsg); cmsg != NULL; cmsg = CMSG_NXTHDR(&inmsg, cmsg))
-		if (IPPROTO_QUIC == cmsg->cmsg_level && QUIC_HANDSHAKE_INFO == cmsg->cmsg_type)
-			break;
-	if (cmsg) {
-		memcpy(&info, CMSG_DATA(cmsg), sizeof(info));
-		msg->level = info.crypto_level;
+	cmsg = CMSG_FIRSTHDR(&inmsg);
+	if (!cmsg)
+		return ret;
+
+	if (SOL_QUIC == cmsg->cmsg_level && QUIC_HANDSHAKE_INFO == cmsg->cmsg_type) {
+		info = (struct quic_handshake_info *)CMSG_DATA(cmsg);
+		msg->level = info->crypto_level;
 	}
 
 	return ret;

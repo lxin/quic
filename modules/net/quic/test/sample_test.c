@@ -38,7 +38,8 @@ static u8 session_data[4096];
 static int quic_test_recvmsg(struct socket *sock, void *msg, int len, s64 *sid, u32 *flags)
 {
 	char incmsg[CMSG_SPACE(sizeof(struct quic_stream_info))];
-	struct quic_stream_info *rinfo = CMSG_DATA(incmsg);
+	struct quic_stream_info *rinfo;
+	struct cmsghdr *cmsg;
 	struct msghdr inmsg;
 	struct kvec iov;
 	int err;
@@ -54,8 +55,14 @@ static int quic_test_recvmsg(struct socket *sock, void *msg, int len, s64 *sid, 
 	if (err < 0)
 		return err;
 
-	*sid = rinfo->stream_id;
-	*flags = rinfo->stream_flags | inmsg.msg_flags;
+	*flags = inmsg.msg_flags;
+
+	cmsg = (struct cmsghdr *)incmsg;
+	if (SOL_QUIC == cmsg->cmsg_level &&  QUIC_STREAM_INFO == cmsg->cmsg_type) {
+		rinfo = CMSG_DATA(cmsg);
+		*sid = rinfo->stream_id;
+		*flags |= rinfo->stream_flags;
+	}
 	return err;
 }
 
@@ -75,13 +82,13 @@ static int quic_test_sendmsg(struct socket *sock, const void *msg, int len, s64 
 	outmsg.msg_controllen = sizeof(outcmsg);
 	outmsg.msg_flags = flags;
 
-	cmsg = CMSG_FIRSTHDR(&outmsg);
-	cmsg->cmsg_level = IPPROTO_QUIC;
-	cmsg->cmsg_type = 0;
-	cmsg->cmsg_len = CMSG_LEN(sizeof(struct quic_stream_info));
+	cmsg = (struct cmsghdr *)outcmsg;
+	cmsg->cmsg_level = SOL_QUIC;
+	cmsg->cmsg_type = QUIC_STREAM_INFO;
+	cmsg->cmsg_len = CMSG_LEN(sizeof(*sinfo));
 
 	outmsg.msg_controllen = cmsg->cmsg_len;
-	sinfo = (struct quic_stream_info *)CMSG_DATA(cmsg);
+	sinfo = CMSG_DATA(cmsg);
 	sinfo->stream_id = sid;
 	sinfo->stream_flags = flags;
 
