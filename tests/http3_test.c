@@ -760,6 +760,18 @@ static int http_server_end_stream(nghttp3_conn *conn, int64_t stream_id, void *u
 	ret = read(fd, req->data, req->len);
 	if (ret < 0)
 		goto err;
+	if (ret != req->len) {
+		unsigned char *off = req->data;
+		size_t left = req->len;
+again:
+		off += ret;
+		left -= ret;
+		ret = read(fd, off, left);
+		if (ret < 0)
+			goto err;
+		if (ret != left)
+			goto again;
+	}
 
 send:
 	ret = sprintf(len, "%u", req->len);
