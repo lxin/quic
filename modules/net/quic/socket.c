@@ -1475,7 +1475,7 @@ static int quic_sock_set_crypto_secret(struct sock *sk, struct quic_crypto_secre
 
 	if (secret->level != QUIC_CRYPTO_APP) {
 		if (secret->send) { /* 0rtt or handshake send key is ready */
-			if (secret->level == QUIC_CRYPTO_EARLY) /* 0rtt recv key is ready */
+			if (secret->level == QUIC_CRYPTO_EARLY) /* 0rtt send key is ready */
 				quic_outq_set_data_level(outq, QUIC_CRYPTO_EARLY);
 			return 0;
 		}
@@ -1805,7 +1805,7 @@ static int quic_sock_get_session_ticket(struct sock *sk, u32 len,
 	union quic_addr a;
 
 	if (!quic_is_serv(sk)) {
-		if (!quic_crypto_ticket_ready(crypto))
+		if (quic_is_established(sk) && !quic_crypto_ticket_ready(crypto))
 			tlen = 0;
 		goto out;
 	}
