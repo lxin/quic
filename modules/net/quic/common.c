@@ -1,34 +1,110 @@
-/* SPDX-License-Identifier: GPL-2.0-or-later */
+// SPDX-License-Identifier: GPL-2.0-or-later
 /* QUIC kernel implementation
  * (C) Copyright Red Hat Corp. 2023
  *
  * This file is part of the QUIC kernel implementation
  *
+ * Initialization/cleanup for QUIC protocol support.
+ *
  * Written or modified by:
  *    Xin Long <lucien.xin@gmail.com>
  */
 
-union quic_num {
+#include "common.h"
+
+static struct quic_hash_table quic_hash_tables[QUIC_HT_MAX_TABLES];
+
+struct quic_hash_head *quic_sock_hash(u32 hash)
+{
+	return &quic_hash_tables[QUIC_HT_SOCK].hash[hash];
+}
+
+struct quic_hash_head *quic_sock_head(struct net *net, union quic_addr *s, union quic_addr *d)
+{
+	struct quic_hash_table *ht = &quic_hash_tables[QUIC_HT_SOCK];
+
+	return &ht->hash[quic_ahash(net, s, d) & (ht->size - 1)];
+}
+
+struct quic_hash_head *quic_listen_sock_head(struct net *net, u16 port)
+{
+	struct quic_hash_table *ht = &quic_hash_tables[QUIC_HT_SOCK];
+
+	return &ht->hash[port & (ht->size - 1)];
+}
+
+struct quic_hash_head *quic_bind_port_head(struct net *net, u16 port)
+{
+	struct quic_hash_table *ht = &quic_hash_tables[QUIC_HT_BIND_PORT];
+
+	return &ht->hash[port & (ht->size - 1)];
+}
+
+struct quic_hash_head *quic_source_conn_id_head(struct net *net, u8 *scid)
+{
+	struct quic_hash_table *ht = &quic_hash_tables[QUIC_HT_CONNECTION_ID];
+
+	return &ht->hash[jhash(scid, 4, 0) & (ht->size - 1)];
+}
+
+struct quic_hash_head *quic_udp_sock_head(struct net *net, u16 port)
+{
+	struct quic_hash_table *ht = &quic_hash_tables[QUIC_HT_UDP_SOCK];
+
+	return &ht->hash[port & (ht->size - 1)];
+}
+
+struct quic_hash_head *quic_stream_head(struct quic_hash_table *ht, s64 stream_id)
+{
+	return &ht->hash[stream_id & (ht->size - 1)];
+}
+
+void quic_hash_tables_destroy(void)
+{
+	struct quic_hash_table *ht;
+	int table;
+
+	for (table = 0; table < QUIC_HT_MAX_TABLES; table++) {
+		ht = &quic_hash_tables[table];
+		ht->size = 64;
+		kfree(ht->hash);
+	}
+}
+
+int quic_hash_tables_init(void)
+{
+	struct quic_hash_head *head;
+	struct quic_hash_table *ht;
+	int table, i;
+
+	for (table = 0; table < QUIC_HT_MAX_TABLES; table++) {
+		ht = &quic_hash_tables[table];
+		ht->size = 64;
+		head = kmalloc_array(ht->size, sizeof(*head), GFP_KERNEL);
+		if (!head) {
+			quic_hash_tables_destroy();
+			return -ENOMEM;
+		}
+		for (i = 0; i < ht->size; i++) {
+			spin_lock_init(&head[i].lock);
+			INIT_HLIST_HEAD(&head[i].head);
+		}
+		ht->hash = head;
+	}
+
+	return 0;
+}
+
+union quic_var {
 	u8	u8;
 	__be16	be16;
 	__be32	be32;
 	__be64	be64;
 };
 
-static inline u32 quic_var_len(u64 n)
+u8 quic_get_var(u8 **pp, u32 *plen, u64 *val)
 {
-	if (n < 64)
-		return 1;
-	if (n < 16384)
-		return 2;
-	if (n < 1073741824)
-		return 4;
-	return 8;
-}
-
-static inline u8 quic_get_var(u8 **pp, u32 *plen, u64 *val)
-{
-	union quic_num n = {};
+	union quic_var n = {};
 	u8 *p = *pp, len;
 	u64 v = 0;
 
@@ -68,9 +144,9 @@ static inline u8 quic_get_var(u8 **pp, u32 *plen, u64 *val)
 	return len;
 }
 
-static inline u32 quic_get_int(u8 **pp, u32 *plen, u64 *val, u32 len)
+u32 quic_get_int(u8 **pp, u32 *plen, u64 *val, u32 len)
 {
-	union quic_num n;
+	union quic_var n;
 	u8 *p = *pp;
 	u64 v = 0;
 
@@ -107,9 +183,9 @@ static inline u32 quic_get_int(u8 **pp, u32 *plen, u64 *val, u32 len)
 	return len;
 }
 
-static inline u8 *quic_put_var(u8 *p, u64 num)
+u8 *quic_put_var(u8 *p, u64 num)
 {
-	union quic_num n;
+	union quic_var n;
 
 	if (num < 64) {
 		*p++ = (u8)(num & 0xff);
@@ -133,9 +209,9 @@ static inline u8 *quic_put_var(u8 *p, u64 num)
 	return p + 8;
 }
 
-static inline u8 *quic_put_int(u8 *p, u64 num, u8 len)
+u8 *quic_put_int(u8 *p, u64 num, u8 len)
 {
-	union quic_num n;
+	union quic_var n;
 
 	switch (len) {
 	case 1:
@@ -154,7 +230,7 @@ static inline u8 *quic_put_int(u8 *p, u64 num, u8 len)
 	}
 }
 
-static inline u8 *quic_put_data(u8 *p, u8 *data, u32 len)
+u8 *quic_put_data(u8 *p, u8 *data, u32 len)
 {
 	if (!len)
 		return p;
@@ -163,14 +239,14 @@ static inline u8 *quic_put_data(u8 *p, u8 *data, u32 len)
 	return p + len;
 }
 
-static inline u8 *quic_put_param(u8 *p, u16 id, u64 value)
+u8 *quic_put_param(u8 *p, u16 id, u64 value)
 {
 	p = quic_put_var(p, id);
 	p = quic_put_var(p, quic_var_len(value));
 	return quic_put_var(p, value);
 }
 
-static inline int quic_get_param(u64 *pdest, u8 **pp, u32 *plen)
+int quic_get_param(u64 *pdest, u8 **pp, u32 *plen)
 {
 	u64 valuelen;
 
@@ -185,7 +261,7 @@ static inline int quic_get_param(u64 *pdest, u8 **pp, u32 *plen)
 	return 0;
 }
 
-static inline s64 quic_get_num(s64 max_pkt_num, s64 pkt_num, u32 n)
+s64 quic_get_num(s64 max_pkt_num, s64 pkt_num, u32 n)
 {
 	s64 expected = max_pkt_num + 1;
 	s64 win = (s64)1 << (n * 8);
@@ -201,26 +277,7 @@ static inline s64 quic_get_num(s64 max_pkt_num, s64 pkt_num, u32 n)
 	return cand;
 }
 
-struct quic_data {
-	u8 *data;
-	u32 len;
-};
-
-static inline struct quic_data *quic_data(struct quic_data *d, u8 *data, u32 len)
-{
-	d->data = data;
-	d->len  = len;
-	return d;
-}
-
-static inline void quic_data_free(struct quic_data *d)
-{
-	kfree(d->data);
-	d->data = NULL;
-	d->len = 0;
-}
-
-static inline int quic_data_dup(struct quic_data *to, u8 *data, u32 len)
+int quic_data_dup(struct quic_data *to, u8 *data, u32 len)
 {
 	if (!len)
 		return 0;
@@ -235,7 +292,7 @@ static inline int quic_data_dup(struct quic_data *to, u8 *data, u32 len)
 	return 0;
 }
 
-static inline int quic_data_append(struct quic_data *to, u8 *data, u32 len)
+int quic_data_append(struct quic_data *to, u8 *data, u32 len)
 {
 	u8 *p;
 
@@ -254,12 +311,7 @@ static inline int quic_data_append(struct quic_data *to, u8 *data, u32 len)
 	return 0;
 }
 
-static inline int quic_data_cmp(struct quic_data *d1, struct quic_data *d2)
-{
-	return d1->len != d2->len || memcmp(d1->data, d2->data, d1->len);
-}
-
-static inline int quic_data_has(struct quic_data *d1, struct quic_data *d2)
+int quic_data_has(struct quic_data *d1, struct quic_data *d2)
 {
 	struct quic_data d;
 	u64 length;
@@ -275,7 +327,7 @@ static inline int quic_data_has(struct quic_data *d1, struct quic_data *d2)
 	return 0;
 }
 
-static inline int quic_data_match(struct quic_data *d1, struct quic_data *d2)
+int quic_data_match(struct quic_data *d1, struct quic_data *d2)
 {
 	struct quic_data d;
 	u64 length;
@@ -291,7 +343,7 @@ static inline int quic_data_match(struct quic_data *d1, struct quic_data *d2)
 	return 0;
 }
 
-static inline void quic_data_to_string(u8 *to, u32 *plen, struct quic_data *from)
+void quic_data_to_string(u8 *to, u32 *plen, struct quic_data *from)
 {
 	struct quic_data d;
 	u8 *data = to, *p;
@@ -308,7 +360,7 @@ static inline void quic_data_to_string(u8 *to, u32 *plen, struct quic_data *from
 	*plen = data - to;
 }
 
-static inline void quic_data_from_string(struct quic_data *to, u8 *from, u32 len)
+void quic_data_from_string(struct quic_data *to, u8 *from, u32 len)
 {
 	struct quic_data d;
 	u8 *p = to->data;

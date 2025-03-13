@@ -10,8 +10,6 @@
  *    Xin Long <lucien.xin@gmail.com>
  */
 
-#include <linux/bitmap.h>
-#include <linux/types.h>
 #include <linux/slab.h>
 
 #include "pnspace.h"

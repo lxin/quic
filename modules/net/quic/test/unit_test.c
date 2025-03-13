@@ -19,6 +19,7 @@
 #include <net/sock.h>
 
 #include "../pnspace.h"
+#include "../common.h"
 #include "../connid.h"
 #include "../crypto.h"
 #include "../cong.h"

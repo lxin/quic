@@ -8,17 +8,9 @@
  *    Xin Long <lucien.xin@gmail.com>
  */
 
-#define QUIC_CONN_ID_MAX_LEN	20
-#define QUIC_CONN_ID_DEF_LEN	8
-
 #define QUIC_CONN_ID_LIMIT	8
 #define QUIC_CONN_ID_DEF	7
 #define QUIC_CONN_ID_LEAST	2
-
-struct quic_conn_id {
-	u8 data[QUIC_CONN_ID_MAX_LEN];
-	u8 len;
-};
 
 struct quic_common_conn_id {
 	struct quic_conn_id id;
@@ -65,12 +57,6 @@ static inline void quic_conn_id_generate(struct quic_conn_id *conn_id)
 {
 	get_random_bytes(conn_id->data, QUIC_CONN_ID_DEF_LEN);
 	conn_id->len = QUIC_CONN_ID_DEF_LEN;
-}
-
-static inline void quic_conn_id_update(struct quic_conn_id *conn_id, u8 *data, u32 len)
-{
-	memcpy(conn_id->data, data, len);
-	conn_id->len = (u8)len;
 }
 
 static inline bool quic_conn_id_select_alt(struct quic_conn_id_set *id_set, bool active)

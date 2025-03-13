@@ -10,9 +10,6 @@
  *    Xin Long <lucien.xin@gmail.com>
  */
 
-#include <linux/version.h>
-#include <net/gro.h>
-
 #include "socket.h"
 
 #define QUIC_HLEN(dcid, scid)	(1 + QUIC_VERSION_LEN + 1 + (dcid)->len + 1 + (scid)->len)

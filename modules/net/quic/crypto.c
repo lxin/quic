@@ -12,17 +12,12 @@
 
 #include <uapi/linux/quic.h>
 #include <crypto/skcipher.h>
-#include <net/netns/hash.h>
-#include <net/udp_tunnel.h>
 #include <linux/skbuff.h>
-#include <linux/jhash.h>
 #include <crypto/aead.h>
 #include <crypto/hash.h>
 #include <net/tls.h>
 
-#include "hashtable.h"
-#include "number.h"
-#include "connid.h"
+#include "common.h"
 #include "crypto.h"
 
 static u8 quic_random_data[32] __read_mostly;

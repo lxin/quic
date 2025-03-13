@@ -4,6 +4,8 @@
  *
  * This file is part of the QUIC kernel implementation
  *
+ * Initialization/cleanup for QUIC protocol support.
+ *
  * Written or modified by:
  *    Xin Long <lucien.xin@gmail.com>
  */

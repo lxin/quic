@@ -10,8 +10,6 @@
  *    Xin Long <lucien.xin@gmail.com>
  */
 
-#include <linux/nospec.h>
-
 #include "socket.h"
 
 /* ACK Frame {

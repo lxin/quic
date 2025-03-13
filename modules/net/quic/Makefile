@@ -7,8 +7,9 @@ LINUXINCLUDE += -I$(ROOTDIR)/include
 
 obj-$(CONFIG_IP_QUIC) += quic.o
 
-quic-y := family.o protocol.o socket.o connid.o stream.o path.o packet.o \
-	  frame.o input.o output.o crypto.o pnspace.o timer.o cong.o
+quic-y := common.o family.o protocol.o socket.o connid.o stream.o path.o \
+	  packet.o frame.o input.o output.o crypto.o pnspace.o timer.o \
+	  cong.o
 
 ifdef CONFIG_KUNIT
 	obj-$(CONFIG_IP_QUIC_TEST) += quic_unit_test.o

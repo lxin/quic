@@ -17,7 +17,6 @@
 
 #include "socket.h"
 
-struct quic_hash_table quic_hash_tables[QUIC_HT_MAX_TABLES] __read_mostly;
 static DEFINE_PER_CPU(int, quic_memory_per_cpu_fw_alloc);
 static unsigned int quic_net_id __read_mostly;
 
@@ -191,7 +190,7 @@ static int quic_seq_show(struct seq_file *seq, void *v)
 	if (hash >= 64)
 		return -ENOMEM;
 
-	head = &quic_hash_tables[QUIC_HT_SOCK].hash[hash];
+	head = quic_sock_hash(hash);
 	spin_lock(&head->lock);
 	sk_for_each(sk, &head->head) {
 		if (net != sock_net(sk))
@@ -461,42 +460,6 @@ static struct pernet_operations quic_net_ops = {
 	.id   = &quic_net_id,
 	.size = sizeof(struct quic_net),
 };
-
-static void quic_hash_tables_destroy(void)
-{
-	struct quic_hash_table *ht;
-	int table;
-
-	for (table = 0; table < QUIC_HT_MAX_TABLES; table++) {
-		ht = &quic_hash_tables[table];
-		ht->size = 64;
-		kfree(ht->hash);
-	}
-}
-
-static int quic_hash_tables_init(void)
-{
-	struct quic_hash_head *head;
-	struct quic_hash_table *ht;
-	int table, i;
-
-	for (table = 0; table < QUIC_HT_MAX_TABLES; table++) {
-		ht = &quic_hash_tables[table];
-		ht->size = 64;
-		head = kmalloc_array(ht->size, sizeof(*head), GFP_KERNEL);
-		if (!head) {
-			quic_hash_tables_destroy();
-			return -ENOMEM;
-		}
-		for (i = 0; i < ht->size; i++) {
-			spin_lock_init(&head[i].lock);
-			INIT_HLIST_HEAD(&head[i].head);
-		}
-		ht->hash = head;
-	}
-
-	return 0;
-}
 
 #ifdef CONFIG_SYSCTL
 static struct ctl_table_header *quic_sysctl_header;

@@ -11,11 +11,8 @@
  */
 
 #include <uapi/linux/quic.h>
-#include <net/netns/hash.h>
-#include <linux/jhash.h>
-#include <net/sock.h>
 
-#include "hashtable.h"
+#include "common.h"
 #include "stream.h"
 
 static bool quic_stream_id_send(s64 stream_id, bool is_serv)

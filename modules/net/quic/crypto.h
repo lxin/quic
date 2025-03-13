@@ -8,36 +8,6 @@
  *    Xin Long <lucien.xin@gmail.com>
  */
 
-#include <linux/crypto.h>
-
-struct quic_crypto_cb {
-	void (*crypto_done)(struct sk_buff *skb, int err);
-	union {
-		struct quic_conn_id *conn_id;
-		struct sk_buff *last;
-	};
-	s64 number_max;
-	s64 number;
-	u16 errcode;
-	u16 length;
-	u32 time;
-
-	u16 number_offset;
-	u16 udph_offset;
-	u8 number_len;
-	u8 level;
-
-	u8 key_update:1;
-	u8 key_phase:1;
-	u8 backlog:1;
-	u8 resume:1;
-	u8 path:1;
-	u8 ecn:2;
-};
-
-#define QUIC_CRYPTO_CB(skb)	((struct quic_crypto_cb *)&((skb)->cb[0]))
-#define quic_udphdr(skb)	((struct udphdr *)((skb)->head + QUIC_CRYPTO_CB(skb)->udph_offset))
-
 #define QUIC_TAG_LEN	16
 #define QUIC_IV_LEN	12
 #define QUIC_SECRET_LEN	48

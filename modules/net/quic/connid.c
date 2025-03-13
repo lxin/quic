@@ -11,11 +11,9 @@
  */
 
 #include <uapi/linux/quic.h>
-#include <net/netns/hash.h>
-#include <linux/jhash.h>
 #include <net/sock.h>
 
-#include "hashtable.h"
+#include "common.h"
 #include "connid.h"
 
 struct quic_conn_id *quic_conn_id_lookup(struct net *net, u8 *scid, u32 len)

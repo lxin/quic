@@ -10,7 +10,6 @@
  *    Xin Long <lucien.xin@gmail.com>
  */
 
-#include <net/sock_reuseport.h>
 #include <net/inet_common.h>
 #include <linux/version.h>
 #include <net/tls.h>

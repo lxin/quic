@@ -8,11 +8,6 @@
  *    Xin Long <lucien.xin@gmail.com>
  */
 
-#define QUIC_STREAM_BIT_FIN	0x01
-#define QUIC_STREAM_BIT_LEN	0x02
-#define QUIC_STREAM_BIT_OFF	0x04
-#define QUIC_STREAM_BIT_MASK	0x08
-
 #define QUIC_DEF_STREAMS	100
 #define QUIC_MAX_STREAMS	4096ULL
 

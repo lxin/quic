@@ -67,8 +67,6 @@ struct quic_packet_sent {
 
 #define QUIC_VERSION_LEN		4
 
-struct quic_request_sock;
-
 static inline void quic_packet_set_version(struct quic_packet *packet, u32 version)
 {
 	packet->version = version;

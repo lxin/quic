@@ -13,11 +13,8 @@
 #include <uapi/linux/quic.h>
 #include <net/udp_tunnel.h>
 
-#include "hashtable.h"
+#include "common.h"
 #include "family.h"
-#include "connid.h"
-#include "stream.h"
-#include "crypto.h"
 #include "path.h"
 
 static int (*quic_path_rcv)(struct sk_buff *skb, u8 err);

@@ -15,8 +15,7 @@
 #include <net/udp_tunnel.h>
 #include <linux/icmp.h>
 
-#include "hashtable.h"
-#include "crypto.h"
+#include "common.h"
 
 struct quic_addr_family_ops {
 	u32	iph_len;
