@@ -1080,28 +1080,46 @@ void quic_outq_set_param(struct sock *sk, struct quic_transport_param *p)
 {
 	struct quic_packet *packet = quic_packet(sk);
 	struct quic_outqueue *outq = quic_outq(sk);
-	struct quic_inqueue *inq = quic_inq(sk);
-	u32 remote_idle, local_idle, pmtu;
+	struct quic_cong *cong = quic_cong(sk);
+	u32 pmtu;
 
+	if (!p->remote)
+		return;
+
+	outq->disable_1rtt_encryption = p->disable_1rtt_encryption;
 	outq->max_datagram_frame_size = p->max_datagram_frame_size;
 	outq->max_udp_payload_size = p->max_udp_payload_size;
-	pmtu = min_t(u32, dst_mtu(__sk_dst_get(sk)), QUIC_PATH_MAX_PMTU);
-	quic_packet_mss_update(sk, pmtu - packet->hlen);
-
 	outq->ack_delay_exponent = p->ack_delay_exponent;
 	outq->max_idle_timeout = p->max_idle_timeout;
-	outq->max_ack_delay = p->max_ack_delay;
 	outq->grease_quic_bit = p->grease_quic_bit;
-	outq->disable_1rtt_encryption = p->disable_1rtt_encryption;
-	outq->max_bytes = p->max_data;
+	outq->stateless_reset = p->stateless_reset;
+	outq->max_ack_delay = p->max_ack_delay;
+	outq->max_data = p->max_data;
 
-	remote_idle = outq->max_idle_timeout;
-	local_idle = quic_inq_max_idle_timeout(inq);
-	if (remote_idle && (!local_idle || remote_idle < local_idle))
-		quic_inq_set_max_idle_timeout(inq, remote_idle);
+	outq->max_bytes = outq->max_data;
+	quic_cong_set_max_window(cong, min_t(u64, outq->max_data, S32_MAX / 2));
+	quic_cong_set_max_ack_delay(cong, outq->max_ack_delay);
 
-	if (quic_inq_disable_1rtt_encryption(inq) && outq->disable_1rtt_encryption)
-		quic_packet_set_taglen(quic_packet(sk), 0);
+	pmtu = min_t(u32, dst_mtu(__sk_dst_get(sk)), QUIC_PATH_MAX_PMTU);
+	quic_packet_mss_update(sk, pmtu - packet->hlen);
+}
+
+void quic_outq_get_param(struct sock *sk, struct quic_transport_param *p)
+{
+	struct quic_outqueue *outq = quic_outq(sk);
+
+	if (!p->remote)
+		return;
+
+	p->disable_1rtt_encryption = outq->disable_1rtt_encryption;
+	p->max_datagram_frame_size = outq->max_datagram_frame_size;
+	p->max_udp_payload_size = outq->max_udp_payload_size;
+	p->ack_delay_exponent = outq->ack_delay_exponent;
+	p->max_idle_timeout = outq->max_idle_timeout;
+	p->grease_quic_bit = outq->grease_quic_bit;
+	p->stateless_reset = outq->stateless_reset;
+	p->max_ack_delay = outq->max_ack_delay;
+	p->max_data = outq->max_data;
 }
 
 void quic_outq_init(struct sock *sk)

@@ -17,16 +17,17 @@ struct quic_outqueue {
 	struct work_struct work;
 	u64 last_max_bytes;
 	u64 max_bytes;
-	u64 window;
+	u64 max_data;
 	u64 bytes;
 
-	u32 max_datagram_frame_size;
-	u32 max_udp_payload_size;
-	u32 ack_delay_exponent;
+	u16 max_datagram_frame_size;
+	u16 max_udp_payload_size;
+	u8 ack_delay_exponent;
 	u32 max_idle_timeout;
 	u32 stream_list_len;	/* all frames len in stream list */
 	u32 max_ack_delay;
 	u32 inflight;		/* all inflight ack_eliciting frames len */
+	u32 window;
 	u16 count;
 	u8  level;
 
@@ -43,6 +44,7 @@ struct quic_outqueue {
 
 	u8 disable_1rtt_encryption:1;
 	u8 grease_quic_bit:1;
+	u8 stateless_reset:1;
 	u8 data_blocked:1;
 	u8 force_delay:1;
 	u8 single:1;
@@ -63,12 +65,12 @@ static inline u64 quic_outq_window(struct quic_outqueue *outq)
 	return outq->window;
 }
 
-static inline u32 quic_outq_ack_delay_exponent(struct quic_outqueue *outq)
+static inline u8 quic_outq_ack_delay_exponent(struct quic_outqueue *outq)
 {
 	return outq->ack_delay_exponent;
 }
 
-static inline u32 quic_outq_max_udp(struct quic_outqueue *outq)
+static inline u16 quic_outq_max_udp(struct quic_outqueue *outq)
 {
 	return outq->max_udp_payload_size;
 }
@@ -113,7 +115,7 @@ static inline void quic_outq_set_close_phrase(struct quic_outqueue *outq, u8 *ph
 	outq->close_phrase = phrase;
 }
 
-static inline u32 quic_outq_max_dgram(struct quic_outqueue *outq)
+static inline u16 quic_outq_max_dgram(struct quic_outqueue *outq)
 {
 	return outq->max_datagram_frame_size;
 }
@@ -160,6 +162,7 @@ void quic_outq_encrypted_tail(struct sock *sk, struct sk_buff *skb);
 void quic_outq_transmit_app_close(struct sock *sk);
 void quic_outq_transmit_probe(struct sock *sk);
 
+void quic_outq_get_param(struct sock *sk, struct quic_transport_param *p);
 void quic_outq_set_param(struct sock *sk, struct quic_transport_param *p);
 void quic_outq_sync_window(struct sock *sk, u32 window);
 void quic_outq_init(struct sock *sk);

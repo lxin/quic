@@ -116,9 +116,12 @@ static int quic_packet_version_change(struct sock *sk, struct quic_conn_id *dcid
 int quic_packet_select_version(struct sock *sk, u32 *versions, u8 count)
 {
 	struct quic_packet *packet = quic_packet(sk);
-	u32 preferred = quic_config(sk)->version;
-	u32 chosen = packet->version, best = 0;
+	struct quic_config *c = quic_config(sk);
 	u8 i, pref_found = 0, ch_found = 0;
+	u32 preferred, chosen, best = 0;
+
+	preferred = c->version ?: QUIC_VERSION_V1;
+	chosen = packet->version;
 
 	for (i = 0; i < count; i++) {
 		if (!quic_packet_compatible_versions(versions[i]))
@@ -1002,7 +1005,7 @@ static int quic_packet_app_process_done(struct sock *sk, struct sk_buff *skb)
 out:
 	if (quic_is_established(sk)) {
 		if (!quic_inq_need_sack(inq))
-			quic_timer_reset(sk, QUIC_TIMER_IDLE, quic_inq_max_idle_timeout(inq));
+			quic_timer_reset(sk, QUIC_TIMER_IDLE, quic_inq_timeout(inq));
 		quic_outq_transmit(sk);
 	} else if (!quic_inq_need_sack(inq)) {
 		quic_inq_set_need_sack(inq, 1);

@@ -86,20 +86,18 @@ struct quic_sock {
 	struct inet_sock		inet;
 	struct list_head		reqs;
 
+	struct quic_config		config;
+	struct quic_data		ticket;
+	struct quic_data		token;
+	struct quic_data		alpn;
+
+	struct quic_stream_table	streams;
 	struct quic_conn_id_set		source;
 	struct quic_conn_id_set		dest;
-	struct quic_stream_table	streams;
 	struct quic_path_group		paths;
-	struct quic_cong		cong;
-	struct quic_crypto		crypto[QUIC_CRYPTO_MAX];
 	struct quic_pnspace		space[QUIC_PNSPACE_MAX];
-
-	struct quic_transport_param	local;
-	struct quic_transport_param	remote;
-	struct quic_config		config;
-	struct quic_data		token;
-	struct quic_data		ticket;
-	struct quic_data		alpn;
+	struct quic_crypto		crypto[QUIC_CRYPTO_MAX];
+	struct quic_cong		cong;
 
 	struct quic_outqueue		outq;
 	struct quic_inqueue		inq;
@@ -195,16 +193,6 @@ static inline struct quic_conn_id_set *quic_source(const struct sock *sk)
 static inline struct quic_conn_id_set *quic_dest(const struct sock *sk)
 {
 	return &quic_sk(sk)->dest;
-}
-
-static inline struct quic_transport_param *quic_local(const struct sock *sk)
-{
-	return &quic_sk(sk)->local;
-}
-
-static inline struct quic_transport_param *quic_remote(const struct sock *sk)
-{
-	return &quic_sk(sk)->remote;
 }
 
 static inline bool quic_is_serv(const struct sock *sk)

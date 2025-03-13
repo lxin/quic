@@ -195,10 +195,10 @@ static inline int quic_frame_level_check(u8 level, u8 type)
 	return 0;
 }
 
-int quic_frame_get_transport_params_ext(struct sock *sk, struct quic_transport_param *params,
-					u8 *data, u32 *len);
-int quic_frame_set_transport_params_ext(struct sock *sk, struct quic_transport_param *params,
-					u8 *data, u32 len);
+int quic_frame_build_transport_params_ext(struct sock *sk, struct quic_transport_param *params,
+					  u8 *data, u32 *len);
+int quic_frame_parse_transport_params_ext(struct sock *sk, struct quic_transport_param *params,
+					  u8 *data, u32 len);
 int quic_frame_stream_append(struct sock *sk, struct quic_frame *frame,
 			     struct quic_msginfo *info, u8 pack);
 

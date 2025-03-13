@@ -272,10 +272,18 @@ int quic_path_detect_alt(struct quic_path_group *paths, union quic_addr *sa, uni
 	return 0;
 }
 
-void quic_path_set_param(struct quic_path_group *paths, struct quic_transport_param *p,
-			 bool remote)
+void quic_path_get_param(struct quic_path_group *paths, struct quic_transport_param *p)
 {
-	if (remote) {
+	if (p->remote) {
+		p->disable_active_migration = paths->disable_saddr_alt;
+		return;
+	}
+	p->disable_active_migration = paths->disable_daddr_alt;
+}
+
+void quic_path_set_param(struct quic_path_group *paths, struct quic_transport_param *p)
+{
+	if (p->remote) {
 		paths->disable_saddr_alt = p->disable_active_migration;
 		return;
 	}

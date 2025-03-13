@@ -14,6 +14,7 @@
 #include <linux/jiffies.h>
 #include <net/sock.h>
 
+#include "common.h"
 #include "cong.h"
 
 /* CUBIC APIs */
@@ -506,32 +507,6 @@ static void quic_cong_pto_update(struct quic_cong *cong)
 	pr_debug("%s: update pto: %u\n", __func__, pto);
 }
 
-void quic_cong_set_config(struct quic_cong *cong, struct quic_config *c)
-{
-	u8 algo = QUIC_CONG_ALG_RENO;
-
-	if (c->congestion_control_algo < QUIC_CONG_ALG_MAX)
-		algo = c->congestion_control_algo;
-
-	cong->latest_rtt = c->initial_smoothed_rtt;
-	cong->smoothed_rtt = cong->latest_rtt;
-	cong->rttvar = cong->smoothed_rtt / 2;
-	quic_cong_pto_update(cong);
-
-	cong->state = QUIC_CONG_SLOW_START;
-	cong->ssthresh = U32_MAX;
-	cong->ops = &quic_congs[algo];
-	cong->ops->on_init(cong);
-}
-EXPORT_SYMBOL_GPL(quic_cong_set_config);
-
-void quic_cong_set_param(struct quic_cong *cong, struct quic_transport_param *p)
-{
-	cong->max_window = p->max_data;
-	cong->max_ack_delay = p->max_ack_delay;
-}
-EXPORT_SYMBOL_GPL(quic_cong_set_param);
-
 static void quic_cong_update_pacing_time(struct quic_cong *cong, u32 bytes)
 {
 	unsigned long rate = READ_ONCE(cong->pacing_rate);
@@ -589,9 +564,6 @@ void quic_cong_rtt_update(struct quic_cong *cong, u32 time, u32 ack_delay)
 {
 	u32 adjusted_rtt, rttvar_sample;
 
-	if (ack_delay > cong->max_ack_delay * 2) /* not a good one for rtt sample */
-		return;
-
 	cong->latest_rtt = cong->time - time;
 	if (!cong->min_rtt_valid) {
 		cong->min_rtt = cong->latest_rtt;
@@ -625,3 +597,32 @@ void quic_cong_rtt_update(struct quic_cong *cong, u32 time, u32 ack_delay)
 		cong->ops->on_rtt_update(cong);
 }
 EXPORT_SYMBOL_GPL(quic_cong_rtt_update);
+
+void quic_cong_set_algo(struct quic_cong *cong, u8 algo)
+{
+	if (algo >= QUIC_CONG_ALG_MAX)
+		algo = QUIC_CONG_ALG_RENO;
+
+	cong->state = QUIC_CONG_SLOW_START;
+	cong->ssthresh = U32_MAX;
+	cong->ops = &quic_congs[algo];
+	cong->ops->on_init(cong);
+}
+EXPORT_SYMBOL_GPL(quic_cong_set_algo);
+
+void quic_cong_set_srtt(struct quic_cong *cong, u32 srtt)
+{
+	cong->latest_rtt = srtt;
+	cong->smoothed_rtt = cong->latest_rtt;
+	cong->rttvar = cong->smoothed_rtt / 2;
+	quic_cong_pto_update(cong);
+}
+EXPORT_SYMBOL_GPL(quic_cong_set_srtt);
+
+void quic_cong_init(struct quic_cong *cong)
+{
+	quic_cong_set_max_ack_delay(cong, QUIC_DEF_ACK_DELAY);
+	quic_cong_set_algo(cong, QUIC_CONG_ALG_RENO);
+	quic_cong_set_max_window(cong, S32_MAX / 2);
+	quic_cong_set_srtt(cong, QUIC_RTT_INIT);
+}

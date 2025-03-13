@@ -503,17 +503,13 @@ out:
 
 static void quic_cong_test1(struct kunit *test)
 {
-	struct quic_transport_param p = {};
 	struct quic_cong cong = {};
-	struct quic_config c = {};
 	u32 time, ack_delay;
 
-	p.max_ack_delay = 25000;
-	p.ack_delay_exponent = 3;
-	quic_cong_set_param(&cong, &p);
+	quic_cong_set_max_ack_delay(&cong, 25000);
 
-	c.initial_smoothed_rtt = 333000;
-	quic_cong_set_config(&cong, &c);
+	quic_cong_set_algo(&cong, QUIC_CONG_ALG_RENO);
+	quic_cong_set_srtt(&cong, QUIC_RTT_INIT);
 	cong.is_rtt_set = 1;
 
 	KUNIT_EXPECT_EQ(test, cong.rttvar, 166500);
@@ -699,21 +695,15 @@ static void quic_cong_test1(struct kunit *test)
 
 static void quic_cong_test2(struct kunit *test)
 {
-	struct quic_transport_param p = {};
 	struct quic_cong cong = {};
-	struct quic_config c = {};
 	u32 time, bytes;
 
-	p.max_data = 262144;
-	p.max_ack_delay = 25000;
-	p.ack_delay_exponent = 3;
-	quic_cong_set_param(&cong, &p);
-
+	quic_cong_set_max_ack_delay(&cong, 25000);
+	quic_cong_set_max_window(&cong, 262144);
 	quic_cong_set_mss(&cong, 1400);
 
-	c.congestion_control_algo = QUIC_CONG_ALG_RENO;
-	c.initial_smoothed_rtt = 333000;
-	quic_cong_set_config(&cong, &c);
+	quic_cong_set_algo(&cong, QUIC_CONG_ALG_RENO);
+	quic_cong_set_srtt(&cong, QUIC_RTT_INIT);
 	cong.is_rtt_set = 1;
 
 	KUNIT_EXPECT_EQ(test, cong.mss, 1400);
@@ -862,22 +852,16 @@ static void quic_cong_test2(struct kunit *test)
 
 static void quic_cong_test3(struct kunit *test)
 {
-	struct quic_transport_param p = {};
 	struct quic_cong cong = {};
-	struct quic_config c = {};
 	u32 time, bytes;
 	s64 number;
 
-	p.max_data = 106496;
-	p.max_ack_delay = 25000;
-	p.ack_delay_exponent = 3;
-	quic_cong_set_param(&cong, &p);
-
+	quic_cong_set_max_ack_delay(&cong, 25000);
+	quic_cong_set_max_window(&cong, 106496);
 	quic_cong_set_mss(&cong, 1400);
 
-	c.congestion_control_algo = QUIC_CONG_ALG_CUBIC;
-	c.initial_smoothed_rtt = 333000;
-	quic_cong_set_config(&cong, &c);
+	quic_cong_set_algo(&cong, QUIC_CONG_ALG_CUBIC);
+	quic_cong_set_srtt(&cong, QUIC_RTT_INIT);
 	cong.is_rtt_set = 1;
 
 	KUNIT_EXPECT_EQ(test, cong.mss, 1400);

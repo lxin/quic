@@ -199,6 +199,11 @@ void quic_conn_id_set_free(struct quic_conn_id_set *id_set)
 	id_set->active = NULL;
 }
 
+void quic_conn_id_get_param(struct quic_conn_id_set *id_set, struct quic_transport_param *p)
+{
+	p->active_connection_id_limit = id_set->max_count;
+}
+
 void quic_conn_id_set_param(struct quic_conn_id_set *id_set, struct quic_transport_param *p)
 {
 	id_set->max_count = p->active_connection_id_limit;

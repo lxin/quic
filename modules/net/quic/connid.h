@@ -35,9 +35,9 @@ struct quic_conn_id_set {
 	struct quic_common_conn_id *active;
 	struct quic_common_conn_id *alt;
 	struct list_head head;
-	u32 entry_size;
-	u32 max_count;
-	u32 count;
+	u8 entry_size;
+	u8 max_count;
+	u8 count;
 };
 
 static inline u32 quic_conn_id_first_number(struct quic_conn_id_set *id_set)
@@ -96,7 +96,7 @@ static inline struct quic_conn_id *quic_conn_id_choose(struct quic_conn_id_set *
 	return (alt && id_set->alt) ? &id_set->alt->id : &id_set->active->id;
 }
 
-static inline u32 quic_conn_id_max_count(struct quic_conn_id_set *id_set)
+static inline u8 quic_conn_id_max_count(struct quic_conn_id_set *id_set)
 {
 	return id_set->max_count;
 }
@@ -141,6 +141,7 @@ struct quic_conn_id *quic_conn_id_get(struct quic_conn_id_set *id_set, u8 *scid,
 struct quic_conn_id *quic_conn_id_find(struct quic_conn_id_set *id_set, u32 number);
 struct quic_conn_id *quic_conn_id_lookup(struct net *net, u8 *scid, u32 len);
 
+void quic_conn_id_get_param(struct quic_conn_id_set *id_set, struct quic_transport_param *p);
 void quic_conn_id_set_param(struct quic_conn_id_set *id_set, struct quic_transport_param *p);
 void quic_conn_id_set_init(struct quic_conn_id_set *id_set, bool source);
 void quic_conn_id_set_free(struct quic_conn_id_set *id_set);

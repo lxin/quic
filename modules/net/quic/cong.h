@@ -75,6 +75,16 @@ static inline void quic_cong_set_mss(struct quic_cong *cong, u32 mss)
 		cong->window = cong->min_window;
 }
 
+static inline void quic_cong_set_max_window(struct quic_cong *cong, u32 window)
+{
+	cong->max_window = window;
+}
+
+static inline void quic_cong_set_max_ack_delay(struct quic_cong *cong, u32 max_ack_delay)
+{
+	cong->max_ack_delay = max_ack_delay;
+}
+
 static inline void *quic_cong_priv(struct quic_cong *cong)
 {
 	return (void *)cong->priv;
@@ -100,9 +110,6 @@ static inline u64 quic_cong_pacing_time(struct quic_cong *cong)
 	return cong->pacing_time;
 }
 
-void quic_cong_set_param(struct quic_cong *cong, struct quic_transport_param *p);
-void quic_cong_set_config(struct quic_cong *cong, struct quic_config *c);
-
 void quic_cong_on_packet_acked(struct quic_cong *cong, u32 time, u32 bytes, s64 number);
 void quic_cong_on_packet_lost(struct quic_cong *cong, u32 time, u32 bytes, s64 number);
 void quic_cong_on_process_ecn(struct quic_cong *cong);
@@ -110,3 +117,7 @@ void quic_cong_on_process_ecn(struct quic_cong *cong);
 void quic_cong_on_packet_sent(struct quic_cong *cong, u32 time, u32 bytes, s64 number);
 void quic_cong_on_ack_recv(struct quic_cong *cong, u32 bytes, u32 max_rate);
 void quic_cong_rtt_update(struct quic_cong *cong, u32 time, u32 ack_delay);
+
+void quic_cong_set_srtt(struct quic_cong *cong, u32 srtt);
+void quic_cong_set_algo(struct quic_cong *cong, u8 algo);
+void quic_cong_init(struct quic_cong *cong);

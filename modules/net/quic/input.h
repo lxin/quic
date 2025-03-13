@@ -11,9 +11,6 @@
 #define QUIC_MAX_ACK_DELAY_EXPONENT	20
 #define QUIC_DEF_ACK_DELAY_EXPONENT	3
 
-#define QUIC_MAX_ACK_DELAY		(16384 * 1000)
-#define QUIC_DEF_ACK_DELAY		25000
-
 struct quic_inqueue {
 	struct sk_buff_head backlog_list;
 	struct list_head handshake_list;
@@ -22,20 +19,22 @@ struct quic_inqueue {
 	struct list_head recv_list;
 	struct work_struct work;
 	u64 max_bytes;
+	u64 max_data;
 	u64 highest;
-	u64 window;
 	u64 bytes;
 
-	u32 max_datagram_frame_size;
-	u32 max_udp_payload_size;
-	u32 ack_delay_exponent;
+	u16 max_datagram_frame_size;
+	u16 max_udp_payload_size;
+	u8 ack_delay_exponent;
 	u32 max_idle_timeout;
 	u32 max_ack_delay;
+	u32 timeout;
 	u32 events;
 	u16 count;
 
 	u8 disable_1rtt_encryption:1;
 	u8 grease_quic_bit:1;
+	u8 stateless_reset:1;
 	u8 need_sack:2;
 };
 
@@ -49,17 +48,12 @@ static inline void quic_inq_set_count(struct quic_inqueue *inq, u16 count)
 	inq->count = count;
 }
 
-static inline u32 quic_inq_max_idle_timeout(struct quic_inqueue *inq)
+static inline u32 quic_inq_timeout(struct quic_inqueue *inq)
 {
-	return inq->max_idle_timeout;
+	return inq->timeout;
 }
 
-static inline void quic_inq_set_max_idle_timeout(struct quic_inqueue *inq, u32 timeout)
-{
-	inq->max_idle_timeout = timeout;
-}
-
-static inline u32 quic_inq_ack_delay_exponent(struct quic_inqueue *inq)
+static inline u8 quic_inq_ack_delay_exponent(struct quic_inqueue *inq)
 {
 	return inq->ack_delay_exponent;
 }
@@ -69,14 +63,14 @@ static inline u32 quic_inq_max_ack_delay(struct quic_inqueue *inq)
 	return inq->max_ack_delay;
 }
 
-static inline u32 quic_inq_max_dgram(struct quic_inqueue *inq)
+static inline u16 quic_inq_max_dgram(struct quic_inqueue *inq)
 {
 	return inq->max_datagram_frame_size;
 }
 
-static inline u32 quic_inq_window(struct quic_inqueue *inq)
+static inline u32 quic_inq_max_data(struct quic_inqueue *inq)
 {
-	return inq->window;
+	return inq->max_data;
 }
 
 static inline u64 quic_inq_bytes(struct quic_inqueue *inq)
@@ -124,11 +118,6 @@ static inline struct list_head *quic_inq_recv_list(struct quic_inqueue *inq)
 	return &inq->recv_list;
 }
 
-static inline u8 quic_inq_disable_1rtt_encryption(struct quic_inqueue *inq)
-{
-	return inq->disable_1rtt_encryption;
-}
-
 static inline u8 quic_inq_need_sack(struct quic_inqueue *inq)
 {
 	return inq->need_sack;
@@ -150,6 +139,7 @@ void quic_inq_backlog_tail(struct sock *sk, struct sk_buff *skb);
 void quic_inq_data_read(struct sock *sk, u32 bytes);
 
 void quic_inq_flow_control(struct sock *sk, struct quic_stream *stream, u32 bytes);
+void quic_inq_get_param(struct sock *sk, struct quic_transport_param *p);
 void quic_inq_set_param(struct sock *sk, struct quic_transport_param *p);
 void quic_inq_init(struct sock *sk);
 void quic_inq_free(struct sock *sk);

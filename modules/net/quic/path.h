@@ -257,8 +257,8 @@ u32 quic_path_pl_recv(struct quic_path_group *paths, bool *raise_timer, bool *co
 u32 quic_path_pl_toobig(struct quic_path_group *paths, u32 pmtu, bool *reset_timer);
 u32 quic_path_pl_send(struct quic_path_group *paths, s64 number);
 
-void quic_path_set_param(struct quic_path_group *paths, struct quic_transport_param *p,
-			 bool remote);
+void quic_path_get_param(struct quic_path_group *paths, struct quic_transport_param *p);
+void quic_path_set_param(struct quic_path_group *paths, struct quic_transport_param *p);
 bool quic_path_pl_confirm(struct quic_path_group *paths, s64 largest, s64 smallest);
 void quic_path_pl_reset(struct quic_path_group *paths);
 

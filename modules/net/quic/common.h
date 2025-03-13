@@ -11,6 +11,9 @@
 #include <net/netns/hash.h>
 #include <linux/jhash.h>
 
+#define QUIC_MAX_ACK_DELAY	(16384 * 1000)
+#define QUIC_DEF_ACK_DELAY	25000
+
 #define QUIC_STREAM_BIT_FIN	0x01
 #define QUIC_STREAM_BIT_LEN	0x02
 #define QUIC_STREAM_BIT_OFF	0x04

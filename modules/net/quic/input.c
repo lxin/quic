@@ -84,7 +84,7 @@ void quic_inq_flow_control(struct sock *sk, struct quic_stream *stream, u32 byte
 	inq->bytes += bytes;
 
 	/* recv flow control */
-	window = inq->window;
+	window = inq->max_data;
 	if (inq->bytes + window - inq->max_bytes >=
 	    max(mss, (window >> QUIC_INQ_RWND_SHIFT))) {
 		if (quic_under_memory_pressure(sk))
@@ -387,21 +387,49 @@ int quic_inq_handshake_recv(struct sock *sk, struct quic_frame *frame)
 	return 0;
 }
 
-void quic_inq_set_param(struct sock *sk, struct quic_transport_param *p)
+void quic_inq_get_param(struct sock *sk, struct quic_transport_param *p)
 {
 	struct quic_inqueue *inq = quic_inq(sk);
 
+	p->disable_1rtt_encryption = inq->disable_1rtt_encryption;
+	p->max_datagram_frame_size = inq->max_datagram_frame_size;
+	p->max_udp_payload_size = inq->max_udp_payload_size;
+	p->ack_delay_exponent = inq->ack_delay_exponent;
+	p->max_idle_timeout = inq->max_idle_timeout;
+	p->grease_quic_bit = inq->grease_quic_bit;
+	p->stateless_reset = inq->stateless_reset;
+	p->max_ack_delay = inq->max_ack_delay;
+	p->max_data = inq->max_data;
+}
+
+void quic_inq_set_param(struct sock *sk, struct quic_transport_param *p)
+{
+	struct quic_packet *packet = quic_packet(sk);
+	struct quic_inqueue *inq = quic_inq(sk);
+
+	if (p->remote) {
+		if (p->max_idle_timeout &&
+		    (!inq->max_idle_timeout || p->max_idle_timeout < inq->max_idle_timeout))
+			inq->timeout = p->max_idle_timeout;
+
+		if (inq->disable_1rtt_encryption && p->disable_1rtt_encryption)
+			quic_packet_set_taglen(packet, 0);
+		return;
+	}
+
+	inq->disable_1rtt_encryption = p->disable_1rtt_encryption;
 	inq->max_datagram_frame_size = p->max_datagram_frame_size;
 	inq->max_udp_payload_size = p->max_udp_payload_size;
-	inq->max_ack_delay = p->max_ack_delay;
 	inq->ack_delay_exponent = p->ack_delay_exponent;
 	inq->max_idle_timeout = p->max_idle_timeout;
 	inq->grease_quic_bit = p->grease_quic_bit;
-	inq->window = p->max_data;
+	inq->stateless_reset = p->stateless_reset;
+	inq->max_ack_delay = p->max_ack_delay;
+	inq->max_data = p->max_data;
 
-	inq->max_bytes = p->max_data;
+	inq->timeout = inq->max_idle_timeout;
+	inq->max_bytes = inq->max_data;
 	sk->sk_rcvbuf = (int)p->max_data * 2;
-	inq->disable_1rtt_encryption = p->disable_1rtt_encryption;
 }
 
 int quic_inq_event_recv(struct sock *sk, u8 event, void *args)

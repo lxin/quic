@@ -422,12 +422,31 @@ void quic_stream_free(struct quic_stream_table *streams)
 	kfree(ht->hash);
 }
 
+void quic_stream_get_param(struct quic_stream_table *streams, struct quic_transport_param *p,
+			   bool is_serv)
+{
+	if (p->remote) {
+		p->max_stream_data_bidi_remote = streams->send.max_stream_data_bidi_remote;
+		p->max_stream_data_bidi_local = streams->send.max_stream_data_bidi_local;
+		p->max_stream_data_uni = streams->send.max_stream_data_uni;
+		p->max_streams_bidi = streams->send.max_streams_bidi;
+		p->max_streams_uni = streams->send.max_streams_uni;
+		return;
+	}
+
+	p->max_stream_data_bidi_remote = streams->recv.max_stream_data_bidi_remote;
+	p->max_stream_data_bidi_local = streams->recv.max_stream_data_bidi_local;
+	p->max_stream_data_uni = streams->recv.max_stream_data_uni;
+	p->max_streams_bidi = streams->recv.max_streams_bidi;
+	p->max_streams_uni = streams->recv.max_streams_uni;
+}
+
 void quic_stream_set_param(struct quic_stream_table *streams, struct quic_transport_param *p,
-			   bool remote, bool is_serv)
+			   bool is_serv)
 {
 	u8 type;
 
-	if (remote) {
+	if (p->remote) {
 		streams->send.max_stream_data_bidi_local = p->max_stream_data_bidi_local;
 		streams->send.max_stream_data_bidi_remote = p->max_stream_data_bidi_remote;
 		streams->send.max_stream_data_uni = p->max_stream_data_uni;

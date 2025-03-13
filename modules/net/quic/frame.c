@@ -1284,15 +1284,15 @@ static int quic_frame_connection_close_process(struct sock *sk, struct quic_fram
 static int quic_frame_data_blocked_process(struct sock *sk, struct quic_frame *frame, u8 type)
 {
 	struct quic_inqueue *inq = quic_inq(sk);
-	u64 max_bytes, recv_max_bytes;
-	u32 window, len = frame->len;
+	u64 window, max_bytes, recv_max_bytes;
+	u32 len = frame->len;
 	u8 *p = frame->data;
 
 	if (!quic_get_var(&p, &len, &max_bytes))
 		return -EINVAL;
 	recv_max_bytes = quic_inq_max_bytes(inq);
 
-	window = quic_inq_window(inq);
+	window = quic_inq_max_data(inq);
 	if (quic_under_memory_pressure(sk))
 		window >>= 1;
 
@@ -1690,8 +1690,8 @@ static int quic_frame_get_address(union quic_addr *addr, struct quic_conn_id *co
 	return 0;
 }
 
-int quic_frame_set_transport_params_ext(struct sock *sk, struct quic_transport_param *params,
-					u8 *data, u32 len)
+int quic_frame_parse_transport_params_ext(struct sock *sk, struct quic_transport_param *params,
+					  u8 *data, u32 len)
 {
 	struct quic_conn_id_set *id_set = quic_dest(sk);
 	struct quic_path_group *paths = quic_paths(sk);
@@ -1699,8 +1699,8 @@ int quic_frame_set_transport_params_ext(struct sock *sk, struct quic_transport_p
 	struct quic_conn_id *active, conn_id;
 	u32 versions[16] = {packet->version};
 	u8 *p = data, count = 1, token[16];
+	u64 type, value, valuelen;
 	union quic_addr addr;
-	u64 type, valuelen;
 
 	params->max_udp_payload_size = QUIC_MAX_UDP_PAYLOAD;
 	params->ack_delay_exponent = QUIC_DEF_ACK_DELAY_EXPONENT;
@@ -1752,31 +1752,40 @@ int quic_frame_set_transport_params_ext(struct sock *sk, struct quic_transport_p
 				return -1;
 			break;
 		case QUIC_TRANSPORT_PARAM_INITIAL_MAX_STREAMS_BIDI:
-			if (quic_get_param(&params->max_streams_bidi, &p, &len))
+			if (quic_get_param(&value, &p, &len))
 				return -1;
-			if (params->max_streams_bidi > QUIC_MAX_STREAMS)
-				params->max_streams_bidi = QUIC_MAX_STREAMS;
+			if (value > QUIC_MAX_STREAMS)
+				value = QUIC_MAX_STREAMS;
+			params->max_streams_bidi = value;
 			break;
 		case QUIC_TRANSPORT_PARAM_INITIAL_MAX_STREAMS_UNI:
-			if (quic_get_param(&params->max_streams_uni, &p, &len))
+			if (quic_get_param(&value, &p, &len))
 				return -1;
-			if (params->max_streams_uni > QUIC_MAX_STREAMS)
-				params->max_streams_uni = QUIC_MAX_STREAMS;
+			if (value > QUIC_MAX_STREAMS)
+				value = QUIC_MAX_STREAMS;
+			params->max_streams_uni = value;
 			break;
 		case QUIC_TRANSPORT_PARAM_MAX_IDLE_TIMEOUT:
-			if (quic_get_param(&params->max_idle_timeout, &p, &len))
+			if (quic_get_param(&value, &p, &len))
 				return -1;
-			params->max_idle_timeout *= 1000;
+			value *= 1000;
+			if (value < QUIC_MIN_IDLE_TIMEOUT)
+				return -1;
+			params->max_idle_timeout = value;
 			break;
 		case QUIC_TRANSPORT_PARAM_MAX_UDP_PAYLOAD_SIZE:
-			if (quic_get_param(&params->max_udp_payload_size, &p, &len))
+			if (quic_get_param(&value, &p, &len))
 				return -1;
+			if (value < QUIC_MIN_UDP_PAYLOAD || value > QUIC_MAX_UDP_PAYLOAD)
+				return -1;
+			params->max_udp_payload_size = value;
 			break;
 		case QUIC_TRANSPORT_PARAM_ACK_DELAY_EXPONENT:
-			if (quic_get_param(&params->ack_delay_exponent, &p, &len))
+			if (quic_get_param(&value, &p, &len))
 				return -1;
-			if (params->ack_delay_exponent > QUIC_MAX_ACK_DELAY_EXPONENT)
+			if (value > QUIC_MAX_ACK_DELAY_EXPONENT)
 				return -1;
+			params->ack_delay_exponent = value;
 			break;
 		case QUIC_TRANSPORT_PARAM_DISABLE_ACTIVE_MIGRATION:
 			if (!quic_get_var(&p, &len, &valuelen))
@@ -1802,20 +1811,26 @@ int quic_frame_set_transport_params_ext(struct sock *sk, struct quic_transport_p
 			params->grease_quic_bit = 1;
 			break;
 		case QUIC_TRANSPORT_PARAM_MAX_ACK_DELAY:
-			if (quic_get_param(&params->max_ack_delay, &p, &len))
+			if (quic_get_param(&value, &p, &len))
 				return -1;
-			params->max_ack_delay *= 1000;
-			if (params->max_ack_delay >= (u64)QUIC_MAX_ACK_DELAY)
+			value *= 1000;
+			if (value >= QUIC_MAX_ACK_DELAY)
 				return -1;
+			params->max_ack_delay = value;
 			break;
 		case QUIC_TRANSPORT_PARAM_ACTIVE_CONNECTION_ID_LIMIT:
-			if (quic_get_param(&params->active_connection_id_limit, &p, &len) ||
-			    params->active_connection_id_limit < QUIC_CONN_ID_LEAST)
+			if (quic_get_param(&value, &p, &len))
 				return -1;
+			if (value < QUIC_CONN_ID_LEAST || value > QUIC_CONN_ID_LIMIT)
+				return -1;
+			params->active_connection_id_limit = value;
 			break;
 		case QUIC_TRANSPORT_PARAM_MAX_DATAGRAM_FRAME_SIZE:
-			if (quic_get_param(&params->max_datagram_frame_size, &p, &len))
+			if (quic_get_param(&value, &p, &len))
 				return -1;
+			if (value && value < QUIC_PATH_MIN_PMTU)
+				return -1;
+			params->max_datagram_frame_size = value;
 			break;
 		case QUIC_TRANSPORT_PARAM_STATELESS_RESET_TOKEN:
 			if (quic_is_serv(sk))
@@ -1901,8 +1916,8 @@ static u8 *quic_frame_put_address(u8 *p, u16 id, union quic_addr *addr,
 	return p;
 }
 
-int quic_frame_get_transport_params_ext(struct sock *sk, struct quic_transport_param *params,
-					u8 *data, u32 *len)
+int quic_frame_build_transport_params_ext(struct sock *sk, struct quic_transport_param *params,
+					  u8 *data, u32 *len)
 {
 	struct quic_conn_id_set *id_set = quic_source(sk);
 	struct quic_path_group *paths = quic_paths(sk);
@@ -1991,11 +2006,11 @@ int quic_frame_get_transport_params_ext(struct sock *sk, struct quic_transport_p
 	}
 	if (params->max_ack_delay != QUIC_DEF_ACK_DELAY) {
 		p = quic_put_param(p, QUIC_TRANSPORT_PARAM_MAX_ACK_DELAY,
-				   div64_ul(params->max_ack_delay, 1000));
+				   (params->max_ack_delay / 1000));
 	}
 	if (params->max_idle_timeout) {
 		p = quic_put_param(p, QUIC_TRANSPORT_PARAM_MAX_IDLE_TIMEOUT,
-				   div64_ul(params->max_idle_timeout, 1000));
+				   (params->max_idle_timeout / 1000));
 	}
 	if (params->active_connection_id_limit &&
 	    params->active_connection_id_limit != QUIC_CONN_ID_LEAST) {
