@@ -139,10 +139,6 @@ static inline void quic_inq_set_need_sack(struct quic_inqueue *inq, u8 need_sack
 	inq->need_sack = need_sack;
 }
 
-void quic_rcv_err_pmtu(struct sock *sk);
-int quic_rcv_err(struct sk_buff *skb);
-int quic_rcv(struct sk_buff *skb);
-
 int quic_inq_handshake_recv(struct sock *sk, struct quic_frame *frame);
 int quic_inq_stream_recv(struct sock *sk, struct quic_frame *frame);
 int quic_inq_dgram_recv(struct sock *sk, struct quic_frame *frame);

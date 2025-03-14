@@ -261,3 +261,6 @@ void quic_path_set_param(struct quic_path_group *paths, struct quic_transport_pa
 			 bool remote);
 bool quic_path_pl_confirm(struct quic_path_group *paths, s64 largest, s64 smallest);
 void quic_path_pl_reset(struct quic_path_group *paths);
+
+int quic_path_init(int (*rcv)(struct sk_buff *skb, u8 err));
+void quic_path_destroy(void);

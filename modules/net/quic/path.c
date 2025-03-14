@@ -12,17 +12,16 @@
 
 #include <uapi/linux/quic.h>
 #include <net/udp_tunnel.h>
-#include <linux/version.h>
 
 #include "hashtable.h"
-#include "protocol.h"
 #include "family.h"
 #include "connid.h"
 #include "stream.h"
 #include "crypto.h"
-#include "frame.h"
-#include "input.h"
 #include "path.h"
+
+static int (*quic_path_rcv)(struct sk_buff *skb, u8 err);
+static struct workqueue_struct *quic_wq __read_mostly;
 
 static int quic_udp_rcv(struct sock *sk, struct sk_buff *skb)
 {
@@ -33,14 +32,17 @@ static int quic_udp_rcv(struct sock *sk, struct sk_buff *skb)
 	QUIC_CRYPTO_CB(skb)->udph_offset = skb->transport_header;
 	QUIC_CRYPTO_CB(skb)->time = jiffies_to_usecs(jiffies);
 	skb_set_transport_header(skb, sizeof(struct udphdr));
-	quic_rcv(skb);
+	quic_path_rcv(skb, 0);
 	return 0;
 }
 
 static int quic_udp_err(struct sock *sk, struct sk_buff *skb)
 {
+	if (skb_linearize(skb))
+		return 0;
+
 	QUIC_CRYPTO_CB(skb)->udph_offset = skb->transport_header;
-	return quic_rcv_err(skb);
+	return quic_path_rcv(skb, 1);
 }
 
 static void quic_udp_sock_destroy(struct work_struct *work)
@@ -461,4 +463,19 @@ void quic_path_pl_reset(struct quic_path_group *paths)
 bool quic_path_pl_confirm(struct quic_path_group *paths, s64 largest, s64 smallest)
 {
 	return paths->pl.number && paths->pl.number >= smallest && paths->pl.number <= largest;
+}
+
+int quic_path_init(int (*rcv)(struct sk_buff *skb, u8 err))
+{
+	quic_wq = create_workqueue("quic_workqueue");
+	if (!quic_wq)
+		return -ENOMEM;
+
+	quic_path_rcv = rcv;
+	return 0;
+}
+
+void quic_path_destroy(void)
+{
+	destroy_workqueue(quic_wq);
 }
