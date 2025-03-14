@@ -16,6 +16,7 @@
 
 #include "hashtable.h"
 #include "protocol.h"
+#include "family.h"
 #include "connid.h"
 #include "stream.h"
 #include "crypto.h"

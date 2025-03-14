@@ -11,12 +11,13 @@
 #ifndef __net_quic_h__
 #define __net_quic_h__
 
+#include <uapi/linux/quic.h>
 #include <net/udp_tunnel.h>
-#include <linux/quic.h>
 
 #include "hashtable.h"
 #include "protocol.h"
 #include "pnspace.h"
+#include "family.h"
 #include "number.h"
 #include "connid.h"
 #include "stream.h"
