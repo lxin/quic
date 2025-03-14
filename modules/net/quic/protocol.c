@@ -26,7 +26,6 @@ static DEFINE_PER_CPU(int, quic_memory_per_cpu_fw_alloc);
 struct kmem_cache *quic_frame_cachep __read_mostly;
 struct workqueue_struct *quic_wq __read_mostly;
 struct percpu_counter quic_sockets_allocated;
-u8 quic_random_data[32] __read_mostly;
 
 long sysctl_quic_mem[3];
 int sysctl_quic_rmem[3];
@@ -1190,7 +1189,7 @@ static __init int quic_init(void)
 	quic_sysctl_register();
 #endif
 
-	get_random_bytes(quic_random_data, 32);
+	quic_crypto_init();
 	pr_info("quic: init\n");
 	return 0;
 

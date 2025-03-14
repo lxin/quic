@@ -141,7 +141,6 @@ int quic_crypto_get_secret(struct quic_crypto *crypto, struct quic_crypto_secret
 int quic_crypto_encrypt(struct quic_crypto *crypto, struct sk_buff *skb);
 int quic_crypto_decrypt(struct quic_crypto *crypto, struct sk_buff *skb);
 int quic_crypto_key_update(struct quic_crypto *crypto);
-void quic_crypto_destroy(struct quic_crypto *crypto);
 
 int quic_crypto_initial_keys_install(struct quic_crypto *crypto, struct quic_conn_id *conn_id,
 				     u32 version, bool is_serv);
@@ -156,3 +155,6 @@ int quic_crypto_get_retry_tag(struct quic_crypto *crypto, struct sk_buff *skb,
 			      struct quic_conn_id *odcid, u32 version, u8 *tag);
 int quic_crypto_verify_token(struct quic_crypto *crypto, void *addr, u32 addrlen,
 			     struct quic_conn_id *conn_id, u8 *token, u32 len);
+
+void quic_crypto_destroy(struct quic_crypto *crypto);
+void quic_crypto_init(void);

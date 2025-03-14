@@ -11,7 +11,6 @@
 extern struct kmem_cache *quic_frame_cachep __read_mostly;
 extern struct workqueue_struct *quic_wq __read_mostly;
 extern struct percpu_counter quic_sockets_allocated;
-extern u8 quic_random_data[32] __read_mostly;
 
 extern long sysctl_quic_mem[3];
 extern int sysctl_quic_rmem[3];

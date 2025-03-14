@@ -21,12 +21,11 @@
 #include <net/tls.h>
 
 #include "hashtable.h"
-#include "protocol.h"
 #include "number.h"
 #include "connid.h"
-#include "stream.h"
 #include "crypto.h"
-#include "frame.h"
+
+static u8 quic_random_data[32] __read_mostly;
 
 static int quic_crypto_hkdf_extract(struct crypto_shash *tfm, struct quic_data *srt,
 				    struct quic_data *hash, struct quic_data *key)
@@ -1023,3 +1022,8 @@ int quic_crypto_generate_session_ticket_key(struct quic_crypto *crypto, void *da
 	return quic_crypto_generate_key(crypto, data, len, "session_ticket", key, key_len);
 }
 EXPORT_SYMBOL_GPL(quic_crypto_generate_session_ticket_key);
+
+void quic_crypto_init(void)
+{
+	get_random_bytes(quic_random_data, 32);
+}

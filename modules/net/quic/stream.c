@@ -16,10 +16,7 @@
 #include <net/sock.h>
 
 #include "hashtable.h"
-#include "connid.h"
 #include "stream.h"
-#include "crypto.h"
-#include "frame.h"
 
 static bool quic_stream_id_send(s64 stream_id, bool is_serv)
 {
