@@ -176,12 +176,13 @@ static struct quic_frame_frag *quic_frame_frag_alloc(u16 size)
 
 static struct quic_frame *quic_frame_stream_create(struct sock *sk, void *data, u8 type)
 {
-	u32 msg_len, max_frame_len, wspace, hlen = 1;
+	u32 msg_len, max_frame_len, hlen = 1;
 	struct quic_msginfo *info = data;
 	struct quic_frame_frag *frag;
 	struct quic_stream *stream;
 	struct quic_frame *frame;
 	u8 *p, nodelay = 0;
+	u64 wspace;
 
 	stream = info->stream;
 	hlen += quic_var_len(stream->id);
@@ -195,7 +196,7 @@ static struct quic_frame *quic_frame_stream_create(struct sock *sk, void *data, 
 
 	msg_len = iov_iter_count(info->msg);
 	wspace = quic_outq_wspace(sk, stream);
-	if (msg_len <= wspace) {
+	if ((u64)msg_len <= wspace) {
 		if (msg_len <= max_frame_len - hlen) {
 			if (info->flags & MSG_STREAM_FIN)
 				type |= QUIC_STREAM_BIT_FIN;
@@ -250,11 +251,11 @@ static struct quic_frame *quic_frame_stream_create(struct sock *sk, void *data, 
 int quic_frame_stream_append(struct sock *sk, struct quic_frame *frame,
 			     struct quic_msginfo *info, u8 pack)
 {
-	u32 msg_len, max_frame_len, wspace, hlen = 1;
 	struct quic_stream *stream = info->stream;
 	u8 *p, type = frame->type, nodelay = 0;
+	u32 msg_len, max_frame_len, hlen = 1;
 	struct quic_frame_frag *frag, *pos;
-	u64 offset = 0;
+	u64 wspace, offset = 0;
 
 	hlen += quic_var_len(stream->id);
 	offset = stream->send.offset - frame->bytes;
@@ -267,7 +268,7 @@ int quic_frame_stream_append(struct sock *sk, struct quic_frame *frame,
 
 	msg_len = iov_iter_count(info->msg);
 	wspace = quic_outq_wspace(sk, stream);
-	if (msg_len <= wspace) {
+	if ((u64)msg_len <= wspace) {
 		if (msg_len <= max_frame_len - hlen - frame->bytes) {
 			if (info->flags & MSG_STREAM_FIN)
 				type |= QUIC_STREAM_BIT_FIN;
@@ -289,10 +290,10 @@ int quic_frame_stream_append(struct sock *sk, struct quic_frame *frame,
 	if (msg_len) {
 		frag = quic_frame_frag_alloc(msg_len);
 		if (!frag)
-			return -1;
+			return 0;
 		if (!quic_frame_copy_from_iter_full(frag->data, msg_len, info->msg)) {
 			kfree(frag);
-			return -1;
+			return 0;
 		}
 		if (frame->flist) {
 			pos = frame->flist;

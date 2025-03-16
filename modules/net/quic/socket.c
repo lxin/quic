@@ -664,7 +664,7 @@ static int quic_wait_for_stream_send(struct sock *sk, struct quic_stream *stream
 		}
 		if (!timeo) {
 			err = -EAGAIN;
-			if (quic_outq_wspace(sk, stream) < len)
+			if (quic_outq_wspace(sk, stream) < (u64)len)
 				err = -ENOSPC;
 			break;
 		}

@@ -145,14 +145,14 @@ int quic_outq_flow_control(struct sock *sk, struct quic_stream *stream, u16 byte
 	return blocked;
 }
 
-u32 quic_outq_wspace(struct sock *sk, struct quic_stream *stream)
+u64 quic_outq_wspace(struct sock *sk, struct quic_stream *stream)
 {
 	struct quic_outqueue *outq = quic_outq(sk);
-	u32 len = outq->max_bytes - outq->bytes;
+	u64 len = outq->max_bytes - outq->bytes;
 
 	if (stream) {
-		len = min_t(u32, len, sk_stream_wspace(sk));
-		len = min_t(u32, len, stream->send.max_bytes - stream->send.bytes);
+		len = min_t(u64, len, sk_stream_wspace(sk));
+		len = min_t(u64, len, stream->send.max_bytes - stream->send.bytes);
 	}
 
 	return len;
