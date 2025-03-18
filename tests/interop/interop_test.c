@@ -11,6 +11,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <netdb.h>
+#include <poll.h>
 
 static int http_log_level = LOG_INFO;
 
@@ -895,17 +896,15 @@ static int http3_client_create_conn(nghttp3_conn **httpconn, struct http_ctx *ct
 static int http3_run_loop(nghttp3_conn *httpconn, struct http_ctx *ctx)
 {
 	int sockfd = ctx->sockfd;
-	struct timeval tv;
-	fd_set readfds;
 	int ret;
 
 	while (!ctx->complete) {
-		tv.tv_sec = 1;
-		tv.tv_usec = 0;
-		FD_ZERO(&readfds);
-		FD_SET(sockfd, &readfds);
+		struct pollfd pfd = {
+			.fd = sockfd,
+			.events = POLLIN,
+		};
 
-		ret = select(sockfd + 1, &readfds, NULL,  NULL, &tv);
+		ret = poll(&pfd, 1, 1000);
 		if (ret < 0)
 			return -1;
 		ret = http3_read_data(ctx, httpconn, sockfd);
@@ -1454,17 +1453,15 @@ static int http09_run_loop(struct http_ctx *ctx)
 	int sockfd = ctx->sockfd;
 	int64_t stream_id = -1;
 	uint32_t flags = 0;
-	struct timeval tv;
-	fd_set readfds;
 	int ret;
 
 	while (!ctx->complete) {
-		tv.tv_sec = 1;
-		tv.tv_usec = 0;
-		FD_ZERO(&readfds);
-		FD_SET(sockfd, &readfds);
+		struct pollfd pfd = {
+			.fd = sockfd,
+			.events = POLLIN,
+		};
 
-		ret = select(sockfd + 1, &readfds, NULL,  NULL, &tv);
+		ret = poll(&pfd, 1, 1000);
 		if (ret < 0)
 			return -1;
 		while (1) {
