@@ -8,6 +8,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <netdb.h>
+#include <poll.h>
 
 static int http_log_level = LOG_INFO;
 
@@ -453,17 +454,15 @@ static int http_submit_request(nghttp3_conn *httpconn, int sockfd, struct http_r
 
 static int http_run_loop(nghttp3_conn *httpconn, int sockfd, struct http_request *req)
 {
-	struct timeval tv;
-	fd_set readfds;
 	int ret;
 
 	while (!req->done) {
-		tv.tv_sec = 1;
-		tv.tv_usec = 0;
-		FD_ZERO(&readfds);
-		FD_SET(sockfd, &readfds);
+		struct pollfd pfd = {
+			.fd = sockfd,
+			.events = POLLIN,
+		};
 
-		ret = select(sockfd + 1, &readfds, NULL,  NULL, &tv);
+		ret = poll(&pfd, 1, 1000);
 		if (ret < 0)
 			return -1;
 		ret = http_read_data(httpconn, sockfd);
