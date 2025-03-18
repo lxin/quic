@@ -24,6 +24,7 @@
 #include <string.h>
 #include <errno.h>
 #include <stdio.h>
+#include <poll.h>
 
 #include "netinet/quic.h"
 
@@ -549,10 +550,8 @@ int quic_handshake(gnutls_session_t session)
 	int ret, sockfd = gnutls_transport_get_int(session);
 	struct quic_msg *msg, _msg = {};
 	struct quic_ctx *ctx;
-	struct timeval tv;
 	unsigned int len;
 	uint8_t opt[128];
-	fd_set readfds;
 
 	ctx = malloc(sizeof(*ctx));
 	if (!ctx) {
@@ -607,14 +606,14 @@ int quic_handshake(gnutls_session_t session)
 	}
 
 	while (!ctx->completed) {
-		tv.tv_sec = 1;
-		tv.tv_usec = 0;
-		FD_ZERO(&readfds);
-		FD_SET(sockfd, &readfds);
+		struct pollfd pfd = {
+			.fd = sockfd,
+			.events = POLLIN,
+		};
 
-		ret = select(sockfd + 1, &readfds, NULL,  NULL, &tv);
+		ret = poll(&pfd, 1, 1000);
 		if (ret < 0) {
-			quic_log_error("socket select error %d", errno);
+			quic_log_error("socket poll() error %d", errno);
 			ret = -errno;
 			goto out;
 		}
