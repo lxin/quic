@@ -448,7 +448,7 @@ out:
 	(MSG_STREAM_NEW | MSG_STREAM_FIN | MSG_STREAM_UNI | MSG_STREAM_DONTWAIT)
 
 #define QUIC_MSG_FLAGS \
-	(QUIC_MSG_STREAM_FLAGS | MSG_MORE | MSG_DONTWAIT | MSG_DATAGRAM)
+	(QUIC_MSG_STREAM_FLAGS | MSG_MORE | MSG_DONTWAIT | MSG_DATAGRAM | MSG_NOSIGNAL)
 
 static int quic_msghdr_parse(struct sock *sk, struct msghdr *msg, struct quic_handshake_info *hinfo,
 			     struct quic_stream_info *sinfo, bool *has_hinfo)
@@ -825,6 +825,8 @@ static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 out:
 	err = bytes;
 err:
+	if (err < 0 && !has_hinfo && !(flags & MSG_DATAGRAM))
+		err = sk_stream_error(sk, flags, err);
 	release_sock(sk);
 	return err;
 }
