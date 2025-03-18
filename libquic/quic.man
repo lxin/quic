@@ -145,6 +145,11 @@ and `QUIC_HANDSHAKE_INFO` discribed in
 The `flags` parameter in `sendmsg()` can be set to the following values:
 
 .IP \[bu] 4
+.B `MSG_NOSIGNAL`:
+See
+.BR sendmsg (2).
+
+.IP \[bu] 4
 .B `MSG_MORE`:
 Indicates that the data will be held until the next data is sent without
 this flag.
