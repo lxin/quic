@@ -95,11 +95,6 @@ static inline u32 quic_cong_pto(struct quic_cong *cong)
 	return cong->pto;
 }
 
-static inline u32 quic_cong_latest_rtt(struct quic_cong *cong)
-{
-	return cong->latest_rtt;
-}
-
 static inline u64 quic_cong_pacing_time(struct quic_cong *cong)
 {
 	return cong->pacing_time;

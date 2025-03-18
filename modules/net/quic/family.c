@@ -16,6 +16,7 @@
 #include <linux/icmp.h>
 
 #include "common.h"
+#include "family.h"
 
 struct quic_addr_family_ops {
 	u32	iph_len;

@@ -2063,13 +2063,3 @@ void quic_frame_put(struct quic_frame *frame)
 	if (refcount_dec_and_test(&frame->refcnt))
 		quic_frame_free(frame);
 }
-
-void quic_frame_list_purge(struct list_head *head)
-{
-	struct quic_frame *frame, *next;
-
-	list_for_each_entry_safe(frame, next, head, list) {
-		list_del_init(&frame->list);
-		quic_frame_put(frame);
-	}
-}

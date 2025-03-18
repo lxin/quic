@@ -204,7 +204,6 @@ int quic_frame_stream_append(struct sock *sk, struct quic_frame *frame,
 
 struct quic_frame *quic_frame_alloc(u32 size, u8 *data, gfp_t gfp);
 struct quic_frame *quic_frame_get(struct quic_frame *frame);
-void quic_frame_list_purge(struct list_head *head);
 void quic_frame_put(struct quic_frame *frame);
 
 struct quic_frame *quic_frame_create(struct sock *sk, u8 type, void *data);
