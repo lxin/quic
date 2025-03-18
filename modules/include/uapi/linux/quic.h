@@ -91,30 +91,32 @@ struct quic_transport_param {
 	uint8_t		stateless_reset;
 	uint8_t		disable_1rtt_encryption;
 	uint8_t		disable_compatible_version;
-	uint64_t	max_udp_payload_size;
-	uint64_t	ack_delay_exponent;
-	uint64_t	max_ack_delay;
-	uint64_t	active_connection_id_limit;
-	uint64_t	max_idle_timeout;
-	uint64_t	max_datagram_frame_size;
+	uint8_t		active_connection_id_limit;
+	uint8_t		ack_delay_exponent;
+	uint16_t	max_datagram_frame_size;
+	uint16_t	max_udp_payload_size;
+	uint32_t	max_idle_timeout;
+	uint32_t	max_ack_delay;
+	uint16_t	max_streams_bidi;
+	uint16_t	max_streams_uni;
 	uint64_t	max_data;
 	uint64_t	max_stream_data_bidi_local;
 	uint64_t	max_stream_data_bidi_remote;
 	uint64_t	max_stream_data_uni;
-	uint64_t	max_streams_bidi;
-	uint64_t	max_streams_uni;
+	uint64_t	reserved;
 };
 
 struct quic_config {
 	uint32_t	version;
 	uint32_t	plpmtud_probe_interval;
-	uint64_t	initial_smoothed_rtt;
+	uint32_t	initial_smoothed_rtt;
+	uint32_t	payload_cipher_type;
 	uint8_t		congestion_control_algo;
 	uint8_t		validate_peer_address;
-	uint32_t	payload_cipher_type;
+	uint8_t		stream_data_nodelay;
 	uint8_t		receive_session_ticket;
 	uint8_t		certificate_request;
-	uint8_t		stream_data_nodelay;
+	uint8_t		reserved[3];
 };
 
 struct quic_crypto_secret {
