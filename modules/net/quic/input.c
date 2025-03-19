@@ -391,6 +391,7 @@ void quic_inq_get_param(struct sock *sk, struct quic_transport_param *p)
 {
 	struct quic_inqueue *inq = quic_inq(sk);
 
+	p->disable_compatible_version = inq->disable_compatible_version;
 	p->disable_1rtt_encryption = inq->disable_1rtt_encryption;
 	p->max_datagram_frame_size = inq->max_datagram_frame_size;
 	p->max_udp_payload_size = inq->max_udp_payload_size;
@@ -417,6 +418,7 @@ void quic_inq_set_param(struct sock *sk, struct quic_transport_param *p)
 		return;
 	}
 
+	inq->disable_compatible_version = p->disable_compatible_version;
 	inq->disable_1rtt_encryption = p->disable_1rtt_encryption;
 	inq->max_datagram_frame_size = p->max_datagram_frame_size;
 	inq->max_udp_payload_size = p->max_udp_payload_size;

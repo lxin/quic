@@ -1086,6 +1086,7 @@ void quic_outq_set_param(struct sock *sk, struct quic_transport_param *p)
 	if (!p->remote)
 		return;
 
+	outq->disable_compatible_version = p->disable_compatible_version;
 	outq->disable_1rtt_encryption = p->disable_1rtt_encryption;
 	outq->max_datagram_frame_size = p->max_datagram_frame_size;
 	outq->max_udp_payload_size = p->max_udp_payload_size;
@@ -1111,6 +1112,7 @@ void quic_outq_get_param(struct sock *sk, struct quic_transport_param *p)
 	if (!p->remote)
 		return;
 
+	p->disable_compatible_version = outq->disable_compatible_version;
 	p->disable_1rtt_encryption = outq->disable_1rtt_encryption;
 	p->max_datagram_frame_size = outq->max_datagram_frame_size;
 	p->max_udp_payload_size = outq->max_udp_payload_size;

@@ -32,6 +32,7 @@ struct quic_inqueue {
 	u32 events;
 	u16 count;
 
+	u8 disable_compatible_version:1;
 	u8 disable_1rtt_encryption:1;
 	u8 grease_quic_bit:1;
 	u8 stateless_reset:1;
