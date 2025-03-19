@@ -557,6 +557,7 @@ the QUIC stack. The events are categorized under the `quic_event_type` enum:
 enum quic_event_type {
   QUIC_EVENT_NONE,
   QUIC_EVENT_STREAM_UPDATE,
+  QUIC_EVENT_STREAM_MAX_DATA,
   QUIC_EVENT_STREAM_MAX_STREAM,
   QUIC_EVENT_CONNECTION_ID,
   QUIC_EVENT_CONNECTION_CLOSE,
@@ -630,6 +631,28 @@ receive side.
 finalsz
 The final size of the stream. It is used for the SIZE_KNOWN, RESET_RECVD,
 or RECVD state updates on receive side.
+
+.SS QUIC_EVENT_STREAM_MAX_DATA
+Delivered when a Stream Max Data frame is received. If a stream is blocked,
+a non-blocking sendmsg() call will return ENOSPC. This event notifies the
+application when additional send space becomes available for a stream,
+allowing applications to adjust stream scheduling accordingly.
+
+.PP
+Data format in the event:
+
+.nf
+struct quic_stream_max_data {
+  int64_t  id;
+  uint64_t max_data;
+};
+.fi
+.TP
+id
+The stream ID.
+.TP
+max_data
+The updated maximum amount of data that can be sent on the stream.
 
 .SS QUIC_EVENT_STREAM_MAX_STREAM
 Delivered when a `MAX_STREAMS` frame is received. Useful when
@@ -825,18 +848,19 @@ struct quic_transport_param {
   uint8_t  stateless_reset;                  /* 0 */
   uint8_t  disable_1rtt_encryption;          /* 0 */
   uint8_t  disable_compatible_version;       /* 0 */
-  uint64_t max_udp_payload_size;             /* 65527 */
-  uint64_t ack_delay_exponent;               /* 3 */
-  uint64_t max_ack_delay;                    /* 25000 */
-  uint64_t active_connection_id_limit;       /* 7 */
-  uint64_t max_idle_timeout;                 /* 30000000 us */
-  uint64_t max_datagram_frame_size;          /* 0 */
+  uint8_t  active_connection_id_limit;       /* 7 */
+  uint8_t  ack_delay_exponent;               /* 3 */
+  uint16_t max_datagram_frame_size;          /* 0 */
+  uint16_t max_udp_payload_size;             /* 65527 */
+  uint32_t max_idle_timeout;                 /* 30000000 us */
+  uint32_t max_ack_delay;                    /* 25000 */
+  uint16_t max_streams_bidi;                 /* 100 */
+  uint16_t max_streams_uni;                  /* 100 */
   uint64_t max_data;                         /* 65536 * 32 */
   uint64_t max_stream_data_bidi_local;       /* 65536 * 4 */
   uint64_t max_stream_data_bidi_remote;      /* 65536 * 4 */
   uint64_t max_stream_data_uni;              /* 65536 * 4 */
-  uint64_t max_streams_bidi;                 /* 100 */
-  uint64_t max_streams_uni;                  /* 100 */
+  uint64_t reserved;
 };
 .fi
 .PP
@@ -863,13 +887,14 @@ The `optval` type is:
 struct quic_config {
   uint32_t version;
   uint32_t plpmtud_probe_interval;
-  uint64_t initial_smoothed_rtt;
+  uint32_t initial_smoothed_rtt;
+  uint32_t payload_cipher_type;
   uint8_t  congestion_control_algo;
   uint8_t  validate_peer_address;
-  uint32_t payload_cipher_type;
+  uint8_t  stream_data_nodelay;
   uint8_t  receive_session_ticket;
   uint8_t  certificate_request;
-  uint8_t  stream_data_nodelay;
+  uint8_t  reserved[3];
 };
 .fi
 .IP "version"
