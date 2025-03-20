@@ -301,6 +301,8 @@ struct quic_stream *quic_stream_recv_get(struct quic_stream_table *streams, s64 
 	stream = quic_stream_recv_create(streams, stream_id, is_serv);
 	if (!stream)
 		return ERR_PTR(-ENOSTR);
+	if (quic_stream_id_send(stream_id, is_serv))
+		streams->send.active_stream_id = stream_id;
 	return stream;
 }
 
