@@ -1044,8 +1044,11 @@ static int quic_packet_app_process(struct sock *sk, struct sk_buff *skb)
 	/* Do decryption */
 	if (!cb->conn_id) {
 		cb->conn_id = quic_conn_id_get(source, skb->data + 1, skb->len - 1);
-		if (!cb->conn_id)
+		if (!cb->conn_id) {
+			if (!quic_packet_stateless_reset_process(sk, skb))
+				return 0;
 			goto err;
+		}
 	}
 	cb->number_offset = cb->conn_id->len + 1;
 	cb->length = (u16)(skb->len - cb->number_offset);
@@ -1061,8 +1064,6 @@ static int quic_packet_app_process(struct sock *sk, struct sk_buff *skb)
 			QUIC_INC_STATS(net, QUIC_MIB_PKT_DECBACKLOGS);
 			return err;
 		}
-		if (!quic_packet_stateless_reset_process(sk, skb))
-			return 0;
 		QUIC_INC_STATS(net, QUIC_MIB_PKT_DECDROP);
 		if (cb->key_update) {
 			key_phase = cb->key_phase;
