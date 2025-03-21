@@ -29,7 +29,6 @@ struct quic_outqueue {
 	u32 inflight;		/* all inflight ack_eliciting frames len */
 	u32 window;
 	u16 count;
-	u8  level;
 
 	/* Use for 0-RTT/1-RTT DATA (re)transmit,
 	 * as QUIC_CRYPTO_CB(skb)->level is always QUIC_CRYPTO_APP.

@@ -86,14 +86,12 @@ static void quic_outq_transmit_ctrl(struct sock *sk, u8 level)
 	}
 }
 
-static void quic_outq_transmit_dgram(struct sock *sk, u8 level)
+static void quic_outq_transmit_dgram(struct sock *sk)
 {
 	struct quic_outqueue *outq = quic_outq(sk);
 	struct quic_frame *frame, *next;
 	struct list_head *head;
 
-	if (level != QUIC_CRYPTO_APP)
-		return;
 	if (!quic_crypto_send_ready(quic_crypto(sk, outq->data_level)))
 		return;
 
@@ -187,14 +185,12 @@ static int quic_outq_delay_check(struct sock *sk, u8 level, u8 nodelay)
 	return 1;
 }
 
-static void quic_outq_transmit_stream(struct sock *sk, u8 level)
+static void quic_outq_transmit_stream(struct sock *sk)
 {
 	struct quic_outqueue *outq = quic_outq(sk);
 	struct quic_frame *frame, *next;
 	struct list_head *head;
 
-	if (level != QUIC_CRYPTO_APP)
-		return;
 	if (!quic_crypto_send_ready(quic_crypto(sk, outq->data_level)))
 		return;
 
@@ -215,7 +211,7 @@ static void quic_outq_transmit_stream(struct sock *sk, u8 level)
 	}
 }
 
-static int quic_outq_transmit_old(struct sock *sk)
+static void quic_outq_transmit_old(struct sock *sk, u8 level)
 {
 	struct quic_outqueue *outq = quic_outq(sk);
 	struct quic_frame *frame, *next;
@@ -223,9 +219,9 @@ static int quic_outq_transmit_old(struct sock *sk)
 
 	head = &outq->transmitted_list;
 	list_for_each_entry_safe(frame, next, head, list) {
-		if (!frame->level && outq->level)
+		if (!frame->level && level)
 			break;
-		if (frame->level != outq->level)
+		if (frame->level != level)
 			continue;
 		if (!quic_frame_retransmittable(frame->type))
 			continue;
@@ -240,23 +236,35 @@ static int quic_outq_transmit_old(struct sock *sk)
 		outq->count += quic_packet_create(sk); /* build and xmit the packed frames */
 		next = frame; /* go back but still pack the current frame */
 	}
-
-	return quic_outq_transmit_flush(sk);
 }
 
 /* pack and transmit frames from outqueue */
 int quic_outq_transmit(struct sock *sk)
 {
+	quic_outq_transmit_ctrl(sk, QUIC_CRYPTO_INITIAL);
+	quic_outq_transmit_ctrl(sk, QUIC_CRYPTO_HANDSHAKE);
+	quic_outq_transmit_ctrl(sk, QUIC_CRYPTO_APP);
+
+	quic_outq_transmit_dgram(sk);
+	quic_outq_transmit_stream(sk);
+
+	return quic_outq_transmit_flush(sk);
+}
+
+static int quic_outq_transmit_single(struct sock *sk, u8 level)
+{
 	struct quic_outqueue *outq = quic_outq(sk);
 
-	if (!outq->single) {
-		quic_outq_transmit_ctrl(sk, QUIC_CRYPTO_INITIAL);
-		quic_outq_transmit_ctrl(sk, QUIC_CRYPTO_HANDSHAKE);
+	outq->single = 1;
+	quic_outq_transmit_ctrl(sk, level);
+
+	if (level == QUIC_CRYPTO_APP) {
+		quic_outq_transmit_dgram(sk);
+		quic_outq_transmit_stream(sk);
 	}
 
-	quic_outq_transmit_ctrl(sk, outq->level);
-	quic_outq_transmit_dgram(sk, outq->level);
-	quic_outq_transmit_stream(sk, outq->level);
+	quic_outq_transmit_old(sk, level);
+	outq->single = 0;
 
 	return quic_outq_transmit_flush(sk);
 }
@@ -887,7 +895,7 @@ void quic_outq_retransmit_list(struct sock *sk, struct list_head *head)
 void quic_outq_transmit_pto(struct sock *sk)
 {
 	struct quic_outqueue *outq = quic_outq(sk);
-	struct quic_probeinfo info;
+	struct quic_probeinfo info = {};
 	u32 time;
 	u8 level;
 
@@ -901,22 +909,20 @@ void quic_outq_transmit_pto(struct sock *sk)
 
 	quic_outq_get_pto_time(sk, &level);
 
-	outq->single = 1;
-	outq->level = level;
-	if (quic_outq_transmit(sk) || quic_outq_transmit_old(sk))
+	if (quic_outq_transmit_single(sk, level))
 		goto out;
 
 	if (quic_packet_config(sk, level, 0))
 		goto out;
 
-	info.size = 0;
-	info.level = level;
+	if (level) {
+		info.level = level;
+		info.size = QUIC_MIN_UDP_PAYLOAD;
+	}
 	quic_outq_transmit_frame(sk, QUIC_FRAME_PING, &info, 0, false);
 
 out:
-	outq->level = 0;
-	outq->single = 0;
-	if (outq->pto_count < 3)
+	if (outq->pto_count < 8)
 		outq->pto_count++;
 	quic_outq_update_loss_timer(sk);
 }
@@ -996,7 +1002,6 @@ int quic_outq_transmit_frame(struct sock *sk, u8 type, void *data, u8 path, u8 c
 
 	frame->path = path;
 	quic_outq_ctrl_tail(sk, frame, cork);
-	quic_timer_reset_path(sk);
 	return 0;
 }
 
