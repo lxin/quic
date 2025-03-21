@@ -839,7 +839,7 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb)
 				return err;
 			}
 			QUIC_INC_STATS(net, QUIC_MIB_PKT_DECDROP);
-			packet->errcode = cb->errcode;
+			packet->errcode = QUIC_TRANSPORT_ERROR_CRYPTO;
 			goto err;
 		}
 		if (!cb->resume)
