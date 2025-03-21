@@ -1044,25 +1044,26 @@ static int quic_param_check_and_copy(struct quic_transport_param *p,
 		param->max_datagram_frame_size = p->max_datagram_frame_size;
 	}
 	if (p->max_data) {
-		if (p->max_data < QUIC_PATH_MIN_PMTU || p->max_data > (S32_MAX / 2))
+		if (p->max_data < QUIC_PATH_MIN_PMTU ||
+		    (!p->remote && p->max_data > (S32_MAX / 2)))
 			return -EINVAL;
 		param->max_data = p->max_data;
 	}
 	if (p->max_stream_data_bidi_local) {
 		if (p->max_stream_data_bidi_local < QUIC_PATH_MIN_PMTU ||
-		    p->max_stream_data_bidi_local > (S32_MAX / 4))
+		    (!p->remote && p->max_stream_data_bidi_local > (S32_MAX / 4)))
 			return -EINVAL;
 		param->max_stream_data_bidi_local = p->max_stream_data_bidi_local;
 	}
 	if (p->max_stream_data_bidi_remote) {
 		if (p->max_stream_data_bidi_remote < QUIC_PATH_MIN_PMTU ||
-		    p->max_stream_data_bidi_remote > (S32_MAX / 4))
+		    (!p->remote && p->max_stream_data_bidi_remote > (S32_MAX / 4)))
 			return -EINVAL;
 		param->max_stream_data_bidi_remote = p->max_stream_data_bidi_remote;
 	}
 	if (p->max_stream_data_uni) {
 		if (p->max_stream_data_uni < QUIC_PATH_MIN_PMTU ||
-		    p->max_stream_data_uni > (S32_MAX / 4))
+		    (!p->remote && p->max_stream_data_uni > (S32_MAX / 4)))
 			return -EINVAL;
 		param->max_stream_data_uni = p->max_stream_data_uni;
 	}
