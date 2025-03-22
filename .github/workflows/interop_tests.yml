@@ -61,10 +61,14 @@ jobs:
           sudo add-apt-repository ppa:wireshark-dev/nightly
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends tshark
+      - name: Checkout linuxquic
+        if: ${{ matrix.server == 'linuxquic' || matrix.client == 'linuxquic' }}
+        uses: actions/checkout@v4
+        with:
+          path: quic
       - name: Install Linux QUIC module
         if: ${{ matrix.server == 'linuxquic' || matrix.client == 'linuxquic' }}
         run: |
-          git clone https://github.com/lxin/quic.git
           cd quic && sed -i '/LIBGNUTLS/d' configure.ac
           ./autogen.sh && ./configure --prefix=/usr
           sudo make -C modules install
