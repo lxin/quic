@@ -27,7 +27,7 @@ struct quic_addr_family_ops {
 	void	(*lower_xmit)(struct sock *sk, struct sk_buff *skb, union quic_addr *da,
 			      union quic_addr *sa);
 
-	void	(*get_msg_addr)(union quic_addr *addr, struct sk_buff *skb, bool src);
+	void	(*get_msg_addrs)(union quic_addr *da, union quic_addr *sa, struct sk_buff *skb);
 	void	(*seq_dump_addr)(struct seq_file *seq, union quic_addr *addr);
 	int	(*get_mtu_info)(struct sk_buff *skb, u32 *info);
 	u8	(*get_msg_ecn)(struct sk_buff *skb);
@@ -191,36 +191,30 @@ static void quic_v6_seq_dump_addr(struct seq_file *seq, union quic_addr *addr)
 	seq_printf(seq, "%pI6c:%d\t", &addr->v6.sin6_addr, ntohs(addr->v4.sin_port));
 }
 
-static void quic_v4_get_msg_addr(union quic_addr *a, struct sk_buff *skb, bool src)
+static void quic_v4_get_msg_addrs(union quic_addr *da, union quic_addr *sa, struct sk_buff *skb)
 {
 	struct udphdr *uh = quic_udphdr(skb);
-	struct sockaddr_in *sa = &a->v4;
 
-	a->v4.sin_family = AF_INET;
-	if (src) {
-		sa->sin_port = uh->source;
-		sa->sin_addr.s_addr = ip_hdr(skb)->saddr;
-		return;
-	}
+	sa->v4.sin_family = AF_INET;
+	sa->v4.sin_port = uh->source;
+	sa->v4.sin_addr.s_addr = ip_hdr(skb)->saddr;
 
-	sa->sin_port = uh->dest;
-	sa->sin_addr.s_addr = ip_hdr(skb)->daddr;
+	da->v4.sin_family = AF_INET;
+	da->v4.sin_port = uh->dest;
+	da->v4.sin_addr.s_addr = ip_hdr(skb)->daddr;
 }
 
-static void quic_v6_get_msg_addr(union quic_addr *a, struct sk_buff *skb, bool src)
+static void quic_v6_get_msg_addrs(union quic_addr *da, union quic_addr *sa, struct sk_buff *skb)
 {
 	struct udphdr *uh = quic_udphdr(skb);
-	struct sockaddr_in6 *sa = &a->v6;
 
-	a->v6.sin6_family = AF_INET6;
-	if (src) {
-		sa->sin6_port = uh->source;
-		sa->sin6_addr = ipv6_hdr(skb)->saddr;
-		return;
-	}
+	sa->v6.sin6_family = AF_INET6;
+	sa->v6.sin6_port = uh->source;
+	sa->v6.sin6_addr = ipv6_hdr(skb)->saddr;
 
-	sa->sin6_port = uh->dest;
-	sa->sin6_addr = ipv6_hdr(skb)->daddr;
+	da->v6.sin6_family = AF_INET6;
+	da->v6.sin6_port = uh->dest;
+	da->v6.sin6_addr = ipv6_hdr(skb)->daddr;
 }
 
 static int quic_v4_get_mtu_info(struct sk_buff *skb, u32 *info)
@@ -268,7 +262,7 @@ static struct quic_addr_family_ops quic_af_inet = {
 	.flow_route		= quic_v4_flow_route,
 	.lower_xmit		= quic_v4_lower_xmit,
 	.seq_dump_addr		= quic_v4_seq_dump_addr,
-	.get_msg_addr		= quic_v4_get_msg_addr,
+	.get_msg_addrs		= quic_v4_get_msg_addrs,
 	.get_mtu_info		= quic_v4_get_mtu_info,
 	.get_msg_ecn		= quic_v4_get_msg_ecn,
 };
@@ -280,7 +274,7 @@ static struct quic_addr_family_ops quic_af_inet6 = {
 	.flow_route		= quic_v6_flow_route,
 	.lower_xmit		= quic_v6_lower_xmit,
 	.seq_dump_addr		= quic_v6_seq_dump_addr,
-	.get_msg_addr		= quic_v6_get_msg_addr,
+	.get_msg_addrs		= quic_v6_get_msg_addrs,
 	.get_mtu_info		= quic_v6_get_mtu_info,
 	.get_msg_ecn		= quic_v6_get_msg_ecn,
 };
@@ -579,10 +573,11 @@ void quic_seq_dump_addr(struct seq_file *seq, union quic_addr *addr)
 	quic_af(addr)->seq_dump_addr(seq, addr);
 }
 
-void quic_get_msg_addr(union quic_addr *addr, struct sk_buff *skb, bool src)
+void quic_get_msg_addrs(union quic_addr *da, union quic_addr *sa, struct sk_buff *skb)
 {
-	memset(addr, 0, sizeof(*addr));
-	quic_af_skb(skb)->get_msg_addr(addr, skb, src);
+	memset(sa, 0, sizeof(*sa));
+	memset(da, 0, sizeof(*da));
+	quic_af_skb(skb)->get_msg_addrs(da, sa, skb);
 }
 
 int quic_get_mtu_info(struct sk_buff *skb, u32 *info)

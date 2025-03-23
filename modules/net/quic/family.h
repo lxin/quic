@@ -15,8 +15,8 @@ int quic_common_getsockopt(struct sock *sk, int level, int optname, char __user 
 int quic_is_any_addr(union quic_addr *a);
 u32 quic_encap_len(union quic_addr *a);
 
+void quic_get_msg_addrs(union quic_addr *da, union quic_addr *sa, struct sk_buff *skb);
 void quic_get_pref_addr(struct sock *sk, union quic_addr *addr, u8 **pp, u32 *plen);
-void quic_get_msg_addr(union quic_addr *addr, struct sk_buff *skb, bool src);
 void quic_set_pref_addr(struct sock *sk, u8 *p, union quic_addr *addr);
 void quic_seq_dump_addr(struct seq_file *seq, union quic_addr *addr);
 

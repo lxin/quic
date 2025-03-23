@@ -171,8 +171,7 @@ static struct sock *quic_packet_get_sock(struct sock *sk, struct sk_buff *skb)
 {
 	union quic_addr daddr, saddr;
 
-	quic_get_msg_addr(&daddr, skb, 0);
-	quic_get_msg_addr(&saddr, skb, 1);
+	quic_get_msg_addrs(&daddr, &saddr, skb);
 
 	return quic_sock_lookup(skb, &daddr, &saddr);
 }
@@ -1138,8 +1137,7 @@ err:
 
 void quic_packet_get_addrs(struct quic_packet *packet, struct sk_buff *skb)
 {
-	quic_get_msg_addr(&packet->saddr, skb, 0);
-	quic_get_msg_addr(&packet->daddr, skb, 1);
+	quic_get_msg_addrs(&packet->saddr, &packet->daddr, skb);
 }
 
 int quic_packet_process(struct sock *sk, struct sk_buff *skb)
