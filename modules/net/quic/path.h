@@ -233,6 +233,11 @@ static inline void quic_path_set_orig_dcid(struct quic_path_group *paths, struct
 	paths->orig_dcid = *cid;
 }
 
+static inline struct quic_conn_id *quic_path_dcid(struct quic_path_group *paths)
+{
+	return paths->retry ? &paths->retry_dcid : &paths->orig_dcid;
+}
+
 static inline void quic_path_set_serv(struct quic_path_group *paths)
 {
 	paths->serv = 1;

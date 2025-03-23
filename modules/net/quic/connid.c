@@ -19,15 +19,13 @@
 struct quic_conn_id *quic_conn_id_lookup(struct net *net, u8 *scid, u32 len)
 {
 	struct quic_hash_head *head = quic_source_conn_id_head(net, scid);
-	struct quic_source_conn_id *tmp, *s_conn_id = NULL;
+	struct quic_source_conn_id *s_conn_id;
 
 	spin_lock(&head->lock);
-	hlist_for_each_entry(tmp, &head->head, node) {
-		if (net == sock_net(tmp->sk) && tmp->common.id.len <= len &&
-		    !memcmp(scid, &tmp->common.id.data, tmp->common.id.len)) {
-			s_conn_id = tmp;
+	hlist_for_each_entry(s_conn_id, &head->head, node) {
+		if (net == sock_net(s_conn_id->sk) && s_conn_id->common.id.len == len &&
+		    !memcmp(scid, &s_conn_id->common.id.data, s_conn_id->common.id.len))
 			break;
-		}
 	}
 
 	spin_unlock(&head->lock);
@@ -39,7 +37,7 @@ struct quic_conn_id *quic_conn_id_get(struct quic_conn_id_set *id_set, u8 *scid,
 	struct quic_common_conn_id *common;
 
 	list_for_each_entry(common, &id_set->head, list)
-		if (common->id.len <= len && !memcmp(scid, &common->id.data, common->id.len))
+		if (common->id.len == len && !memcmp(scid, &common->id.data, common->id.len))
 			return &common->id;
 	return NULL;
 }

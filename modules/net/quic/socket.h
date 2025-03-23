@@ -250,10 +250,14 @@ static inline bool quic_under_memory_pressure(const struct sock *sk)
 	return !!READ_ONCE(*sk->sk_prot->memory_pressure);
 }
 
-struct sock *quic_sock_lookup(struct sk_buff *skb, union quic_addr *sa, union quic_addr *da);
+struct sock *quic_sock_lookup(struct sk_buff *skb, union quic_addr *sa, union quic_addr *da,
+			      struct quic_conn_id *dcid);
+struct sock *quic_listen_sock_lookup(struct sk_buff *skb, union quic_addr *sa,
+				     union quic_addr *da);
+int quic_accept_sock_exists(struct sock *sk, struct sk_buff *skb);
+
 int quic_request_sock_enqueue(struct sock *sk, struct quic_conn_id *odcid, u8 retry);
 struct quic_request_sock *quic_request_sock_dequeue(struct sock *sk);
-int quic_accept_sock_exists(struct sock *sk, struct sk_buff *skb);
 bool quic_request_sock_exists(struct sock *sk);
 
 #endif /* __net_quic_h__ */

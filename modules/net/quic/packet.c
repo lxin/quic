@@ -167,15 +167,6 @@ static int quic_packet_get_token(struct quic_data *token, u8 **pp, u32 *plen)
 	return 0;
 }
 
-static struct sock *quic_packet_get_sock(struct sock *sk, struct sk_buff *skb)
-{
-	union quic_addr daddr, saddr;
-
-	quic_get_msg_addrs(&daddr, &saddr, skb);
-
-	return quic_sock_lookup(skb, &daddr, &saddr);
-}
-
 void quic_packet_rcv_err_pmtu(struct sock *sk)
 {
 	struct quic_path_group *paths = quic_paths(sk);
@@ -212,11 +203,13 @@ void quic_packet_rcv_err_pmtu(struct sock *sk)
 
 static int quic_packet_rcv_err(struct sk_buff *skb)
 {
+	union quic_addr daddr, saddr;
 	struct sock *sk = NULL;
 	int ret = 0;
 	u32 info;
 
-	sk = quic_packet_get_sock(sk, skb);
+	quic_get_msg_addrs(&daddr, &saddr, skb);
+	sk = quic_sock_lookup(skb, &daddr, &saddr, NULL);
 	if (!sk)
 		return -ENOENT;
 
@@ -240,35 +233,79 @@ out:
 	return ret;
 }
 
+int quic_packet_get_dcid(struct quic_conn_id *dcid, struct sk_buff *skb)
+{
+	u32 plen = skb->len;
+	u8 *p = skb->data;
+	u64 len;
+
+	if (plen < 1 + QUIC_VERSION_LEN)
+		return -EINVAL;
+	plen -= (1 + QUIC_VERSION_LEN);
+	p += (1 + QUIC_VERSION_LEN);
+
+	if (!quic_get_int(&p, &plen, &len, 1) ||
+	    len > plen || len > QUIC_CONN_ID_MAX_LEN)
+		return -EINVAL;
+	quic_conn_id_update(dcid, p, len);
+	return 0;
+}
+
+static struct sock *quic_packet_get_sock(struct sk_buff *skb)
+{
+	struct quic_crypto_cb *cb = QUIC_CRYPTO_CB(skb);
+	struct net *net = dev_net(skb->dev);
+	struct quic_conn_id dcid, *conn_id;
+	union quic_addr daddr, saddr;
+	struct sock *sk = NULL;
+
+	if (skb->len < sizeof(struct quichdr))
+		return NULL;
+
+	if (!quic_hdr(skb)->form) {
+		if (skb->len < 1 + QUIC_CONN_ID_DEF_LEN)
+			return NULL;
+		conn_id = quic_conn_id_lookup(net, skb->data + 1, QUIC_CONN_ID_DEF_LEN);
+		if (conn_id) {
+			cb->conn_id = conn_id;
+			return quic_conn_id_sk(conn_id);
+		}
+
+		quic_get_msg_addrs(&daddr, &saddr, skb);
+		sk = quic_listen_sock_lookup(skb, &daddr, &saddr);
+		if (sk)
+			return sk;
+		return quic_sock_lookup(skb, &daddr, &saddr, NULL);
+	}
+
+	if (quic_packet_get_dcid(&dcid, skb))
+		return NULL;
+	conn_id = quic_conn_id_lookup(net, dcid.data, dcid.len);
+	if (conn_id)
+		return quic_conn_id_sk(conn_id);
+
+	quic_get_msg_addrs(&daddr, &saddr, skb);
+	sk = quic_sock_lookup(skb, &daddr, &saddr, &dcid);
+	if (sk)
+		return sk;
+	return quic_listen_sock_lookup(skb, &daddr, &saddr);
+}
+
 int quic_packet_rcv(struct sk_buff *skb, u8 err)
 {
 	struct quic_crypto_cb *cb = QUIC_CRYPTO_CB(skb);
 	struct net *net = dev_net(skb->dev);
-	struct quic_conn_id *conn_id;
-	struct sock *sk = NULL;
-	u8 *dcid;
+	struct sock *sk;
 
 	if (unlikely(err))
 		return quic_packet_rcv_err(skb);
 
 	skb_pull(skb, skb_transport_offset(skb));
 
-	if (skb->len < sizeof(struct quichdr))
+	sk = quic_packet_get_sock(skb);
+	if (!sk)
 		goto err;
 
-	if (!quic_hdr(skb)->form) { /* search scid hashtable for post-handshake packets */
-		dcid = (u8 *)quic_hdr(skb) + 1;
-		conn_id = quic_conn_id_lookup(net, dcid, skb->len - 1);
-		if (conn_id) {
-			cb->conn_id = conn_id;
-			sk = quic_conn_id_sk(conn_id);
-		}
-	}
-	if (!sk) {
-		sk = quic_packet_get_sock(sk, skb);
-		if (!sk)
-			goto err;
-	}
 	bh_lock_sock(sk);
 	if (sock_owned_by_user(sk)) {
 		cb->backlog = 1;
@@ -531,13 +568,6 @@ static int quic_packet_listen_process(struct sock *sk, struct sk_buff *skb)
 	struct quic_data token;
 	int err = 0;
 
-	quic_packet_get_addrs(packet, skb);
-	if (quic_request_sock_exists(sk))
-		goto enqueue;
-
-	if (QUIC_CRYPTO_CB(skb)->backlog && quic_accept_sock_exists(sk, skb))
-		goto out; /* moved skb to another sk backlog */
-
 	if (!quic_hshdr(skb)->form) { /* stateless reset always by listen sock */
 		if (len < 17) {
 			QUIC_INC_STATS(net, QUIC_MIB_PKT_INVHDRDROP);
@@ -557,6 +587,13 @@ static int quic_packet_listen_process(struct sock *sk, struct sk_buff *skb)
 		kfree_skb(skb);
 		goto out;
 	}
+
+	quic_get_msg_addrs(&packet->saddr, &packet->daddr, skb);
+	if (quic_request_sock_exists(sk))
+		goto enqueue;
+
+	if (QUIC_CRYPTO_CB(skb)->backlog && quic_accept_sock_exists(sk, skb))
+		goto out; /* moved skb to another sk backlog */
 
 	if (!quic_packet_compatible_versions(version)) { /* version negotiation */
 		err = quic_packet_version_transmit(sk);
@@ -838,7 +875,7 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb)
 				return err;
 			}
 			QUIC_INC_STATS(net, QUIC_MIB_PKT_DECDROP);
-			packet->errcode = QUIC_TRANSPORT_ERROR_CRYPTO;
+			packet->errcode = cb->errcode;
 			goto err;
 		}
 		if (!cb->resume)
@@ -1042,7 +1079,7 @@ static int quic_packet_app_process(struct sock *sk, struct sk_buff *skb)
 
 	/* Do decryption */
 	if (!cb->conn_id) {
-		cb->conn_id = quic_conn_id_get(source, skb->data + 1, skb->len - 1);
+		cb->conn_id = quic_conn_id_get(source, skb->data + 1, QUIC_CONN_ID_DEF_LEN);
 		if (!cb->conn_id) {
 			if (!quic_packet_stateless_reset_process(sk, skb))
 				return 0;
@@ -1100,7 +1137,7 @@ static int quic_packet_app_process(struct sock *sk, struct sk_buff *skb)
 		goto err;
 	}
 
-	quic_packet_get_addrs(packet, skb);
+	quic_get_msg_addrs(&packet->saddr, &packet->daddr, skb);
 	/* Set path so that the replies will choose the correct path */
 	cb->path = quic_path_detect_alt(quic_paths(sk), &packet->saddr, &packet->daddr);
 	active = (cb->conn_id == quic_conn_id_active(source));
@@ -1135,20 +1172,15 @@ err:
 	return err;
 }
 
-void quic_packet_get_addrs(struct quic_packet *packet, struct sk_buff *skb)
-{
-	quic_get_msg_addrs(&packet->saddr, &packet->daddr, skb);
-}
-
 int quic_packet_process(struct sock *sk, struct sk_buff *skb)
 {
-	if (quic_is_listen(sk))
-		return quic_packet_listen_process(sk, skb);
-
 	if (quic_is_closed(sk)) {
 		kfree_skb(skb);
 		return 0;
 	}
+
+	if (quic_is_listen(sk))
+		return quic_packet_listen_process(sk, skb);
 
 	if (quic_hdr(skb)->form)
 		return quic_packet_handshake_process(sk, skb);

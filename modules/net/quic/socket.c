@@ -31,7 +31,8 @@ bool quic_request_sock_exists(struct sock *sk)
 
 	list_for_each_entry(req, quic_reqs(sk), list) {
 		if (!memcmp(&req->saddr, &packet->saddr, sizeof(req->saddr)) &&
-		    !memcmp(&req->daddr, &packet->daddr, sizeof(req->daddr)))
+		    !memcmp(&req->daddr, &packet->daddr, sizeof(req->daddr)) &&
+		    !quic_conn_id_cmp(&req->dcid, &packet->dcid))
 			return true;
 	}
 	return false;
@@ -76,29 +77,54 @@ struct quic_request_sock *quic_request_sock_dequeue(struct sock *sk)
 int quic_accept_sock_exists(struct sock *sk, struct sk_buff *skb)
 {
 	struct quic_packet *packet = quic_packet(sk);
-	struct sock *nsk;
 	int ret = 0;
 
 	local_bh_disable();
-	nsk = quic_sock_lookup(skb, &packet->saddr, &packet->daddr);
-	if (nsk == sk)
+	sk = quic_sock_lookup(skb, &packet->saddr, &packet->daddr, &packet->dcid);
+	if (!sk)
 		goto out;
+
 	/* the request sock was just accepted */
-	bh_lock_sock(nsk);
-	if (sock_owned_by_user(nsk)) {
-		if (sk_add_backlog(nsk, skb, READ_ONCE(nsk->sk_rcvbuf)))
+	bh_lock_sock(sk);
+	if (sock_owned_by_user(sk)) {
+		if (sk_add_backlog(sk, skb, READ_ONCE(sk->sk_rcvbuf)))
 			kfree_skb(skb);
 	} else {
-		sk->sk_backlog_rcv(nsk, skb);
+		sk->sk_backlog_rcv(sk, skb);
 	}
-	bh_unlock_sock(nsk);
+	bh_unlock_sock(sk);
 	ret = 1;
 out:
 	local_bh_enable();
 	return ret;
 }
 
-struct sock *quic_sock_lookup(struct sk_buff *skb, union quic_addr *sa, union quic_addr *da)
+struct sock *quic_sock_lookup(struct sk_buff *skb, union quic_addr *sa, union quic_addr *da,
+			      struct quic_conn_id *dcid)
+{
+	struct net *net = dev_net(skb->dev);
+	struct quic_path_group *paths;
+	struct quic_hash_head *head;
+	struct sock *sk;
+
+	/* Search for regular socket first */
+	head = quic_sock_head(net, sa, da);
+	spin_lock(&head->lock);
+	sk_for_each(sk, &head->head) {
+		if (net != sock_net(sk))
+			continue;
+		paths = quic_paths(sk);
+		if (!quic_path_cmp_saddr(paths, 0, sa) &&
+		    !quic_path_cmp_daddr(paths, 0, da) &&
+		    (!dcid || !quic_conn_id_cmp(quic_path_dcid(paths), dcid)))
+			break;
+	}
+	spin_unlock(&head->lock);
+
+	return sk;
+}
+
+struct sock *quic_listen_sock_lookup(struct sk_buff *skb, union quic_addr *sa, union quic_addr *da)
 {
 	struct net *net = dev_net(skb->dev);
 	struct quic_data alpns = {}, alpn;
@@ -109,22 +135,6 @@ struct sock *quic_sock_lookup(struct sk_buff *skb, union quic_addr *sa, union qu
 	u32 len;
 	u8 *p;
 
-	/* Search for regular socket first */
-	head = quic_sock_head(net, sa, da);
-	spin_lock(&head->lock);
-	sk_for_each(tmp, &head->head) {
-		if (net == sock_net(tmp) && !quic_is_closed(tmp) &&
-		    !quic_path_cmp_saddr(quic_paths(tmp), 0, sa) &&
-		    !quic_path_cmp_daddr(quic_paths(tmp), 0, da)) {
-			sk = tmp;
-			break;
-		}
-	}
-	spin_unlock(&head->lock);
-	if (sk)
-		return sk;
-
-	/* Search for listen socket */
 	head = quic_listen_sock_head(net, ntohs(sa->v4.sin_port));
 	spin_lock(&head->lock);
 
@@ -359,17 +369,7 @@ static int quic_hash(struct sock *sk)
 	if (!sk->sk_max_ack_backlog) {
 		head = quic_sock_head(net, sa, da);
 		spin_lock(&head->lock);
-
-		sk_for_each(nsk, &head->head) {
-			if (net == sock_net(nsk) && !quic_is_closed(nsk) &&
-			    !quic_path_cmp_saddr(quic_paths(nsk), 0, sa) &&
-			    !quic_path_cmp_daddr(quic_paths(nsk), 0, da)) {
-				spin_unlock(&head->lock);
-				return -EADDRINUSE;
-			}
-		}
 		__sk_add_node(sk, &head->head);
-
 		spin_unlock(&head->lock);
 		return 0;
 	}
@@ -1194,9 +1194,11 @@ static int quic_copy_sock(struct sock *nsk, struct sock *sk, struct quic_request
 	inet_sk(nsk)->pmtudisc = inet_sk(sk)->pmtudisc;
 
 	skb_queue_walk_safe(quic_inq_backlog_list(inq), skb, tmp) {
-		quic_packet_get_addrs(packet, skb);
+		quic_get_msg_addrs(&packet->saddr, &packet->daddr, skb);
+		quic_packet_get_dcid(&packet->dcid, skb);
 		if (!memcmp(&req->saddr, &packet->saddr, sizeof(req->saddr)) &&
-		    !memcmp(&req->daddr, &packet->daddr, sizeof(req->daddr))) {
+		    !memcmp(&req->daddr, &packet->daddr, sizeof(req->daddr)) &&
+		    !quic_conn_id_cmp(&req->dcid, &packet->dcid)) {
 			__skb_unlink(skb, quic_inq_backlog_list(inq));
 			quic_inq_backlog_tail(nsk, skb);
 		}
@@ -1250,15 +1252,15 @@ static int quic_accept_sock_init(struct sock *sk, struct quic_request_sock *req)
 		goto out;
 	quic_packet_set_version(packet, req->version);
 
-	err = sk->sk_prot->hash(sk);
-	if (err)
-		goto out;
-
 	quic_path_set_orig_dcid(paths, &req->orig_dcid);
 	if (req->retry) {
 		quic_path_set_retry(paths, 1);
 		quic_path_set_retry_dcid(paths, &req->dcid);
 	}
+
+	err = sk->sk_prot->hash(sk);
+	if (err)
+		goto out;
 
 	quic_timer_start(sk, QUIC_TIMER_IDLE, quic_inq_timeout(inq));
 	quic_set_state(sk, QUIC_SS_ESTABLISHING);
