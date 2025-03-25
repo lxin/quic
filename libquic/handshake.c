@@ -337,6 +337,12 @@ static int quic_set_secret(gnutls_session_t session, gnutls_record_encryption_le
 	if (!ctx || ctx->completed)
 		return 0;
 
+	if (secretlen > QUIC_CRYPTO_SECRET_BUFFER_SIZE) {
+		quic_log_error("secretlen[%zu] > %u",
+			       secretlen, QUIC_CRYPTO_SECRET_BUFFER_SIZE);
+		return GNUTLS_E_UNEXPECTED_PACKET_LENGTH;
+	}
+
 	if (level == GNUTLS_ENCRYPTION_LEVEL_EARLY)
 		type = gnutls_early_cipher_get(session);
 
