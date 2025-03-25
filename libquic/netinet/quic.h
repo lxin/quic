@@ -51,5 +51,6 @@ ssize_t quic_sendmsg(int sockfd, const void *msg, size_t len,
 ssize_t quic_recvmsg(int sockfd, void *msg, size_t len,
 		     int64_t *sid, uint32_t *flags);
 
-void quic_set_log_func(void (*func)(int level, const char *msg));
-void quic_set_log_level(int level);
+typedef void (*quic_set_log_func_t)(int level, const char *msg);
+quic_set_log_func_t quic_set_log_func(quic_set_log_func_t func);
+int quic_set_log_level(int level);
