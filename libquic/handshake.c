@@ -577,6 +577,56 @@ static int quic_storage_add(void *dbf, time_t exp_time, const gnutls_datum_t *ke
 
 static gnutls_anti_replay_t quic_anti_replay;
 
+static int quic_handshake_init(gnutls_session_t session)
+{
+	struct quic_handshake_ctx *ctx;
+	int ret;
+
+	ctx = malloc(sizeof(*ctx));
+	if (!ctx) {
+		quic_log_error("ctx malloc error %d", ENOMEM);
+		return -ENOMEM;
+	}
+	memset(ctx, 0, sizeof(*ctx));
+
+	/* gnutls_session_set_ptr() might be used by the caller. */
+	gnutls_db_set_ptr(session, ctx);
+
+	ret = gnutls_session_ext_register(
+		session, "QUIC Transport Parameters", QUIC_TLSEXT_TP_PARAM,
+		GNUTLS_EXT_TLS, quic_tp_recv, quic_tp_send, NULL, NULL, NULL,
+		GNUTLS_EXT_FLAG_TLS | GNUTLS_EXT_FLAG_CLIENT_HELLO | GNUTLS_EXT_FLAG_EE);
+	if (ret) {
+		free(ctx);
+		quic_log_gnutls_error(ret);
+		return ret;
+	}
+	gnutls_handshake_set_secret_function(session, quic_set_secret);
+	gnutls_handshake_set_read_function(session, quic_msg_read);
+	gnutls_alert_set_read_function(session, quic_alert_read);
+
+	return 0;
+}
+
+static void quic_handshake_deinit(gnutls_session_t session)
+{
+	struct quic_handshake_ctx *ctx = quic_handshake_ctx_get(session);
+	struct quic_msg *msg;
+
+	if (ctx == NULL)
+		return;
+
+	gnutls_db_set_ptr(session, NULL);
+
+	msg = ctx->send_list;
+	while (msg) {
+		ctx->send_list = msg->next;
+		quic_msg_destroy(msg);
+		msg = ctx->send_list;
+	}
+	free(ctx);
+}
+
 /**
  * quic_handshake - Drive the handshake interaction with TLS session
  * @session: TLS session
@@ -593,28 +643,15 @@ int quic_handshake(gnutls_session_t session)
 	unsigned int len;
 	uint8_t opt[128];
 
-	ctx = malloc(sizeof(*ctx));
-	if (!ctx) {
-		quic_log_error("ctx malloc error %d", ENOMEM);
-		return -ENOMEM;
-	}
-	memset(ctx, 0, sizeof(*ctx));
+	ret = quic_handshake_init(session);
+	if (ret != 0)
+		return ret;
+
+	ctx = quic_handshake_ctx_get(session);
 
 	len = sizeof(opt);
 	ret = getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_TOKEN, opt, &len);
 	ctx->is_serv = !!ret;
-	/* gnutls_session_set_ptr() might be used by the caller. */
-	gnutls_db_set_ptr(session, ctx);
-
-	gnutls_handshake_set_secret_function(session, quic_set_secret);
-	gnutls_handshake_set_read_function(session, quic_msg_read);
-	gnutls_alert_set_read_function(session, quic_alert_read);
-	ret = gnutls_session_ext_register(
-		session, "QUIC Transport Parameters", QUIC_TLSEXT_TP_PARAM,
-		GNUTLS_EXT_TLS, quic_tp_recv, quic_tp_send, NULL, NULL, NULL,
-		GNUTLS_EXT_FLAG_TLS | GNUTLS_EXT_FLAG_CLIENT_HELLO | GNUTLS_EXT_FLAG_EE);
-	if (ret)
-		goto out;
 
 	if (ctx->is_serv) {
 		if (!quic_anti_replay) {
@@ -693,15 +730,7 @@ int quic_handshake(gnutls_session_t session)
 	}
 
 out:
-	gnutls_db_set_ptr(session, NULL);
-
-	msg = ctx->send_list;
-	while (msg) {
-		ctx->send_list = msg->next;
-		quic_msg_destroy(msg);
-		msg = ctx->send_list;
-	}
-	free(ctx);
+	quic_handshake_deinit(session);
 	return ret < 0 ? ret : 0;
 }
 
