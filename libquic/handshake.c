@@ -51,22 +51,29 @@ struct quic_ctx {
 static int quic_log_level = LOG_NOTICE;
 static void (*quic_log_func)(int level, const char *msg);
 
+static void quic_log_error(char const *fmt, ...);
+
 /**
  * quic_log_debug - log msg with debug level
  *
  */
-void quic_log_debug(char const *fmt, ...)
+static void quic_log_debug(char const *fmt, ...)
 {
 	char msg[128];
 	va_list arg;
+	int rc;
 
 	if (quic_log_level < LOG_DEBUG)
 		return;
 
 	va_start(arg, fmt);
-	if (vsnprintf(msg, sizeof(msg), fmt, arg) < 0)
-		printf("%s: msg size is greater than 128 bytes!\n", __func__);
+	rc = vsnprintf(msg, sizeof(msg), fmt, arg);
 	va_end(arg);
+	if (rc < 0) {
+		quic_log_error("%s: msg size is greater than 128 bytes!",
+			       __func__);
+		return;
+	}
 
 	if (quic_log_func) {
 		quic_log_func(LOG_DEBUG, msg);
@@ -79,18 +86,23 @@ void quic_log_debug(char const *fmt, ...)
  * quic_log_notice - log msg with notice level
  *
  */
-void quic_log_notice(char const *fmt, ...)
+static void quic_log_notice(char const *fmt, ...)
 {
 	char msg[128];
 	va_list arg;
+	int rc;
 
 	if (quic_log_level < LOG_NOTICE)
 		return;
 
 	va_start(arg, fmt);
-	if (vsnprintf(msg, sizeof(msg), fmt, arg) < 0)
-		printf("%s: msg size is greater than 128 bytes!\n", __func__);
+	rc = vsnprintf(msg, sizeof(msg), fmt, arg);
 	va_end(arg);
+	if (rc < 0) {
+		quic_log_error("%s: msg size is greater than 128 bytes!",
+			       __func__);
+		return;
+	}
 
 	if (quic_log_func) {
 		quic_log_func(LOG_NOTICE, msg);
@@ -103,18 +115,23 @@ void quic_log_notice(char const *fmt, ...)
  * quic_log_error - log msg with error level
  *
  */
-void quic_log_error(char const *fmt, ...)
+static void quic_log_error(char const *fmt, ...)
 {
 	char msg[128];
 	va_list arg;
+	int rc;
 
 	if (quic_log_level < LOG_ERR)
 		return;
 
 	va_start(arg, fmt);
-	if (vsnprintf(msg, sizeof(msg), fmt, arg) < 0)
-		printf("%s: msg size is greater than 128 bytes!\n", __func__);
+	rc = vsnprintf(msg, sizeof(msg), fmt, arg);
 	va_end(arg);
+	if (rc < 0) {
+		snprintf(msg, sizeof(msg),
+			 "%s: msg size is greater than 128 bytes!",
+			 __func__);
+	}
 
 	if (quic_log_func) {
 		quic_log_func(LOG_ERR, msg);
@@ -128,7 +145,7 @@ void quic_log_error(char const *fmt, ...)
  * @error: the error code returned from gnutls APIs
  *
  */
-void quic_log_gnutls_error(int error)
+static void quic_log_gnutls_error(int error)
 {
 	quic_log_error("gnutls: %s (%d)", gnutls_strerror(error), error);
 }
