@@ -10,6 +10,7 @@
 #include <linux/tls.h>
 #include <arpa/inet.h>
 #include <netinet/quic.h>
+#include <sys/syslog.h>
 
 #define SND_MSG_LEN	4096
 #define RCV_MSG_LEN	4096 * 16
@@ -378,6 +379,8 @@ int main(int argc, char *argv[])
 			printf("parse options error\n");
 		return -1;
 	}
+
+	quic_set_log_level(LOG_NOTICE);
 
 	if (!opts.is_serv)
 		return do_client(&opts);

@@ -897,6 +897,8 @@ int main(int argc, char *argv[])
 	if (argc < 2)
 		goto err;
 
+	quic_set_log_level(http_log_level);
+
 	if (!strcmp(argv[1], "-c")) {
 		if (argc < 3) {
 			http_log_info("\n  %s -c <URI>\n", argv[0]);

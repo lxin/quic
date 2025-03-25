@@ -7,6 +7,7 @@
 #include <errno.h>
 #include <netdb.h>
 #include <netinet/quic.h>
+#include <sys/syslog.h>
 
 static const char *parse_address(
 	char const *address, char const *port, struct sockaddr_storage *sas)
@@ -329,6 +330,8 @@ int main(int argc, char *argv[])
 		printf("%s server|client ...\n", argv[0]);
 		return 0;
 	}
+
+	quic_set_log_level(LOG_NOTICE);
 
 	if (!strcmp(argv[1], "client"))
 		return do_client(argc, argv);
