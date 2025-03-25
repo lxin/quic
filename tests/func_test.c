@@ -8,6 +8,7 @@
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <netinet/quic.h>
+#include <sys/syslog.h>
 
 #define MSG_LEN	4096
 char msg[MSG_LEN + 1];
@@ -2291,6 +2292,8 @@ int main(int argc, char *argv[])
 		printf("%s server|client ...\n", argv[0]);
 		return 0;
 	}
+
+	quic_set_log_level(LOG_NOTICE);
 
 	if (!strcmp(argv[1], "client"))
 		return do_client(argc, argv);
