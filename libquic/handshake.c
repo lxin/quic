@@ -48,7 +48,11 @@ struct quic_ctx {
 	uint8_t is_serv:1;
 };
 
-static int quic_log_level = LOG_NOTICE;
+/*
+ * The caller needs to opt-in in order
+ * to get log messages
+ */
+static int quic_log_level = -1;
 static void (*quic_log_func)(int level, const char *msg);
 
 static void quic_log_error(char const *fmt, ...);
