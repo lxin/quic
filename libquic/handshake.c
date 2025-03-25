@@ -53,7 +53,7 @@ struct quic_ctx {
  * to get log messages
  */
 static int quic_log_level = -1;
-static void (*quic_log_func)(int level, const char *msg);
+static quic_set_log_func_t quic_log_func;
 
 static void quic_log_error(char const *fmt, ...);
 
@@ -158,20 +158,28 @@ static void quic_log_gnutls_error(int error)
  * quic_set_log_level - change the log_level
  * @level: the level it changes to (LOG_XXX from sys/syslog.h)
  *
+ * Return values:
+ * - The old @level
  */
-void quic_set_log_level(int level)
+int quic_set_log_level(int level)
 {
+	int old = quic_log_level;
 	quic_log_level = level;
+	return old;
 }
 
 /**
  * quic_set_log_func - change the log func
  * @func: the log func it changes to
  *
+ * Return values:
+ * - The old @func
  */
-void quic_set_log_func(void (*func)(int level, const char *msg))
+quic_set_log_func_t quic_set_log_func(quic_set_log_func_t func)
 {
+	quic_set_log_func_t old = quic_log_func;
 	quic_log_func = func;
+	return old;
 }
 
 /**
