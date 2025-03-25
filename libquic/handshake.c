@@ -50,6 +50,7 @@ struct quic_ctx {
 		uint8_t buf[256];
 		unsigned int len;
 	} transport_param;
+	gnutls_anti_replay_t quic_anti_replay;
 };
 
 /*
@@ -569,8 +570,6 @@ static int quic_storage_add(void *dbf, time_t exp_time, const gnutls_datum_t *ke
 	return 0;
 }
 
-static gnutls_anti_replay_t quic_anti_replay;
-
 /**
  * quic_handshake - Drive the handshake interaction with TLS session
  * @session: TLS session
@@ -638,14 +637,12 @@ int quic_handshake(gnutls_session_t session)
 			msg = ctx->send_list;
 		}
 	} else {
-		if (!quic_anti_replay) {
-			ret = gnutls_anti_replay_init(&quic_anti_replay);
-			if (ret)
-				goto out;
-			gnutls_anti_replay_set_add_function(quic_anti_replay, quic_storage_add);
-			gnutls_anti_replay_set_ptr(quic_anti_replay, NULL);
-		}
-		gnutls_anti_replay_enable(session, quic_anti_replay);
+		ret = gnutls_anti_replay_init(&ctx->quic_anti_replay);
+		if (ret)
+			goto out;
+		gnutls_anti_replay_set_add_function(ctx->quic_anti_replay, quic_storage_add);
+		gnutls_anti_replay_set_ptr(ctx->quic_anti_replay, NULL);
+		gnutls_anti_replay_enable(session, ctx->quic_anti_replay);
 	}
 
 	while (!ctx->completed) {
@@ -694,6 +691,12 @@ int quic_handshake(gnutls_session_t session)
 	}
 
 out:
+	if (ctx->quic_anti_replay) {
+		gnutls_anti_replay_enable(session, NULL);
+		gnutls_anti_replay_deinit(ctx->quic_anti_replay);
+		ctx->quic_anti_replay = NULL;
+	}
+
 	gnutls_db_set_ptr(session, NULL);
 
 	msg = ctx->send_list;
