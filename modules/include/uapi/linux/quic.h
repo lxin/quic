@@ -123,7 +123,8 @@ struct quic_crypto_secret {
 	uint8_t send;  /* send or recv */
 	uint8_t level; /* crypto level */
 	uint32_t type; /* TLS_CIPHER_* */
-	uint8_t secret[48];
+#define QUIC_CRYPTO_SECRET_BUFFER_SIZE 48
+	uint8_t secret[QUIC_CRYPTO_SECRET_BUFFER_SIZE];
 };
 
 enum quic_cong_algo {
