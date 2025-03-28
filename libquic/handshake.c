@@ -459,6 +459,7 @@ static struct quic_msg *quic_msg_create(const void *data, size_t datalen)
 
 static void quic_msg_destroy(struct quic_msg *msg)
 {
+	gnutls_memset(msg->data, 0, msg->len);
 	free(msg->data);
 	free(msg);
 }
@@ -634,6 +635,8 @@ static void quic_handshake_deinit(gnutls_session_t session)
 		quic_msg_destroy(msg);
 		msg = ctx->send_list;
 	}
+
+	gnutls_memset(ctx, 0, sizeof(*ctx));
 	free(ctx);
 }
 
