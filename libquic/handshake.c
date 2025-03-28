@@ -732,6 +732,20 @@ int quic_handshake(gnutls_session_t session)
 		while (msg) {
 			quic_log_debug("< Handshake SEND: %u %u", msg->len, msg->level);
 			ret = quic_handshake_sendmsg(sockfd, msg);
+			if ((ret < 0) && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+				struct pollfd pfd = {
+					.fd = sockfd,
+					.events = POLLOUT,
+				};
+
+				ret = poll(&pfd, 1, 1000);
+				if (ret < 0) {
+					quic_log_error("socket poll() error %d", errno);
+					ret = -errno;
+					goto out;
+				}
+				continue;
+			}
 			if (ret < 0) {
 				quic_log_error("socket sendmsg error %d", errno);
 				ret = -errno;
