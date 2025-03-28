@@ -409,7 +409,12 @@ static int quic_alert_read(gnutls_session_t session,
 
 static int quic_tp_recv(gnutls_session_t session, const uint8_t *buf, size_t len)
 {
+	struct quic_handshake_ctx *ctx = quic_handshake_ctx_get(session);
 	int sockfd = gnutls_transport_get_int(session);
+
+	if (ctx == NULL) {
+		return GNUTLS_E_RECEIVED_ILLEGAL_EXTENSION;
+	}
 
 	if (setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_TRANSPORT_PARAM_EXT, buf, len)) {
 		quic_log_error("socket setsockopt transport_param_ext error %d", errno);
@@ -422,6 +427,10 @@ static int quic_tp_send(gnutls_session_t session, gnutls_buffer_t extdata)
 {
 	struct quic_handshake_ctx *ctx = quic_handshake_ctx_get(session);
 	int ret;
+
+	if (ctx == NULL) {
+		return GNUTLS_E_UNIMPLEMENTED_FEATURE;
+	}
 
 	ret = gnutls_buffer_append_data(extdata,
 					ctx->transport_param.buf,
