@@ -55,7 +55,15 @@ struct quic_handshake_ctx {
 
 static struct quic_handshake_ctx *quic_handshake_ctx_get(gnutls_session_t session)
 {
-	return gnutls_db_get_ptr(session);
+	gnutls_ext_priv_data_t data = NULL;
+	int ret;
+
+	ret = gnutls_ext_get_data(session, QUIC_TLSEXT_TP_PARAM, &data);
+	if (ret != 0) {
+		return NULL;
+	}
+
+	return data;
 }
 
 /*
@@ -587,9 +595,6 @@ static int quic_handshake_init(gnutls_session_t session)
 	}
 	memset(ctx, 0, sizeof(*ctx));
 
-	/* gnutls_session_set_ptr() might be used by the caller. */
-	gnutls_db_set_ptr(session, ctx);
-
 	ret = gnutls_session_ext_register(
 		session, "QUIC Transport Parameters", QUIC_TLSEXT_TP_PARAM,
 		GNUTLS_EXT_TLS, quic_tp_recv, quic_tp_send, NULL, NULL, NULL,
@@ -598,6 +603,7 @@ static int quic_handshake_init(gnutls_session_t session)
 		quic_log_gnutls_error(ret);
 		return ret;
 	}
+	gnutls_ext_set_data(session, QUIC_TLSEXT_TP_PARAM, ctx);
 	gnutls_handshake_set_secret_function(session, quic_set_secret);
 	gnutls_handshake_set_read_function(session, quic_msg_read);
 	gnutls_alert_set_read_function(session, quic_alert_read);
@@ -620,7 +626,7 @@ static void quic_handshake_deinit(gnutls_session_t session)
 		ctx->quic_anti_replay = NULL;
 	}
 
-	gnutls_db_set_ptr(session, NULL);
+	gnutls_ext_set_data(session, QUIC_TLSEXT_TP_PARAM, NULL);
 
 	msg = ctx->send_list;
 	while (msg) {
