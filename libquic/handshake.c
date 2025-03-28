@@ -674,11 +674,6 @@ int quic_handshake(gnutls_session_t session)
 	}
 
 	while (!ctx->completed) {
-		struct pollfd pfd = {
-			.fd = sockfd,
-			.events = POLLIN,
-		};
-
 		msg = ctx->send_list;
 		while (msg) {
 			quic_log_debug("< Handshake SEND: %d %d", msg->len, msg->level);
@@ -693,14 +688,20 @@ int quic_handshake(gnutls_session_t session)
 			msg = ctx->send_list;
 		}
 
-		ret = poll(&pfd, 1, 1000);
-		if (ret < 0) {
-			quic_log_error("socket poll() error %d", errno);
-			ret = -errno;
-			goto out;
-		}
-		msg = &_msg;
 		while (!ctx->completed) {
+			struct pollfd pfd = {
+				.fd = sockfd,
+				.events = POLLIN,
+			};
+
+			ret = poll(&pfd, 1, 1000);
+			if (ret < 0) {
+				quic_log_error("socket poll() error %d", errno);
+				ret = -errno;
+				goto out;
+			}
+
+			msg = &_msg;
 			msg->data = ctx->data;
 			msg->len = sizeof(ctx->data);
 			ret = quic_handshake_recvmsg(sockfd, msg);
