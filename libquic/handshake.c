@@ -352,7 +352,9 @@ static int quic_set_secret(gnutls_session_t session, gnutls_record_encryption_le
 	if (tx_secret) {
 		secret.send = 1;
 		memcpy(secret.secret, tx_secret, secretlen);
-		if (setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_CRYPTO_SECRET, &secret, len)) {
+		ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_CRYPTO_SECRET, &secret, len);
+		gnutls_memset(secret.secret, 0, secretlen);
+		if (ret) {
 			quic_log_error("socket setsockopt tx secret error %d %u", errno, level);
 			return -1;
 		}
@@ -360,7 +362,9 @@ static int quic_set_secret(gnutls_session_t session, gnutls_record_encryption_le
 	if (rx_secret) {
 		secret.send = 0;
 		memcpy(secret.secret, rx_secret, secretlen);
-		if (setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_CRYPTO_SECRET, &secret, len)) {
+		ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_CRYPTO_SECRET, &secret, len);
+		gnutls_memset(secret.secret, 0, secretlen);
+		if (ret) {
 			quic_log_error("socket setsockopt rx secret error %d %u", errno, level);
 			return -1;
 		}
