@@ -671,6 +671,13 @@ int quic_handshake(gnutls_session_t session)
 		ret = quic_handshake_process(session, QUIC_CRYPTO_INITIAL, NULL, 0);
 		if (ret)
 			goto out;
+	}
+
+	while (!ctx->completed) {
+		struct pollfd pfd = {
+			.fd = sockfd,
+			.events = POLLIN,
+		};
 
 		msg = ctx->send_list;
 		while (msg) {
@@ -685,13 +692,6 @@ int quic_handshake(gnutls_session_t session)
 			quic_msg_destroy(msg);
 			msg = ctx->send_list;
 		}
-	}
-
-	while (!ctx->completed) {
-		struct pollfd pfd = {
-			.fd = sockfd,
-			.events = POLLIN,
-		};
 
 		ret = poll(&pfd, 1, 1000);
 		if (ret < 0) {
