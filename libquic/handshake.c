@@ -33,6 +33,14 @@
 #define QUIC_MSG_STREAM_FLAGS \
 	(MSG_STREAM_NEW | MSG_STREAM_FIN | MSG_STREAM_UNI | MSG_STREAM_DONTWAIT)
 
+struct quic_setopt {
+	struct quic_setopt *next;
+	int level;
+	int optname;
+	void *optval;
+	socklen_t optlen;
+};
+
 struct quic_msg {
 	struct quic_msg *next;
 	uint8_t *data;
@@ -40,13 +48,34 @@ struct quic_msg {
 	uint8_t level;
 };
 
-struct quic_ctx {
+struct quic_handshake_ctx {
+	int saved_sockfd;
+	struct quic_setopt *set_list;
+	struct quic_setopt *set_last;
 	struct quic_msg *send_list;
 	struct quic_msg *send_last;
 	uint8_t data[65536];
 	uint8_t completed:1;
 	uint8_t is_serv:1;
+	struct {
+		uint8_t buf[256];
+		unsigned int len;
+	} transport_param;
+	gnutls_anti_replay_t quic_anti_replay;
 };
+
+static struct quic_handshake_ctx *quic_handshake_ctx_get(gnutls_session_t session)
+{
+	gnutls_ext_priv_data_t data = NULL;
+	int ret;
+
+	ret = gnutls_ext_get_data(session, QUIC_TLSEXT_TP_PARAM, &data);
+	if (ret != 0) {
+		return NULL;
+	}
+
+	return data;
+}
 
 /*
  * The caller needs to opt-in in order
@@ -180,6 +209,48 @@ quic_set_log_func_t quic_set_log_func(quic_set_log_func_t func)
 	quic_set_log_func_t old = quic_log_func;
 	quic_log_func = func;
 	return old;
+}
+
+static struct quic_setopt *quic_setopt_create(int level,
+					      int optname,
+					      const void *optval,
+					      socklen_t optlen)
+{
+	struct quic_setopt *sopt = malloc(sizeof(*sopt));
+
+	if (!sopt)
+		return NULL;
+
+	memset(sopt, 0, sizeof(*sopt));
+	sopt->optval = malloc(optlen);
+	if (!sopt->optval) {
+		free(sopt);
+		return NULL;
+	}
+
+	sopt->level = level;
+	sopt->optname = optname;
+	memcpy(sopt->optval, optval, optlen);
+	sopt->optlen = optlen;
+
+	return sopt;
+}
+
+static void quic_setopt_append_list(struct quic_handshake_ctx *ctx,
+				    struct quic_setopt *sopt)
+{
+	if (!ctx->set_list)
+		ctx->set_list = sopt;
+	else
+		ctx->set_last->next = sopt;
+	ctx->set_last = sopt;
+}
+
+static void quic_setopt_destroy(struct quic_setopt *sopt)
+{
+	gnutls_memset(sopt->optval, 0, sopt->optlen);
+	free(sopt->optval);
+	free(sopt);
 }
 
 /**
@@ -330,9 +401,9 @@ static int quic_set_secret(gnutls_session_t session, gnutls_record_encryption_le
 			   const void *rx_secret, const void *tx_secret, size_t secretlen)
 {
 	gnutls_cipher_algorithm_t type  = gnutls_cipher_get(session);
-	struct quic_ctx *ctx = gnutls_db_get_ptr(session);
+	struct quic_handshake_ctx *ctx = quic_handshake_ctx_get(session);
 	struct quic_crypto_secret secret = {};
-	int sockfd, ret, len = sizeof(secret);
+	int ret, len = sizeof(secret);
 
 	if (!ctx || ctx->completed)
 		return 0;
@@ -346,24 +417,37 @@ static int quic_set_secret(gnutls_session_t session, gnutls_record_encryption_le
 	if (level == GNUTLS_ENCRYPTION_LEVEL_EARLY)
 		type = gnutls_early_cipher_get(session);
 
-	sockfd = gnutls_transport_get_int(session);
 	secret.level = quic_crypto_level(level);
 	secret.type = quic_tls_cipher_type(type);
 	if (tx_secret) {
+		struct quic_setopt *tx_sopt;
 		secret.send = 1;
 		memcpy(secret.secret, tx_secret, secretlen);
-		if (setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_CRYPTO_SECRET, &secret, len)) {
-			quic_log_error("socket setsockopt tx secret error %d %u", errno, level);
-			return -1;
+		tx_sopt = quic_setopt_create(SOL_QUIC,
+					     QUIC_SOCKOPT_CRYPTO_SECRET,
+					     &secret,
+					     len);
+		gnutls_memset(secret.secret, 0, secretlen);
+		if (tx_sopt == NULL) {
+			quic_log_error("socket quic_setopt_create(secret) error %d %u", ENOMEM, level);
+			return GNUTLS_E_MEMORY_ERROR;
 		}
+		quic_setopt_append_list(ctx, tx_sopt);
 	}
 	if (rx_secret) {
+		struct quic_setopt *rx_sopt;
 		secret.send = 0;
 		memcpy(secret.secret, rx_secret, secretlen);
-		if (setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_CRYPTO_SECRET, &secret, len)) {
-			quic_log_error("socket setsockopt rx secret error %d %u", errno, level);
-			return -1;
+		rx_sopt = quic_setopt_create(SOL_QUIC,
+					     QUIC_SOCKOPT_CRYPTO_SECRET,
+					     &secret,
+					     len);
+		gnutls_memset(secret.secret, 0, secretlen);
+		if (rx_sopt == NULL) {
+			quic_log_error("socket quic_setopt_create(secret) error %d %u", ENOMEM, level);
+			return GNUTLS_E_MEMORY_ERROR;
 		}
+		quic_setopt_append_list(ctx, rx_sopt);
 		if (secret.level == QUIC_CRYPTO_APP) {
 			if (ctx->is_serv) {
 				ret = gnutls_session_ticket_send(session, 1, 0);
@@ -391,28 +475,38 @@ static int quic_alert_read(gnutls_session_t session,
 
 static int quic_tp_recv(gnutls_session_t session, const uint8_t *buf, size_t len)
 {
-	int sockfd = gnutls_transport_get_int(session);
+	struct quic_handshake_ctx *ctx = quic_handshake_ctx_get(session);
+	struct quic_setopt *tp_sopt;
 
-	if (setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_TRANSPORT_PARAM_EXT, buf, len)) {
-		quic_log_error("socket setsockopt transport_param_ext error %d", errno);
-		return -1;
+	if (ctx == NULL) {
+		return GNUTLS_E_RECEIVED_ILLEGAL_EXTENSION;
 	}
+
+	tp_sopt = quic_setopt_create(SOL_QUIC,
+				     QUIC_SOCKOPT_TRANSPORT_PARAM_EXT,
+				     buf,
+				     len);
+	if (tp_sopt == NULL) {
+		quic_log_error("socket quic_setopt_create(tp) error %d", ENOMEM);
+		return GNUTLS_E_MEMORY_ERROR;
+	}
+	quic_setopt_append_list(ctx, tp_sopt);
+
 	return 0;
 }
 
 static int quic_tp_send(gnutls_session_t session, gnutls_buffer_t extdata)
 {
-	int ret, sockfd = gnutls_transport_get_int(session);
-	uint8_t buf[256];
-	unsigned int len;
+	struct quic_handshake_ctx *ctx = quic_handshake_ctx_get(session);
+	int ret;
 
-	len = sizeof(buf);
-	if (getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_TRANSPORT_PARAM_EXT, buf, &len)) {
-		quic_log_error("socket getsockopt transport_param_ext error %d", errno);
-		return -1;
+	if (ctx == NULL) {
+		return GNUTLS_E_UNIMPLEMENTED_FEATURE;
 	}
 
-	ret = gnutls_buffer_append_data(extdata, buf, len);
+	ret = gnutls_buffer_append_data(extdata,
+					ctx->transport_param.buf,
+					ctx->transport_param.len);
 	if (ret) {
 		quic_log_gnutls_error(ret);
 		return ret;
@@ -421,7 +515,9 @@ static int quic_tp_send(gnutls_session_t session, gnutls_buffer_t extdata)
 	return 0;
 }
 
-static struct quic_msg *quic_msg_create(const void *data, size_t datalen)
+static struct quic_msg *quic_msg_create(uint8_t level,
+					const void *data,
+					size_t datalen)
 {
 	struct quic_msg *msg = malloc(sizeof(*msg));
 
@@ -437,11 +533,24 @@ static struct quic_msg *quic_msg_create(const void *data, size_t datalen)
 
 	msg->len = datalen;
 	memcpy(msg->data, data, msg->len);
+	msg->level = level;
+
 	return msg;
+}
+
+static void quic_msg_append_list(struct quic_handshake_ctx *ctx,
+				 struct quic_msg *msg)
+{
+	if (!ctx->send_list)
+		ctx->send_list = msg;
+	else
+		ctx->send_last->next = msg;
+	ctx->send_last = msg;
 }
 
 static void quic_msg_destroy(struct quic_msg *msg)
 {
+	gnutls_memset(msg->data, 0, msg->len);
 	free(msg->data);
 	free(msg);
 }
@@ -449,24 +558,20 @@ static void quic_msg_destroy(struct quic_msg *msg)
 static int quic_msg_read(gnutls_session_t session, gnutls_record_encryption_level_t level,
 			 gnutls_handshake_description_t htype, const void *data, size_t datalen)
 {
-	struct quic_ctx *ctx = gnutls_db_get_ptr(session);
+	struct quic_handshake_ctx *ctx = quic_handshake_ctx_get(session);
 	struct quic_msg *msg;
+	uint8_t qlevel = quic_crypto_level(level);
 
 	if (!ctx || htype == GNUTLS_HANDSHAKE_KEY_UPDATE)
 		return 0;
 
-	msg = quic_msg_create(data, datalen);
+	msg = quic_msg_create(qlevel, data, datalen);
 	if (!msg) {
 		quic_log_error("msg create error %d", ENOMEM);
 		return -1;
 	}
 
-	msg->level = quic_crypto_level(level);
-	if (!ctx->send_list)
-		ctx->send_list = msg;
-	else
-		ctx->send_last->next = msg;
-	ctx->send_last = msg;
+	quic_msg_append_list(ctx, msg);
 
 	quic_log_debug("  Read func: %u %u %u", level, htype, datalen);
 	return 0;
@@ -570,7 +675,78 @@ static int quic_storage_add(void *dbf, time_t exp_time, const gnutls_datum_t *ke
 	return 0;
 }
 
-static gnutls_anti_replay_t quic_anti_replay;
+static int quic_handshake_init(gnutls_session_t session)
+{
+	struct quic_handshake_ctx *ctx;
+	int ret;
+
+	ctx = malloc(sizeof(*ctx));
+	if (!ctx) {
+		quic_log_error("ctx malloc error %d", ENOMEM);
+		return -ENOMEM;
+	}
+	memset(ctx, 0, sizeof(*ctx));
+
+	ret = gnutls_session_ext_register(
+		session, "QUIC Transport Parameters", QUIC_TLSEXT_TP_PARAM,
+		GNUTLS_EXT_TLS, quic_tp_recv, quic_tp_send, NULL, NULL, NULL,
+		GNUTLS_EXT_FLAG_TLS | GNUTLS_EXT_FLAG_CLIENT_HELLO | GNUTLS_EXT_FLAG_EE);
+	if (ret) {
+		quic_log_gnutls_error(ret);
+		return ret;
+	}
+	gnutls_ext_set_data(session, QUIC_TLSEXT_TP_PARAM, ctx);
+	gnutls_handshake_set_secret_function(session, quic_set_secret);
+	gnutls_handshake_set_read_function(session, quic_msg_read);
+	gnutls_alert_set_read_function(session, quic_alert_read);
+
+	/*
+	 * During the handshake nobody should use the sockfd
+	 * other than the main loop.
+	 */
+	ctx->saved_sockfd = gnutls_transport_get_int(session);
+	gnutls_transport_set_int(session, -1);
+
+	return 0;
+}
+
+static void quic_handshake_deinit(gnutls_session_t session)
+{
+	struct quic_handshake_ctx *ctx = quic_handshake_ctx_get(session);
+	struct quic_setopt *sopt;
+	struct quic_msg *msg;
+
+	if (ctx == NULL) {
+		return;
+	}
+
+	if (ctx->quic_anti_replay) {
+		gnutls_anti_replay_enable(session, NULL);
+		gnutls_anti_replay_deinit(ctx->quic_anti_replay);
+		ctx->quic_anti_replay = NULL;
+	}
+
+	gnutls_ext_set_data(session, QUIC_TLSEXT_TP_PARAM, NULL);
+
+	gnutls_transport_set_int(session, ctx->saved_sockfd);
+
+	sopt = ctx->set_list;
+	while (sopt) {
+		ctx->set_list = sopt->next;
+		quic_setopt_destroy(sopt);
+		sopt = ctx->set_list;
+	}
+
+	msg = ctx->send_list;
+	while (msg) {
+		ctx->send_list = msg->next;
+		quic_msg_destroy(msg);
+		msg = ctx->send_list;
+	}
+
+	gnutls_memset(ctx, 0, sizeof(*ctx));
+	free(ctx);
+}
 
 /**
  * quic_handshake - Drive the handshake interaction with TLS session
@@ -584,76 +760,61 @@ int quic_handshake(gnutls_session_t session)
 {
 	int ret, sockfd = gnutls_transport_get_int(session);
 	struct quic_msg *msg, _msg = {};
-	struct quic_ctx *ctx;
+	struct quic_setopt *sopt;
+	struct quic_handshake_ctx *ctx;
 	unsigned int len;
 	uint8_t opt[128];
 
-	ctx = malloc(sizeof(*ctx));
-	if (!ctx) {
-		quic_log_error("ctx malloc error %d", ENOMEM);
-		return -ENOMEM;
+	ret = quic_handshake_init(session);
+	if (ret != 0) {
+		return ret;
 	}
-	memset(ctx, 0, sizeof(*ctx));
+
+	ctx = quic_handshake_ctx_get(session);
+
+	ctx->transport_param.len = sizeof(ctx->transport_param.buf);
+	ret = getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_TRANSPORT_PARAM_EXT,
+			 ctx->transport_param.buf, &ctx->transport_param.len);
+	if (ret != 0) {
+		quic_log_error("socket getsockopt transport_param_ext error %d", errno);
+		ret = errno ? -errno : -1;
+		goto out;
+	}
 
 	len = sizeof(opt);
 	ret = getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_TOKEN, opt, &len);
 	ctx->is_serv = !!ret;
-	/* gnutls_session_set_ptr() might be used by the caller. */
-	gnutls_db_set_ptr(session, ctx);
 
-	gnutls_handshake_set_secret_function(session, quic_set_secret);
-	gnutls_handshake_set_read_function(session, quic_msg_read);
-	gnutls_alert_set_read_function(session, quic_alert_read);
-	ret = gnutls_session_ext_register(
-		session, "QUIC Transport Parameters", QUIC_TLSEXT_TP_PARAM,
-		GNUTLS_EXT_TLS, quic_tp_recv, quic_tp_send, NULL, NULL, NULL,
-		GNUTLS_EXT_FLAG_TLS | GNUTLS_EXT_FLAG_CLIENT_HELLO | GNUTLS_EXT_FLAG_EE);
-	if (ret)
-		goto out;
+	if (ctx->is_serv) {
+		ret = gnutls_anti_replay_init(&ctx->quic_anti_replay);
+		if (ret)
+			goto out;
+		gnutls_anti_replay_set_add_function(ctx->quic_anti_replay, quic_storage_add);
+		gnutls_anti_replay_set_ptr(ctx->quic_anti_replay, NULL);
+		gnutls_anti_replay_enable(session, ctx->quic_anti_replay);
+	}
 
 	if (!ctx->is_serv) {
 		ret = quic_handshake_process(session, QUIC_CRYPTO_INITIAL, NULL, 0);
 		if (ret)
 			goto out;
-
-		msg = ctx->send_list;
-		while (msg) {
-			quic_log_debug("< Handshake SEND: %d %d", msg->len, msg->level);
-			ret = quic_handshake_sendmsg(sockfd, msg);
-			if (ret < 0) {
-				quic_log_error("socket sendmsg error %d", errno);
-				ret = -errno;
-				goto out;
-			}
-			ctx->send_list = msg->next;
-			quic_msg_destroy(msg);
-			msg = ctx->send_list;
-		}
-	} else {
-		if (!quic_anti_replay) {
-			ret = gnutls_anti_replay_init(&quic_anti_replay);
-			if (ret)
-				goto out;
-			gnutls_anti_replay_set_add_function(quic_anti_replay, quic_storage_add);
-			gnutls_anti_replay_set_ptr(quic_anti_replay, NULL);
-		}
-		gnutls_anti_replay_enable(session, quic_anti_replay);
 	}
 
 	while (!ctx->completed) {
-		struct pollfd pfd = {
-			.fd = sockfd,
-			.events = POLLIN,
-		};
+		while (ctx->set_list == NULL && ctx->send_list == NULL && !ctx->completed) {
+			struct pollfd pfd = {
+				.fd = sockfd,
+				.events = POLLIN,
+			};
 
-		ret = poll(&pfd, 1, 1000);
-		if (ret < 0) {
-			quic_log_error("socket poll() error %d", errno);
-			ret = -errno;
-			goto out;
-		}
-		msg = &_msg;
-		while (!ctx->completed) {
+			ret = poll(&pfd, 1, 1000);
+			if (ret < 0) {
+				quic_log_error("socket poll() error %d", errno);
+				ret = -errno;
+				goto out;
+			}
+
+			msg = &_msg;
 			msg->data = ctx->data;
 			msg->len = sizeof(ctx->data);
 			ret = quic_handshake_recvmsg(sockfd, msg);
@@ -670,10 +831,40 @@ int quic_handshake(gnutls_session_t session)
 				goto out;
 		}
 
+		sopt = ctx->set_list;
+		while (sopt) {
+			quic_log_debug("< Handshake SETSOCKOPT: %u %u", sopt->level, sopt->optname);
+			ret = setsockopt(sockfd, sopt->level, sopt->optname, sopt->optval, sopt->optlen);
+			if (ret < 0) {
+				quic_log_error("socket setsockopt(%u, %u) error %d",
+					       sopt->level, sopt->optname,
+					       errno);
+				ret = -errno;
+				goto out;
+			}
+			ctx->set_list = sopt->next;
+			quic_setopt_destroy(sopt);
+			sopt = ctx->set_list;
+		}
+
 		msg = ctx->send_list;
 		while (msg) {
 			quic_log_debug("< Handshake SEND: %u %u", msg->len, msg->level);
 			ret = quic_handshake_sendmsg(sockfd, msg);
+			if ((ret < 0) && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+				struct pollfd pfd = {
+					.fd = sockfd,
+					.events = POLLOUT,
+				};
+
+				ret = poll(&pfd, 1, 1000);
+				if (ret < 0) {
+					quic_log_error("socket poll() error %d", errno);
+					ret = -errno;
+					goto out;
+				}
+				continue;
+			}
 			if (ret < 0) {
 				quic_log_error("socket sendmsg error %d", errno);
 				ret = -errno;
@@ -686,15 +877,7 @@ int quic_handshake(gnutls_session_t session)
 	}
 
 out:
-	gnutls_db_set_ptr(session, NULL);
-
-	msg = ctx->send_list;
-	while (msg) {
-		ctx->send_list = msg->next;
-		quic_msg_destroy(msg);
-		msg = ctx->send_list;
-	}
-	free(ctx);
+	quic_handshake_deinit(session);
 	return ret < 0 ? ret : 0;
 }
 
