@@ -46,6 +46,10 @@ struct quic_ctx {
 	uint8_t data[65536];
 	uint8_t completed:1;
 	uint8_t is_serv:1;
+	struct {
+		uint8_t buf[256];
+		unsigned int len;
+	} transport_param;
 };
 
 /*
@@ -402,17 +406,12 @@ static int quic_tp_recv(gnutls_session_t session, const uint8_t *buf, size_t len
 
 static int quic_tp_send(gnutls_session_t session, gnutls_buffer_t extdata)
 {
-	int ret, sockfd = gnutls_transport_get_int(session);
-	uint8_t buf[256];
-	unsigned int len;
+	struct quic_ctx *ctx = gnutls_db_get_ptr(session);
+	int ret;
 
-	len = sizeof(buf);
-	if (getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_TRANSPORT_PARAM_EXT, buf, &len)) {
-		quic_log_error("socket getsockopt transport_param_ext error %d", errno);
-		return -1;
-	}
-
-	ret = gnutls_buffer_append_data(extdata, buf, len);
+	ret = gnutls_buffer_append_data(extdata,
+					ctx->transport_param.buf,
+					ctx->transport_param.len);
 	if (ret) {
 		quic_log_gnutls_error(ret);
 		return ret;
@@ -594,6 +593,15 @@ int quic_handshake(gnutls_session_t session)
 		return -ENOMEM;
 	}
 	memset(ctx, 0, sizeof(*ctx));
+
+	ctx->transport_param.len = sizeof(ctx->transport_param.buf);
+	ret = getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_TRANSPORT_PARAM_EXT,
+			 ctx->transport_param.buf, &ctx->transport_param.len);
+	if (ret != 0) {
+		quic_log_error("socket getsockopt transport_param_ext error %d", errno);
+		ret = errno ? -errno : -1;
+		goto out;
+	}
 
 	len = sizeof(opt);
 	ret = getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_TOKEN, opt, &len);
