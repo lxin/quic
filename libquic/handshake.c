@@ -33,6 +33,14 @@
 #define QUIC_MSG_STREAM_FLAGS \
 	(MSG_STREAM_NEW | MSG_STREAM_FIN | MSG_STREAM_UNI | MSG_STREAM_DONTWAIT)
 
+struct quic_setopt {
+	struct quic_setopt *next;
+	int level;
+	int optname;
+	void *optval;
+	socklen_t optlen;
+};
+
 struct quic_msg {
 	struct quic_msg *next;
 	uint8_t *data;
@@ -41,6 +49,8 @@ struct quic_msg {
 };
 
 struct quic_handshake_ctx {
+	struct quic_setopt *set_list;
+	struct quic_setopt *set_last;
 	struct quic_msg *send_list;
 	struct quic_msg *send_last;
 	uint8_t data[65536];
@@ -200,6 +210,48 @@ quic_set_log_func_t quic_set_log_func(quic_set_log_func_t func)
 	return old;
 }
 
+static struct quic_setopt *quic_setopt_create(int level,
+					      int optname,
+					      const void *optval,
+					      socklen_t optlen)
+{
+	struct quic_setopt *sopt = malloc(sizeof(*sopt));
+
+	if (!sopt)
+		return NULL;
+
+	memset(sopt, 0, sizeof(*sopt));
+	sopt->optval = malloc(optlen);
+	if (!sopt->optval) {
+		free(sopt);
+		return NULL;
+	}
+
+	sopt->level = level;
+	sopt->optname = optname;
+	memcpy(sopt->optval, optval, optlen);
+	sopt->optlen = optlen;
+
+	return sopt;
+}
+
+static void quic_setopt_append_list(struct quic_handshake_ctx *ctx,
+				    struct quic_setopt *sopt)
+{
+	if (!ctx->set_list)
+		ctx->set_list = sopt;
+	else
+		ctx->set_last->next = sopt;
+	ctx->set_last = sopt;
+}
+
+static void quic_setopt_destroy(struct quic_setopt *sopt)
+{
+	gnutls_memset(sopt->optval, 0, sopt->optlen);
+	free(sopt->optval);
+	free(sopt);
+}
+
 /**
  * quic_recvmsg - receive msg and also get stream ID and flag
  * @sockfd: IPPROTO_QUIC type socket
@@ -350,7 +402,7 @@ static int quic_set_secret(gnutls_session_t session, gnutls_record_encryption_le
 	gnutls_cipher_algorithm_t type  = gnutls_cipher_get(session);
 	struct quic_handshake_ctx *ctx = quic_handshake_ctx_get(session);
 	struct quic_crypto_secret secret = {};
-	int sockfd, ret, len = sizeof(secret);
+	int ret, len = sizeof(secret);
 
 	if (!ctx || ctx->completed)
 		return 0;
@@ -364,28 +416,37 @@ static int quic_set_secret(gnutls_session_t session, gnutls_record_encryption_le
 	if (level == GNUTLS_ENCRYPTION_LEVEL_EARLY)
 		type = gnutls_early_cipher_get(session);
 
-	sockfd = gnutls_transport_get_int(session);
 	secret.level = quic_crypto_level(level);
 	secret.type = quic_tls_cipher_type(type);
 	if (tx_secret) {
+		struct quic_setopt *tx_sopt;
 		secret.send = 1;
 		memcpy(secret.secret, tx_secret, secretlen);
-		ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_CRYPTO_SECRET, &secret, len);
+		tx_sopt = quic_setopt_create(SOL_QUIC,
+					     QUIC_SOCKOPT_CRYPTO_SECRET,
+					     &secret,
+					     len);
 		gnutls_memset(secret.secret, 0, secretlen);
-		if (ret) {
-			quic_log_error("socket setsockopt tx secret error %d %u", errno, level);
-			return -1;
+		if (tx_sopt == NULL) {
+			quic_log_error("socket quic_setopt_create(secret) error %d %u", ENOMEM, level);
+			return GNUTLS_E_MEMORY_ERROR;
 		}
+		quic_setopt_append_list(ctx, tx_sopt);
 	}
 	if (rx_secret) {
+		struct quic_setopt *rx_sopt;
 		secret.send = 0;
 		memcpy(secret.secret, rx_secret, secretlen);
-		ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_CRYPTO_SECRET, &secret, len);
+		rx_sopt = quic_setopt_create(SOL_QUIC,
+					     QUIC_SOCKOPT_CRYPTO_SECRET,
+					     &secret,
+					     len);
 		gnutls_memset(secret.secret, 0, secretlen);
-		if (ret) {
-			quic_log_error("socket setsockopt rx secret error %d %u", errno, level);
-			return -1;
+		if (rx_sopt == NULL) {
+			quic_log_error("socket quic_setopt_create(secret) error %d %u", ENOMEM, level);
+			return GNUTLS_E_MEMORY_ERROR;
 		}
+		quic_setopt_append_list(ctx, rx_sopt);
 		if (secret.level == QUIC_CRYPTO_APP) {
 			if (ctx->is_serv) {
 				ret = gnutls_session_ticket_send(session, 1, 0);
@@ -414,16 +475,22 @@ static int quic_alert_read(gnutls_session_t session,
 static int quic_tp_recv(gnutls_session_t session, const uint8_t *buf, size_t len)
 {
 	struct quic_handshake_ctx *ctx = quic_handshake_ctx_get(session);
-	int sockfd = gnutls_transport_get_int(session);
+	struct quic_setopt *tp_sopt;
 
 	if (ctx == NULL) {
 		return GNUTLS_E_RECEIVED_ILLEGAL_EXTENSION;
 	}
 
-	if (setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_TRANSPORT_PARAM_EXT, buf, len)) {
-		quic_log_error("socket setsockopt transport_param_ext error %d", errno);
-		return -1;
+	tp_sopt = quic_setopt_create(SOL_QUIC,
+				     QUIC_SOCKOPT_TRANSPORT_PARAM_EXT,
+				     buf,
+				     len);
+	if (tp_sopt == NULL) {
+		quic_log_error("socket quic_setopt_create(tp) error %d", ENOMEM);
+		return GNUTLS_E_MEMORY_ERROR;
 	}
+	quic_setopt_append_list(ctx, tp_sopt);
+
 	return 0;
 }
 
@@ -638,6 +705,7 @@ static int quic_handshake_init(gnutls_session_t session)
 static void quic_handshake_deinit(gnutls_session_t session)
 {
 	struct quic_handshake_ctx *ctx = quic_handshake_ctx_get(session);
+	struct quic_setopt *sopt;
 	struct quic_msg *msg;
 
 	if (ctx == NULL) {
@@ -651,6 +719,13 @@ static void quic_handshake_deinit(gnutls_session_t session)
 	}
 
 	gnutls_ext_set_data(session, QUIC_TLSEXT_TP_PARAM, NULL);
+
+	sopt = ctx->set_list;
+	while (sopt) {
+		ctx->set_list = sopt->next;
+		quic_setopt_destroy(sopt);
+		sopt = ctx->set_list;
+	}
 
 	msg = ctx->send_list;
 	while (msg) {
@@ -675,6 +750,7 @@ int quic_handshake(gnutls_session_t session)
 {
 	int ret, sockfd = gnutls_transport_get_int(session);
 	struct quic_msg *msg, _msg = {};
+	struct quic_setopt *sopt;
 	struct quic_handshake_ctx *ctx;
 	unsigned int len;
 	uint8_t opt[128];
@@ -715,7 +791,7 @@ int quic_handshake(gnutls_session_t session)
 	}
 
 	while (!ctx->completed) {
-		while (ctx->send_list == NULL && !ctx->completed) {
+		while (ctx->set_list == NULL && ctx->send_list == NULL && !ctx->completed) {
 			struct pollfd pfd = {
 				.fd = sockfd,
 				.events = POLLIN,
@@ -743,6 +819,22 @@ int quic_handshake(gnutls_session_t session)
 			ret = quic_handshake_process(session, msg->level, msg->data, msg->len);
 			if (ret)
 				goto out;
+		}
+
+		sopt = ctx->set_list;
+		while (sopt) {
+			quic_log_debug("< Handshake SETSOCKOPT: %u %u", sopt->level, sopt->optname);
+			ret = setsockopt(sockfd, sopt->level, sopt->optname, sopt->optval, sopt->optlen);
+			if (ret < 0) {
+				quic_log_error("socket setsockopt(%u, %u) error %d",
+					       sopt->level, sopt->optname,
+					       errno);
+				ret = -errno;
+				goto out;
+			}
+			ctx->set_list = sopt->next;
+			quic_setopt_destroy(sopt);
+			sopt = ctx->set_list;
 		}
 
 		msg = ctx->send_list;
