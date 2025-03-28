@@ -435,7 +435,9 @@ static int quic_tp_send(gnutls_session_t session, gnutls_buffer_t extdata)
 	return 0;
 }
 
-static struct quic_msg *quic_msg_create(const void *data, size_t datalen)
+static struct quic_msg *quic_msg_create(uint8_t level,
+					const void *data,
+					size_t datalen)
 {
 	struct quic_msg *msg = malloc(sizeof(*msg));
 
@@ -451,7 +453,19 @@ static struct quic_msg *quic_msg_create(const void *data, size_t datalen)
 
 	msg->len = datalen;
 	memcpy(msg->data, data, msg->len);
+	msg->level = level;
+
 	return msg;
+}
+
+static void quic_msg_append_list(struct quic_handshake_ctx *ctx,
+				 struct quic_msg *msg)
+{
+	if (!ctx->send_list)
+		ctx->send_list = msg;
+	else
+		ctx->send_last->next = msg;
+	ctx->send_last = msg;
 }
 
 static void quic_msg_destroy(struct quic_msg *msg)
@@ -465,23 +479,19 @@ static int quic_msg_read(gnutls_session_t session, gnutls_record_encryption_leve
 			 gnutls_handshake_description_t htype, const void *data, size_t datalen)
 {
 	struct quic_handshake_ctx *ctx = quic_handshake_ctx_get(session);
+	uint8_t qlevel = quic_crypto_level(level);
 	struct quic_msg *msg;
 
 	if (!ctx || htype == GNUTLS_HANDSHAKE_KEY_UPDATE)
 		return 0;
 
-	msg = quic_msg_create(data, datalen);
+	msg = quic_msg_create(qlevel, data, datalen);
 	if (!msg) {
 		quic_log_error("msg create error %d", ENOMEM);
 		return -1;
 	}
 
-	msg->level = quic_crypto_level(level);
-	if (!ctx->send_list)
-		ctx->send_list = msg;
-	else
-		ctx->send_last->next = msg;
-	ctx->send_last = msg;
+	quic_msg_append_list(ctx, msg);
 
 	quic_log_debug("  Read func: %u %u %u", level, htype, datalen);
 	return 0;
