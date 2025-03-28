@@ -48,6 +48,11 @@ struct quic_handshake_ctx {
 	uint8_t is_serv:1;
 };
 
+static struct quic_handshake_ctx *quic_handshake_ctx_get(gnutls_session_t session)
+{
+	return gnutls_db_get_ptr(session);
+}
+
 /*
  * The caller needs to opt-in in order
  * to get log messages
@@ -330,7 +335,7 @@ static int quic_set_secret(gnutls_session_t session, gnutls_record_encryption_le
 			   const void *rx_secret, const void *tx_secret, size_t secretlen)
 {
 	gnutls_cipher_algorithm_t type  = gnutls_cipher_get(session);
-	struct quic_handshake_ctx *ctx = gnutls_db_get_ptr(session);
+	struct quic_handshake_ctx *ctx = quic_handshake_ctx_get(session);
 	struct quic_crypto_secret secret = {};
 	int sockfd, ret, len = sizeof(secret);
 
@@ -449,7 +454,7 @@ static void quic_msg_destroy(struct quic_msg *msg)
 static int quic_msg_read(gnutls_session_t session, gnutls_record_encryption_level_t level,
 			 gnutls_handshake_description_t htype, const void *data, size_t datalen)
 {
-	struct quic_handshake_ctx *ctx = gnutls_db_get_ptr(session);
+	struct quic_handshake_ctx *ctx = quic_handshake_ctx_get(session);
 	struct quic_msg *msg;
 
 	if (!ctx || htype == GNUTLS_HANDSHAKE_KEY_UPDATE)
