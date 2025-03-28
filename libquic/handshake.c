@@ -674,21 +674,7 @@ int quic_handshake(gnutls_session_t session)
 	}
 
 	while (!ctx->completed) {
-		msg = ctx->send_list;
-		while (msg) {
-			quic_log_debug("< Handshake SEND: %d %d", msg->len, msg->level);
-			ret = quic_handshake_sendmsg(sockfd, msg);
-			if (ret < 0) {
-				quic_log_error("socket sendmsg error %d", errno);
-				ret = -errno;
-				goto out;
-			}
-			ctx->send_list = msg->next;
-			quic_msg_destroy(msg);
-			msg = ctx->send_list;
-		}
-
-		while (!ctx->completed) {
+		while (ctx->send_list == NULL && !ctx->completed) {
 			struct pollfd pfd = {
 				.fd = sockfd,
 				.events = POLLIN,
