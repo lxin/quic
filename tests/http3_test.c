@@ -331,7 +331,7 @@ static int http_client_create_conn(nghttp3_conn **httpconn, int sockfd, struct h
 	ret = nghttp3_conn_bind_control_stream(*httpconn, ctrl_stream_id);
 	if (ret)
 		return -1;
-	http_log_debug("%s ctrl_stream_id %llu\n", __func__, ctrl_stream_id);
+	http_log_debug("%s ctrl_stream_id %lld\n", __func__, ctrl_stream_id);
 
 	sinfo.stream_id = -1;
 	sinfo.stream_flags = MSG_STREAM_UNI;
@@ -341,7 +341,7 @@ static int http_client_create_conn(nghttp3_conn **httpconn, int sockfd, struct h
 		return -1;
 	}
 	qpack_enc_stream_id = sinfo.stream_id;
-	http_log_debug("%s qpack_enc_stream_id %llu\n", __func__, qpack_enc_stream_id);
+	http_log_debug("%s qpack_enc_stream_id %lld\n", __func__, qpack_enc_stream_id);
 
 	sinfo.stream_id = -1;
 	sinfo.stream_flags = MSG_STREAM_UNI;
@@ -351,7 +351,7 @@ static int http_client_create_conn(nghttp3_conn **httpconn, int sockfd, struct h
 		return -1;
 	}
 	qpack_dec_stream_id = sinfo.stream_id;
-	http_log_debug("%s qpack_dec_stream_id %llu\n", __func__, qpack_dec_stream_id);
+	http_log_debug("%s qpack_dec_stream_id %lld\n", __func__, qpack_dec_stream_id);
 	ret = nghttp3_conn_bind_qpack_streams(*httpconn, qpack_enc_stream_id,
 					      qpack_dec_stream_id);
 	if (ret)
@@ -362,7 +362,9 @@ static int http_client_create_conn(nghttp3_conn **httpconn, int sockfd, struct h
 
 static int http_write_data(nghttp3_conn *httpconn, int sockfd)
 {
-	int ret, i, flags = 0, fin = 0, sent;
+	ssize_t n;
+	size_t sent;
+	int ret, i, flags = 0, fin = 0;
 	int64_t stream_id = -1;
 	nghttp3_vec vec[16];
 	nghttp3_ssize cnt;
@@ -375,12 +377,15 @@ static int http_write_data(nghttp3_conn *httpconn, int sockfd)
 		for (i = 0; i < cnt; i++) {
 			if (i == cnt - 1 && fin)
 				flags |= MSG_STREAM_FIN;
-			http_log_debug("%s: %d %ld %d\n", __func__, vec[i].len, stream_id, flags);
-			ret = quic_sendmsg(sockfd, vec[i].base, vec[i].len, stream_id, flags);
-			if (ret < 0)
+			http_log_debug("%s: %p %llu %lld %d\n", __func__, vec[i].base, vec[i].len, stream_id, flags);
+			n = quic_sendmsg(sockfd, vec[i].base, vec[i].len, stream_id, flags);
+			if (n < 0) {
+				http_log_debug("%s: %d\n", __func__, errno);
 				return -1;
-			sent += ret;
+			}
+			sent += n;
 		}
+		http_log_debug("%s: %lld %llu\n", __func__, stream_id, sent);
 		ret = nghttp3_conn_add_write_offset(httpconn, stream_id, sent);
 		if (ret)
 			return -1;
@@ -664,7 +669,7 @@ static int http_server_begin_headers(nghttp3_conn *conn, int64_t stream_id, void
 	struct http_request *req = user_data;
 
 	req->stream_id = stream_id;
-	http_log_debug("%s: %llu\n", __func__, stream_id);
+	http_log_debug("%s: %lld\n", __func__, stream_id);
 	return 0;
 }
 
@@ -676,7 +681,7 @@ static int http_server_recv_header(nghttp3_conn *conn, int64_t stream_id, int32_
 	struct http_request *req = user_data;
 
 	if (req->stream_id != stream_id) {
-		http_log_error("%s: %llu %llu\n", __func__, req->stream_id, stream_id);
+		http_log_error("%s: %lld %lld\n", __func__, req->stream_id, stream_id);
 		return -1;
 	}
 
@@ -754,6 +759,18 @@ static int http_server_end_stream(nghttp3_conn *conn, int64_t stream_id, void *u
 	ret = read(fd, req->data, req->len);
 	if (ret < 0)
 		goto err;
+	if (ret != req->len) {
+		unsigned char *off = req->data;
+		size_t left = req->len;
+again:
+		off += ret;
+		left -= ret;
+		ret = read(fd, off, left);
+		if (ret < 0)
+			goto err;
+		if (ret != left)
+			goto again;
+	}
 
 send:
 	ret = sprintf(len, "%u", req->len);
@@ -829,7 +846,7 @@ static int http_server_create_conn(nghttp3_conn **httpconn, int sockfd, struct h
 	ret = nghttp3_conn_bind_control_stream(*httpconn, ctrl_stream_id);
 	if (ret)
 		return -1;
-	http_log_debug("%s ctrl_stream_id %llu\n", __func__, ctrl_stream_id);
+	http_log_debug("%s ctrl_stream_id %lld\n", __func__, ctrl_stream_id);
 
 	sinfo.stream_id = -1;
 	sinfo.stream_flags = MSG_STREAM_UNI;
@@ -839,7 +856,7 @@ static int http_server_create_conn(nghttp3_conn **httpconn, int sockfd, struct h
 		return -1;
 	}
 	qpack_enc_stream_id = sinfo.stream_id;
-	http_log_debug("%s qpack_enc_stream_id %llu\n", __func__, qpack_enc_stream_id);
+	http_log_debug("%s qpack_enc_stream_id %lld\n", __func__, qpack_enc_stream_id);
 
 	sinfo.stream_id = -1;
 	sinfo.stream_flags = MSG_STREAM_UNI;
@@ -849,7 +866,7 @@ static int http_server_create_conn(nghttp3_conn **httpconn, int sockfd, struct h
 		return -1;
 	}
 	qpack_dec_stream_id = sinfo.stream_id;
-	http_log_debug("%s qpack_dec_stream_id %llu\n", __func__, qpack_dec_stream_id);
+	http_log_debug("%s qpack_dec_stream_id %lld\n", __func__, qpack_dec_stream_id);
 	ret = nghttp3_conn_bind_qpack_streams(*httpconn, qpack_enc_stream_id,
 					      qpack_dec_stream_id);
 	if (ret)
