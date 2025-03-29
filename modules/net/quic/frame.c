@@ -910,6 +910,8 @@ static int quic_frame_new_conn_id_process(struct sock *sk, struct quic_frame *fr
 		return -EINVAL;
 
 	first = quic_conn_id_first_number(id_set);
+	if (seqno < first) /* dup */
+		goto out;
 	if (prior < first)
 		prior = first;
 	if (seqno - prior + 1 > quic_conn_id_max_count(id_set)) {
@@ -930,6 +932,7 @@ static int quic_frame_new_conn_id_process(struct sock *sk, struct quic_frame *fr
 	if (quic_path_alt_state(quic_paths(sk), QUIC_PATH_ALT_PENDING))
 		quic_outq_probe_path_alt(sk, true);
 
+out:
 	len -= (length + 16);
 	return (int)(frame->len - len);
 }
