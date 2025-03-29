@@ -23,7 +23,7 @@ static int quic_outq_limit_check(struct sock *sk, u8 type, u16 frame_len)
 		return -1;
 
 	/* congestion control */
-	if (!outq->single && quic_frame_ack_eliciting(type)) {
+	if (!outq->single && quic_frame_ack_eliciting(type) && !quic_frame_ping(type)) {
 		len = quic_packet_frame_len(packet) + frame_len;
 		if (outq->inflight + len > outq->window)
 			return -1;

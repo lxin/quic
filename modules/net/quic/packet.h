@@ -28,6 +28,7 @@ struct quic_packet {
 	u16 len;
 
 	u8 ack_eliciting:1;
+	u8 ack_requested:1;
 	u8 ack_immediate:1;
 	u8 non_probing:1;
 	u8 has_sack:1;
@@ -119,7 +120,7 @@ static inline void quic_packet_reset(struct quic_packet *packet)
 	packet->errframe = 0;
 	packet->has_sack = 0;
 	packet->non_probing = 0;
-	packet->ack_eliciting = 0;
+	packet->ack_requested = 0;
 	packet->ack_immediate = 0;
 }
 

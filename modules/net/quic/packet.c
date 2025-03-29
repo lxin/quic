@@ -928,7 +928,7 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb)
 
 		cb->resume = 0;
 		skb_reset_transport_header(skb);
-		if (!packet->ack_eliciting)
+		if (!packet->ack_requested)
 			continue;
 
 		quic_pnspace_set_need_sack(space, 1);
@@ -1024,7 +1024,7 @@ static int quic_packet_app_process_done(struct sock *sk, struct sk_buff *skb)
 		}
 	}
 
-	if (!packet->ack_eliciting)
+	if (!packet->ack_requested)
 		goto out;
 
 	if (!packet->ack_immediate && !quic_pnspace_has_gap(space) &&
@@ -1128,7 +1128,7 @@ static int quic_packet_app_process(struct sock *sk, struct sk_buff *skb)
 	err = quic_pnspace_check(space, cb->number);
 	if (err) {
 		if (err > 0) { /* dup packet, send ack immediately */
-			packet->ack_eliciting = 1;
+			packet->ack_requested = 1;
 			packet->ack_immediate = 1;
 			goto out;
 		}
@@ -1339,6 +1339,7 @@ static u8 *quic_packet_pack_frames(struct sock *sk, struct sk_buff *skb,
 	struct quic_crypto_cb *cb = QUIC_CRYPTO_CB(skb);
 	struct quic_path_group *paths = quic_paths(sk);
 	struct quic_packet *packet = quic_packet(sk);
+	u32 now = jiffies_to_usecs(jiffies);
 	struct quic_frame *frame, *next;
 	struct quic_frame_frag *frag;
 	struct quic_pnspace *space;
@@ -1364,7 +1365,7 @@ static u8 *quic_packet_pack_frames(struct sock *sk, struct sk_buff *skb,
 			p = quic_put_data(p, frag->data, frag->size);
 		pr_debug("%s: num: %llu, type: %u, packet_len: %u, frame_len: %u, level: %u\n",
 			 __func__, number, frame->type, skb->len, frame->len, packet->level);
-		if (!quic_frame_ack_eliciting(frame->type)) {
+		if (!quic_frame_ack_eliciting(frame->type) || quic_frame_ping(frame->type)) {
 			quic_frame_put(frame);
 			continue;
 		}
@@ -1380,6 +1381,9 @@ static u8 *quic_packet_pack_frames(struct sock *sk, struct sk_buff *skb,
 	if (quic_is_established(sk) && !quic_path_alt_state(paths, QUIC_PATH_ALT_PROBING))
 		quic_timer_reset_path(sk);
 
+	if (packet->ack_eliciting)
+		quic_pnspace_set_last_sent_time(space, now);
+
 	if (!sent)
 		return p;
 
@@ -1389,13 +1393,12 @@ static u8 *quic_packet_pack_frames(struct sock *sk, struct sk_buff *skb,
 		sent->ecn = INET_ECN_ECT_0;
 	}
 	sent->number = number;
+	sent->sent_time = now;
 	sent->frame_len = packet->frame_len;
-	sent->sent_time = jiffies_to_usecs(jiffies);
 	sent->level = (packet->level % QUIC_CRYPTO_EARLY);
 
 	quic_outq_inc_inflight(quic_outq(sk), sent->frame_len);
 	quic_pnspace_inc_inflight(space, sent->frame_len);
-	quic_pnspace_set_last_sent_time(space, sent->sent_time);
 	quic_outq_packet_sent_tail(sk, sent);
 
 	quic_cong_on_packet_sent(quic_cong(sk), sent->sent_time, sent->frame_len, number);
@@ -1472,12 +1475,14 @@ static struct sk_buff *quic_packet_handshake_create(struct sock *sk)
 	}
 
 	len = packet->len;
-	if (packet->frames) {
+	if (packet->ack_eliciting) {
 		hlen = QUIC_MIN_UDP_PAYLOAD - packet->taglen[1];
 		if (level == QUIC_CRYPTO_INITIAL && len < hlen) {
 			len = hlen;
 			plen = len - packet->len;
 		}
+	}
+	if (packet->frames) {
 		sent = quic_packet_sent_alloc(packet->frames);
 		if (!sent) {
 			quic_outq_retransmit_list(sk, &packet->frame_list);
@@ -1674,6 +1679,7 @@ int quic_packet_config(struct sock *sk, u8 level, u8 path)
 	if (!quic_packet_empty(packet))
 		return 0;
 
+	packet->ack_eliciting = 0;
 	packet->frame_len = 0;
 	packet->ipfragok = 0;
 	packet->padding = 0;
@@ -1844,8 +1850,11 @@ int quic_packet_tail(struct sock *sk, struct quic_frame *frame)
 		packet->padding = frame->padding;
 
 	if (quic_frame_ack_eliciting(frame->type)) {
-		packet->frames++;
-		packet->frame_len += frame->len;
+		packet->ack_eliciting = 1;
+		if (!quic_frame_ping(frame->type)) {
+			packet->frames++;
+			packet->frame_len += frame->len;
+		}
 	}
 
 	list_move_tail(&frame->list, &packet->frame_list);
