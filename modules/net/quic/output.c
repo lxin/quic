@@ -32,8 +32,10 @@ static int quic_outq_limit_check(struct sock *sk, u8 type, u16 frame_len)
 	/* amplificationlimit */
 	if (quic_is_serv(sk) && !quic_path_validated(paths)) {
 		len = quic_packet_len(packet) + frame_len + quic_packet_taglen(packet);
-		if (quic_path_ampl_sndlen(paths) + len > quic_path_ampl_rcvlen(paths) * 3)
+		if (quic_path_ampl_sndlen(paths) + len > quic_path_ampl_rcvlen(paths) * 3) {
+			quic_path_set_blocked(paths, 1);
 			return -1;
+		}
 	}
 
 	return 0;
@@ -722,16 +724,16 @@ static u32 quic_outq_get_pto_time(struct sock *sk, u8 *level)
 /* SetLossDetectionTimer() */
 void quic_outq_update_loss_timer(struct sock *sk)
 {
+	struct quic_path_group *paths = quic_paths(sk);
 	struct quic_outqueue *outq = quic_outq(sk);
 	u32 time, now = jiffies_to_usecs(jiffies);
-	u8 level, valid;
+	u8 level;
 
 	time = quic_outq_get_loss_time(sk, &level);
 	if (time)
 		goto out;
 
-	valid = quic_path_validated(quic_paths(sk));
-	if (!outq->inflight && (quic_is_serv(sk) || valid))
+	if ((!outq->inflight && quic_is_established(sk)) || quic_path_blocked(paths))
 		return quic_timer_stop(sk, QUIC_TIMER_LOSS);
 
 	time = quic_outq_get_pto_time(sk, &level);

@@ -70,6 +70,7 @@ struct quic_path_group {
 	u8 ecn_probes;
 	u8 alt_probes;
 	u8 alt_state;
+	u8 blocked:1;
 	u8 retry:1;
 	u8 serv:1;
 };
@@ -211,6 +212,16 @@ static inline u8 quic_path_retry(struct quic_path_group *paths)
 static inline void quic_path_set_retry(struct quic_path_group *paths, u8 retry)
 {
 	paths->retry = retry;
+}
+
+static inline u8 quic_path_blocked(struct quic_path_group *paths)
+{
+	return paths->blocked;
+}
+
+static inline void quic_path_set_blocked(struct quic_path_group *paths, u8 blocked)
+{
+	paths->blocked = blocked;
 }
 
 static inline struct quic_conn_id *quic_path_retry_dcid(struct quic_path_group *paths)

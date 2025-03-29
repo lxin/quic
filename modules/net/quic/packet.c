@@ -955,6 +955,10 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb)
 		quic_timer_reset(sk, QUIC_TIMER_SACK, quic_inq_max_ack_delay(inq));
 		quic_inq_set_need_sack(inq, 1);
 	}
+	if (quic_path_blocked(paths)) {
+		quic_path_set_blocked(paths, 0);
+		quic_outq_update_loss_timer(sk);
+	}
 
 	consume_skb(skb);
 	return 0;
