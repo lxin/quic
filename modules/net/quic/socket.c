@@ -1503,8 +1503,6 @@ static int quic_sock_set_crypto_secret(struct sock *sk, struct quic_crypto_secre
 	if (!quic_is_serv(sk))
 		goto out;
 
-	/* some implementations don't send ACKs to handshake packets so ACK them manually */
-	quic_outq_transmitted_sack(sk, QUIC_CRYPTO_INITIAL, QUIC_PN_MAP_MAX_PN, 0, -1, 0);
 	quic_outq_transmitted_sack(sk, QUIC_CRYPTO_HANDSHAKE, QUIC_PN_MAP_MAX_PN, 0, -1, 0);
 	if (quic_path_pref_addr(paths)) {
 		err = quic_path_bind(sk, paths, 1);

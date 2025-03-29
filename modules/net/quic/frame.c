@@ -1002,8 +1002,7 @@ static int quic_frame_handshake_done_process(struct sock *sk, struct quic_frame 
 		frame->errcode = QUIC_TRANSPORT_ERROR_PROTOCOL_VIOLATION;
 		return -EINVAL;
 	}
-	/* some implementations don't send ACKs to handshake packets, so ACK them manually */
-	quic_outq_transmitted_sack(sk, QUIC_CRYPTO_INITIAL, QUIC_PN_MAP_MAX_PN, 0, -1, 0);
+
 	quic_outq_transmitted_sack(sk, QUIC_CRYPTO_HANDSHAKE, QUIC_PN_MAP_MAX_PN, 0, -1, 0);
 
 	if (!quic_path_pref_addr(paths))
@@ -1399,9 +1398,12 @@ static int quic_frame_path_response_process(struct sock *sk, struct quic_frame *
 		return -EINVAL;
 
 	memcpy(entropy, frame->data, 8);
+	if (memcmp(quic_path_entropy(paths), entropy, 8))
+		goto out;
 
-	if (memcmp(quic_path_entropy(paths), entropy, 8) ||
-	    !quic_path_alt_state(paths, QUIC_PATH_ALT_PROBING))
+	quic_outq_transmitted_sack(sk, QUIC_CRYPTO_HANDSHAKE, QUIC_PN_MAP_MAX_PN, 0, -1, 0);
+
+	if (!quic_path_alt_state(paths, QUIC_PATH_ALT_PROBING))
 		goto out;
 
 	quic_path_swap(paths);

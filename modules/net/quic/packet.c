@@ -920,8 +920,11 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb)
 
 		if (!quic_path_validated(paths)) {
 			quic_path_inc_ampl_rcvlen(paths, cb->number_offset + cb->length);
-			if (packet->level == QUIC_CRYPTO_HANDSHAKE)
+			if (packet->level == QUIC_CRYPTO_HANDSHAKE) {
+				quic_outq_transmitted_sack(sk, QUIC_CRYPTO_INITIAL,
+							   QUIC_PN_MAP_MAX_PN, 0, -1, 0);
 				quic_path_set_validated(paths, 1);
+			}
 		}
 		skb_pull(skb, cb->number_offset + cb->length);
 
