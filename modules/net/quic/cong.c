@@ -564,6 +564,9 @@ void quic_cong_rtt_update(struct quic_cong *cong, u32 time, u32 ack_delay)
 {
 	u32 adjusted_rtt, rttvar_sample;
 
+	if (ack_delay > cong->max_ack_delay * 2)
+		return;
+
 	cong->latest_rtt = cong->time - time;
 	if (!cong->min_rtt_valid) {
 		cong->min_rtt = cong->latest_rtt;
