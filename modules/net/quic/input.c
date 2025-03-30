@@ -391,6 +391,9 @@ void quic_inq_get_param(struct sock *sk, struct quic_transport_param *p)
 {
 	struct quic_inqueue *inq = quic_inq(sk);
 
+	if (p->remote)
+		return;
+
 	p->disable_compatible_version = inq->disable_compatible_version;
 	p->disable_1rtt_encryption = inq->disable_1rtt_encryption;
 	p->max_datagram_frame_size = inq->max_datagram_frame_size;
