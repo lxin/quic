@@ -69,6 +69,11 @@ static inline void quic_pnspace_set_time(struct quic_pnspace *space, u32 time)
 	space->time = time;
 }
 
+static inline u32 quic_pnspace_time(struct quic_pnspace *space)
+{
+	return space->time;
+}
+
 static inline void quic_pnspace_set_sack_path(struct quic_pnspace *space, u8 path)
 {
 	space->sack_path = path;

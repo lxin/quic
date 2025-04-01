@@ -293,7 +293,6 @@ static struct sock *quic_packet_get_sock(struct sk_buff *skb)
 
 int quic_packet_rcv(struct sk_buff *skb, u8 err)
 {
-	struct quic_crypto_cb *cb = QUIC_CRYPTO_CB(skb);
 	struct net *net = dev_net(skb->dev);
 	struct sock *sk;
 
@@ -308,7 +307,6 @@ int quic_packet_rcv(struct sk_buff *skb, u8 err)
 
 	bh_lock_sock(sk);
 	if (sock_owned_by_user(sk)) {
-		cb->backlog = 1;
 		if (sk_add_backlog(sk, skb, READ_ONCE(sk->sk_rcvbuf))) {
 			QUIC_INC_STATS(net, QUIC_MIB_PKT_RCVDROP);
 			bh_unlock_sock(sk);
@@ -592,7 +590,7 @@ static int quic_packet_listen_process(struct sock *sk, struct sk_buff *skb)
 	if (quic_request_sock_exists(sk))
 		goto enqueue;
 
-	if (QUIC_CRYPTO_CB(skb)->backlog && quic_accept_sock_exists(sk, skb))
+	if (quic_accept_sock_exists(sk, skb))
 		goto out; /* moved skb to another sk backlog */
 
 	if (!quic_packet_compatible_versions(version)) { /* version negotiation */

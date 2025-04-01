@@ -76,8 +76,12 @@ struct quic_request_sock *quic_request_sock_dequeue(struct sock *sk)
 
 int quic_accept_sock_exists(struct sock *sk, struct sk_buff *skb)
 {
+	struct quic_pnspace *space = quic_pnspace(sk, QUIC_CRYPTO_INITIAL);
 	struct quic_packet *packet = quic_packet(sk);
 	int ret = 0;
+
+	if (QUIC_CRYPTO_CB(skb)->time > quic_pnspace_time(space))
+		return ret;
 
 	local_bh_disable();
 	sk = quic_sock_lookup(skb, &packet->saddr, &packet->daddr, &packet->dcid);
@@ -1287,6 +1291,7 @@ static struct sock *quic_accept(struct sock *sk, struct proto_accept_arg *arg)
 static struct sock *quic_accept(struct sock *sk, int flags, int *errp, bool kern)
 {
 #endif
+	struct quic_pnspace *space = quic_pnspace(sk, QUIC_CRYPTO_INITIAL);
 	struct quic_request_sock *req = NULL;
 	struct sock *nsk = NULL;
 	int err = -EINVAL;
@@ -1324,6 +1329,8 @@ static struct sock *quic_accept(struct sock *sk, int flags, int *errp, bool kern
 	err = quic_accept_sock_init(nsk, req);
 	if (err)
 		goto free;
+
+	quic_pnspace_set_time(space, jiffies_to_usecs(jiffies));
 out:
 	release_sock(sk);
 	*errp = err;
