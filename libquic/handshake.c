@@ -40,9 +40,18 @@ struct quic_msg {
 	uint8_t level;
 };
 
+struct quic_smsg {
+	struct quic_smsg *next;
+	char cmsg[CMSG_SPACE(sizeof(struct quic_handshake_info))];
+	struct iovec iov;
+	struct msghdr msg;
+	unsigned flags;
+	uint8_t data[];
+};
+
 struct quic_handshake_ctx {
-	struct quic_msg *send_list;
-	struct quic_msg *send_last;
+	struct quic_smsg *send_list;
+	struct quic_smsg *send_last;
 	uint8_t data[65536];
 	uint8_t completed:1;
 	uint8_t is_serv:1;
@@ -435,44 +444,58 @@ static int quic_tp_send(gnutls_session_t session, gnutls_buffer_t extdata)
 	return 0;
 }
 
-static struct quic_msg *quic_msg_create(uint8_t level,
-					const void *data,
-					size_t datalen)
+static struct quic_smsg *quic_smsg_create(uint8_t level,
+					  const void *data,
+					  size_t datalen)
 {
-	struct quic_msg *msg = malloc(sizeof(*msg));
+	struct quic_handshake_info *info;
+	struct quic_smsg *smsg;
+	struct cmsghdr *cmsg;
 
-	if (!msg)
+	smsg = malloc(sizeof(*smsg) + datalen);
+	if (!smsg)
 		return NULL;
 
-	memset(msg, 0, sizeof(*msg));
-	msg->data = malloc(datalen);
-	if (!msg->data) {
-		free(msg);
-		return NULL;
-	}
+	memset(smsg, 0, sizeof(*smsg));
+	memcpy(smsg->data, data, datalen);
 
-	msg->len = datalen;
-	memcpy(msg->data, data, msg->len);
-	msg->level = level;
+	smsg->iov.iov_base = smsg->data;
+	smsg->iov.iov_len = datalen;
 
-	return msg;
+	smsg->msg.msg_iov = &smsg->iov;
+	smsg->msg.msg_iovlen = 1;
+	smsg->msg.msg_control = smsg->cmsg;
+	smsg->msg.msg_controllen = sizeof(smsg->cmsg);
+
+	cmsg = CMSG_FIRSTHDR(&smsg->msg);
+	cmsg->cmsg_level = SOL_QUIC;
+	cmsg->cmsg_type = QUIC_HANDSHAKE_INFO;
+	cmsg->cmsg_len = CMSG_LEN(sizeof(*info));
+
+	info = (struct quic_handshake_info *)CMSG_DATA(cmsg);
+	info->crypto_level = level;
+
+	smsg->flags = 0;
+
+	return smsg;
 }
 
-static void quic_msg_append_list(struct quic_handshake_ctx *ctx,
-				 struct quic_msg *msg)
+static void quic_smsg_append_list(struct quic_handshake_ctx *ctx,
+				  struct quic_smsg *smsg)
 {
 	if (!ctx->send_list)
-		ctx->send_list = msg;
-	else
-		ctx->send_last->next = msg;
-	ctx->send_last = msg;
+		ctx->send_list = smsg;
+	else {
+		ctx->send_last->flags |= MSG_MORE;
+		ctx->send_last->next = smsg;
+	}
+	ctx->send_last = smsg;
 }
 
-static void quic_msg_destroy(struct quic_msg *msg)
+static void quic_smsg_destroy(struct quic_smsg *smsg)
 {
-	gnutls_memset(msg->data, 0, msg->len);
-	free(msg->data);
-	free(msg);
+	gnutls_memset(smsg, 0, sizeof(*smsg) + smsg->iov.iov_len);
+	free(smsg);
 }
 
 static int quic_msg_read(gnutls_session_t session, gnutls_record_encryption_level_t level,
@@ -480,18 +503,18 @@ static int quic_msg_read(gnutls_session_t session, gnutls_record_encryption_leve
 {
 	struct quic_handshake_ctx *ctx = quic_handshake_ctx_get(session);
 	uint8_t qlevel = quic_crypto_level(level);
-	struct quic_msg *msg;
+	struct quic_smsg *smsg;
 
 	if (!ctx || htype == GNUTLS_HANDSHAKE_KEY_UPDATE)
 		return 0;
 
-	msg = quic_msg_create(qlevel, data, datalen);
-	if (!msg) {
+	smsg = quic_smsg_create(qlevel, data, datalen);
+	if (!smsg) {
 		quic_log_error("msg create error %d", ENOMEM);
 		return -1;
 	}
 
-	quic_msg_append_list(ctx, msg);
+	quic_smsg_append_list(ctx, smsg);
 
 	quic_log_debug("  Read func: %u %u %u", level, htype, datalen);
 	return 0;
@@ -524,34 +547,6 @@ err:
 	gnutls_alert_send_appropriate(session, ret);
 	quic_log_gnutls_error(ret);
 	return ret;
-}
-
-static int quic_handshake_sendmsg(int sockfd, struct quic_msg *msg)
-{
-	char outcmsg[CMSG_SPACE(sizeof(struct quic_handshake_info))];
-	struct quic_handshake_info *info;
-	struct msghdr outmsg;
-	struct cmsghdr *cmsg;
-	struct iovec iov;
-
-	iov.iov_base = (void *)msg->data;
-	iov.iov_len = msg->len;
-
-	memset(&outmsg, 0, sizeof(outmsg));
-	outmsg.msg_iov = &iov;
-	outmsg.msg_iovlen = 1;
-	outmsg.msg_control = outcmsg;
-	outmsg.msg_controllen = sizeof(outcmsg);
-
-	cmsg = CMSG_FIRSTHDR(&outmsg);
-	cmsg->cmsg_level = SOL_QUIC;
-	cmsg->cmsg_type = QUIC_HANDSHAKE_INFO;
-	cmsg->cmsg_len = CMSG_LEN(sizeof(*info));
-
-	info = (struct quic_handshake_info *)CMSG_DATA(cmsg);
-	info->crypto_level = msg->level;
-
-	return sendmsg(sockfd, &outmsg, (msg->next ? MSG_MORE : 0));
 }
 
 static int quic_handshake_recvmsg(int sockfd, struct quic_msg *msg)
@@ -629,18 +624,18 @@ static int quic_handshake_init(gnutls_session_t session)
 static void quic_handshake_deinit(gnutls_session_t session)
 {
 	struct quic_handshake_ctx *ctx = quic_handshake_ctx_get(session);
-	struct quic_msg *msg;
+	struct quic_smsg *smsg;
 
 	if (ctx == NULL)
 		return;
 
 	gnutls_ext_set_data(session, QUIC_TLSEXT_TP_PARAM, NULL);
 
-	msg = ctx->send_list;
-	while (msg) {
-		ctx->send_list = msg->next;
-		quic_msg_destroy(msg);
-		msg = ctx->send_list;
+	smsg = ctx->send_list;
+	while (smsg) {
+		ctx->send_list = smsg->next;
+		quic_smsg_destroy(smsg);
+		smsg = ctx->send_list;
 	}
 
 	gnutls_memset(ctx, 0, sizeof(*ctx));
@@ -659,6 +654,7 @@ int quic_handshake(gnutls_session_t session)
 {
 	int ret, sockfd = gnutls_transport_get_int(session);
 	struct quic_msg *msg, _msg = {};
+	struct quic_smsg *smsg;
 	struct quic_handshake_ctx *ctx;
 	unsigned int len;
 	uint8_t opt[128];
@@ -721,11 +717,13 @@ int quic_handshake(gnutls_session_t session)
 				goto out;
 		}
 
-		msg = ctx->send_list;
-		while (msg) {
-			quic_log_debug("< Handshake SEND: %u %u", msg->len, msg->level);
-			ret = quic_handshake_sendmsg(sockfd, msg);
-			if ((ret < 0) && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+		smsg = ctx->send_list;
+		while (smsg) {
+			size_t slen;
+
+			quic_log_debug("< Handshake SEND: %u", smsg->iov.iov_len);
+			slen = sendmsg(sockfd, &smsg->msg, smsg->flags);
+			if (slen == -1 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
 				struct pollfd pfd = {
 					.fd = sockfd,
 					.events = POLLOUT,
@@ -740,14 +738,20 @@ int quic_handshake(gnutls_session_t session)
 				}
 				continue;
 			}
-			if (ret < 0) {
+			if (slen < 0) {
 				quic_log_error("socket sendmsg error %d", errno);
 				ret = -errno;
 				goto out;
 			}
-			ctx->send_list = msg->next;
-			quic_msg_destroy(msg);
-			msg = ctx->send_list;
+			if (slen != smsg->iov.iov_len) {
+				quic_log_error("socket sendmsg error %d", errno);
+				ret = -EMSGSIZE;
+				goto out;
+			}
+
+			ctx->send_list = smsg->next;
+			quic_smsg_destroy(smsg);
+			smsg = ctx->send_list;
 		}
 	}
 
