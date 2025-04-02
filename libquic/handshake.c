@@ -634,6 +634,30 @@ static int quic_handshake_init(gnutls_session_t session)
 	return 0;
 }
 
+static int quic_handshake_sendmsg_process(struct quic_handshake_ctx *ctx,
+					  ssize_t slen)
+{
+	struct quic_smsg *smsg = ctx->send_list;
+
+	if (slen < 0) {
+		quic_log_error("socket sendmsg(%u, %u) error %zd",
+			       smsg->iov.iov_len,
+			       slen);
+		return slen;
+	}
+	if (slen != smsg->iov.iov_len) {
+		quic_log_error("socket sendmsg(%u, %u) short %zd",
+			       smsg->iov.iov_len,
+			       slen);
+		return -EMSGSIZE;
+	}
+
+	ctx->send_list = smsg->next;
+	quic_smsg_destroy(smsg);
+
+	return 0;
+}
+
 static void quic_handshake_deinit(gnutls_session_t session)
 {
 	struct quic_handshake_ctx *ctx = quic_handshake_ctx_get(session);
@@ -776,19 +800,14 @@ int quic_handshake(gnutls_session_t session)
 				}
 				continue;
 			}
-			if (slen < 0) {
-				quic_log_error("socket sendmsg error %d", errno);
-				ret = -errno;
-				goto out;
-			}
-			if (slen != smsg->iov.iov_len) {
-				quic_log_error("socket sendmsg error %d", errno);
-				ret = -EMSGSIZE;
-				goto out;
-			}
 
-			ctx->send_list = smsg->next;
-			quic_smsg_destroy(smsg);
+			if (slen == -1)
+				slen = -errno;
+
+			ret = quic_handshake_sendmsg_process(ctx, slen);
+			if (ret)
+				goto out;
+
 			smsg = ctx->send_list;
 		}
 	}
