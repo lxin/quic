@@ -51,6 +51,7 @@ struct quic_smsg {
 };
 
 struct quic_handshake_ctx {
+	gnutls_session_t session;
 	struct quic_smsg *send_list;
 	struct quic_smsg *send_last;
 	struct quic_rmsg rmsg;
@@ -617,6 +618,8 @@ static int quic_handshake_init(gnutls_session_t session)
 	}
 	memset(ctx, 0, sizeof(*ctx));
 
+	ctx->session = session;
+
 	ret = gnutls_session_ext_register(
 		session, "QUIC Transport Parameters", QUIC_TLSEXT_TP_PARAM,
 		GNUTLS_EXT_TLS, quic_tp_recv, quic_tp_send, NULL, NULL, NULL,
@@ -654,6 +657,49 @@ static int quic_handshake_sendmsg_process(struct quic_handshake_ctx *ctx,
 
 	ctx->send_list = smsg->next;
 	quic_smsg_destroy(smsg);
+
+	return 0;
+}
+
+static int quic_handshake_recvmsg_process(struct quic_handshake_ctx *ctx,
+					  ssize_t rlen)
+{
+	struct quic_rmsg *rmsg = &ctx->rmsg;
+	uint8_t level;
+	int ret;
+
+	if (rlen < 0) {
+		quic_log_error("socket recvmsg(%u) error %zd",
+			       rmsg->iov.iov_len,
+			       rlen);
+		return rlen;
+	}
+
+	if (rlen == 0) {
+		quic_log_error("socket recvmsg(%u) EOF",
+			       rmsg->iov.iov_len);
+		return -ECONNRESET;
+	}
+
+	if (rmsg->msg.msg_flags & MSG_TRUNC) {
+		quic_log_error("socket recvmsg(%u) got MSG_TRUNC %zd",
+			       rmsg->iov.iov_len,
+			       rlen);
+		return -EMSGSIZE;
+	}
+
+	ret = quic_check_rmsg_level(rmsg);
+	if (ret < 0) {
+		quic_log_error("socket recvmsg(%u) no QUIC_HANDSHAKE_INFO",
+			       rmsg->iov.iov_len);
+		return -EBADMSG;
+	}
+	level = ret;
+
+	quic_log_debug("> Handshake RECV: %zu %u", rlen, level);
+	ret = quic_handshake_process(ctx->session, level, rmsg->data, rlen);
+	if (ret != 0)
+		return ret;
 
 	return 0;
 }
@@ -726,7 +772,6 @@ int quic_handshake(gnutls_session_t session)
 		while (ctx->send_list == NULL && !ctx->completed) {
 			struct quic_rmsg *rmsg = &ctx->rmsg;
 			ssize_t rlen;
-			uint8_t level;
 
 			quic_prepare_rmsg(rmsg);
 			rlen = recvmsg(sockfd, &rmsg->msg, rmsg->flags);
@@ -745,36 +790,11 @@ int quic_handshake(gnutls_session_t session)
 				}
 				continue;
 			}
-			if (rlen < 0) {
-				quic_log_error("socket recvmsg error %d", errno);
-				ret = -errno;
-				goto out;
-			}
-			if (rlen == 0) {
-				errno = ECONNRESET;
-				quic_log_error("socket recvmsg error %d", errno);
-				ret = -errno;
-				goto out;
-			}
-			if (rmsg->msg.msg_flags & MSG_TRUNC) {
-				quic_log_error("socket recvmsg(%u) got MSG_TRUNC %zd",
-					       rmsg->iov.iov_len,
-					       rlen);
-				ret = -EMSGSIZE;
-				goto out;
-			}
 
-			ret = quic_check_rmsg_level(rmsg);
-			if (ret < 0) {
-				quic_log_error("socket recvmsg(%u) no QUIC_HANDSHAKE_INFO",
-					       rmsg->iov.iov_len);
-				ret = -EBADMSG;
-				goto out;
-			}
-			level = ret;
+			if (rlen == -1)
+				rlen = -errno;
 
-			quic_log_debug("> Handshake RECV: %zu %u", rlen, level);
-			ret = quic_handshake_process(session, level, rmsg->data, rlen);
+			ret = quic_handshake_recvmsg_process(ctx, rlen);
 			if (ret)
 				goto out;
 		}
