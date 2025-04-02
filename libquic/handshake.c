@@ -50,6 +50,15 @@ struct quic_smsg {
 	uint8_t data[];
 };
 
+struct quic_handshake_ctx;
+
+typedef int (*quic_handshake_step_process_fn_t)(struct quic_handshake_ctx *ctx);
+
+struct quic_handshake_step_internal {
+	struct quic_handshake_step step;
+	quic_handshake_step_process_fn_t process_fn;
+};
+
 struct quic_handshake_ctx {
 	gnutls_session_t session;
 	struct quic_smsg *send_list;
@@ -57,6 +66,7 @@ struct quic_handshake_ctx {
 	struct quic_rmsg rmsg;
 	uint8_t completed:1;
 	uint8_t is_serv:1;
+	struct quic_handshake_step_internal next_step;
 };
 
 static struct quic_handshake_ctx *quic_handshake_ctx_get(gnutls_session_t session)
@@ -201,6 +211,40 @@ quic_set_log_func_t quic_set_log_func(quic_set_log_func_t func)
 	quic_set_log_func_t old = quic_log_func;
 	quic_log_func = func;
 	return old;
+}
+
+static void quic_prepare_sendmsg_step(struct quic_handshake_ctx *ctx,
+				      quic_handshake_step_process_fn_t process_fn,
+				      const struct msghdr *msg,
+				      int flags)
+{
+	struct quic_handshake_step_sendmsg *s = &ctx->next_step.step.s_sendmsg;
+
+	ctx->next_step.step.op = QUIC_HANDSHAKE_STEP_OP_SENDMSG;
+	*s = (struct quic_handshake_step_sendmsg) {
+		.msg = msg,
+		.flags = flags,
+		.retval = -EUCLEAN,
+	};
+
+	ctx->next_step.process_fn = process_fn;
+}
+
+static void quic_prepare_recvmsg_step(struct quic_handshake_ctx *ctx,
+				      quic_handshake_step_process_fn_t process_fn,
+				      struct msghdr *msg,
+				      int flags)
+{
+	struct quic_handshake_step_recvmsg *s = &ctx->next_step.step.s_recvmsg;
+
+	ctx->next_step.step.op = QUIC_HANDSHAKE_STEP_OP_RECVMSG;
+	*s = (struct quic_handshake_step_recvmsg) {
+		.msg = msg,
+		.flags = flags,
+		.retval = -EUCLEAN,
+	};
+
+	ctx->next_step.process_fn = process_fn;
 }
 
 /**
@@ -606,15 +650,20 @@ static int quic_storage_add(void *dbf, time_t exp_time, const gnutls_datum_t *ke
 
 static gnutls_anti_replay_t quic_anti_replay;
 
-static void quic_handshake_deinit(gnutls_session_t session);
+static int quic_handshake_next_step(struct quic_handshake_ctx *ctx,
+				    struct quic_handshake_step **pstep);
 
-static int quic_handshake_init(gnutls_session_t session)
+int quic_handshake_init(gnutls_session_t session,
+			struct quic_handshake_step **pstep)
 {
 	int sockfd = gnutls_transport_get_int(session);
 	struct quic_handshake_ctx *ctx;
 	unsigned int len;
 	uint8_t opt[128];
 	int ret;
+
+	if (pstep == NULL || *pstep != NULL)
+		return -EINVAL;
 
 	ctx = malloc(sizeof(*ctx));
 	if (!ctx) {
@@ -663,16 +712,60 @@ static int quic_handshake_init(gnutls_session_t session)
 			goto deinit;
 	}
 
+	ret = quic_handshake_next_step(ctx, pstep);
+	if (ret)
+		goto deinit;
 	return 0;
 deinit:
 	quic_handshake_deinit(session);
 	return ret;
 }
 
-static int quic_handshake_sendmsg_process(struct quic_handshake_ctx *ctx,
-					  ssize_t slen)
+static int quic_handshake_sendmsg_process(struct quic_handshake_ctx *ctx);
+static int quic_handshake_recvmsg_process(struct quic_handshake_ctx *ctx);
+
+static int quic_handshake_next_step(struct quic_handshake_ctx *ctx,
+				    struct quic_handshake_step **pstep)
 {
+	gnutls_memset(&ctx->next_step, 0, sizeof(ctx->next_step));
+
+	if (ctx->send_list != NULL) {
+		struct quic_smsg *smsg = ctx->send_list;
+
+		quic_log_debug("< Handshake SEND: %u", smsg->iov.iov_len);
+		quic_prepare_sendmsg_step(ctx,
+					  quic_handshake_sendmsg_process,
+					  &smsg->msg,
+					  smsg->flags);
+		goto prepared;
+	}
+
+	if (!ctx->completed) {
+		struct quic_rmsg *rmsg = &ctx->rmsg;
+
+		quic_prepare_rmsg(rmsg);
+		quic_log_debug("> Handshake RECV: %u", rmsg->iov.iov_len);
+		quic_prepare_recvmsg_step(ctx,
+					  quic_handshake_recvmsg_process,
+					  &rmsg->msg,
+					  rmsg->flags);
+		goto prepared;
+	}
+
+prepared:
+	if (ctx->next_step.process_fn != NULL)
+		*pstep = &ctx->next_step.step;
+	else
+		*pstep = NULL;
+
+	return 0;
+}
+
+static int quic_handshake_sendmsg_process(struct quic_handshake_ctx *ctx)
+{
+	struct quic_handshake_step_sendmsg *s = &ctx->next_step.step.s_sendmsg;
 	struct quic_smsg *smsg = ctx->send_list;
+	ssize_t slen = s->retval;
 
 	if (slen < 0) {
 		quic_log_error("socket sendmsg(%u, %u) error %zd",
@@ -693,10 +786,11 @@ static int quic_handshake_sendmsg_process(struct quic_handshake_ctx *ctx,
 	return 0;
 }
 
-static int quic_handshake_recvmsg_process(struct quic_handshake_ctx *ctx,
-					  ssize_t rlen)
+static int quic_handshake_recvmsg_process(struct quic_handshake_ctx *ctx)
 {
+	struct quic_handshake_step_recvmsg *s = &ctx->next_step.step.s_recvmsg;
 	struct quic_rmsg *rmsg = &ctx->rmsg;
+	ssize_t rlen = s->retval;
 	uint8_t level;
 	int ret;
 
@@ -736,7 +830,38 @@ static int quic_handshake_recvmsg_process(struct quic_handshake_ctx *ctx,
 	return 0;
 }
 
-static void quic_handshake_deinit(gnutls_session_t session)
+int quic_handshake_step(gnutls_session_t session,
+			struct quic_handshake_step **pstep)
+{
+	struct quic_handshake_ctx *ctx = quic_handshake_ctx_get(session);
+	quic_handshake_step_process_fn_t process_fn = ctx->next_step.process_fn;
+	int ret;
+
+	ctx->next_step.process_fn = NULL;
+
+	if (pstep == NULL)
+		return -EINVAL;
+
+	if (*pstep != &ctx->next_step.step) {
+		quic_log_error("ctx invalid step[%p] != expected[%p] %d",
+			       *pstep, &ctx->next_step.step, EINVAL);
+		return -EINVAL;
+	}
+
+	if (process_fn == NULL) {
+		quic_log_error("ctx no process_fn %d",
+			       EINVAL);
+		return -EINVAL;
+	}
+
+	ret = process_fn(ctx);
+	if (ret)
+		return ret;
+
+	return quic_handshake_next_step(ctx, pstep);
+}
+
+void quic_handshake_deinit(gnutls_session_t session)
 {
 	struct quic_handshake_ctx *ctx = quic_handshake_ctx_get(session);
 	struct quic_smsg *smsg;
@@ -768,22 +893,19 @@ static void quic_handshake_deinit(gnutls_session_t session)
 int quic_handshake(gnutls_session_t session)
 {
 	int ret, sockfd = gnutls_transport_get_int(session);
-	struct quic_smsg *smsg;
-	struct quic_handshake_ctx *ctx;
+	struct quic_handshake_step *step = NULL;
 
-	ret = quic_handshake_init(session);
+	ret = quic_handshake_init(session, &step);
 	if (ret != 0)
 		return ret;
 
-	ctx = quic_handshake_ctx_get(session);
-
-	while (!ctx->completed) {
-		while (ctx->send_list == NULL && !ctx->completed) {
-			struct quic_rmsg *rmsg = &ctx->rmsg;
+	while (ret == 0 && step != NULL) {
+		switch (step->op) {
+		case QUIC_HANDSHAKE_STEP_OP_RECVMSG: {
+			struct quic_handshake_step_recvmsg *s = &step->s_recvmsg;
 			ssize_t rlen;
 
-			quic_prepare_rmsg(rmsg);
-			rlen = recvmsg(sockfd, &rmsg->msg, rmsg->flags);
+			rlen = recvmsg(sockfd, s->msg, s->flags);
 			if (rlen == -1 && errno == EINTR)
 				continue;
 			if (rlen == -1 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
@@ -805,17 +927,18 @@ int quic_handshake(gnutls_session_t session)
 			if (rlen == -1)
 				rlen = -errno;
 
-			ret = quic_handshake_recvmsg_process(ctx, rlen);
+			s->retval = rlen;
+			ret = quic_handshake_step(session, &step);
 			if (ret)
 				goto out;
-		}
 
-		smsg = ctx->send_list;
-		while (smsg) {
-			size_t slen;
+			continue;
+			}
+		case QUIC_HANDSHAKE_STEP_OP_SENDMSG: {
+			struct quic_handshake_step_sendmsg *s = &step->s_sendmsg;
+			ssize_t slen;
 
-			quic_log_debug("< Handshake SEND: %u", smsg->iov.iov_len);
-			slen = sendmsg(sockfd, &smsg->msg, smsg->flags);
+			slen = sendmsg(sockfd, s->msg, s->flags);
 			if (slen == -1 && errno == EINTR)
 				continue;
 			if (slen == -1 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
@@ -837,12 +960,16 @@ int quic_handshake(gnutls_session_t session)
 			if (slen == -1)
 				slen = -errno;
 
-			ret = quic_handshake_sendmsg_process(ctx, slen);
+			s->retval = slen;
+			ret = quic_handshake_step(session, &step);
 			if (ret)
 				goto out;
 
-			smsg = ctx->send_list;
+			continue;
+			}
 		}
+
+		ret = -EUCLEAN;
 	}
 
 out:

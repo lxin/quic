@@ -34,6 +34,38 @@ int quic_client_handshake(int sockfd, const char *pkey_file,
 int quic_server_handshake(int sockfd, const char *pkey_file,
 			  const char *cert_file, const char *alpns);
 
+enum quic_handshake_step_op {
+	QUIC_HANDSHAKE_STEP_OP_SENDMSG = 1,
+	QUIC_HANDSHAKE_STEP_OP_RECVMSG,
+};
+
+struct quic_handshake_step_sendmsg {
+	const struct msghdr *msg;
+	int flags;
+	ssize_t retval;
+};
+
+struct quic_handshake_step_recvmsg {
+	struct msghdr *msg;
+	int flags;
+	ssize_t retval;
+};
+
+struct quic_handshake_step {
+	enum quic_handshake_step_op op;
+
+	union {
+		struct quic_handshake_step_sendmsg s_sendmsg;
+		struct quic_handshake_step_recvmsg s_recvmsg;
+	};
+};
+
+int quic_handshake_init(gnutls_session_t session,
+			struct quic_handshake_step **pstep);
+int quic_handshake_step(gnutls_session_t session,
+			struct quic_handshake_step **pstep);
+void quic_handshake_deinit(gnutls_session_t session);
+
 int quic_handshake(gnutls_session_t session);
 
 int quic_session_get_data(gnutls_session_t session,
