@@ -475,7 +475,7 @@ static struct quic_smsg *quic_smsg_create(uint8_t level,
 	info = (struct quic_handshake_info *)CMSG_DATA(cmsg);
 	info->crypto_level = level;
 
-	smsg->flags = 0;
+	smsg->flags = MSG_NOSIGNAL;
 
 	return smsg;
 }
