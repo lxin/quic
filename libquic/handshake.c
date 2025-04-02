@@ -775,6 +775,8 @@ int quic_handshake(gnutls_session_t session)
 
 			quic_prepare_rmsg(rmsg);
 			rlen = recvmsg(sockfd, &rmsg->msg, rmsg->flags);
+			if (rlen == -1 && errno == EINTR)
+				continue;
 			if (rlen == -1 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
 				struct pollfd pfd = {
 					.fd = sockfd,
@@ -805,6 +807,8 @@ int quic_handshake(gnutls_session_t session)
 
 			quic_log_debug("< Handshake SEND: %u", smsg->iov.iov_len);
 			slen = sendmsg(sockfd, &smsg->msg, smsg->flags);
+			if (slen == -1 && errno == EINTR)
+				continue;
 			if (slen == -1 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
 				struct pollfd pfd = {
 					.fd = sockfd,
