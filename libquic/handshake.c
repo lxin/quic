@@ -703,23 +703,25 @@ int quic_handshake(gnutls_session_t session)
 			struct quic_rmsg *rmsg = &ctx->rmsg;
 			ssize_t rlen;
 			uint8_t level;
-			struct pollfd pfd = {
-				.fd = sockfd,
-				.events = POLLIN,
-			};
-
-			ret = poll(&pfd, 1, 1000);
-			if (ret < 0) {
-				quic_log_error("socket poll() error %d", errno);
-				ret = -errno;
-				goto out;
-			}
 
 			quic_prepare_rmsg(rmsg);
 			rlen = recvmsg(sockfd, &rmsg->msg, rmsg->flags);
+			if (rlen == -1 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+				struct pollfd pfd = {
+					.fd = sockfd,
+					.events = POLLIN,
+				};
+				int prc;
+
+				prc = poll(&pfd, 1, 1000);
+				if (prc < 0) {
+					quic_log_error("socket poll() error %d", errno);
+					ret = -errno;
+					goto out;
+				}
+				continue;
+			}
 			if (rlen < 0) {
-				if (errno == EAGAIN || errno == EWOULDBLOCK)
-					break;
 				quic_log_error("socket recvmsg error %d", errno);
 				ret = -errno;
 				goto out;
