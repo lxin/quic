@@ -375,7 +375,7 @@ static int http_client_setup_socket(char *host, char *port, int testcase)
 	if (testcase == IOP_VERSIONNEGOTIATION)
 		config.version = 123;
 
-	config.initial_smoothed_rtt = 100000;
+	config.initial_smoothed_rtt = 30000;
 	if (setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_CONFIG, &config, sizeof(config))) {
 		http_log_error("socket setsockopt config failed\n");
 		goto err_close;
@@ -384,7 +384,7 @@ static int http_client_setup_socket(char *host, char *port, int testcase)
 	if (testcase != IOP_VERSIONNEGOTIATION && testcase != IOP_V2)
 		param.disable_compatible_version = 1;
 	param.grease_quic_bit = 1;
-	param.max_idle_timeout = 180000000;
+	param.max_idle_timeout = 120000000;
 	param.max_streams_bidi = 300;
 	if (setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_TRANSPORT_PARAM, &param, sizeof(param))) {
 		http_log_error("socket setsockopt transport_param failed\n");
@@ -448,14 +448,14 @@ static int http_server_setup_socket(char *host, char *port, char *alpn, int test
 	if (testcase == IOP_V2)
 		config.version = QUIC_VERSION_V2;
 
-	config.initial_smoothed_rtt = 100000;
+	config.initial_smoothed_rtt = 30000;
 	if (setsockopt(listenfd, SOL_QUIC, QUIC_SOCKOPT_CONFIG, &config, sizeof(config))) {
 		http_log_error("socket setsockopt config failed\n");
 		goto err_close;
 	}
 
 	param.grease_quic_bit = 1;
-	param.max_idle_timeout = 180000000;
+	param.max_idle_timeout = 120000000;
 	param.max_streams_bidi = 300;
 	if (setsockopt(listenfd, SOL_QUIC, QUIC_SOCKOPT_TRANSPORT_PARAM, &param, sizeof(param))) {
 		http_log_error("socket setsockopt transport_param failed\n");
