@@ -5,6 +5,7 @@ on: [ push, pull_request, workflow_dispatch ]
 jobs:
   check:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Install dependencies
         run: |
