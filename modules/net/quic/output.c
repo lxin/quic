@@ -583,10 +583,10 @@ static void quic_outq_path_confirm(struct sock *sk, u8 level, s64 largest, s64 s
 	bool raise_timer, complete;
 	u32 pathmtu;
 
-	if (quic_path_validated(paths) || level == QUIC_CRYPTO_HANDSHAKE)
+	if (quic_path_validated(paths))
 		outq->pto_count = 0;
 
-	if (!quic_path_pl_confirm(paths, largest, smallest))
+	if (level || !quic_path_pl_confirm(paths, largest, smallest))
 		return;
 
 	pathmtu = quic_path_pl_recv(paths, &raise_timer, &complete);
