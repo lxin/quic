@@ -438,6 +438,11 @@ This section shows you the basic usage of QUIC, you can get more details via man
 
 - these APIs are provided (see [tests/ticket_test.c](https://github.com/lxin/quic/blob/main/tests/ticket_test.c) for how APIs are used):
 
+      int quic_handshake_init(gnutls_session_t session);
+      struct quic_handshake_step *quic_handshake_next_step(gnutls_session_t session);
+      int quic_handshake_process_step(gnutls_session_t session, const struct quic_handshake_step *step);
+      void quic_handshake_deinit(gnutls_session_t session);
+
       int quic_handshake(gnutls_session_t session);
 
       int quic_session_get_data(gnutls_session_t session,
