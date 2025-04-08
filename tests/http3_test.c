@@ -723,8 +723,10 @@ static int http_server_end_stream(nghttp3_conn *conn, int64_t stream_id, void *u
 	char len[10], status[] = "200";
 	nghttp3_data_reader dr = {};
 	char path[128] = {};
+	unsigned char *off;
 	nghttp3_nv nva[4];
 	struct stat st;
+	size_t left;
 	int ret, fd;
 
 	if (!strcmp(req->path, "/")) {
@@ -757,9 +759,16 @@ static int http_server_end_stream(nghttp3_conn *conn, int64_t stream_id, void *u
 	req->data = malloc(req->len);
 	if (!req->data)
 		return -1;
-	ret = read(fd, req->data, req->len);
-	if (ret < 0)
-		goto err;
+
+	off = req->data;
+	left = req->len;
+	while (left > 0) {
+		ret = read(fd, off, left);
+		if (ret < 0)
+			goto err;
+		off += ret;
+		left -= ret;
+	}
 
 send:
 	ret = sprintf(len, "%u", req->len);
