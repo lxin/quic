@@ -525,9 +525,169 @@ by commas.
 The function returns `0` on success and an error code on failure.
 .RE
 
+.SS quic_handshake_init()
+`quic_handshake_init()` provides greater control over the configuration of the
+handshake session, allowing more detailed management of the TLS session
+and also the sendmsg(2) and recvmsg(2) scheduling. It prepares
+the usage of `quic_handshake_next_step()` and requires
+`quic_handshake_deinit()` to cleanup.
+
+Without the need to integrate sendmsg(2) and recvmsg(3) calls into an
+existing event loop `quic_handshake()` can be used instead.
+
+.PP
+.B quic_handshake_init()
+
+.RS 4
+.nf
+int quic_handshake_init(void *session);
+.fi
+
+The argument is:
+
+.TP
+.B session
+A pointer to a TLS session object. This is represented differently depending on
+the TLS library being used, such as `gnutls_session_t` in GnuTLS or `SSL *` in
+OpenSSL.
+
+.PP
+The function returns `0` on success and an error code on failure.
+.RE
+
+.SS quic_handshake_next_step()
+`quic_handshake_next_step()` provides greater control over the configuration of the
+handshake session, allowing more detailed management of the TLS session
+and also the sendmsg(2) and recvmsg(2) scheduling. It requires
+`quic_handshake_init()` to prepare the state. It should called
+until NULL is returned, which indicates the handshake is completed
+and `quic_handshake_deinit()` can cleanup.
+
+The callers needs to do the work described by the step
+(sendmsg(2) or recvmsg(2)) and set the `retval` to the
+return value of the syscall if it's greater or equal to zero,
+or set it to -errno on failure. Note `EINTR`, `EAGAIN` and `EWOULDBLOCK`
+should never be set, instead the operation should be retried by the caller.
+
+When the step work is done the caller needs to pass the
+`struct quic_handshake_step` pointer to `quic_handshake_process_step()`.
+
+.nf
+enum quic_handshake_step_op {
+  QUIC_HANDSHAKE_STEP_OP_SENDMSG = 1,
+  QUIC_HANDSHAKE_STEP_OP_RECVMSG,
+};
+
+struct quic_handshake_step_sendmsg {
+  const struct msghdr *msg;
+  int flags;
+  ssize_t retval;
+};
+
+struct quic_handshake_step_recvmsg {
+  struct msghdr *msg;
+  int flags;
+  ssize_t retval;
+};
+
+struct quic_handshake_step {
+  enum quic_handshake_step_op op;
+
+  union {
+    struct quic_handshake_step_sendmsg s_sendmsg;
+    struct quic_handshake_step_recvmsg s_recvmsg;
+  };
+};
+.fi
+
+.PP
+.B quic_handshake_next_step()
+
+.RS 4
+.nf
+struct quic_handshake_step *quic_handshake_next_step(void *session);
+.fi
+
+The argument is:
+
+.TP
+.B session
+A pointer to a TLS session object. This is represented differently depending on
+the TLS library being used, such as `gnutls_session_t` in GnuTLS or `SSL *` in
+OpenSSL.
+
+.PP
+The function returns a pointer to `struct quic_handshake_step` if
+more external work (described by the step) is needed, it returns `NULL` if
+the handshake is completed.
+.RE
+
+.SS quic_handshake_process_step()
+`quic_handshake_process_step()` provides greater control over the configuration of the
+handshake session, allowing more detailed management of the TLS session
+and also the sendmsg(2) and recvmsg(2) scheduling. It requires
+`quic_handshake_next_step()` was called before and returned a
+non `NULL` pointer.
+
+The caller should check the return value for errors and
+cleanup with `quic_handshake_deinit()`.
+Without an error `quic_handshake_next_step()` should be
+called again.
+
+.PP
+.B quic_handshake_process_step()
+
+.RS 4
+.nf
+int quic_handshake_next_step(void *session, struct quic_handshake_step *step);
+.fi
+
+The arguments are:
+
+.TP
+.B session
+A pointer to a TLS session object. This is represented differently depending on
+the TLS library being used, such as `gnutls_session_t` in GnuTLS or `SSL *` in
+OpenSSL.
+
+.TP
+.B step
+A pointer to `struct quic_handshake_step`, which was returned by
+`quic_handshake_next_step()` before.
+
+.PP
+The function returns `0` on success and an error code on failure.
+.RE
+
+.SS quic_handshake_deinit()
+`quic_handshake_deinit()` cleans up the state created by `quic_handshake_init()`.
+It should be called even if `quic_handshake_process_step()` returned an error.
+
+.PP
+.B quic_handshake_deinit()
+
+.RS 4
+.nf
+void quic_handshake_deinit(void *session);
+.fi
+
+The argument is:
+
+.TP
+.B session
+A pointer to a TLS session object. This is represented differently depending on
+the TLS library being used, such as `gnutls_session_t` in GnuTLS or `SSL *` in
+OpenSSL.
+
 .SS quic_handshake()
 `quic_handshake()` provides greater control over the configuration of the
 handshake session, allowing more detailed management of the TLS session.
+
+It is a simplified helper arround `quic_handshake_init()`,
+`quic_handshake_next_step()`, `quic_handshake_process_step()`
+and `quic_handshake_deinit()` for callers without the need to
+integrate sendmsg(2) and recvmsg(3) calls into an existing
+event loop.
 
 .PP
 .B quic_handshake()
