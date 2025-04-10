@@ -1134,7 +1134,6 @@ static int quic_packet_app_process(struct sock *sk, struct sk_buff *skb)
 			goto out;
 		}
 		QUIC_INC_STATS(net, QUIC_MIB_PKT_INVNUMDROP);
-		packet->errcode = QUIC_TRANSPORT_ERROR_INTERNAL;
 		err = -EINVAL;
 		goto err;
 	}
