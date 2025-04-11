@@ -1031,15 +1031,12 @@ static int quic_packet_app_process_done(struct sock *sk, struct sk_buff *skb)
 	if (!packet->ack_requested)
 		goto out;
 
-	if (!packet->ack_immediate && !quic_pnspace_has_gap(space) &&
-	    quic_inq_count(inq) < (u16)(QUIC_PATH_MAX_PMTU / packet->mss[0] + 1)) {
-		quic_inq_set_count(inq, quic_inq_count(inq) + 1);
+	if (!packet->ack_immediate) {
 		if (!quic_inq_need_sack(inq))
 			quic_timer_reset(sk, QUIC_TIMER_SACK, quic_inq_max_ack_delay(inq));
 		quic_inq_set_need_sack(inq, 2);
 		goto out;
 	}
-	quic_inq_set_count(inq, 0);
 	quic_pnspace_set_need_sack(space, 1);
 	quic_pnspace_set_sack_path(space, cb->path);
 

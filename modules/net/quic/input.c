@@ -71,6 +71,7 @@ static void quic_inq_stream_tail(struct sock *sk, struct quic_stream *stream,
 
 void quic_inq_flow_control(struct sock *sk, struct quic_stream *stream, u32 bytes)
 {
+	struct quic_pnspace *space = quic_pnspace(sk, QUIC_CRYPTO_APP);
 	struct quic_packet *packet = quic_packet(sk);
 	struct quic_inqueue *inq = quic_inq(sk);
 	u32 mss, window;
@@ -105,8 +106,10 @@ void quic_inq_flow_control(struct sock *sk, struct quic_stream *stream, u32 byte
 			frame = 1;
 	}
 
-	if (frame)
+	if (frame) {
+		quic_pnspace_set_need_sack(space, 1);
 		quic_outq_transmit(sk);
+	}
 }
 
 static bool quic_sk_rmem_schedule(struct sock *sk, int size)

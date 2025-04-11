@@ -30,7 +30,6 @@ struct quic_inqueue {
 	u32 max_ack_delay;
 	u32 timeout;
 	u32 events;
-	u16 count;
 
 	u8 disable_compatible_version:1;
 	u8 disable_1rtt_encryption:1;
@@ -38,16 +37,6 @@ struct quic_inqueue {
 	u8 stateless_reset:1;
 	u8 need_sack:2;
 };
-
-static inline u16 quic_inq_count(struct quic_inqueue *inq)
-{
-	return inq->count;
-}
-
-static inline void quic_inq_set_count(struct quic_inqueue *inq, u16 count)
-{
-	inq->count = count;
-}
 
 static inline u32 quic_inq_timeout(struct quic_inqueue *inq)
 {
