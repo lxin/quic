@@ -713,6 +713,18 @@ static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 		msginfo.level = hinfo.crypto_level;
 		msginfo.msg = &msg->msg_iter;
 		while (iov_iter_count(&msg->msg_iter) > 0) {
+			if (sk_stream_wspace(sk) < len || !sk_wmem_schedule(sk, len)) {
+				if (delay) {
+					quic_outq_set_force_delay(outq, 0);
+					quic_outq_transmit(sk);
+				}
+				err = quic_wait_for_send(sk, flags, len);
+				if (err) {
+					if (err == -EPIPE || !bytes)
+						goto err;
+					goto out;
+				}
+			}
 			frame = quic_frame_create(sk, QUIC_FRAME_CRYPTO, &msginfo);
 			if (!frame) {
 				if (!bytes) {
@@ -722,22 +734,15 @@ static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 				goto out;
 			}
 			len = frame->bytes;
-			if (sk_stream_wspace(sk) < len || !sk_wmem_schedule(sk, len)) {
-				if (delay) {
-					quic_outq_set_force_delay(outq, 0);
-					quic_outq_transmit(sk);
-				}
-				err = quic_wait_for_send(sk, flags, len);
-				if (err) {
-					quic_frame_put(frame);
-					if (err == -EPIPE || !bytes)
-						goto err;
-					goto out;
-				}
+			if (!sk_wmem_schedule(sk, len)) {
+				iov_iter_revert(msginfo.msg, len);
+				quic_frame_put(frame);
+				continue;
 			}
 			bytes += frame->bytes;
 			quic_outq_set_force_delay(outq, delay);
 			quic_outq_ctrl_tail(sk, frame, delay);
+			len = 1;
 		}
 		goto out;
 	}
@@ -752,18 +757,18 @@ static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 			err = -EINVAL;
 			goto err;
 		}
-		frame = quic_frame_create(sk, QUIC_FRAME_DATAGRAM_LEN, &msg->msg_iter);
-		if (!frame) {
-			err = -EINVAL;
-			goto err;
-		}
-		len = frame->bytes;
+		len = iov_iter_count(&msg->msg_iter);
 		if (sk_stream_wspace(sk) < len || !sk_wmem_schedule(sk, len)) {
 			err = quic_wait_for_send(sk, flags, len);
 			if (err) {
 				quic_frame_put(frame);
 				goto err;
 			}
+		}
+		frame = quic_frame_create(sk, QUIC_FRAME_DATAGRAM_LEN, &msg->msg_iter);
+		if (!frame) {
+			err = -EINVAL;
+			goto err;
 		}
 		bytes += frame->bytes;
 		quic_outq_set_force_delay(outq, delay);

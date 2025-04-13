@@ -340,7 +340,7 @@ static struct quic_frame *quic_frame_handshake_done_create(struct sock *sk, void
 
 static struct quic_frame *quic_frame_crypto_create(struct sock *sk, void *data, u8 type)
 {
-	u32 msg_len, max_frame_len, hlen = 1;
+	u32 msg_len, max_frame_len, wspace, hlen = 1;
 	struct quic_msginfo *info = data;
 	struct quic_crypto *crypto;
 	struct quic_frame *frame;
@@ -350,35 +350,13 @@ static struct quic_frame *quic_frame_crypto_create(struct sock *sk, void *data, 
 	max_frame_len = quic_packet_max_payload(quic_packet(sk));
 	crypto = quic_crypto(sk, info->level);
 	msg_len = iov_iter_count(info->msg);
-
-	if (!info->level) {
-		offset = 0;
-		hlen += quic_var_len(offset);
-		hlen += quic_var_len(max_frame_len);
-		if (msg_len > max_frame_len - hlen)
-			return NULL;
-
-		frame = quic_frame_alloc(msg_len + hlen, NULL, GFP_ATOMIC);
-		if (!frame)
-			return NULL;
-		p = quic_put_var(frame->data, type);
-		p = quic_put_var(p, offset);
-		p = quic_put_var(p, msg_len);
-		if (!quic_frame_copy_from_iter_full(p, msg_len, info->msg)) {
-			quic_frame_put(frame);
-			return NULL;
-		}
-		p += msg_len;
-		frame->bytes = (u16)msg_len;
-		frame->len = (u16)(p - frame->data);
-		frame->size = frame->len;
-
-		return frame;
-	}
+	wspace = sk_stream_wspace(sk);
 
 	offset = quic_crypto_send_offset(crypto);
 	hlen += quic_var_len(offset);
 	hlen += quic_var_len(max_frame_len);
+	if (msg_len > wspace)
+		msg_len = wspace;
 	if (msg_len > max_frame_len - hlen)
 		msg_len = max_frame_len - hlen;
 
