@@ -453,6 +453,8 @@ static int quic_msghdr_parse(struct sock *sk, struct msghdr *msg, struct quic_ha
 	struct cmsghdr *cmsg;
 	s64 active;
 
+	if (quic_is_closed(sk))
+		return -EINVAL;
 	if (msg->msg_flags & ~QUIC_MSG_FLAGS)
 		return -EINVAL;
 
@@ -691,11 +693,6 @@ static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 	if (err)
 		goto err;
 
-	if (quic_packet_config(sk, hinfo.crypto_level, 0)) {
-		err = -ENETUNREACH;
-		goto err;
-	}
-
 	delay = !!(flags & MSG_MORE);
 	if (has_hinfo) {
 		if (hinfo.crypto_level >= QUIC_CRYPTO_EARLY) {
@@ -707,6 +704,11 @@ static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 			err = -EINVAL;
 			goto err;
 		}
+		if (quic_packet_config(sk, hinfo.crypto_level, 0)) {
+			err = -ENETUNREACH;
+			goto err;
+		}
+
 		msginfo.level = hinfo.crypto_level;
 		msginfo.msg = &msg->msg_iter;
 		while (iov_iter_count(&msg->msg_iter) > 0) {
@@ -737,6 +739,11 @@ static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 			quic_outq_ctrl_tail(sk, frame, delay);
 		}
 		goto out;
+	}
+
+	if (quic_packet_config(sk, QUIC_CRYPTO_APP, 0)) {
+		err = -ENETUNREACH;
+		goto err;
 	}
 
 	if (flags & MSG_DATAGRAM) {
