@@ -606,9 +606,14 @@ static int quic_storage_add(void *dbf, time_t exp_time, const gnutls_datum_t *ke
 
 static gnutls_anti_replay_t quic_anti_replay;
 
+static void quic_handshake_deinit(gnutls_session_t session);
+
 static int quic_handshake_init(gnutls_session_t session)
 {
+	int sockfd = gnutls_transport_get_int(session);
 	struct quic_handshake_ctx *ctx;
+	unsigned int len;
+	uint8_t opt[128];
 	int ret;
 
 	ctx = malloc(sizeof(*ctx));
@@ -634,7 +639,34 @@ static int quic_handshake_init(gnutls_session_t session)
 	gnutls_handshake_set_read_function(session, quic_msg_read);
 	gnutls_alert_set_read_function(session, quic_alert_read);
 
+	len = sizeof(opt);
+	ret = getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_TOKEN, opt, &len);
+	ctx->is_serv = !!ret;
+
+	if (ctx->is_serv) {
+		if (!quic_anti_replay) {
+			ret = gnutls_anti_replay_init(&quic_anti_replay);
+			if (ret)
+				goto deinit;
+			gnutls_anti_replay_set_add_function(quic_anti_replay,
+							    quic_storage_add);
+			gnutls_anti_replay_set_ptr(quic_anti_replay, NULL);
+		}
+		gnutls_anti_replay_enable(ctx->session, quic_anti_replay);
+	}
+
+	if (!ctx->is_serv) {
+		ret = quic_handshake_process(ctx->session,
+					     QUIC_CRYPTO_INITIAL,
+					     NULL, 0);
+		if (ret)
+			goto deinit;
+	}
+
 	return 0;
+deinit:
+	quic_handshake_deinit(session);
+	return ret;
 }
 
 static int quic_handshake_sendmsg_process(struct quic_handshake_ctx *ctx,
@@ -738,35 +770,12 @@ int quic_handshake(gnutls_session_t session)
 	int ret, sockfd = gnutls_transport_get_int(session);
 	struct quic_smsg *smsg;
 	struct quic_handshake_ctx *ctx;
-	unsigned int len;
-	uint8_t opt[128];
 
 	ret = quic_handshake_init(session);
 	if (ret != 0)
 		return ret;
 
 	ctx = quic_handshake_ctx_get(session);
-
-	len = sizeof(opt);
-	ret = getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_TOKEN, opt, &len);
-	ctx->is_serv = !!ret;
-
-	if (ctx->is_serv) {
-		if (!quic_anti_replay) {
-			ret = gnutls_anti_replay_init(&quic_anti_replay);
-			if (ret)
-				goto out;
-			gnutls_anti_replay_set_add_function(quic_anti_replay, quic_storage_add);
-			gnutls_anti_replay_set_ptr(quic_anti_replay, NULL);
-		}
-		gnutls_anti_replay_enable(session, quic_anti_replay);
-	}
-
-	if (!ctx->is_serv) {
-		ret = quic_handshake_process(session, QUIC_CRYPTO_INITIAL, NULL, 0);
-		if (ret)
-			goto out;
-	}
 
 	while (!ctx->completed) {
 		while (ctx->send_list == NULL && !ctx->completed) {
