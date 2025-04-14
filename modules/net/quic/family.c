@@ -292,7 +292,7 @@ static int quic_v4_get_user_addr(struct sock *sk, union quic_addr *a, struct soc
 {
 	u32 len = sizeof(struct sockaddr_in);
 
-	if (addr->sa_family != sk->sk_family || addr_len < len)
+	if (addr_len < len || addr->sa_family != sk->sk_family)
 		return 1;
 	memcpy(a, addr, len);
 	return 0;
@@ -303,8 +303,11 @@ static int quic_v6_get_user_addr(struct sock *sk, union quic_addr *a, struct soc
 {
 	u32 len = sizeof(struct sockaddr_in);
 
+	if (addr_len < len)
+		return 1;
+
 	if (addr->sa_family != sk->sk_family) {
-		if (ipv6_only_sock(sk) || addr_len < len)
+		if (ipv6_only_sock(sk))
 			return 1;
 		memcpy(a, addr, len);
 		return 0;
