@@ -1861,6 +1861,9 @@ static int quic_sock_get_transport_params_ext(struct sock *sk, u32 len,
 	u32 datalen = 0;
 	u8 data[256];
 
+	if (!quic_is_establishing(sk))
+		return -EINVAL;
+
 	quic_sock_fetch_transport_param(sk, &param);
 
 	if (quic_frame_build_transport_params_ext(sk, &param, data, &datalen))
