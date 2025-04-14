@@ -82,7 +82,6 @@ static int quic_inet_listen(struct socket *sock, int backlog)
 	if (err)
 		goto free;
 	active = quic_conn_id_active(dest);
-	quic_path_set_serv(paths);
 
 	err = quic_crypto_initial_keys_install(crypto, active, packet->version, 1);
 	if (err)
@@ -92,6 +91,7 @@ static int quic_inet_listen(struct socket *sock, int backlog)
 	err = sk->sk_prot->hash(sk);
 	if (err)
 		goto free;
+	quic_path_set_serv(paths);
 out:
 	release_sock(sk);
 	return err;
