@@ -132,8 +132,19 @@ static __poll_t quic_inet_poll(struct file *file, struct socket *sock, poll_tabl
 	if (!list_empty(head))
 		mask |= EPOLLIN | EPOLLRDNORM;
 
-	if (quic_is_closed(sk))
+	if (quic_is_closed(sk)) {
+		/*
+		 * A broken connection should
+		 * report almost everything
+		 * in order to let applications
+		 * to detect it reliable.
+		 */
+		mask |= EPOLLHUP;
+		mask |= EPOLLERR;
+		mask |= EPOLLIN | EPOLLRDNORM | EPOLLRDHUP;
+		mask |= EPOLLOUT | EPOLLWRNORM;
 		return mask;
+	}
 
 	if (sk_stream_wspace(sk) > 0 && quic_outq_wspace(sk, NULL) > 0) {
 		mask |= EPOLLOUT | EPOLLWRNORM;
