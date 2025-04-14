@@ -386,6 +386,7 @@ static int http_client_setup_socket(char *host, char *port, int testcase)
 	param.grease_quic_bit = 1;
 	param.max_idle_timeout = 120000000;
 	param.max_streams_bidi = 300;
+	param.max_ack_delay = 2500;
 	if (setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_TRANSPORT_PARAM, &param, sizeof(param))) {
 		http_log_error("socket setsockopt transport_param failed\n");
 		goto err_close;
@@ -457,6 +458,7 @@ static int http_server_setup_socket(char *host, char *port, char *alpn, int test
 	param.grease_quic_bit = 1;
 	param.max_idle_timeout = 120000000;
 	param.max_streams_bidi = 300;
+	param.max_ack_delay = 2500;
 	if (setsockopt(listenfd, SOL_QUIC, QUIC_SOCKOPT_TRANSPORT_PARAM, &param, sizeof(param))) {
 		http_log_error("socket setsockopt transport_param failed\n");
 		goto err_close;
