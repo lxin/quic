@@ -96,12 +96,12 @@ out:
 	release_sock(sk);
 	return err;
 free:
-	sk->sk_prot->unhash(sk);
-	sk->sk_max_ack_backlog = 0;
-	quic_crypto_destroy(crypto);
-	quic_conn_id_set_free(dest);
-	quic_conn_id_set_free(source);
 	quic_set_state(sk, QUIC_SS_CLOSED);
+	sk->sk_max_ack_backlog = 0;
+
+	quic_conn_id_set_free(source);
+	quic_conn_id_set_free(dest);
+	quic_crypto_destroy(crypto);
 	goto out;
 }
 
