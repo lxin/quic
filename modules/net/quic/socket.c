@@ -1411,6 +1411,8 @@ static int quic_sock_connection_migrate(struct sock *sk, struct sockaddr *addr, 
 static int quic_sock_set_token(struct sock *sk, void *data, u32 len)
 {
 	if (quic_is_serv(sk)) {
+		if (!quic_is_established(sk))
+			return -EINVAL;
 		if (quic_outq_transmit_frame(sk, QUIC_FRAME_NEW_TOKEN, NULL, 0, false))
 			return -ENOMEM;
 		return 0;
