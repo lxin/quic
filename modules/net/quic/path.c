@@ -45,13 +45,6 @@ static int quic_udp_err(struct sock *sk, struct sk_buff *skb)
 static void quic_udp_sock_destroy(struct work_struct *work)
 {
 	struct quic_udp_sock *us = container_of(work, struct quic_udp_sock, work);
-	struct quic_hash_head *head;
-
-	head = quic_udp_sock_head(sock_net(us->sk), ntohs(us->addr.v4.sin_port));
-
-	spin_lock(&head->lock);
-	__hlist_del(&us->node);
-	spin_unlock(&head->lock);
 
 	udp_tunnel_sock_release(us->sk->sk_socket);
 	kfree(us);
@@ -104,8 +97,17 @@ static struct quic_udp_sock *quic_udp_sock_get(struct quic_udp_sock *us)
 
 static void quic_udp_sock_put(struct quic_udp_sock *us)
 {
-	if (us && refcount_dec_and_test(&us->refcnt))
+	struct quic_hash_head *head;
+
+	if (us && refcount_dec_and_test(&us->refcnt)) {
+		head = quic_udp_sock_head(sock_net(us->sk), ntohs(us->addr.v4.sin_port));
+
+		spin_lock(&head->lock);
+		__hlist_del(&us->node);
+		spin_unlock(&head->lock);
+
 		queue_work(quic_wq, &us->work);
+	}
 }
 
 static struct quic_udp_sock *quic_udp_sock_lookup(struct sock *sk, union quic_addr *a)
