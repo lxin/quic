@@ -1,15 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
-/* QUIC kernel implementation
- * (C) Copyright Red Hat Corp. 2023
- *
- * This file is the userspace handshake part for the QUIC kernel implementation
- *
- * Initialization/cleanup for QUIC protocol support.
- *
- * Written or modified by:
- *    Xin Long <lucien.xin@gmail.com>
- */
-
 prefix=@prefix@
 exec_prefix=@exec_prefix@
 libdir=@libdir@
