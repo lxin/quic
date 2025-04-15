@@ -1688,6 +1688,7 @@ static int quic_sock_set_connection_close(struct sock *sk, struct quic_connectio
 		data = kmemdup(close->phrase, len, GFP_KERNEL);
 		if (!data)
 			return -ENOMEM;
+		kfree(quic_outq_close_phrase(outq));
 		quic_outq_set_close_phrase(outq, data);
 	}
 
