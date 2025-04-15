@@ -237,6 +237,9 @@ static inline void quic_set_state(struct sock *sk, int state)
 		QUIC_DEC_STATS(net, QUIC_MIB_CONN_CURRENTESTABS);
 	}
 
+	if (state == QUIC_SS_CLOSED)
+		sk->sk_prot->unhash(sk);
+
 	inet_sk_set_state(sk, state);
 	sk->sk_state_change(sk);
 }

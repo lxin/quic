@@ -1,0 +1,184 @@
+# Copyright 2017 syzkaller project authors. All rights reserved.
+# Use of this source code is governed by Apache 2 LICENSE that can be found in the LICENSE file.
+
+# AF_INET and AF_INET6: QUIC support
+
+include <linux/quic.h>
+include <linux/net.h>
+include <asm/ioctls.h>
+
+resource sock_quic[sock_in]
+
+socket$inet_quic(domain const[AF_INET], type flags[quic_socket_type], proto const[IPPROTO_QUIC]) sock_quic
+
+quic_socket_type = SOCK_STREAM, SOCK_DGRAM
+
+resource sock_quic6[sock_in6]
+
+socket$inet6_quic(domain const[AF_INET6], type flags[quic_socket_type], proto const[IPPROTO_QUIC]) sock_quic6
+
+# TODO: separate for ip & ipv6
+sendmsg$inet_quic(fd sock_quic, msg ptr[in, msghdr_quic], f flags[send_flags])
+sendmmsg$inet_quic(fd sock_quic, mmsg ptr[in, array[msghdr_quic]], vlen len[mmsg], f flags[send_flags])
+
+msghdr_quic {
+	addr		ptr[in, sockaddr_quic]
+	addrlen		len[addr, int32]
+	vec		ptr[in, array[iovec_in]]
+	vlen		len[vec, intptr]
+	ctrl		ptr[in, array[cmsghdr_quic], opt]
+	ctrllen		bytesize[ctrl, intptr]
+	f		flags[send_flags, int32]
+}
+
+cmsghdr_quic [
+	handshake	cmsghdr_quic_handshake_info
+	stream		cmsghdr_quic_stream_info
+] [varlen]
+
+quic_handshake_info {
+	crypto_level	int8
+}
+
+cmsghdr_quic_handshake_info {
+	len		len[parent, intptr]
+	level		const[SOL_QUIC, int32]
+	type		const[QUIC_HANDSHAKE_INFO, int32]
+	msg		quic_handshake_info
+} [align[PTR_SIZE]]
+
+quic_stream_info {
+	stream_id	int64
+	stream_flags	int32
+}
+
+cmsghdr_quic_stream_info {
+	len		len[parent, intptr]
+	level		const[SOL_QUIC, int32]
+	type		const[QUIC_STREAM_INFO, int32]
+	msg		quic_stream_info
+} [align[PTR_SIZE]]
+
+# Generic QUIC socket options
+quic_option_types_buf = QUIC_SOCKOPT_TOKEN, QUIC_SOCKOPT_ALPN, QUIC_SOCKOPT_SESSION_TICKET, QUIC_SOCKOPT_TRANSPORT_PARAM_EXT
+
+getsockopt$inet_quic_buf(fd sock_quic, level const[SOL_QUIC], optname flags[quic_option_types_buf], optval buffer[out], optlen ptr[inout, len[optval, int32]])
+setsockopt$inet_quic_buf(fd sock_quic, level const[SOL_QUIC], optname flags[quic_option_types_buf], optval buffer[in], optlen len[optval])
+getsockopt$inet6_quic_buf(fd sock_quic6, level const[SOL_QUIC], optname flags[quic_option_types_buf], optval buffer[out], optlen ptr[inout, len[optval, int32]])
+setsockopt$inet6_quic_buf(fd sock_quic6, level const[SOL_QUIC], optname flags[quic_option_types_buf], optval buffer[in], optlen len[optval])
+
+# Specific QUIC socket options
+
+setsockopt$inet_quic_QUIC_SOCKOPT_EVENT(fd sock_quic, level const[SOL_QUIC], opt const[QUIC_SOCKOPT_EVENT], val ptr[in, quic_event_option], len len[val])
+setsockopt$inet_quic6_QUIC_SOCKOPT_EVENT(fd sock_quic6, level const[SOL_QUIC], opt const[QUIC_SOCKOPT_EVENT], val ptr[in, quic_event_option], len len[val])
+getsockopt$inet_quic_QUIC_SOCKOPT_EVENT(fd sock_quic, level const[SOL_QUIC], opt const[QUIC_SOCKOPT_EVENT], val ptr[inout, quic_event_option], len ptr[inout, len[val, int32]])
+getsockopt$inet_quic6_QUIC_SOCKOPT_EVENT(fd sock_quic6, level const[SOL_QUIC], opt const[QUIC_SOCKOPT_EVENT], val ptr[inout, quic_event_option], len ptr[inout, len[val, int32]])
+
+getsockopt$inet_quic_QUIC_SOCKOPT_STREAM_OPEN(fd sock_quic, level const[SOL_QUIC], opt const[QUIC_SOCKOPT_STREAM_OPEN], val ptr[inout, quic_stream_info], len ptr[inout, len[val, int32]])
+getsockopt$inet_quic6_QUIC_SOCKOPT_STREAM_OPEN(fd sock_quic6, level const[SOL_QUIC], opt const[QUIC_SOCKOPT_STREAM_OPEN], val ptr[inout, quic_stream_info], len ptr[inout, len[val, int32]])
+
+setsockopt$inet_quic_QUIC_SOCKOPT_STREAM_RESET(fd sock_quic, level const[SOL_QUIC], opt const[QUIC_SOCKOPT_STREAM_RESET], val ptr[in, quic_errinfo], len len[val])
+setsockopt$inet_quic6_QUIC_SOCKOPT_STREAM_RESET(fd sock_quic6, level const[SOL_QUIC], opt const[QUIC_SOCKOPT_STREAM_RESET], val ptr[in, quic_errinfo], len len[val])
+
+setsockopt$inet_quic_QUIC_SOCKOPT_STREAM_STOP_SENDING(fd sock_quic, level const[SOL_QUIC], opt const[QUIC_SOCKOPT_STREAM_STOP_SENDING], val ptr[in, quic_errinfo], len len[val])
+setsockopt$inet_quic6_QUIC_SOCKOPT_STREAM_STOP_SENDING(fd sock_quic6, level const[SOL_QUIC], opt const[QUIC_SOCKOPT_STREAM_STOP_SENDING], val ptr[in, quic_errinfo], len len[val])
+
+setsockopt$inet_quic_QUIC_SOCKOPT_CONNECTION_ID(fd sock_quic, level const[SOL_QUIC], opt const[QUIC_SOCKOPT_CONNECTION_ID], val ptr[in, quic_connection_id_info], len len[val])
+setsockopt$inet_quic6_QUIC_SOCKOPT_CONNECTION_ID(fd sock_quic6, level const[SOL_QUIC], opt const[QUIC_SOCKOPT_CONNECTION_ID], val ptr[in, quic_connection_id_info], len len[val])
+getsockopt$inet_quic_QUIC_SOCKOPT_CONNECTION_ID(fd sock_quic, level const[SOL_QUIC], opt const[QUIC_SOCKOPT_CONNECTION_ID], val ptr[inout, quic_connection_id_info], len ptr[inout, len[val, int32]])
+getsockopt$inet_quic6_QUIC_SOCKOPT_CONNECTION_ID(fd sock_quic6, level const[SOL_QUIC], opt const[QUIC_SOCKOPT_CONNECTION_ID], val ptr[inout, quic_connection_id_info], len ptr[inout, len[val, int32]])
+
+setsockopt$inet_quic_QUIC_SOCKOPT_CONNECTION_CLOSE(fd sock_quic, level const[SOL_QUIC], opt const[QUIC_SOCKOPT_CONNECTION_CLOSE], val ptr[in, quic_connection_close], len len[val])
+setsockopt$inet_quic6_QUIC_SOCKOPT_CONNECTION_CLOSE(fd sock_quic6, level const[SOL_QUIC], opt const[QUIC_SOCKOPT_CONNECTION_CLOSE], val ptr[in, quic_connection_close], len len[val])
+getsockopt$inet_quic_QUIC_SOCKOPT_CONNECTION_CLOSE(fd sock_quic, level const[SOL_QUIC], opt const[QUIC_SOCKOPT_CONNECTION_CLOSE], val ptr[inout, quic_connection_close], len ptr[inout, len[val, int32]])
+getsockopt$inet_quic6_QUIC_SOCKOPT_CONNECTION_CLOSE(fd sock_quic6, level const[SOL_QUIC], opt const[QUIC_SOCKOPT_CONNECTION_CLOSE], val ptr[inout, quic_connection_close], len ptr[inout, len[val, int32]])
+
+setsockopt$inet_quic_QUIC_SOCKOPT_CONNECTION_MIGRATION(fd sock_quic, level const[SOL_QUIC], opt const[QUIC_SOCKOPT_CONNECTION_MIGRATION], val ptr[in, sockaddr_quic], len len[val])
+setsockopt$inet_quic6_QUIC_SOCKOPT_CONNECTION_MIGRATION(fd sock_quic6, level const[SOL_QUIC], opt const[QUIC_SOCKOPT_CONNECTION_MIGRATION], val ptr[in, sockaddr_quic], len len[val])
+
+setsockopt$inet_quic_QUIC_SOCKOPT_TRANSPORT_PARAM(fd sock_quic, level const[SOL_QUIC], opt const[QUIC_SOCKOPT_TRANSPORT_PARAM], val ptr[in, quic_transport_param], len len[val])
+setsockopt$inet_quic6_QUIC_SOCKOPT_TRANSPORT_PARAM(fd sock_quic6, level const[SOL_QUIC], opt const[QUIC_SOCKOPT_TRANSPORT_PARAM], val ptr[in, quic_transport_param], len len[val])
+getsockopt$inet_quic_QUIC_SOCKOPT_TRANSPORT_PARAM(fd sock_quic, level const[SOL_QUIC], opt const[QUIC_SOCKOPT_TRANSPORT_PARAM], val ptr[inout, quic_transport_param], len ptr[inout, len[val, int32]])
+getsockopt$inet_quic6_QUIC_SOCKOPT_TRANSPORT_PARAM(fd sock_quic6, level const[SOL_QUIC], opt const[QUIC_SOCKOPT_TRANSPORT_PARAM], val ptr[inout, quic_transport_param], len ptr[inout, len[val, int32]])
+
+setsockopt$inet_quic_QUIC_SOCKOPT_CONFIG(fd sock_quic, level const[SOL_QUIC], opt const[QUIC_SOCKOPT_CONFIG], val ptr[in, quic_config], len len[val])
+setsockopt$inet_quic6_QUIC_SOCKOPT_CONFIG(fd sock_quic6, level const[SOL_QUIC], opt const[QUIC_SOCKOPT_CONFIG], val ptr[in, quic_config], len len[val])
+getsockopt$inet_quic_QUIC_SOCKOPT_CONFIG(fd sock_quic, level const[SOL_QUIC], opt const[QUIC_SOCKOPT_CONFIG], val ptr[inout, quic_config], len ptr[inout, len[val, int32]])
+getsockopt$inet_quic6_QUIC_SOCKOPT_CONFIG(fd sock_quic6, level const[SOL_QUIC], opt const[QUIC_SOCKOPT_CONFIG], val ptr[inout, quic_config], len ptr[inout, len[val, int32]])
+
+setsockopt$inet_quic_QUIC_SOCKOPT_CRYPTO_SECRET(fd sock_quic, level const[SOL_QUIC], opt const[QUIC_SOCKOPT_CRYPTO_SECRET], val ptr[in, quic_crypto_secret], len len[val])
+setsockopt$inet_quic6_QUIC_SOCKOPT_CRYPTO_SECRET(fd sock_quic6, level const[SOL_QUIC], opt const[QUIC_SOCKOPT_CRYPTO_SECRET], val ptr[in, quic_crypto_secret], len len[val])
+getsockopt$inet_quic_QUIC_SOCKOPT_CRYPTO_SECRET(fd sock_quic, level const[SOL_QUIC], opt const[QUIC_SOCKOPT_CRYPTO_SECRET], val ptr[inout, quic_crypto_secret], len ptr[inout, len[val, int32]])
+getsockopt$inet_quic6_QUIC_SOCKOPT_CRYPTO_SECRET(fd sock_quic6, level const[SOL_QUIC], opt const[QUIC_SOCKOPT_CRYPTO_SECRET], val ptr[inout, quic_crypto_secret], len ptr[inout, len[val, int32]])
+
+setsockopt$inet_quic_QUIC_SOCKOPT_KEY_UPDATE(fd sock_quic, level const[SOL_QUIC], opt const[QUIC_SOCKOPT_KEY_UPDATE], optval buffer[in], len len[optval])
+setsockopt$inet_quic6_QUIC_SOCKOPT_KEY_UPDATE(fd sock_quic6, level const[SOL_QUIC], opt const[QUIC_SOCKOPT_KEY_UPDATE], optval buffer[in], len len[optval])
+
+sockaddr_quic [
+	in		sockaddr_in
+	in6		sockaddr_in6
+] [varlen]
+
+quic_event_option {
+	type		int8
+	on		int8
+}
+
+quic_errinfo {
+	stream_id	int64
+	errcode		int32
+}
+
+quic_connection_id_info {
+	dest		int8
+	active		int32
+	prior_to	int32
+}
+
+quic_connection_close {
+	errcode		int32
+	frame		int8
+	phrase		array[int8]
+}
+
+quic_transport_param {
+	remote				int8
+	disable_active_migration	int8
+	grease_quic_bit			int8
+	stateless_reset			int8
+	disable_1rtt_encryption		int8
+	disable_compatible_version	int8
+	active_connection_id_limit	int8
+	ack_delay_exponent		int8
+	max_datagram_frame_size		int16
+	max_udp_payload_size		int16
+	max_idle_timeout		int32
+	max_ack_delay			int32
+	max_streams_bidi		int16
+	max_streams_uni			int16
+	max_data			int64
+	max_stream_data_bidi_local	int64
+	max_stream_data_bidi_remote	int64
+	max_stream_data_uni		int64
+	reserved			int64
+}
+
+quic_config {
+	version				int32
+	plpmtud_probe_interval		int32
+	initial_smoothed_rtt		int32
+	payload_cipher_type		int32
+	congestion_control_algo		int8
+	validate_peer_address		int8
+	stream_data_nodelay		int8
+	receive_session_ticket		int8
+	certificate_request		int8
+	reserved			array[int8, 3]
+}
+
+quic_crypto_secret {
+	send		int8
+	level		int8
+	type		int32
+	secret		array[int8, 48]
+}
