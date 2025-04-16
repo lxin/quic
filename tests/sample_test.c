@@ -32,14 +32,15 @@ static int do_client(int argc, char *argv[])
 {
 	struct sockaddr_storage ra = {};
 	char msg[50], *psk, *host;
+	struct quic_config config = {};
 	unsigned int flags;
 	int ret, sockfd;
 	const char *rc;
 	int64_t sid;
 
-	if (argc < 6) {
+	if (argc < 7) {
 		printf("%s client <PEER ADDR> <PEER PORT> <PSK_FILE | 'none'> "
-		       "<HOSTNAME | 'none'> [ALPN]\n", argv[0]);
+		       "<HOSTNAME | 'none'> <'default' | 'v1' | 'v2'> [ALPN]\n", argv[0]);
 		return 0;
 	}
 
@@ -53,6 +54,22 @@ static int do_client(int argc, char *argv[])
 		printf("socket create failed\n");
 		return -1;
 	}
+	if (strcmp(argv[6], "v1") == 0) {
+		config.version = QUIC_VERSION_V1;
+		if (setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_CONFIG, &config, sizeof(config))) {
+			printf("socket setsockopt config failed\n");
+			return -1;
+		}
+	} else if (strcmp(argv[6], "v2") == 0) {
+		config.version = QUIC_VERSION_V2;
+		if (setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_CONFIG, &config, sizeof(config))) {
+			printf("socket setsockopt config failed\n");
+			return -1;
+		}
+	} else if (strcmp(argv[6], "default") != 0) {
+		printf("%s: invalid protocol[%s]\n", argv[0], argv[6]);
+		return -1;
+	}
 
 	if (connect(sockfd, (struct sockaddr *)&ra, sizeof(ra))) {
 		printf("socket connect failed\n");
@@ -61,7 +78,7 @@ static int do_client(int argc, char *argv[])
 
 	psk  = strcmp(argv[4], "none") ? argv[4] : NULL;
 	host = strcmp(argv[5], "none") ? argv[5] : NULL;
-	if (quic_client_handshake(sockfd, psk, host, argv[6]))
+	if (quic_client_handshake(sockfd, psk, host, argv[7]))
 		return -1;
 
 	/* set MSG_STREAM_NEW flag to open a stream while sending first data
@@ -96,13 +113,14 @@ static int do_server(int argc, char *argv[])
 	unsigned int addrlen, flags;
 	struct sockaddr_storage sa = {};
 	char msg[50], *alpn, *cert;
+	struct quic_config config = {};
 	int listenfd, sockfd, ret;
 	const char *rc;
 	int64_t sid;
 
-	if (argc < 6) {
+	if (argc < 7) {
 		printf("%s server <LOCAL ADDR> <LOCAL PORT> <PRIVATE_KEY_FILE | PSK_FILE> "
-		       "<CERTIFICATE_FILE | 'none'> [ALPN]\n", argv[0]);
+		       "<CERTIFICATE_FILE | 'none'> <'default' | 'v1' | 'v2'> [ALPN]\n", argv[0]);
 		return 0;
 	}
 
@@ -120,7 +138,23 @@ static int do_server(int argc, char *argv[])
 		printf("socket bind failed\n");
 		return -1;
 	}
-	alpn = argv[6]; /* For kernel ALPN match */
+	if (strcmp(argv[6], "v1") == 0) {
+		config.version = QUIC_VERSION_V1;
+		if (setsockopt(listenfd, SOL_QUIC, QUIC_SOCKOPT_CONFIG, &config, sizeof(config))) {
+			printf("socket setsockopt config failed\n");
+			return -1;
+		}
+	} else if (strcmp(argv[6], "v2") == 0) {
+		config.version = QUIC_VERSION_V2;
+		if (setsockopt(listenfd, SOL_QUIC, QUIC_SOCKOPT_CONFIG, &config, sizeof(config))) {
+			printf("socket setsockopt config failed\n");
+			return -1;
+		}
+	} else if (strcmp(argv[6], "default") != 0) {
+		printf("%s: invalid protocol[%s]\n", argv[0], argv[6]);
+		return -1;
+	}
+	alpn = argv[7]; /* For kernel ALPN match */
 	if (alpn && setsockopt(listenfd, SOL_QUIC, QUIC_SOCKOPT_ALPN, alpn, strlen(alpn))) {
 		printf("socket setsockopt alpn failed\n");
 		return -1;
@@ -137,7 +171,7 @@ static int do_server(int argc, char *argv[])
 	}
 
 	cert = strcmp(argv[5], "none") ? argv[5] : NULL;
-	if (quic_server_handshake(sockfd, argv[4], cert, argv[6]))
+	if (quic_server_handshake(sockfd, argv[4], cert, argv[7]))
 		return -1;
 
 	flags = 0;
