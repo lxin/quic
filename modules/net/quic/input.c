@@ -467,8 +467,10 @@ int quic_inq_event_recv(struct sock *sk, u8 event, void *args)
 		args_len = sizeof(struct quic_connection_id_info);
 		break;
 	case QUIC_EVENT_CONNECTION_CLOSE:
-		args_len = strlen(((struct quic_connection_close *)args)->phrase) + 1 +
-			   sizeof(struct quic_connection_close);
+		args_len = sizeof(struct quic_connection_close);
+		p = ((struct quic_connection_close *)args)->phrase;
+		if (*p)
+			args_len += strlen(p) + 1;
 		break;
 	case QUIC_EVENT_CONNECTION_MIGRATION:
 	case QUIC_EVENT_KEY_UPDATE:

@@ -17,7 +17,7 @@ void quic_timer_sack_handler(struct sock *sk)
 	struct quic_pnspace *space = quic_pnspace(sk, QUIC_CRYPTO_APP);
 	struct quic_inqueue *inq = quic_inq(sk);
 	struct quic_connection_close *close;
-	u8 buf[100] = {};
+	u8 buf[16] = {};
 
 	if (quic_is_closed(sk))
 		return;
