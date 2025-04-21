@@ -485,14 +485,16 @@ void quic_outq_transmit_probe(struct sock *sk)
 void quic_outq_transmit_close(struct sock *sk, u8 type, u32 errcode, u8 level)
 {
 	struct quic_outqueue *outq = quic_outq(sk);
-	struct quic_connection_close close = {};
+	struct quic_connection_close *close;
+	u8 buf[16] = {};
 
 	if (!errcode)
 		return;
 
-	close.errcode = errcode;
-	close.frame = type;
-	quic_inq_event_recv(sk, QUIC_EVENT_CONNECTION_CLOSE, &close);
+	close = (void *)buf;
+	close->errcode = errcode;
+	close->frame = type;
+	quic_inq_event_recv(sk, QUIC_EVENT_CONNECTION_CLOSE, close);
 
 	quic_outq_set_close_errcode(outq, errcode);
 	quic_outq_set_close_frame(outq, type);
