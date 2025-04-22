@@ -1461,7 +1461,7 @@ static int quic_sock_set_crypto_secret(struct sock *sk, struct quic_crypto_secre
 	struct sk_buff *skb;
 	int err;
 
-	if (len != sizeof(*secret))
+	if (!quic_is_establishing(sk) || len != sizeof(*secret))
 		return -EINVAL;
 
 	if (secret->level != QUIC_CRYPTO_APP &&
