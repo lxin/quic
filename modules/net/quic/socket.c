@@ -1815,6 +1815,8 @@ static int quic_sock_get_session_ticket(struct sock *sk, u32 len,
 	if (tlen)
 		goto out;
 
+	if (quic_is_closed(sk))
+		return -EINVAL;
 	crypto = quic_crypto(sk, QUIC_CRYPTO_INITIAL);
 	memcpy(&a, quic_path_daddr(quic_paths(sk), 0), sizeof(a));
 	a.v4.sin_port = 0;
