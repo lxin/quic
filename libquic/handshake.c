@@ -37,6 +37,7 @@ struct quic_rmsg {
 	struct iovec iov;
 	struct msghdr msg;
 	unsigned flags;
+	uint8_t level;
 	uint8_t data[65536];
 };
 
@@ -46,6 +47,7 @@ struct quic_smsg {
 	struct iovec iov;
 	struct msghdr msg;
 	unsigned flags;
+	uint8_t level;
 	uint8_t data[];
 };
 
@@ -521,6 +523,7 @@ static struct quic_smsg *quic_smsg_create(uint8_t level,
 	info->crypto_level = level;
 
 	smsg->flags = MSG_NOSIGNAL;
+	smsg->level = level;
 
 	return smsg;
 }
@@ -638,7 +641,9 @@ static int quic_check_rmsg_level(struct quic_rmsg *rmsg)
 	}
 
 	info = (struct quic_handshake_info *)CMSG_DATA(cmsg);
-	return info->crypto_level;
+	rmsg->level = info->crypto_level;
+
+	return 0;
 }
 
 static int quic_storage_add(void *dbf, time_t exp_time, const gnutls_datum_t *key,
@@ -731,7 +736,6 @@ static int quic_handshake_next_step(struct quic_handshake_ctx *ctx,
 	if (ctx->send_list != NULL) {
 		struct quic_smsg *smsg = ctx->send_list;
 
-		quic_log_debug("< Handshake SEND: %u", smsg->iov.iov_len);
 		quic_prepare_sendmsg_step(ctx,
 					  quic_handshake_sendmsg_process,
 					  &smsg->msg,
@@ -743,7 +747,6 @@ static int quic_handshake_next_step(struct quic_handshake_ctx *ctx,
 		struct quic_rmsg *rmsg = &ctx->rmsg;
 
 		quic_prepare_rmsg(rmsg);
-		quic_log_debug("> Handshake RECV: %u", rmsg->iov.iov_len);
 		quic_prepare_recvmsg_step(ctx,
 					  quic_handshake_recvmsg_process,
 					  &rmsg->msg,
@@ -779,6 +782,7 @@ static int quic_handshake_sendmsg_process(struct quic_handshake_ctx *ctx)
 		return -EMSGSIZE;
 	}
 
+	quic_log_debug("> Handshake SENT: %zu %u", slen, smsg->level);
 	ctx->send_list = smsg->next;
 	quic_smsg_destroy(smsg);
 
@@ -790,7 +794,6 @@ static int quic_handshake_recvmsg_process(struct quic_handshake_ctx *ctx)
 	struct quic_handshake_step_recvmsg *s = &ctx->next_step.step.s_recvmsg;
 	struct quic_rmsg *rmsg = &ctx->rmsg;
 	ssize_t rlen = s->retval;
-	uint8_t level;
 	int ret;
 
 	if (rlen < 0) {
@@ -819,10 +822,9 @@ static int quic_handshake_recvmsg_process(struct quic_handshake_ctx *ctx)
 			       rmsg->iov.iov_len);
 		return -EBADMSG;
 	}
-	level = ret;
 
-	quic_log_debug("> Handshake RECV: %zu %u", rlen, level);
-	ret = quic_handshake_process(ctx->session, level, rmsg->data, rlen);
+	quic_log_debug("> Handshake RECV: %zu %u", rlen, rmsg->level);
+	ret = quic_handshake_process(ctx->session, rmsg->level, rmsg->data, rlen);
 	if (ret != 0)
 		return ret;
 
