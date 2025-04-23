@@ -124,6 +124,8 @@ http3_tests() {
 
 	print_start "Http/3 Tests (http3_test -> Public Websites)"
 	make http3_test > /dev/null || return 1
+	echo "- https://d.moritzbuhl.de/pub"
+	./http3_test -c https://d.moritzbuhl.de/pub > /dev/null || return 1 # linuxquic
 	echo "- https://cloudflare-quic.com/"
 	./http3_test -c https://cloudflare-quic.com/ > /dev/null || return 1  # Cloudflare Quiche
 	echo "- https://quic.aiortc.org/"
