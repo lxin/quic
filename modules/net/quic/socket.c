@@ -1657,6 +1657,9 @@ static int quic_sock_stream_stop_sending(struct sock *sk, struct quic_errinfo *i
 	if (stream->recv.state >= QUIC_STREAM_RECV_STATE_RECVD)
 		return -EINVAL;
 
+	if (stream->send.stop_sent)
+		return -EAGAIN;
+
 	return quic_outq_transmit_frame(sk, QUIC_FRAME_STOP_SENDING, info, 0, false);
 }
 

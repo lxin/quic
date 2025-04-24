@@ -30,7 +30,8 @@ struct quic_stream {
 		u32 frags;
 		u8 state;
 
-		u8 data_blocked;
+		u8 data_blocked:1;
+		u8 stop_sent:1;
 		u8 done:1;
 	} send;
 	struct {
