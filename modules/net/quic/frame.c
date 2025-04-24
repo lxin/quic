@@ -722,6 +722,7 @@ static struct quic_frame *quic_frame_stream_data_blocked_create(struct sock *sk,
 static struct quic_frame *quic_frame_streams_blocked_uni_create(struct sock *sk,
 								void *data, u8 type)
 {
+	struct quic_stream_table *streams = quic_streams(sk);
 	struct quic_frame *frame;
 	s64 *max = data;
 	u8 *p, buf[12];
@@ -735,6 +736,7 @@ static struct quic_frame *quic_frame_streams_blocked_uni_create(struct sock *sk,
 	if (!frame)
 		return NULL;
 	quic_put_data(frame->data, buf, frame_len);
+	quic_stream_set_send_uni_blocked(streams, 1);
 
 	return frame;
 }
@@ -742,6 +744,7 @@ static struct quic_frame *quic_frame_streams_blocked_uni_create(struct sock *sk,
 static struct quic_frame *quic_frame_streams_blocked_bidi_create(struct sock *sk,
 								 void *data, u8 type)
 {
+	struct quic_stream_table *streams = quic_streams(sk);
 	struct quic_frame *frame;
 	s64 *max = data;
 	u8 *p, buf[12];
@@ -755,6 +758,7 @@ static struct quic_frame *quic_frame_streams_blocked_bidi_create(struct sock *sk
 	if (!frame)
 		return NULL;
 	quic_put_data(frame->data, buf, frame_len);
+	quic_stream_set_send_bidi_blocked(streams, 1);
 
 	return frame;
 }

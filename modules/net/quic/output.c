@@ -563,6 +563,10 @@ static void quic_outq_psent_sack_frames(struct sock *sk, struct quic_packet_sent
 			stream->send.state = update.state;
 			quic_stream_send_put(streams, stream, quic_is_serv(sk));
 			sk->sk_write_space(sk);
+		} else if (quic_frame_streams_blocked_bidi(frame->type)) {
+			quic_stream_set_send_bidi_blocked(streams, 0);
+		} else if (quic_frame_streams_blocked_uni(frame->type)) {
+			quic_stream_set_send_uni_blocked(streams, 0);
 		} else if (quic_frame_stream_data_blocked(frame->type)) {
 			stream->send.data_blocked = 0;
 		} else if (quic_frame_data_blocked(frame->type)) {

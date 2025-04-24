@@ -511,10 +511,33 @@ static int quic_msghdr_parse(struct sock *sk, struct msghdr *msg, struct quic_ha
 	return 0;
 }
 
+static int quic_sock_stream_available(struct sock *sk, s64 stream_id, u32 flags)
+{
+	struct quic_stream_table *streams = quic_streams(sk);
+	u8 type, blocked;
+
+	if (!quic_stream_id_send_exceeds(streams, stream_id) &&
+	    !quic_stream_id_send_overflow(streams, stream_id))
+		return 1;
+
+	if (!(flags & MSG_STREAM_SNDBLOCK))
+		return 0;
+
+	blocked = quic_stream_send_bidi_blocked(streams);
+	type = QUIC_FRAME_STREAMS_BLOCKED_BIDI;
+	if (stream_id & QUIC_STREAM_TYPE_UNI_MASK) {
+		blocked = quic_stream_send_uni_blocked(streams);
+		type = QUIC_FRAME_STREAMS_BLOCKED_UNI;
+	}
+
+	if (!blocked)
+		quic_outq_transmit_frame(sk, type, &stream_id, 0, false);
+	return 0;
+}
+
 static int quic_wait_for_stream(struct sock *sk, s64 stream_id, u32 flags)
 {
 	long timeo = sock_sndtimeo(sk, flags & MSG_STREAM_DONTWAIT);
-	struct quic_stream_table *streams = quic_streams(sk);
 	DEFINE_WAIT(wait);
 	int err = 0;
 
@@ -538,8 +561,7 @@ static int quic_wait_for_stream(struct sock *sk, s64 stream_id, u32 flags)
 			err = -EAGAIN;
 			break;
 		}
-		if (!quic_stream_id_send_exceeds(streams, stream_id) &&
-		    !quic_stream_id_send_overflow(streams, stream_id))
+		if (quic_sock_stream_available(sk, stream_id, flags))
 			break;
 
 		release_sock(sk);
@@ -554,7 +576,6 @@ static struct quic_stream *quic_sock_send_stream(struct sock *sk, struct quic_st
 {
 	struct quic_crypto *crypto = quic_crypto(sk, QUIC_CRYPTO_APP);
 	struct quic_stream_table *streams = quic_streams(sk);
-	u8 type = QUIC_FRAME_STREAMS_BLOCKED_BIDI;
 	struct quic_stream *stream;
 	int err;
 
@@ -572,18 +593,11 @@ static struct quic_stream *quic_sock_send_stream(struct sock *sk, struct quic_st
 	if (!quic_crypto_send_ready(crypto))
 		return ERR_PTR(-EINVAL);
 
-	if ((sinfo->stream_flags & MSG_STREAM_SNDBLOCK) &&
-	    quic_stream_id_send_exceeds(streams, sinfo->stream_id)) {
-		if (sinfo->stream_id & QUIC_STREAM_TYPE_UNI_MASK)
-			type = QUIC_FRAME_STREAMS_BLOCKED_UNI;
-
-		if (quic_outq_transmit_frame(sk, type, &sinfo->stream_id, 0, false))
-			return ERR_PTR(-ENOMEM);
+	if (!quic_sock_stream_available(sk, sinfo->stream_id, sinfo->stream_flags)) {
+		err = quic_wait_for_stream(sk, sinfo->stream_id, sinfo->stream_flags);
+		if (err)
+			return ERR_PTR(err);
 	}
-
-	err = quic_wait_for_stream(sk, sinfo->stream_id, sinfo->stream_flags);
-	if (err)
-		return ERR_PTR(err);
 
 	return quic_stream_send_get(streams, sinfo->stream_id,
 				    sinfo->stream_flags, quic_is_serv(sk));

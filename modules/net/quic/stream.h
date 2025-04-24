@@ -64,6 +64,8 @@ struct quic_stream_table {
 		s64 max_uni_stream_id;
 		s64 active_stream_id;
 
+		u8 bidi_blocked:1;
+		u8 uni_blocked:1;
 		u16 streams_bidi;
 		u16 streams_uni;
 	} send;
@@ -144,6 +146,26 @@ static inline u64 quic_stream_id_to_streams(s64 stream_id)
 static inline s64 quic_stream_streams_to_id(u64 streams, u8 type)
 {
 	return (s64)((streams - 1) << 2) | type;
+}
+
+static inline u8 quic_stream_send_uni_blocked(struct quic_stream_table *streams)
+{
+	return streams->send.uni_blocked;
+}
+
+static inline void quic_stream_set_send_uni_blocked(struct quic_stream_table *streams, u8 blocked)
+{
+	streams->send.uni_blocked = blocked;
+}
+
+static inline u8 quic_stream_send_bidi_blocked(struct quic_stream_table *streams)
+{
+	return streams->send.bidi_blocked;
+}
+
+static inline void quic_stream_set_send_bidi_blocked(struct quic_stream_table *streams, u8 blocked)
+{
+	streams->send.bidi_blocked = blocked;
 }
 
 struct quic_stream *quic_stream_send_get(struct quic_stream_table *streams, s64 stream_id,
