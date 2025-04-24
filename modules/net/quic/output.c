@@ -567,6 +567,8 @@ static void quic_outq_psent_sack_frames(struct sock *sk, struct quic_packet_sent
 			stream->send.data_blocked = 0;
 		} else if (quic_frame_data_blocked(frame->type)) {
 			outq->data_blocked = 0;
+		} else if (quic_frame_new_token(frame->type)) {
+			outq->token_pending = 0;
 		}
 
 		acked += frame->bytes;

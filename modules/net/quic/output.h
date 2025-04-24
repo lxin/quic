@@ -45,6 +45,7 @@ struct quic_outqueue {
 	u8 disable_1rtt_encryption:1;
 	u8 grease_quic_bit:1;
 	u8 stateless_reset:1;
+	u8 token_pending:1;
 	u8 data_blocked:1;
 	u8 force_delay:1;
 	u8 single:1;
@@ -133,6 +134,16 @@ static inline void quic_outq_set_data_level(struct quic_outqueue *outq, u8 level
 static inline void quic_outq_set_force_delay(struct quic_outqueue *outq, u8 delay)
 {
 	outq->force_delay = !!delay;
+}
+
+static inline u8 quic_outq_token_pending(struct quic_outqueue *outq)
+{
+	return outq->token_pending;
+}
+
+static inline void quic_outq_set_token_pending(struct quic_outqueue *outq, u8 pending)
+{
+	outq->token_pending = pending;
 }
 
 void quic_outq_stream_tail(struct sock *sk, struct quic_frame *frame, bool cork);

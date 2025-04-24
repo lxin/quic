@@ -174,6 +174,11 @@ static inline bool quic_frame_ping(u8 type)
 	return type == QUIC_FRAME_PING;
 }
 
+static inline bool quic_frame_new_token(u8 type)
+{
+	return type == QUIC_FRAME_NEW_TOKEN;
+}
+
 static inline int quic_frame_level_check(u8 level, u8 type)
 {
 	if (level == QUIC_CRYPTO_APP)

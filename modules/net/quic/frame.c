@@ -133,6 +133,7 @@ static struct quic_frame *quic_frame_new_token_create(struct sock *sk, void *dat
 	struct quic_crypto *crypto = quic_crypto(sk, QUIC_CRYPTO_INITIAL);
 	struct quic_conn_id_set *id_set = quic_source(sk);
 	struct quic_path_group *paths = quic_paths(sk);
+	struct quic_outqueue *outq = quic_outq(sk);
 	struct quic_frame *frame;
 	u8 token[72], *p;
 	u32 tlen;
@@ -150,6 +151,7 @@ static struct quic_frame *quic_frame_new_token_create(struct sock *sk, void *dat
 	p = quic_put_data(p, token, tlen);
 	frame->len = (u16)(p - frame->data);
 	frame->size = frame->len;
+	quic_outq_set_token_pending(outq, 1);
 
 	return frame;
 }
