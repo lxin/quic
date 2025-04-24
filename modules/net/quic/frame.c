@@ -1654,64 +1654,65 @@ static void quic_frame_datagram_ack(struct sock *sk, struct quic_frame *frame)
 {
 }
 
-#define quic_frame_create_and_process_and_ack(type) \
+#define quic_frame_create_and_process_and_ack(type, eliciting) \
 	{ \
 		.frame_create	= quic_frame_##type##_create, \
 		.frame_process	= quic_frame_##type##_process, \
-		.frame_ack	= quic_frame_##type##_ack \
+		.frame_ack	= quic_frame_##type##_ack, \
+		.ack_eliciting	= eliciting \
 	}
 
 static struct quic_frame_ops quic_frame_ops[QUIC_FRAME_MAX + 1] = {
-	quic_frame_create_and_process_and_ack(padding), /* 0x00 */
-	quic_frame_create_and_process_and_ack(ping),
-	quic_frame_create_and_process_and_ack(ack),
-	quic_frame_create_and_process_and_ack(ack), /* ack_ecn */
-	quic_frame_create_and_process_and_ack(reset_stream),
-	quic_frame_create_and_process_and_ack(stop_sending),
-	quic_frame_create_and_process_and_ack(crypto),
-	quic_frame_create_and_process_and_ack(new_token),
-	quic_frame_create_and_process_and_ack(stream),
-	quic_frame_create_and_process_and_ack(stream),
-	quic_frame_create_and_process_and_ack(stream),
-	quic_frame_create_and_process_and_ack(stream),
-	quic_frame_create_and_process_and_ack(stream),
-	quic_frame_create_and_process_and_ack(stream),
-	quic_frame_create_and_process_and_ack(stream),
-	quic_frame_create_and_process_and_ack(stream),
-	quic_frame_create_and_process_and_ack(max_data), /* 0x10 */
-	quic_frame_create_and_process_and_ack(max_stream_data),
-	quic_frame_create_and_process_and_ack(max_streams_bidi),
-	quic_frame_create_and_process_and_ack(max_streams_uni),
-	quic_frame_create_and_process_and_ack(data_blocked),
-	quic_frame_create_and_process_and_ack(stream_data_blocked),
-	quic_frame_create_and_process_and_ack(streams_blocked_bidi),
-	quic_frame_create_and_process_and_ack(streams_blocked_uni),
-	quic_frame_create_and_process_and_ack(new_conn_id),
-	quic_frame_create_and_process_and_ack(retire_conn_id),
-	quic_frame_create_and_process_and_ack(path_challenge),
-	quic_frame_create_and_process_and_ack(path_response),
-	quic_frame_create_and_process_and_ack(connection_close),
-	quic_frame_create_and_process_and_ack(connection_close),
-	quic_frame_create_and_process_and_ack(handshake_done),
-	quic_frame_create_and_process_and_ack(invalid),
-	quic_frame_create_and_process_and_ack(invalid), /* 0x20 */
-	quic_frame_create_and_process_and_ack(invalid),
-	quic_frame_create_and_process_and_ack(invalid),
-	quic_frame_create_and_process_and_ack(invalid),
-	quic_frame_create_and_process_and_ack(invalid),
-	quic_frame_create_and_process_and_ack(invalid),
-	quic_frame_create_and_process_and_ack(invalid),
-	quic_frame_create_and_process_and_ack(invalid),
-	quic_frame_create_and_process_and_ack(invalid),
-	quic_frame_create_and_process_and_ack(invalid),
-	quic_frame_create_and_process_and_ack(invalid),
-	quic_frame_create_and_process_and_ack(invalid),
-	quic_frame_create_and_process_and_ack(invalid),
-	quic_frame_create_and_process_and_ack(invalid),
-	quic_frame_create_and_process_and_ack(invalid),
-	quic_frame_create_and_process_and_ack(invalid),
-	quic_frame_create_and_process_and_ack(datagram), /* 0x30 */
-	quic_frame_create_and_process_and_ack(datagram),
+	quic_frame_create_and_process_and_ack(padding, 0), /* 0x00 */
+	quic_frame_create_and_process_and_ack(ping, 1),
+	quic_frame_create_and_process_and_ack(ack, 0),
+	quic_frame_create_and_process_and_ack(ack, 0), /* ack_ecn */
+	quic_frame_create_and_process_and_ack(reset_stream, 1),
+	quic_frame_create_and_process_and_ack(stop_sending, 1),
+	quic_frame_create_and_process_and_ack(crypto, 1),
+	quic_frame_create_and_process_and_ack(new_token, 1),
+	quic_frame_create_and_process_and_ack(stream, 1),
+	quic_frame_create_and_process_and_ack(stream, 1),
+	quic_frame_create_and_process_and_ack(stream, 1),
+	quic_frame_create_and_process_and_ack(stream, 1),
+	quic_frame_create_and_process_and_ack(stream, 1),
+	quic_frame_create_and_process_and_ack(stream, 1),
+	quic_frame_create_and_process_and_ack(stream, 1),
+	quic_frame_create_and_process_and_ack(stream, 1),
+	quic_frame_create_and_process_and_ack(max_data, 1), /* 0x10 */
+	quic_frame_create_and_process_and_ack(max_stream_data, 1),
+	quic_frame_create_and_process_and_ack(max_streams_bidi, 1),
+	quic_frame_create_and_process_and_ack(max_streams_uni, 1),
+	quic_frame_create_and_process_and_ack(data_blocked, 1),
+	quic_frame_create_and_process_and_ack(stream_data_blocked, 1),
+	quic_frame_create_and_process_and_ack(streams_blocked_bidi, 1),
+	quic_frame_create_and_process_and_ack(streams_blocked_uni, 1),
+	quic_frame_create_and_process_and_ack(new_conn_id, 1),
+	quic_frame_create_and_process_and_ack(retire_conn_id, 1),
+	quic_frame_create_and_process_and_ack(path_challenge, 0),
+	quic_frame_create_and_process_and_ack(path_response, 0),
+	quic_frame_create_and_process_and_ack(connection_close, 0),
+	quic_frame_create_and_process_and_ack(connection_close, 0),
+	quic_frame_create_and_process_and_ack(handshake_done, 1),
+	quic_frame_create_and_process_and_ack(invalid, 0),
+	quic_frame_create_and_process_and_ack(invalid, 0), /* 0x20 */
+	quic_frame_create_and_process_and_ack(invalid, 0),
+	quic_frame_create_and_process_and_ack(invalid, 0),
+	quic_frame_create_and_process_and_ack(invalid, 0),
+	quic_frame_create_and_process_and_ack(invalid, 0),
+	quic_frame_create_and_process_and_ack(invalid, 0),
+	quic_frame_create_and_process_and_ack(invalid, 0),
+	quic_frame_create_and_process_and_ack(invalid, 0),
+	quic_frame_create_and_process_and_ack(invalid, 0),
+	quic_frame_create_and_process_and_ack(invalid, 0),
+	quic_frame_create_and_process_and_ack(invalid, 0),
+	quic_frame_create_and_process_and_ack(invalid, 0),
+	quic_frame_create_and_process_and_ack(invalid, 0),
+	quic_frame_create_and_process_and_ack(invalid, 0),
+	quic_frame_create_and_process_and_ack(invalid, 0),
+	quic_frame_create_and_process_and_ack(invalid, 0),
+	quic_frame_create_and_process_and_ack(datagram, 1), /* 0x30 */
+	quic_frame_create_and_process_and_ack(datagram, 1),
 };
 
 void quic_frame_ack(struct sock *sk, struct quic_frame *frame)
@@ -1757,13 +1758,13 @@ int quic_frame_process(struct sock *sk, struct quic_frame *frame)
 			return ret;
 		}
 		pr_debug("%s: done, type: %x, level: %d\n", __func__, type, level);
-		if (quic_frame_ack_eliciting(type)) {
+		if (quic_frame_ops[type].ack_eliciting) {
 			packet->ack_requested = 1;
-			if (quic_frame_ack_immediate(type))
+			if (!quic_frame_stream(type) || (type & QUIC_STREAM_BIT_FIN))
 				packet->ack_immediate = 1;
+			if (!quic_frame_new_conn_id(type))
+				packet->non_probing = 1;
 		}
-		if (quic_frame_non_probing(type))
-			packet->non_probing = 1;
 		if (quic_frame_sack(type))
 			packet->has_sack = 1;
 
@@ -1785,9 +1786,10 @@ struct quic_frame *quic_frame_create(struct sock *sk, u8 type, void *data)
 		return NULL;
 	}
 	INIT_LIST_HEAD(&frame->list);
-	pr_debug("%s: done, type: %x, len: %u\n", __func__, type, frame->len);
 	if (!frame->type)
 		frame->type = type;
+	frame->ack_eliciting = quic_frame_ops[type].ack_eliciting;
+	pr_debug("%s: done, type: %x, len: %u\n", __func__, type, frame->len);
 	return frame;
 }
 

@@ -12,7 +12,7 @@
 
 #include "socket.h"
 
-static int quic_outq_limit_check(struct sock *sk, u8 type, u16 frame_len)
+static int quic_outq_limit_check(struct sock *sk, struct quic_frame *frame)
 {
 	struct quic_path_group *paths = quic_paths(sk);
 	struct quic_packet *packet = quic_packet(sk);
@@ -23,15 +23,15 @@ static int quic_outq_limit_check(struct sock *sk, u8 type, u16 frame_len)
 		return -1;
 
 	/* congestion control */
-	if (!outq->single && quic_frame_ack_eliciting(type) && !quic_frame_ping(type)) {
-		len = quic_packet_frame_len(packet) + frame_len;
+	if (!outq->single && frame->ack_eliciting && !quic_frame_ping(frame->type)) {
+		len = quic_packet_frame_len(packet) + frame->len;
 		if (outq->inflight + len > outq->window)
 			return -1;
 	}
 
 	/* amplificationlimit */
 	if (quic_is_serv(sk) && !quic_path_validated(paths)) {
-		len = quic_packet_len(packet) + frame_len + quic_packet_taglen(packet);
+		len = quic_packet_len(packet) + frame->len + quic_packet_taglen(packet);
 		if (quic_path_ampl_sndlen(paths) + len > quic_path_ampl_rcvlen(paths) * 3) {
 			quic_path_set_blocked(paths, 1);
 			return -1;
@@ -79,7 +79,7 @@ static void quic_outq_transmit_ctrl(struct sock *sk, u8 level)
 			continue;
 		if (quic_packet_config(sk, frame->level, frame->path))
 			break;
-		if (quic_outq_limit_check(sk, frame->type, frame->len))
+		if (quic_outq_limit_check(sk, frame))
 			break;
 		if (quic_packet_tail(sk, frame))
 			continue;
@@ -101,7 +101,7 @@ static void quic_outq_transmit_dgram(struct sock *sk)
 	list_for_each_entry_safe(frame, next, head, list) {
 		if (quic_packet_config(sk, outq->data_level, frame->path))
 			break;
-		if (quic_outq_limit_check(sk, frame->type, frame->len))
+		if (quic_outq_limit_check(sk, frame))
 			break;
 		if (quic_packet_tail(sk, frame))
 			continue;
@@ -200,7 +200,7 @@ static void quic_outq_transmit_stream(struct sock *sk)
 	list_for_each_entry_safe(frame, next, head, list) {
 		if (quic_packet_config(sk, outq->data_level, frame->path))
 			break;
-		if (quic_outq_limit_check(sk, frame->type, frame->len))
+		if (quic_outq_limit_check(sk, frame))
 			break;
 		if (quic_outq_delay_check(sk, outq->data_level, frame->nodelay))
 			break;
@@ -225,13 +225,13 @@ static void quic_outq_transmit_old(struct sock *sk, u8 level)
 			break;
 		if (frame->level != level)
 			continue;
-		if (!quic_frame_retransmittable(frame->type))
+		if (quic_frame_dgram(frame->type) || quic_frame_ping(frame->type))
 			continue;
 		if (!quic_crypto_send_ready(quic_crypto(sk, frame->level)))
 			break;
 		if (quic_packet_config(sk, frame->level, frame->path))
 			break;
-		if (quic_outq_limit_check(sk, frame->type, frame->len))
+		if (quic_outq_limit_check(sk, frame))
 			break;
 		if (quic_packet_tail(sk, frame))
 			continue; /* packed and conintue with the next frame */
@@ -387,7 +387,7 @@ void quic_outq_ctrl_tail(struct sock *sk, struct quic_frame *frame, bool cork)
 				break;
 			}
 		}
-		if (quic_frame_path_probing(frame->type)) {
+		if (!frame->ack_eliciting) {
 			head = &pos->list;
 			break;
 		}
@@ -780,17 +780,17 @@ static void quic_outq_psent_retransmit_frames(struct sock *sk, struct quic_packe
 		}
 		quic_frame_put(frame);
 
-		if (frame->transmitted) {
-			list_del_init(&frame->list);
+		if (!frame->transmitted)
+			continue;
 
-			if (!quic_frame_retransmittable(frame->type)) {
-				bytes += frame->bytes;
-				quic_frame_put(frame);
-				continue;
-			}
-			frame->transmitted = 0;
-			quic_outq_retransmit_frame(sk, frame); /* mark as loss */
+		list_del_init(&frame->list);
+		if (quic_frame_dgram(frame->type) || quic_frame_ping(frame->type)) {
+			bytes += frame->bytes;
+			quic_frame_put(frame);
+			continue;
 		}
+		frame->transmitted = 0;
+		quic_outq_retransmit_frame(sk, frame); /* mark as loss */
 	}
 	quic_outq_wfree(bytes, sk);
 }
@@ -850,7 +850,7 @@ void quic_outq_retransmit_list(struct sock *sk, struct list_head *head)
 	list_for_each_entry_safe(frame, next, head, list) {
 		list_del_init(&frame->list);
 
-		if (!quic_frame_retransmittable(frame->type)) {
+		if (quic_frame_dgram(frame->type) || quic_frame_ping(frame->type)) {
 			bytes += frame->bytes;
 			quic_frame_put(frame);
 			continue;

@@ -80,6 +80,7 @@ struct quic_frame_ops {
 	struct quic_frame *(*frame_create)(struct sock *sk, void *data, u8 type);
 	int (*frame_process)(struct sock *sk, struct quic_frame *frame, u8 type);
 	void (*frame_ack)(struct sock *sk, struct quic_frame *frame);
+	u8 ack_eliciting;
 };
 
 struct quic_frame_frag {
@@ -106,6 +107,7 @@ struct quic_frame {
 	u16 size;	/* alloc data size */
 	u16 len;	/* frame length including data in flist */
 
+	u8  ack_eliciting:1;
 	u8  transmitted:1;
 	u8  stream_fin:1;
 	u8  nodelay:1;
@@ -115,34 +117,14 @@ struct quic_frame {
 	u8  path:1;
 };
 
-static inline bool quic_frame_path_probing(u8 type)
+static inline bool quic_frame_new_conn_id(u8 type)
 {
-	return type == QUIC_FRAME_PATH_RESPONSE || type == QUIC_FRAME_PATH_CHALLENGE ||
-	       type == QUIC_FRAME_ACK || type == QUIC_FRAME_ACK_ECN;
+	return type == QUIC_FRAME_NEW_CONNECTION_ID;
 }
 
-static inline bool quic_frame_ack_eliciting(u8 type)
+static inline bool quic_frame_dgram(u8 type)
 {
-	return type != QUIC_FRAME_CONNECTION_CLOSE && type != QUIC_FRAME_CONNECTION_CLOSE_APP &&
-	       type != QUIC_FRAME_PADDING && !quic_frame_path_probing(type);
-}
-
-static inline bool quic_frame_retransmittable(u8 type)
-{
-	return type != QUIC_FRAME_DATAGRAM && type != QUIC_FRAME_DATAGRAM_LEN &&
-	       type != QUIC_FRAME_PING;
-}
-
-static inline bool quic_frame_ack_immediate(u8 type)
-{
-	return (type < QUIC_FRAME_STREAM || type >= QUIC_FRAME_MAX_DATA) ||
-	       (type & QUIC_STREAM_BIT_FIN);
-}
-
-static inline bool quic_frame_non_probing(u8 type)
-{
-	return type != QUIC_FRAME_NEW_CONNECTION_ID && type != QUIC_FRAME_PADDING &&
-	       !quic_frame_path_probing(type);
+	return type == QUIC_FRAME_DATAGRAM || type == QUIC_FRAME_DATAGRAM_LEN;
 }
 
 static inline bool quic_frame_stream(u8 type)

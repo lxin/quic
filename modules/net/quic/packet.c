@@ -1366,7 +1366,7 @@ static u8 *quic_packet_pack_frames(struct sock *sk, struct sk_buff *skb,
 			p = quic_put_data(p, frag->data, frag->size);
 		pr_debug("%s: num: %llu, type: %u, packet_len: %u, frame_len: %u, level: %u\n",
 			 __func__, number, frame->type, skb->len, frame->len, packet->level);
-		if (!quic_frame_ack_eliciting(frame->type) || quic_frame_ping(frame->type)) {
+		if (!frame->ack_eliciting || quic_frame_ping(frame->type)) {
 			quic_frame_put(frame);
 			continue;
 		}
@@ -1850,7 +1850,7 @@ int quic_packet_tail(struct sock *sk, struct quic_frame *frame)
 	if (frame->padding)
 		packet->padding = frame->padding;
 
-	if (quic_frame_ack_eliciting(frame->type)) {
+	if (frame->ack_eliciting) {
 		packet->ack_eliciting = 1;
 		if (!quic_frame_ping(frame->type)) {
 			packet->frames++;
