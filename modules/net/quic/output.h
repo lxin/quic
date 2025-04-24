@@ -146,6 +146,11 @@ static inline void quic_outq_set_token_pending(struct quic_outqueue *outq, u8 pe
 	outq->token_pending = pending;
 }
 
+static inline void quic_outq_set_data_blocked(struct quic_outqueue *outq, u8 blocked)
+{
+	outq->data_blocked = blocked;
+}
+
 void quic_outq_stream_tail(struct sock *sk, struct quic_frame *frame, bool cork);
 void quic_outq_dgram_tail(struct sock *sk, struct quic_frame *frame, bool cork);
 void quic_outq_ctrl_tail(struct sock *sk, struct quic_frame *frame, bool cork);

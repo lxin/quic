@@ -79,6 +79,7 @@ struct quic_probeinfo {
 struct quic_frame_ops {
 	struct quic_frame *(*frame_create)(struct sock *sk, void *data, u8 type);
 	int (*frame_process)(struct sock *sk, struct quic_frame *frame, u8 type);
+	void (*frame_ack)(struct sock *sk, struct quic_frame *frame);
 };
 
 struct quic_frame_frag {
@@ -144,21 +145,6 @@ static inline bool quic_frame_non_probing(u8 type)
 	       !quic_frame_path_probing(type);
 }
 
-static inline bool quic_frame_data_blocked(u8 type)
-{
-	return type == QUIC_FRAME_DATA_BLOCKED;
-}
-
-static inline bool quic_frame_reset_stream(u8 type)
-{
-	return type == QUIC_FRAME_RESET_STREAM;
-}
-
-static inline bool quic_frame_stream_data_blocked(u8 type)
-{
-	return type == QUIC_FRAME_STREAM_DATA_BLOCKED;
-}
-
 static inline bool quic_frame_stream(u8 type)
 {
 	return type >= QUIC_FRAME_STREAM && type < QUIC_FRAME_MAX_DATA;
@@ -172,21 +158,6 @@ static inline bool quic_frame_sack(u8 type)
 static inline bool quic_frame_ping(u8 type)
 {
 	return type == QUIC_FRAME_PING;
-}
-
-static inline bool quic_frame_new_token(u8 type)
-{
-	return type == QUIC_FRAME_NEW_TOKEN;
-}
-
-static inline bool quic_frame_streams_blocked_bidi(u8 type)
-{
-	return type == QUIC_FRAME_STREAMS_BLOCKED_BIDI;
-}
-
-static inline bool quic_frame_streams_blocked_uni(u8 type)
-{
-	return type == QUIC_FRAME_STREAMS_BLOCKED_UNI;
 }
 
 static inline int quic_frame_level_check(u8 level, u8 type)
@@ -223,3 +194,4 @@ void quic_frame_put(struct quic_frame *frame);
 
 struct quic_frame *quic_frame_create(struct sock *sk, u8 type, void *data);
 int quic_frame_process(struct sock *sk, struct quic_frame *frame);
+void quic_frame_ack(struct sock *sk, struct quic_frame *frame);

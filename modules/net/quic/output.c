@@ -526,10 +526,6 @@ void quic_outq_transmit_app_close(struct sock *sk)
 
 static void quic_outq_psent_sack_frames(struct sock *sk, struct quic_packet_sent *sent)
 {
-	struct quic_stream_table *streams = quic_streams(sk);
-	struct quic_outqueue *outq = quic_outq(sk);
-	struct quic_stream_update update;
-	struct quic_stream *stream;
 	struct quic_frame *frame;
 	int acked = 0, i;
 
@@ -541,44 +537,8 @@ static void quic_outq_psent_sack_frames(struct sock *sk, struct quic_packet_sent
 		}
 		quic_frame_put(frame);
 
-		stream = frame->stream;
-		if (quic_frame_stream(frame->type)) {
-			stream->send.frags--;
-			if (!stream->send.frags &&
-			    stream->send.state == QUIC_STREAM_SEND_STATE_SENT) {
-				update.id = stream->id;
-				update.state = QUIC_STREAM_SEND_STATE_RECVD;
-				quic_inq_event_recv(sk, QUIC_EVENT_STREAM_UPDATE, &update);
-
-				stream->send.state = update.state;
-				quic_stream_send_put(streams, stream, quic_is_serv(sk));
-				sk->sk_write_space(sk);
-			}
-		} else if (quic_frame_reset_stream(frame->type)) {
-			update.id = stream->id;
-			update.state = QUIC_STREAM_SEND_STATE_RESET_RECVD;
-			update.errcode = stream->send.errcode;
-			quic_inq_event_recv(sk, QUIC_EVENT_STREAM_UPDATE, &update);
-
-			stream->send.state = update.state;
-			quic_stream_send_put(streams, stream, quic_is_serv(sk));
-			sk->sk_write_space(sk);
-		} else if (quic_frame_streams_blocked_bidi(frame->type)) {
-			quic_stream_set_send_bidi_blocked(streams, 0);
-		} else if (quic_frame_streams_blocked_uni(frame->type)) {
-			quic_stream_set_send_uni_blocked(streams, 0);
-		} else if (quic_frame_stream_data_blocked(frame->type)) {
-			stream->send.data_blocked = 0;
-		} else if (quic_frame_data_blocked(frame->type)) {
-			outq->data_blocked = 0;
-		} else if (quic_frame_new_token(frame->type)) {
-			outq->token_pending = 0;
-		}
-
 		acked += frame->bytes;
-		frame->transmitted = 0;
-		list_del_init(&frame->list);
-		quic_frame_put(frame);
+		quic_frame_ack(sk, frame);
 	}
 	quic_outq_wfree(acked, sk);
 }
