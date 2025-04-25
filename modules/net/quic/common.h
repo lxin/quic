@@ -58,7 +58,11 @@ struct quic_crypto_cb {
 };
 
 #define QUIC_CRYPTO_CB(skb)	((struct quic_crypto_cb *)&((skb)->cb[0]))
-#define quic_udphdr(skb)	((struct udphdr *)((skb)->head + QUIC_CRYPTO_CB(skb)->udph_offset))
+
+static inline struct udphdr *quic_udphdr(const struct sk_buff *skb)
+{
+	return (struct udphdr *)(skb->head + QUIC_CRYPTO_CB(skb)->udph_offset);
+}
 
 struct quichdr {
 #if defined(__LITTLE_ENDIAN_BITFIELD)
