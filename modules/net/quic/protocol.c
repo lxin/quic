@@ -495,26 +495,6 @@ static struct ctl_table_header *quic_sysctl_header;
 
 static void quic_sysctl_register(void)
 {
-	unsigned long limit;
-	int max_share;
-
-	limit = nr_free_buffer_pages() / 8;
-	limit = max(limit, 128UL);
-	sysctl_quic_mem[0] = (long)limit / 4 * 3;
-	sysctl_quic_mem[1] = (long)limit;
-	sysctl_quic_mem[2] = sysctl_quic_mem[0] * 2;
-
-	limit = (sysctl_quic_mem[1]) << (PAGE_SHIFT - 7);
-	max_share = min(4UL * 1024 * 1024, limit);
-
-	sysctl_quic_rmem[0] = PAGE_SIZE;
-	sysctl_quic_rmem[1] = 1024 * 1024;
-	sysctl_quic_rmem[2] = max(sysctl_quic_rmem[1], max_share);
-
-	sysctl_quic_wmem[0] = PAGE_SIZE;
-	sysctl_quic_wmem[1] = 16 * 1024;
-	sysctl_quic_wmem[2] = max(64 * 1024, max_share);
-
 	quic_sysctl_header = register_net_sysctl(&init_net, "net/quic", quic_table);
 }
 
@@ -526,7 +506,8 @@ static void quic_sysctl_unregister(void)
 
 static __init int quic_init(void)
 {
-	int err = -ENOMEM;
+	int max_share, err = -ENOMEM;
+	unsigned long limit;
 
 	if (quic_hash_tables_init())
 		goto err;
@@ -551,6 +532,23 @@ static __init int quic_init(void)
 	err = register_pernet_subsys(&quic_net_ops);
 	if (err)
 		goto err_def_ops;
+
+	limit = nr_free_buffer_pages() / 8;
+	limit = max(limit, 128UL);
+	sysctl_quic_mem[0] = (long)limit / 4 * 3;
+	sysctl_quic_mem[1] = (long)limit;
+	sysctl_quic_mem[2] = sysctl_quic_mem[0] * 2;
+
+	limit = (sysctl_quic_mem[1]) << (PAGE_SHIFT - 7);
+	max_share = min(4UL * 1024 * 1024, limit);
+
+	sysctl_quic_rmem[0] = PAGE_SIZE;
+	sysctl_quic_rmem[1] = 1024 * 1024;
+	sysctl_quic_rmem[2] = max(sysctl_quic_rmem[1], max_share);
+
+	sysctl_quic_wmem[0] = PAGE_SIZE;
+	sysctl_quic_wmem[1] = 16 * 1024;
+	sysctl_quic_wmem[2] = max(64 * 1024, max_share);
 
 #ifdef CONFIG_SYSCTL
 	quic_sysctl_register();
