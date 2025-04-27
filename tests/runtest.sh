@@ -71,6 +71,20 @@ done_tests()
 	echo "ALL TESTS DONE!"
 }
 
+http3_connect()
+{
+	local url=$1
+
+	echo "- $url"
+
+	for i in `seq 3`; do
+		./http3_test -c $url > /dev/null && return 0
+		echo "WARNING: retrying $i ..."
+	done
+
+	return 1;
+}
+
 func_tests()
 {
 	print_start "Function Tests (PSK)"
@@ -124,26 +138,21 @@ http3_tests() {
 
 	print_start "Http/3 Tests (http3_test -> Public Websites)"
 	make http3_test > /dev/null || return 1
-	echo "- https://d.moritzbuhl.de/pub"
-	./http3_test -c https://d.moritzbuhl.de/pub > /dev/null || return 1 # linuxquic
-	echo "- https://cloudflare-quic.com/"
-	./http3_test -c https://cloudflare-quic.com/ > /dev/null || return 1  # Cloudflare Quiche
-	echo "- https://quic.aiortc.org/"
-	./http3_test -c https://quic.aiortc.org/ > /dev/null || return 1  # aioquic
-	echo "- https://facebook.com/"
-	./http3_test -c https://facebook.com/ > /dev/null || return 1 # mvfst
-	echo "- https://nghttp2.org:4433/"
-	./http3_test -c https://nghttp2.org:4433/ > /dev/null || return 1 # ngtcp2
-	echo "- https://outlook.office.com/"
-	./http3_test -c https://outlook.office.com/ > /dev/null || return 1 # msquic
-	echo "- https://www.litespeedtech.com/"
-	./http3_test -c https://www.litespeedtech.com/ > /dev/null || return 1  # lsquic
-	echo "- https://www.google.com/"
-	./http3_test -c https://www.google.com/ > /dev/null || return 1 # Google quiche
-	echo "- https://quic.tech:8443/"
-	./http3_test -c https://quic.tech:8443/ > /dev/null || return 1 # Cloudflare Quiche
-	echo "- https://test.privateoctopus.com:4433"
-	./http3_test -c https://test.privateoctopus.com:4433/ > /dev/null || return 1 # picoquic
+
+	http3_connect https://d.moritzbuhl.de/pub || return 1 # linuxquic
+	http3_connect https://cloudflare-quic.com/ || return 1 # Cloudflare Quiche
+	http3_connect https://quic.aiortc.org/ || return 1 # aioquic
+	http3_connect https://facebook.com/ || return 1 # mvfst
+	http3_connect https://nghttp2.org:4433/ || return 1 # ngtcp2
+	http3_connect https://outlook.office.com/ || return 1 # msquic
+	http3_connect https://www.litespeedtech.com/ || return 1 # lsquic
+	http3_connect https://www.google.com/ || return 1 # Google quiche
+	http3_connect https://quic.tech:8443/ || return 1 # Cloudflare Quiche
+	http3_connect https://test.privateoctopus.com:4433 || return 1 # picoquic
+	http3_connect https://www.haproxy.org/ || return 1 # haproxy
+	http3_connect https://quic.nginx.org:443 || return 1 # nginx
+	http3_connect https://interop.seemann.io || return 1 # quic-go
+	http3_connect https://mew.org:443 || return 1 # Haskell
 
 	print_start "Http/3 Tests (http3_test client -> http3_test server)"
 	daemon_run ./http3_test -s 127.0.0.1:443 ./keys/server-key.pem ./keys/server-cert.pem
