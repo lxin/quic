@@ -63,7 +63,7 @@ int quic_request_sock_enqueue(struct sock *sk, struct quic_conn_id *odcid, u8 re
 	return 0;
 }
 
-struct quic_request_sock *quic_request_sock_dequeue(struct sock *sk)
+static struct quic_request_sock *quic_request_sock_dequeue(struct sock *sk)
 {
 	struct quic_request_sock *req;
 
