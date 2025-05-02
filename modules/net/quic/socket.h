@@ -34,9 +34,6 @@
 extern struct proto quic_prot;
 extern struct proto quicv6_prot;
 
-extern struct proto quic_handshake_prot;
-extern struct proto quicv6_handshake_prot;
-
 enum quic_state {
 	QUIC_SS_CLOSED		= TCP_CLOSE,
 	QUIC_SS_LISTENING	= TCP_LISTEN,

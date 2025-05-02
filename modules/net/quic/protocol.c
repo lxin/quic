@@ -365,7 +365,7 @@ static struct inet_protosw quic_stream_protosw = {
 	.ops        = &quic_proto_ops,
 };
 
-static struct inet_protosw quic_seqpacket_protosw = {
+static struct inet_protosw quic_dgram_protosw = {
 	.type       = SOCK_DGRAM,
 	.protocol   = IPPROTO_QUIC,
 	.prot       = &quic_prot,
@@ -400,7 +400,7 @@ static struct inet_protosw quicv6_stream_protosw = {
 	.ops        = &quicv6_proto_ops,
 };
 
-static struct inet_protosw quicv6_seqpacket_protosw = {
+static struct inet_protosw quicv6_dgram_protosw = {
 	.type       = SOCK_DGRAM,
 	.protocol   = IPPROTO_QUIC,
 	.prot       = &quicv6_prot,
@@ -438,20 +438,20 @@ static int quic_protosw_init(void)
 	}
 
 	inet_register_protosw(&quic_stream_protosw);
-	inet_register_protosw(&quic_seqpacket_protosw);
+	inet_register_protosw(&quic_dgram_protosw);
 	inet6_register_protosw(&quicv6_stream_protosw);
-	inet6_register_protosw(&quicv6_seqpacket_protosw);
+	inet6_register_protosw(&quicv6_dgram_protosw);
 
 	return 0;
 }
 
 static void quic_protosw_exit(void)
 {
-	inet_unregister_protosw(&quic_seqpacket_protosw);
+	inet_unregister_protosw(&quic_dgram_protosw);
 	inet_unregister_protosw(&quic_stream_protosw);
 	proto_unregister(&quic_prot);
 
-	inet6_unregister_protosw(&quicv6_seqpacket_protosw);
+	inet6_unregister_protosw(&quicv6_dgram_protosw);
 	inet6_unregister_protosw(&quicv6_stream_protosw);
 	proto_unregister(&quicv6_prot);
 }
