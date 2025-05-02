@@ -10,6 +10,8 @@
  *    Xin Long <lucien.xin@gmail.com>
  */
 
+#include <linux/version.h>
+
 #include "socket.h"
 
 void quic_timer_sack_handler(struct sock *sk)
@@ -237,8 +239,12 @@ void quic_timer_init(struct sock *sk)
 	timer_setup(quic_timer(sk, QUIC_TIMER_PMTU), quic_timer_pmtu_timeout, 0);
 
 	hr = quic_timer(sk, QUIC_TIMER_PACE);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 13, 0)
+	hrtimer_setup(hr, quic_timer_pace_timeout, CLOCK_MONOTONIC, HRTIMER_MODE_ABS_PINNED_SOFT);
+#else
 	hrtimer_init(hr, CLOCK_MONOTONIC, HRTIMER_MODE_ABS_PINNED_SOFT);
 	hr->function = quic_timer_pace_timeout;
+#endif
 }
 
 void quic_timer_free(struct sock *sk)
