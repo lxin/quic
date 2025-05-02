@@ -1110,7 +1110,6 @@ void quic_outq_init(struct sock *sk)
 	INIT_LIST_HEAD(&outq->datagram_list);
 	INIT_LIST_HEAD(&outq->transmitted_list);
 	INIT_LIST_HEAD(&outq->packet_sent_list);
-	skb_queue_head_init(&sk->sk_write_queue);
 	INIT_WORK(&outq->work, quic_outq_encrypted_work);
 }
 
@@ -1147,5 +1146,6 @@ void quic_outq_free(struct sock *sk)
 	quic_outq_list_purge(sk, &outq->datagram_list);
 	quic_outq_list_purge(sk, &outq->control_list);
 	quic_outq_list_purge(sk, &outq->stream_list);
+	__skb_queue_purge(&sk->sk_write_queue);
 	kfree(outq->close_phrase);
 }
