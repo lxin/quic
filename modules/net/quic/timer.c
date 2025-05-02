@@ -223,7 +223,7 @@ void quic_timer_stop(struct sock *sk, u8 type)
 {
 	if (type == QUIC_TIMER_PACE)
 		return;
-	if (del_timer(quic_timer(sk, type)))
+	if (timer_delete(quic_timer(sk, type)))
 		sock_put(sk);
 }
 
