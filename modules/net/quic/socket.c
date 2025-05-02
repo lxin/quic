@@ -1128,14 +1128,11 @@ static int quic_param_check_and_copy(struct quic_transport_param *p,
 	return 0;
 }
 
-static int quic_sock_set_config(struct sock *sk, struct quic_config *c, u32 len)
+static int quic_sock_apply_config(struct sock *sk, struct quic_config *c)
 {
 	struct quic_config *config = quic_config(sk);
 	struct quic_packet *packet = quic_packet(sk);
 	struct quic_cong *cong = quic_cong(sk);
-
-	if (len < sizeof(*config) || quic_is_established(sk))
-		return -EINVAL;
 
 	if (c->validate_peer_address)
 		config->validate_peer_address = c->validate_peer_address;
@@ -1178,6 +1175,14 @@ static int quic_sock_set_config(struct sock *sk, struct quic_config *c, u32 len)
 		config->stream_data_nodelay = c->stream_data_nodelay;
 
 	return 0;
+}
+
+static int quic_sock_set_config(struct sock *sk, struct quic_config *c, u32 len)
+{
+	if (len < sizeof(*c) || quic_is_established(sk))
+		return -EINVAL;
+
+	return quic_sock_apply_config(sk, c);
 }
 
 static int quic_sock_set_transport_param(struct sock *sk, struct quic_transport_param *p, u32 len)
@@ -1238,7 +1243,7 @@ static int quic_copy_sock(struct sock *nsk, struct sock *sk, struct quic_request
 	if (sk->sk_family == AF_INET6) /* nsk uses quicv6 ops in this case */
 		inet_sk(nsk)->pinet6 = &((struct quic6_sock *)nsk)->inet6;
 
-	quic_sock_set_config(nsk, quic_config(sk), sizeof(struct quic_config));
+	quic_sock_apply_config(nsk, quic_config(sk));
 	quic_sock_fetch_transport_param(sk, &param);
 	quic_sock_apply_transport_param(nsk, &param);
 	events = quic_inq_events(inq);
