@@ -78,11 +78,9 @@ http3_connect()
 	echo "- $url"
 
 	for i in `seq 3`; do
-		./http3_test -c $url > /dev/null && return 0
+		./http3_test -c $url > /dev/null && break
 		echo "WARNING: retrying $i ..."
 	done
-
-	return 1;
 }
 
 func_tests()
