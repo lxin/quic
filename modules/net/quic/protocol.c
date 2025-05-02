@@ -582,6 +582,7 @@ static __exit void quic_exit(void)
 	quic_protosw_exit();
 	percpu_counter_destroy(&quic_sockets_allocated);
 	quic_path_destroy();
+	kmem_cache_destroy(quic_frame_cachep);
 	quic_hash_tables_destroy();
 	pr_info("quic: exit\n");
 }
