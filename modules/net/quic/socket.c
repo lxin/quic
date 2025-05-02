@@ -220,7 +220,7 @@ static void quic_sock_fetch_transport_param(struct sock *sk, struct quic_transpo
 static int quic_init_sock(struct sock *sk)
 {
 	struct quic_transport_param *p = &quic_default_param;
-	u32 i;
+	u8 i;
 
 	sk->sk_destruct = inet_sock_destruct;
 	sk->sk_write_space = quic_write_space;
@@ -228,22 +228,24 @@ static int quic_init_sock(struct sock *sk)
 
 	quic_conn_id_set_init(quic_source(sk), 1);
 	quic_conn_id_set_init(quic_dest(sk), 0);
+
+	if (quic_stream_init(quic_streams(sk)))
+		return -ENOMEM;
+
+	for (i = 0; i < QUIC_PNSPACE_MAX; i++) {
+		if (quic_pnspace_init(quic_pnspace(sk, i)))
+			return -ENOMEM;
+	}
+
 	quic_cong_init(quic_cong(sk));
+	INIT_LIST_HEAD(quic_reqs(sk));
 
 	quic_sock_apply_transport_param(sk, p);
 
 	quic_outq_init(sk);
 	quic_inq_init(sk);
-	quic_packet_init(sk);
 	quic_timer_init(sk);
-
-	for (i = 0; i < QUIC_PNSPACE_MAX; i++) {
-		if (quic_pnspace_init(quic_pnspace(sk, (u8)i)))
-			return -ENOMEM;
-	}
-	if (quic_stream_init(quic_streams(sk)))
-		return -ENOMEM;
-	INIT_LIST_HEAD(quic_reqs(sk));
+	quic_packet_init(sk);
 
 	WRITE_ONCE(sk->sk_sndbuf, READ_ONCE(sysctl_quic_wmem[1]));
 	WRITE_ONCE(sk->sk_rcvbuf, READ_ONCE(sysctl_quic_rmem[1]));
@@ -258,14 +260,23 @@ static int quic_init_sock(struct sock *sk)
 
 static void quic_destroy_sock(struct sock *sk)
 {
-	u32 i;
+	u8 i;
+
+	quic_outq_free(sk);
+	quic_inq_free(sk);
+	quic_timer_free(sk);
 
 	for (i = 0; i < QUIC_PNSPACE_MAX; i++)
-		quic_pnspace_free(quic_pnspace(sk, (u8)i));
+		quic_pnspace_free(quic_pnspace(sk, i));
 	for (i = 0; i < QUIC_CRYPTO_MAX; i++)
-		quic_crypto_free(quic_crypto(sk, (u8)i));
+		quic_crypto_free(quic_crypto(sk, i));
 
-	quic_timer_free(sk);
+	quic_path_free(sk, quic_paths(sk), 0);
+	quic_path_free(sk, quic_paths(sk), 1);
+
+	quic_conn_id_set_free(quic_source(sk));
+	quic_conn_id_set_free(quic_dest(sk));
+
 	quic_stream_free(quic_streams(sk));
 
 	quic_data_free(quic_ticket(sk));
@@ -1262,19 +1273,10 @@ static void quic_close(struct sock *sk, long timeout)
 	lock_sock(sk);
 
 	quic_outq_transmit_app_close(sk);
-
 	quic_set_state(sk, QUIC_SS_CLOSED);
 
-	quic_outq_free(sk);
-	quic_inq_free(sk);
-
-	quic_path_free(sk, quic_paths(sk), 0);
-	quic_path_free(sk, quic_paths(sk), 1);
-
-	quic_conn_id_set_free(quic_source(sk));
-	quic_conn_id_set_free(quic_dest(sk));
-
 	release_sock(sk);
+
 	sk_common_release(sk);
 }
 
