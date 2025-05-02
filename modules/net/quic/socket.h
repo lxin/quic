@@ -17,11 +17,11 @@
 #include "pnspace.h"
 #include "common.h"
 #include "family.h"
-#include "connid.h"
 #include "stream.h"
+#include "connid.h"
 #include "crypto.h"
-#include "cong.h"
 #include "path.h"
+#include "cong.h"
 
 #include "packet.h"
 #include "frame.h"
@@ -95,9 +95,9 @@ struct quic_sock {
 	struct quic_conn_id_set		source;
 	struct quic_conn_id_set		dest;
 	struct quic_path_group		paths;
+	struct quic_cong		cong;
 	struct quic_pnspace		space[QUIC_PNSPACE_MAX];
 	struct quic_crypto		crypto[QUIC_CRYPTO_MAX];
-	struct quic_cong		cong;
 
 	struct quic_outqueue		outq;
 	struct quic_inqueue		inq;
@@ -113,51 +113,6 @@ struct quic6_sock {
 static inline struct quic_sock *quic_sk(const struct sock *sk)
 {
 	return (struct quic_sock *)sk;
-}
-
-static inline struct quic_packet *quic_packet(const struct sock *sk)
-{
-	return &quic_sk(sk)->packet;
-}
-
-static inline struct quic_outqueue *quic_outq(const struct sock *sk)
-{
-	return &quic_sk(sk)->outq;
-}
-
-static inline struct quic_inqueue *quic_inq(const struct sock *sk)
-{
-	return &quic_sk(sk)->inq;
-}
-
-static inline struct quic_cong *quic_cong(const struct sock *sk)
-{
-	return &quic_sk(sk)->cong;
-}
-
-static inline struct quic_crypto *quic_crypto(const struct sock *sk, u8 level)
-{
-	return &quic_sk(sk)->crypto[level];
-}
-
-static inline struct quic_pnspace *quic_pnspace(const struct sock *sk, u8 level)
-{
-	return &quic_sk(sk)->space[level % QUIC_CRYPTO_EARLY];
-}
-
-static inline struct quic_stream_table *quic_streams(const struct sock *sk)
-{
-	return &quic_sk(sk)->streams;
-}
-
-static inline struct quic_path_group *quic_paths(const struct sock *sk)
-{
-	return &quic_sk(sk)->paths;
-}
-
-static inline void *quic_timer(const struct sock *sk, u8 type)
-{
-	return (void *)&quic_sk(sk)->timers[type];
 }
 
 static inline struct list_head *quic_reqs(const struct sock *sk)
@@ -185,6 +140,11 @@ static inline struct quic_data *quic_alpn(const struct sock *sk)
 	return &quic_sk(sk)->alpn;
 }
 
+static inline struct quic_stream_table *quic_streams(const struct sock *sk)
+{
+	return &quic_sk(sk)->streams;
+}
+
 static inline struct quic_conn_id_set *quic_source(const struct sock *sk)
 {
 	return &quic_sk(sk)->source;
@@ -195,9 +155,49 @@ static inline struct quic_conn_id_set *quic_dest(const struct sock *sk)
 	return &quic_sk(sk)->dest;
 }
 
+static inline struct quic_path_group *quic_paths(const struct sock *sk)
+{
+	return &quic_sk(sk)->paths;
+}
+
 static inline bool quic_is_serv(const struct sock *sk)
 {
 	return quic_path_serv(quic_paths(sk));
+}
+
+static inline struct quic_cong *quic_cong(const struct sock *sk)
+{
+	return &quic_sk(sk)->cong;
+}
+
+static inline struct quic_pnspace *quic_pnspace(const struct sock *sk, u8 level)
+{
+	return &quic_sk(sk)->space[level % QUIC_CRYPTO_EARLY];
+}
+
+static inline struct quic_crypto *quic_crypto(const struct sock *sk, u8 level)
+{
+	return &quic_sk(sk)->crypto[level];
+}
+
+static inline struct quic_outqueue *quic_outq(const struct sock *sk)
+{
+	return &quic_sk(sk)->outq;
+}
+
+static inline struct quic_inqueue *quic_inq(const struct sock *sk)
+{
+	return &quic_sk(sk)->inq;
+}
+
+static inline struct quic_packet *quic_packet(const struct sock *sk)
+{
+	return &quic_sk(sk)->packet;
+}
+
+static inline void *quic_timer(const struct sock *sk, u8 type)
+{
+	return (void *)&quic_sk(sk)->timers[type];
 }
 
 static inline bool quic_is_establishing(struct sock *sk)
