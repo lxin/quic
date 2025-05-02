@@ -1298,7 +1298,6 @@ int quic_packet_parse_alpn(struct sk_buff *skb, struct quic_data *alpn)
 	if (err)
 		goto out;
 	cb->number_offset = (u16)(p - skb->data);
-	cb->crypto_done = quic_packet_decrypt_done;
 	err = quic_crypto_decrypt(crypto, skb);
 	if (err) {
 		QUIC_INC_STATS(net, QUIC_MIB_PKT_DECDROP);
