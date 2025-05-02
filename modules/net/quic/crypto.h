@@ -126,5 +126,5 @@ int quic_crypto_get_retry_tag(struct quic_crypto *crypto, struct sk_buff *skb,
 int quic_crypto_verify_token(struct quic_crypto *crypto, void *addr, u32 addrlen,
 			     struct quic_conn_id *conn_id, u8 *token, u32 len);
 
-void quic_crypto_destroy(struct quic_crypto *crypto);
+void quic_crypto_free(struct quic_crypto *crypto);
 void quic_crypto_init(void);

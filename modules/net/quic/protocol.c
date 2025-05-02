@@ -101,7 +101,7 @@ free:
 
 	quic_conn_id_set_free(source);
 	quic_conn_id_set_free(dest);
-	quic_crypto_destroy(crypto);
+	quic_crypto_free(crypto);
 	goto out;
 }
 

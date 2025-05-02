@@ -674,7 +674,7 @@ int quic_crypto_set_secret(struct quic_crypto *crypto, struct quic_crypto_secret
 	crypto->send_ready = 1;
 	return 0;
 err:
-	quic_crypto_destroy(crypto);
+	quic_crypto_free(crypto);
 	return err;
 }
 EXPORT_SYMBOL_GPL(quic_crypto_set_secret);
@@ -740,7 +740,7 @@ err:
 }
 EXPORT_SYMBOL_GPL(quic_crypto_key_update);
 
-void quic_crypto_destroy(struct quic_crypto *crypto)
+void quic_crypto_free(struct quic_crypto *crypto)
 {
 	if (crypto->tag_tfm)
 		crypto_free_aead(crypto->tag_tfm);
@@ -761,7 +761,7 @@ void quic_crypto_destroy(struct quic_crypto *crypto)
 
 	memset(crypto, 0, offsetof(struct quic_crypto, send_offset));
 }
-EXPORT_SYMBOL_GPL(quic_crypto_destroy);
+EXPORT_SYMBOL_GPL(quic_crypto_free);
 
 #define QUIC_INITIAL_SALT_V1    \
 	"\x38\x76\x2c\xf7\xf5\x59\x34\xb3\x4d\x17\x9a\xe6\xa4\xc8\x0c\xad\xcc\xbb\x7f\x0a"

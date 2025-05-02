@@ -104,7 +104,7 @@ static int quic_packet_version_change(struct sock *sk, struct quic_conn_id *dcid
 {
 	struct quic_crypto *crypto = quic_crypto(sk, QUIC_CRYPTO_INITIAL);
 
-	quic_crypto_destroy(crypto);
+	quic_crypto_free(crypto);
 
 	if (quic_crypto_initial_keys_install(crypto, dcid, version, quic_is_serv(sk)))
 		return -1;
@@ -1324,7 +1324,7 @@ int quic_packet_parse_alpn(struct sk_buff *skb, struct quic_data *alpn)
 	err = quic_packet_get_alpn(alpn, p, length);
 
 out:
-	quic_crypto_destroy(crypto);
+	quic_crypto_free(crypto);
 	kfree(crypto);
 	kfree(data);
 	return err;

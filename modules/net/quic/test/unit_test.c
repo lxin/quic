@@ -390,11 +390,11 @@ static void quic_crypto_test1(struct kunit *test)
 	KUNIT_EXPECT_EQ(test, ret, 0);
 
 	quic_conn_id_generate(&conn_id);
-	quic_crypto_destroy(&crypto);
+	quic_crypto_free(&crypto);
 	ret = quic_crypto_initial_keys_install(&crypto, &conn_id, QUIC_VERSION_V1, 0);
 	KUNIT_EXPECT_EQ(test, ret, 0);
 
-	quic_crypto_destroy(&crypto);
+	quic_crypto_free(&crypto);
 	ret = quic_crypto_initial_keys_install(&crypto, &conn_id, QUIC_VERSION_V2, 1);
 	KUNIT_EXPECT_EQ(test, ret, 0);
 
@@ -427,7 +427,7 @@ static void quic_crypto_test1(struct kunit *test)
 	KUNIT_EXPECT_EQ(test, ret, 0);
 	kfree_skb(skb);
 out:
-	quic_crypto_destroy(&crypto);
+	quic_crypto_free(&crypto);
 }
 
 static void quic_crypto_test2(struct kunit *test)
@@ -470,7 +470,7 @@ static void quic_crypto_test2(struct kunit *test)
 	}
 
 	KUNIT_EXPECT_EQ(test, memcmp(encrypted_data, skb->data, skb->len), 0);
-	quic_crypto_destroy(&crypto);
+	quic_crypto_free(&crypto);
 
 	srt.send = 0;
 	srt.level = 0;
@@ -497,7 +497,7 @@ static void quic_crypto_test2(struct kunit *test)
 
 out:
 	kfree_skb(skb);
-	quic_crypto_destroy(&crypto);
+	quic_crypto_free(&crypto);
 	sock_release(sock);
 }
 

@@ -263,7 +263,7 @@ static void quic_destroy_sock(struct sock *sk)
 	for (i = 0; i < QUIC_PNSPACE_MAX; i++)
 		quic_pnspace_free(quic_pnspace(sk, (u8)i));
 	for (i = 0; i < QUIC_CRYPTO_MAX; i++)
-		quic_crypto_destroy(quic_crypto(sk, (u8)i));
+		quic_crypto_free(quic_crypto(sk, (u8)i));
 
 	quic_timer_free(sk);
 	quic_stream_free(quic_streams(sk));
