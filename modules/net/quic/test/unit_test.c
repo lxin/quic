@@ -331,7 +331,7 @@ static struct quic_crypto crypto;
 
 static void quic_encrypt_done(struct sk_buff *skb, int err)
 {
-	struct quic_crypto_cb *cb = QUIC_CRYPTO_CB(skb);
+	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
 
 	WARN_ON(!skb_set_owner_sk_safe(skb, skb->sk));
 
@@ -345,7 +345,7 @@ static void quic_encrypt_done(struct sk_buff *skb, int err)
 
 static void quic_decrypt_done(struct sk_buff *skb, int err)
 {
-	struct quic_crypto_cb *cb = QUIC_CRYPTO_CB(skb);
+	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
 
 	WARN_ON(!skb_set_owner_sk_safe(skb, skb->sk));
 
@@ -433,7 +433,7 @@ out:
 static void quic_crypto_test2(struct kunit *test)
 {
 	struct quic_crypto_secret srt = {};
-	struct quic_crypto_cb *cb;
+	struct quic_skb_cb *cb;
 	struct socket *sock;
 	struct sk_buff *skb;
 	int err;
@@ -456,7 +456,7 @@ static void quic_crypto_test2(struct kunit *test)
 	skb_reset_transport_header(skb);
 
 	skb_put_data(skb, data, 280);
-	cb = QUIC_CRYPTO_CB(skb);
+	cb = QUIC_SKB_CB(skb);
 	cb->number_len = 4;
 	cb->number = 0;
 	cb->number_offset = 17;

@@ -253,7 +253,7 @@ int quic_packet_get_dcid(struct quic_conn_id *dcid, struct sk_buff *skb)
 
 static struct sock *quic_packet_get_sock(struct sk_buff *skb)
 {
-	struct quic_crypto_cb *cb = QUIC_CRYPTO_CB(skb);
+	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
 	struct net *net = dev_net(skb->dev);
 	struct quic_conn_id dcid, *conn_id;
 	union quic_addr daddr, saddr;
@@ -761,7 +761,7 @@ static void quic_packet_decrypt_done(struct sk_buff *skb, int err)
 static int quic_packet_handshake_header_process(struct sock *sk, struct sk_buff *skb)
 {
 	u8 *p = (u8 *)quic_hshdr(skb), type = quic_hshdr(skb)->type;
-	struct quic_crypto_cb *cb = QUIC_CRYPTO_CB(skb);
+	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
 	struct quic_packet *packet = quic_packet(sk);
 	u32 len = skb->len, version;
 	struct quic_data token;
@@ -823,7 +823,7 @@ static int quic_packet_handshake_header_process(struct sock *sk, struct sk_buff 
 
 static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb)
 {
-	struct quic_crypto_cb *cb = QUIC_CRYPTO_CB(skb);
+	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
 	struct quic_path_group *paths = quic_paths(sk);
 	struct quic_packet *packet = quic_packet(sk);
 	struct quic_inqueue *inq = quic_inq(sk);
@@ -973,7 +973,7 @@ err:
 
 static void quic_packet_path_alt_process(struct sock *sk, struct sk_buff *skb)
 {
-	struct quic_crypto_cb *cb = QUIC_CRYPTO_CB(skb);
+	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
 	struct quic_path_group *paths = quic_paths(sk);
 	struct quic_packet *packet = quic_packet(sk);
 
@@ -996,7 +996,7 @@ static int quic_packet_app_process_done(struct sock *sk, struct sk_buff *skb)
 {
 	struct quic_pnspace *space = quic_pnspace(sk, QUIC_CRYPTO_APP);
 	struct quic_stream_table *streams = quic_streams(sk);
-	struct quic_crypto_cb *cb = QUIC_CRYPTO_CB(skb);
+	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
 	struct quic_path_group *paths = quic_paths(sk);
 	struct quic_packet *packet = quic_packet(sk);
 	struct quic_inqueue *inq = quic_inq(sk);
@@ -1059,7 +1059,7 @@ static int quic_packet_app_process(struct sock *sk, struct sk_buff *skb)
 	struct quic_conn_id_set *dest = quic_dest(sk), *source = quic_source(sk);
 	struct quic_pnspace *space = quic_pnspace(sk, QUIC_CRYPTO_APP);
 	struct quic_crypto *crypto = quic_crypto(sk, QUIC_CRYPTO_APP);
-	struct quic_crypto_cb *cb = QUIC_CRYPTO_CB(skb);
+	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
 	struct quic_packet *packet = quic_packet(sk);
 	struct net *net = sock_net(sk);
 	struct quic_frame frame = {};
@@ -1262,7 +1262,7 @@ static int quic_packet_get_alpn(struct quic_data *alpn, u8 *p, u32 len)
 
 int quic_packet_parse_alpn(struct sk_buff *skb, struct quic_data *alpn)
 {
-	struct quic_crypto_cb *cb = QUIC_CRYPTO_CB(skb);
+	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
 	struct net *net = dev_net(skb->dev);
 	u8 *p = skb->data, *data, type;
 	struct quic_conn_id dcid, scid;
@@ -1336,7 +1336,7 @@ out:
 static u8 *quic_packet_pack_frames(struct sock *sk, struct sk_buff *skb,
 				   struct quic_packet_sent *sent, u16 off)
 {
-	struct quic_crypto_cb *cb = QUIC_CRYPTO_CB(skb);
+	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
 	struct quic_path_group *paths = quic_paths(sk);
 	struct quic_packet *packet = quic_packet(sk);
 	u32 now = jiffies_to_usecs(jiffies);
@@ -1723,7 +1723,7 @@ static void quic_packet_encrypt_done(struct sk_buff *skb, int err)
 
 static int quic_packet_bundle(struct sock *sk, struct sk_buff *skb)
 {
-	struct quic_crypto_cb *head_cb, *cb = QUIC_CRYPTO_CB(skb);
+	struct quic_skb_cb *head_cb, *cb = QUIC_SKB_CB(skb);
 	struct quic_packet *packet = quic_packet(sk);
 	struct sk_buff *p;
 
@@ -1740,7 +1740,7 @@ static int quic_packet_bundle(struct sock *sk, struct sk_buff *skb)
 		goto out;
 	}
 	p = packet->head;
-	head_cb = QUIC_CRYPTO_CB(p);
+	head_cb = QUIC_SKB_CB(p);
 	if (head_cb->last == p)
 		skb_shinfo(p)->frag_list = skb;
 	else
@@ -1757,7 +1757,7 @@ out:
 
 int quic_packet_xmit(struct sock *sk, struct sk_buff *skb)
 {
-	struct quic_crypto_cb *cb = QUIC_CRYPTO_CB(skb);
+	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
 	struct quic_packet *packet = quic_packet(sk);
 	struct net *net = sock_net(sk);
 	int err;

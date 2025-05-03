@@ -31,7 +31,7 @@ struct quic_outqueue {
 	u16 count;
 
 	/* Use for 0-RTT/1-RTT DATA (re)transmit,
-	 * as QUIC_CRYPTO_CB(skb)->level is always QUIC_CRYPTO_APP.
+	 * as QUIC_SKB_CB(skb)->level is always QUIC_CRYPTO_APP.
 	 * Set this level to QUIC_CRYPTO_EARLY or QUIC_CRYPTO_APP
 	 * when the corresponding crypto is ready for send.
 	 */

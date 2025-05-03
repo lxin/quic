@@ -80,7 +80,7 @@ int quic_accept_sock_exists(struct sock *sk, struct sk_buff *skb)
 	struct quic_packet *packet = quic_packet(sk);
 	int ret = 0;
 
-	if (QUIC_CRYPTO_CB(skb)->time > quic_pnspace_time(space))
+	if (QUIC_SKB_CB(skb)->time > quic_pnspace_time(space))
 		return ret;
 
 	local_bh_disable();

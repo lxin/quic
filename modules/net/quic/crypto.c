@@ -223,7 +223,7 @@ static void *quic_crypto_skcipher_mem_alloc(struct crypto_skcipher *tfm, u32 mas
 
 static int quic_crypto_header_encrypt(struct crypto_skcipher *tfm, struct sk_buff *skb, bool chacha)
 {
-	struct quic_crypto_cb *cb = QUIC_CRYPTO_CB(skb);
+	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
 	struct skcipher_request *req;
 	struct scatterlist sg;
 	u8 *mask, *iv, *p;
@@ -297,13 +297,13 @@ static void quic_crypto_done(void *data, int err)
 	if (base->flags == CRYPTO_TFM_REQ_MAY_BACKLOG)
 		skb = base->data;
 
-	QUIC_CRYPTO_CB(skb)->crypto_done(skb, err);
+	QUIC_SKB_CB(skb)->crypto_done(skb, err);
 }
 
 static int quic_crypto_payload_encrypt(struct crypto_aead *tfm, struct sk_buff *skb,
 				       u8 *tx_iv, bool ccm)
 {
-	struct quic_crypto_cb *cb = QUIC_CRYPTO_CB(skb);
+	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
 	struct quichdr *hdr = quic_hdr(skb);
 	u8 *iv, i, nonce[QUIC_IV_LEN];
 	struct aead_request *req;
@@ -359,7 +359,7 @@ err:
 static int quic_crypto_payload_decrypt(struct crypto_aead *tfm, struct sk_buff *skb,
 				       u8 *rx_iv, bool ccm)
 {
-	struct quic_crypto_cb *cb = QUIC_CRYPTO_CB(skb);
+	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
 	u8 *iv, i, nonce[QUIC_IV_LEN];
 	struct aead_request *req;
 	struct sk_buff *trailer;
@@ -410,7 +410,7 @@ err:
 
 static void quic_crypto_get_header(struct sk_buff *skb)
 {
-	struct quic_crypto_cb *cb = QUIC_CRYPTO_CB(skb);
+	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
 	struct quichdr *hdr = quic_hdr(skb);
 	u8 *p = (u8 *)hdr;
 	u32 len = 4;
@@ -427,7 +427,7 @@ static void quic_crypto_get_header(struct sk_buff *skb)
 
 static int quic_crypto_header_decrypt(struct crypto_skcipher *tfm, struct sk_buff *skb, bool chacha)
 {
-	struct quic_crypto_cb *cb = QUIC_CRYPTO_CB(skb);
+	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
 	struct quichdr *hdr = quic_hdr(skb);
 	int err, i, len = cb->length;
 	struct skcipher_request *req;
@@ -500,7 +500,7 @@ static bool quic_crypto_is_cipher_chacha(struct quic_crypto *crypto)
 
 int quic_crypto_encrypt(struct quic_crypto *crypto, struct sk_buff *skb)
 {
-	struct quic_crypto_cb *cb = QUIC_CRYPTO_CB(skb);
+	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
 	u8 *iv, cha, ccm, phase = crypto->key_phase;
 	int err;
 
@@ -524,7 +524,7 @@ EXPORT_SYMBOL_GPL(quic_crypto_encrypt);
 
 int quic_crypto_decrypt(struct quic_crypto *crypto, struct sk_buff *skb)
 {
-	struct quic_crypto_cb *cb = QUIC_CRYPTO_CB(skb);
+	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
 	u8 *iv, cha, ccm, phase;
 	int err = 0;
 	u32 time;

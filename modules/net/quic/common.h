@@ -33,7 +33,7 @@ static inline void quic_conn_id_update(struct quic_conn_id *conn_id, u8 *data, u
 	conn_id->len = (u8)len;
 }
 
-struct quic_crypto_cb {
+struct quic_skb_cb {
 	void (*crypto_done)(struct sk_buff *skb, int err);
 	union {
 		struct quic_conn_id *conn_id;
@@ -57,11 +57,11 @@ struct quic_crypto_cb {
 	u8 ecn:2;
 };
 
-#define QUIC_CRYPTO_CB(skb)	((struct quic_crypto_cb *)&((skb)->cb[0]))
+#define QUIC_SKB_CB(skb)	((struct quic_skb_cb *)&((skb)->cb[0]))
 
 static inline struct udphdr *quic_udphdr(const struct sk_buff *skb)
 {
-	return (struct udphdr *)(skb->head + QUIC_CRYPTO_CB(skb)->udph_offset);
+	return (struct udphdr *)(skb->head + QUIC_SKB_CB(skb)->udph_offset);
 }
 
 struct quichdr {

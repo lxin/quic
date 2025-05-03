@@ -1011,7 +1011,7 @@ static void quic_outq_encrypted_work(struct work_struct *work)
 	struct quic_sock *qs = container_of(work, struct quic_sock, outq.work);
 	struct sock *sk = &qs->inet.sk;
 	struct sk_buff_head *head;
-	struct quic_crypto_cb *cb;
+	struct quic_skb_cb *cb;
 	struct sk_buff *skb;
 
 	lock_sock(sk);
@@ -1023,7 +1023,7 @@ static void quic_outq_encrypted_work(struct work_struct *work)
 
 	skb = skb_dequeue(head);
 	while (skb) {
-		cb = QUIC_CRYPTO_CB(skb);
+		cb = QUIC_SKB_CB(skb);
 		if (quic_packet_config(sk, cb->level, cb->path)) {
 			kfree_skb(skb);
 			skb = skb_dequeue(head);

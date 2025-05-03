@@ -26,8 +26,8 @@ static int quic_udp_rcv(struct sock *sk, struct sk_buff *skb)
 		return 0;
 
 	memset(skb->cb, 0, sizeof(skb->cb));
-	QUIC_CRYPTO_CB(skb)->udph_offset = skb->transport_header;
-	QUIC_CRYPTO_CB(skb)->time = jiffies_to_usecs(jiffies);
+	QUIC_SKB_CB(skb)->udph_offset = skb->transport_header;
+	QUIC_SKB_CB(skb)->time = jiffies_to_usecs(jiffies);
 	skb_set_transport_header(skb, sizeof(struct udphdr));
 	quic_path_rcv(skb, 0);
 	return 0;
@@ -38,7 +38,7 @@ static int quic_udp_err(struct sock *sk, struct sk_buff *skb)
 	if (skb_linearize(skb))
 		return 0;
 
-	QUIC_CRYPTO_CB(skb)->udph_offset = skb->transport_header;
+	QUIC_SKB_CB(skb)->udph_offset = skb->transport_header;
 	return quic_path_rcv(skb, 1);
 }
 

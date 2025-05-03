@@ -136,7 +136,7 @@ static int quic_v6_flow_route(struct sock *sk, union quic_addr *da, union quic_a
 static void quic_v4_lower_xmit(struct sock *sk, struct sk_buff *skb, union quic_addr *da,
 			       union quic_addr *sa)
 {
-	struct quic_crypto_cb *cb = QUIC_CRYPTO_CB(skb);
+	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
 	u8 tos = (inet_sk(sk)->tos | cb->ecn), ttl;
 	struct dst_entry *dst;
 	__be16 df = 0;
@@ -162,7 +162,7 @@ static void quic_v4_lower_xmit(struct sock *sk, struct sk_buff *skb, union quic_
 static void quic_v6_lower_xmit(struct sock *sk, struct sk_buff *skb, union quic_addr *da,
 			       union quic_addr *sa)
 {
-	struct quic_crypto_cb *cb = QUIC_CRYPTO_CB(skb);
+	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
 	u8 tc = (inet6_sk(sk)->tclass | cb->ecn), ttl;
 	struct dst_entry *dst;
 
