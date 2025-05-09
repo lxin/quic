@@ -26,6 +26,7 @@ struct quic_outqueue {
 	u32 max_idle_timeout;
 	u32 stream_list_len;	/* all frames len in stream list */
 	u32 max_ack_delay;
+	u32 unsent_bytes;
 	u32 inflight;		/* all inflight ack_eliciting frames len */
 	u32 window;
 	u16 count;
@@ -50,6 +51,16 @@ struct quic_outqueue {
 	u8 force_delay:1;
 	u8 single:1;
 };
+
+static inline void quic_outq_dec_unsent_bytes(struct quic_outqueue *outq, u32 bytes)
+{
+	outq->unsent_bytes -= bytes;
+}
+
+static inline u32 quic_outq_unsent_bytes(struct quic_outqueue *outq)
+{
+	return outq->unsent_bytes;
+}
 
 static inline void quic_outq_inc_inflight(struct quic_outqueue *outq, u32 len)
 {
