@@ -1339,6 +1339,7 @@ static u8 *quic_packet_pack_frames(struct sock *sk, struct sk_buff *skb,
 	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
 	struct quic_path_group *paths = quic_paths(sk);
 	struct quic_packet *packet = quic_packet(sk);
+	struct quic_outqueue *outq = quic_outq(sk);
 	u32 now = jiffies_to_usecs(jiffies);
 	struct quic_frame *frame, *next;
 	struct quic_frame_frag *frag;
@@ -1369,8 +1370,10 @@ static u8 *quic_packet_pack_frames(struct sock *sk, struct sk_buff *skb,
 			quic_frame_put(frame);
 			continue;
 		}
-		if (frame->offset < 0)
+		if (frame->offset < 0) {
 			frame->offset = number;
+			quic_outq_dec_unsent_bytes(outq, frame->bytes);
+		}
 		quic_outq_transmitted_tail(sk, frame);
 		sent->frame_array[i++] = quic_frame_get(frame);
 	}
@@ -1397,8 +1400,8 @@ static u8 *quic_packet_pack_frames(struct sock *sk, struct sk_buff *skb,
 	sent->frame_len = packet->frame_len;
 	sent->level = (packet->level % QUIC_CRYPTO_EARLY);
 
-	quic_outq_inc_inflight(quic_outq(sk), sent->frame_len);
 	quic_pnspace_inc_inflight(space, sent->frame_len);
+	quic_outq_inc_inflight(outq, sent->frame_len);
 	quic_outq_packet_sent_tail(sk, sent);
 
 	quic_cong_on_packet_sent(quic_cong(sk), sent->sent_time, sent->frame_len, number);
