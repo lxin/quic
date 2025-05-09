@@ -500,8 +500,8 @@ static bool quic_crypto_is_cipher_chacha(struct quic_crypto *crypto)
 
 int quic_crypto_encrypt(struct quic_crypto *crypto, struct sk_buff *skb)
 {
-	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
 	u8 *iv, cha, ccm, phase = crypto->key_phase;
+	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
 	int err;
 
 	cb->key_phase = phase;

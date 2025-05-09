@@ -761,8 +761,8 @@ static void quic_packet_decrypt_done(struct sk_buff *skb, int err)
 static int quic_packet_handshake_header_process(struct sock *sk, struct sk_buff *skb)
 {
 	u8 *p = (u8 *)quic_hshdr(skb), type = quic_hshdr(skb)->type;
-	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
 	struct quic_packet *packet = quic_packet(sk);
+	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
 	u32 len = skb->len, version;
 	struct quic_data token;
 	u64 length;
@@ -823,9 +823,9 @@ static int quic_packet_handshake_header_process(struct sock *sk, struct sk_buff 
 
 static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb)
 {
-	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
 	struct quic_path_group *paths = quic_paths(sk);
 	struct quic_packet *packet = quic_packet(sk);
+	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
 	struct quic_inqueue *inq = quic_inq(sk);
 	struct quic_cong *cong = quic_cong(sk);
 	struct net *net = sock_net(sk);
@@ -973,9 +973,9 @@ err:
 
 static void quic_packet_path_alt_process(struct sock *sk, struct sk_buff *skb)
 {
-	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
 	struct quic_path_group *paths = quic_paths(sk);
 	struct quic_packet *packet = quic_packet(sk);
+	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
 
 	if (cb->path) {
 		if (quic_path_alt_state(paths, QUIC_PATH_ALT_NONE))
@@ -996,9 +996,9 @@ static int quic_packet_app_process_done(struct sock *sk, struct sk_buff *skb)
 {
 	struct quic_pnspace *space = quic_pnspace(sk, QUIC_CRYPTO_APP);
 	struct quic_stream_table *streams = quic_streams(sk);
-	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
 	struct quic_path_group *paths = quic_paths(sk);
 	struct quic_packet *packet = quic_packet(sk);
+	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
 	struct quic_inqueue *inq = quic_inq(sk);
 	s64 max_bidi = 0, max_uni = 0;
 	u8 frame;
@@ -1059,8 +1059,8 @@ static int quic_packet_app_process(struct sock *sk, struct sk_buff *skb)
 	struct quic_conn_id_set *dest = quic_dest(sk), *source = quic_source(sk);
 	struct quic_pnspace *space = quic_pnspace(sk, QUIC_CRYPTO_APP);
 	struct quic_crypto *crypto = quic_crypto(sk, QUIC_CRYPTO_APP);
-	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
 	struct quic_packet *packet = quic_packet(sk);
+	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
 	struct net *net = sock_net(sk);
 	struct quic_frame frame = {};
 	u8 taglen, key_phase, active;
@@ -1336,10 +1336,10 @@ out:
 static u8 *quic_packet_pack_frames(struct sock *sk, struct sk_buff *skb,
 				   struct quic_packet_sent *sent, u16 off)
 {
-	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
 	struct quic_path_group *paths = quic_paths(sk);
 	struct quic_packet *packet = quic_packet(sk);
 	struct quic_outqueue *outq = quic_outq(sk);
+	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
 	u32 now = jiffies_to_usecs(jiffies);
 	struct quic_frame *frame, *next;
 	struct quic_frame_frag *frag;
@@ -1760,8 +1760,8 @@ out:
 
 int quic_packet_xmit(struct sock *sk, struct sk_buff *skb)
 {
-	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
 	struct quic_packet *packet = quic_packet(sk);
+	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
 	struct net *net = sock_net(sk);
 	int err;
 
