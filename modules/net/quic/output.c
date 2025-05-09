@@ -327,6 +327,7 @@ int quic_outq_stream_append(struct sock *sk, struct quic_msginfo *info, u8 pack)
 
 	outq->bytes += bytes;
 	outq->stream_list_len += (frame->len - len);
+	outq->unsent_bytes += bytes;
 	quic_outq_set_owner_w((int)bytes, sk);
 
 	return bytes;
@@ -354,6 +355,7 @@ void quic_outq_stream_tail(struct sock *sk, struct quic_frame *frame, bool cork)
 
 	outq->bytes += frame->bytes;
 	outq->stream_list_len += frame->len;
+	outq->unsent_bytes += frame->bytes;
 	quic_outq_set_owner_w((int)frame->bytes, sk);
 
 	list_add_tail(&frame->list, &outq->stream_list);
@@ -363,17 +365,22 @@ void quic_outq_stream_tail(struct sock *sk, struct quic_frame *frame, bool cork)
 
 void quic_outq_dgram_tail(struct sock *sk, struct quic_frame *frame, bool cork)
 {
+	struct quic_outqueue *outq = quic_outq(sk);
+
+	outq->unsent_bytes += frame->bytes;
 	quic_outq_set_owner_w((int)frame->bytes, sk);
-	list_add_tail(&frame->list, &quic_outq(sk)->datagram_list);
+	list_add_tail(&frame->list, &outq->datagram_list);
 	if (!cork)
 		quic_outq_transmit(sk);
 }
 
 void quic_outq_ctrl_tail(struct sock *sk, struct quic_frame *frame, bool cork)
 {
-	struct list_head *head = &quic_outq(sk)->control_list;
+	struct quic_outqueue *outq = quic_outq(sk);
+	struct list_head *head;
 	struct quic_frame *pos;
 
+	head = &quic_outq(sk)->control_list;
 	list_for_each_entry(pos, head, list) {
 		if (frame->level) {
 			if (!pos->level) {
@@ -395,6 +402,7 @@ void quic_outq_ctrl_tail(struct sock *sk, struct quic_frame *frame, bool cork)
 			break;
 	}
 
+	outq->unsent_bytes += frame->bytes;
 	quic_outq_set_owner_w((int)frame->bytes, sk);
 	list_add_tail(&frame->list, head);
 	if (!cork)
@@ -845,20 +853,12 @@ void quic_outq_retransmit_mark(struct sock *sk, u8 level, u8 immediate)
 void quic_outq_retransmit_list(struct sock *sk, struct list_head *head)
 {
 	struct quic_frame *frame, *next;
-	int bytes = 0;
 
 	list_for_each_entry_safe(frame, next, head, list) {
 		list_del_init(&frame->list);
-
-		if (quic_frame_dgram(frame->type) || quic_frame_ping(frame->type)) {
-			bytes += frame->bytes;
-			quic_frame_put(frame);
-			continue;
-		}
 		frame->transmitted = 0;
 		quic_outq_retransmit_frame(sk, frame);
 	}
-	quic_outq_wfree(bytes, sk);
 }
 
 /* OnLossDetectionTimeout() */
