@@ -259,6 +259,14 @@ static int quic_init_sock(struct sock *sk)
 
 	quic_conn_id_set_init(quic_source(sk), 1);
 	quic_conn_id_set_init(quic_dest(sk), 0);
+	quic_cong_init(quic_cong(sk));
+
+	quic_sock_apply_transport_param(sk, p);
+
+	quic_outq_init(sk);
+	quic_inq_init(sk);
+	quic_timer_init(sk);
+	quic_packet_init(sk);
 
 	if (quic_stream_init(quic_streams(sk)))
 		return -ENOMEM;
@@ -267,16 +275,6 @@ static int quic_init_sock(struct sock *sk)
 		if (quic_pnspace_init(quic_pnspace(sk, i)))
 			return -ENOMEM;
 	}
-
-	quic_cong_init(quic_cong(sk));
-	INIT_LIST_HEAD(quic_reqs(sk));
-
-	quic_sock_apply_transport_param(sk, p);
-
-	quic_outq_init(sk);
-	quic_inq_init(sk);
-	quic_timer_init(sk);
-	quic_packet_init(sk);
 
 	WRITE_ONCE(sk->sk_sndbuf, READ_ONCE(sysctl_quic_wmem[1]));
 	WRITE_ONCE(sk->sk_rcvbuf, READ_ONCE(sysctl_quic_rmem[1]));
@@ -449,6 +447,7 @@ static int quic_hash(struct sock *sk)
 			goto out;
 	}
 	__sk_add_node(sk, &head->head);
+	INIT_LIST_HEAD(quic_reqs(sk));
 out:
 	spin_unlock(&head->lock);
 	return err;
@@ -457,6 +456,7 @@ out:
 static void quic_unhash(struct sock *sk)
 {
 	struct quic_path_group *paths = quic_paths(sk);
+	struct quic_request_sock *req, *tmp;
 	struct net *net = sock_net(sk);
 	struct quic_hash_head *head;
 	union quic_addr *sa, *da;
@@ -467,6 +467,10 @@ static void quic_unhash(struct sock *sk)
 	sa = quic_path_saddr(paths, 0);
 	da = quic_path_daddr(paths, 0);
 	if (sk->sk_max_ack_backlog) {
+		list_for_each_entry_safe(req, tmp, quic_reqs(sk), list) {
+			list_del(&req->list);
+			kfree(req);
+		}
 		head = quic_listen_sock_head(net, ntohs(sa->v4.sin_port));
 		goto out;
 	}
