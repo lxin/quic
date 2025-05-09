@@ -393,9 +393,10 @@ static int quic_packet_retry_transmit(struct sock *sk)
 	union quic_addr *da = &packet->daddr;
 	union quic_addr *sa = &packet->saddr;
 	struct sk_buff *skb;
+	struct flowi fl;
 
 	__sk_dst_reset(sk);
-	if (quic_flow_route(sk, da, sa))
+	if (quic_flow_route(sk, da, sa, &fl))
 		return -EINVAL;
 
 	packet->hlen = quic_encap_len(da);
@@ -403,7 +404,7 @@ static int quic_packet_retry_transmit(struct sock *sk)
 	if (!skb)
 		return -ENOMEM;
 
-	quic_lower_xmit(sk, skb, da, sa);
+	quic_lower_xmit(sk, skb, da, &fl);
 	return 0;
 }
 
@@ -460,9 +461,10 @@ static int quic_packet_version_transmit(struct sock *sk)
 	union quic_addr *sa = &packet->saddr;
 	union quic_addr *da = &packet->daddr;
 	struct sk_buff *skb;
+	struct flowi fl;
 
 	__sk_dst_reset(sk);
-	if (quic_flow_route(sk, da, sa))
+	if (quic_flow_route(sk, da, sa, &fl))
 		return -EINVAL;
 
 	packet->hlen = quic_encap_len(da);
@@ -470,7 +472,7 @@ static int quic_packet_version_transmit(struct sock *sk)
 	if (!skb)
 		return -ENOMEM;
 
-	quic_lower_xmit(sk, skb, da, sa);
+	quic_lower_xmit(sk, skb, da, &fl);
 	return 0;
 }
 
@@ -519,9 +521,10 @@ static int quic_packet_stateless_reset_transmit(struct sock *sk)
 	union quic_addr *sa = &packet->saddr;
 	union quic_addr *da = &packet->daddr;
 	struct sk_buff *skb;
+	struct flowi fl;
 
 	__sk_dst_reset(sk);
-	if (quic_flow_route(sk, da, sa))
+	if (quic_flow_route(sk, da, sa, &fl))
 		return -EINVAL;
 
 	packet->hlen = quic_encap_len(da);
@@ -529,7 +532,7 @@ static int quic_packet_stateless_reset_transmit(struct sock *sk)
 	if (!skb)
 		return -ENOMEM;
 
-	quic_lower_xmit(sk, skb, da, sa);
+	quic_lower_xmit(sk, skb, da, &fl);
 	return 0;
 }
 
@@ -1656,7 +1659,7 @@ int quic_packet_route(struct sock *sk)
 
 	da = quic_path_daddr(paths, packet->path);
 	sa = quic_path_saddr(paths, packet->path);
-	err = quic_flow_route(sk, da, sa);
+	err = quic_flow_route(sk, da, sa, quic_path_flowi(paths));
 	if (err)
 		return err;
 
@@ -1820,12 +1823,11 @@ void quic_packet_flush(struct sock *sk)
 {
 	struct quic_path_group *paths = quic_paths(sk);
 	struct quic_packet *packet = quic_packet(sk);
-	union quic_addr *sa, *da;
 
 	if (packet->head) {
-		da = quic_path_daddr(paths, packet->path);
-		sa = quic_path_saddr(paths, packet->path);
-		quic_lower_xmit(sk, packet->head, da, sa);
+		quic_lower_xmit(sk, packet->head,
+				quic_path_daddr(paths, packet->path),
+				quic_path_flowi(paths));
 		packet->head = NULL;
 	}
 }

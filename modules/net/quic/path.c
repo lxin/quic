@@ -201,6 +201,7 @@ static int quic_path_set_bind_port(struct sock *sk, struct quic_path_group *path
 		addr->v4.sin_port = htons(snum);
 		port->net = net;
 		port->port = snum;
+		__sk_dst_reset(sk);
 		hlist_add_head(&port->node, &head->head);
 		spin_unlock_bh(&head->lock);
 		return 0;

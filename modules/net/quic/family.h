@@ -25,9 +25,8 @@ bool quic_cmp_sk_addr(struct sock *sk, union quic_addr *a, union quic_addr *addr
 int quic_get_sk_addr(struct socket *sock, struct sockaddr *a, bool peer);
 void quic_set_sk_addr(struct sock *sk, union quic_addr *a, bool src);
 
-void quic_lower_xmit(struct sock *sk, struct sk_buff *skb, union quic_addr *da,
-		     union quic_addr *sa);
-int quic_flow_route(struct sock *sk, union quic_addr *da, union quic_addr *sa);
+void quic_lower_xmit(struct sock *sk, struct sk_buff *skb, union quic_addr *da, struct flowi *fl);
+int quic_flow_route(struct sock *sk, union quic_addr *da, union quic_addr *sa, struct flowi *fl);
 
 void quic_udp_conf_init(struct sock *sk, struct udp_port_cfg *conf, union quic_addr *a);
 int quic_get_mtu_info(struct sk_buff *skb, u32 *info);

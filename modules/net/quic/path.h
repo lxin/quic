@@ -46,6 +46,7 @@ struct quic_path_group {
 	struct quic_conn_id retry_dcid;
 	struct quic_conn_id orig_dcid;
 	struct quic_path path[2];
+	struct flowi fl;
 	u16 ampl_sndlen; /* amplificationlimit send counting */
 	u16 ampl_rcvlen; /* amplificationlimit recv counting */
 	u8 entropy[8];
@@ -74,6 +75,11 @@ struct quic_path_group {
 	u8 retry:1;
 	u8 serv:1;
 };
+
+static inline struct flowi *quic_path_flowi(struct quic_path_group *paths)
+{
+	return &paths->fl;
+}
 
 static inline union quic_addr *quic_path_saddr(struct quic_path_group *paths, u8 path)
 {
