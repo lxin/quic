@@ -115,11 +115,11 @@ struct sock *quic_sock_lookup(struct sk_buff *skb, union quic_addr *sa, union qu
 	head = quic_sock_head(net, sa, da);
 	spin_lock(&head->lock);
 	sk_for_each(sk, &head->head) {
-		if (net != sock_net(sk))
+		if (net != sock_net(sk) || quic_is_listen(sk))
 			continue;
 		paths = quic_paths(sk);
-		if (!quic_path_cmp_saddr(paths, 0, sa) &&
-		    !quic_path_cmp_daddr(paths, 0, da) &&
+		if (quic_cmp_sk_addr(sk, quic_path_saddr(paths, 0), sa) &&
+		    quic_cmp_sk_addr(sk, quic_path_daddr(paths, 0), da) &&
 		    (!dcid || !quic_conn_id_cmp(quic_path_dcid(paths), dcid)))
 			break;
 	}
@@ -395,7 +395,7 @@ static int quic_hash(struct sock *sk)
 	any = quic_is_any_addr(sa);
 	sk_for_each(nsk, &head->head) {
 		if (net == sock_net(nsk) && quic_is_listen(nsk) &&
-		    !quic_path_cmp_saddr(quic_paths(nsk), 0, sa)) {
+		    quic_cmp_sk_addr(nsk, quic_path_saddr(paths, 0), sa)) {
 			if (!quic_data_cmp(alpns, quic_alpn(nsk))) {
 				err = -EADDRINUSE;
 				if (sk->sk_reuseport && nsk->sk_reuseport) {
@@ -1435,7 +1435,8 @@ static int quic_sock_connection_migrate(struct sock *sk, struct sockaddr *addr, 
 
 	if (quic_get_user_addr(sk, &a, addr, addr_len))
 		return -EINVAL;
-	if (!quic_path_saddr(paths, 0)->v4.sin_port || !quic_path_cmp_saddr(paths, 0, &a))
+	if (!quic_path_saddr(paths, 0)->v4.sin_port ||
+	    quic_cmp_sk_addr(sk, quic_path_saddr(paths, 0), &a))
 		return -EINVAL;
 
 	if (!quic_is_established(sk)) { /* set preferred address param */

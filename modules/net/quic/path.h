@@ -86,12 +86,6 @@ static inline void quic_path_set_saddr(struct quic_path_group *paths, u8 path,
 	memcpy(quic_path_saddr(paths, path), addr, sizeof(*addr));
 }
 
-static inline int quic_path_cmp_saddr(struct quic_path_group *paths, u8 path,
-				      union quic_addr *addr)
-{
-	return memcmp(addr, quic_path_saddr(paths, path), sizeof(*addr));
-}
-
 static inline union quic_addr *quic_path_daddr(struct quic_path_group *paths, u8 path)
 {
 	return &paths->path[path].daddr;
@@ -101,12 +95,6 @@ static inline void quic_path_set_daddr(struct quic_path_group *paths, u8 path,
 				       union quic_addr *addr)
 {
 	memcpy(quic_path_daddr(paths, path), addr, sizeof(*addr));
-}
-
-static inline int quic_path_cmp_daddr(struct quic_path_group *paths, u8 path,
-				      union quic_addr *addr)
-{
-	return memcmp(addr, quic_path_daddr(paths, path), sizeof(*addr));
 }
 
 static inline union quic_addr *quic_path_uaddr(struct quic_path_group *paths, u8 path)
@@ -264,7 +252,8 @@ static inline u8 quic_path_disable_saddr_alt(struct quic_path_group *paths)
 	return paths->disable_saddr_alt;
 }
 
-int quic_path_detect_alt(struct quic_path_group *paths, union quic_addr *sa, union quic_addr *da);
+int quic_path_detect_alt(struct quic_path_group *paths, union quic_addr *sa, union quic_addr *da,
+			 struct sock *sk);
 int quic_path_bind(struct sock *sk, struct quic_path_group *paths, u8 path);
 void quic_path_free(struct sock *sk, struct quic_path_group *paths, u8 path);
 void quic_path_swap(struct quic_path_group *paths);

@@ -932,7 +932,7 @@ static int quic_frame_handshake_done_process(struct sock *sk, struct quic_frame 
 
 	a = quic_path_saddr(paths, 1);
 	a->v4.sin_port = quic_path_saddr(paths, 0)->v4.sin_port;
-	if (quic_path_cmp_saddr(paths, 0, a)) {
+	if (!quic_cmp_sk_addr(sk, quic_path_saddr(paths, 0), a)) {
 		a->v4.sin_port = 0;
 		if (quic_path_bind(sk, paths, 1))
 			return 0;
@@ -1327,7 +1327,7 @@ static int quic_frame_path_response_process(struct sock *sk, struct quic_frame *
 	quic_path_swap(paths);
 	quic_set_sk_addr(sk, quic_path_saddr(paths, 0), 1);
 	quic_set_sk_addr(sk, quic_path_daddr(paths, 0), 0);
-	local = quic_path_cmp_saddr(paths, 1, quic_path_saddr(paths, 0));
+	local = !quic_cmp_sk_addr(sk, quic_path_saddr(paths, 1), quic_path_saddr(paths, 0));
 	quic_inq_event_recv(sk, QUIC_EVENT_CONNECTION_MIGRATION, &local);
 
 	frame->path = 0;
@@ -2059,7 +2059,8 @@ int quic_frame_parse_transport_params_ext(struct sock *sk, struct quic_transport
 				return -1;
 			if (quic_conn_id_add(id_set, &conn_id, 1, token))
 				return -1;
-			if (addr.v4.sin_port && quic_path_cmp_daddr(paths, 0, &addr)) {
+			if (addr.v4.sin_port &&
+			    !quic_cmp_sk_addr(sk, quic_path_daddr(paths, 0), &addr)) {
 				quic_path_set_pref_addr(paths, 1);
 				quic_path_set_daddr(paths, 1, &addr);
 			}

@@ -1141,7 +1141,7 @@ static int quic_packet_app_process(struct sock *sk, struct sk_buff *skb)
 
 	quic_get_msg_addrs(&packet->saddr, &packet->daddr, skb);
 	/* Set path so that the replies will choose the correct path */
-	cb->path = quic_path_detect_alt(quic_paths(sk), &packet->saddr, &packet->daddr);
+	cb->path = quic_path_detect_alt(quic_paths(sk), &packet->saddr, &packet->daddr, sk);
 	active = (cb->conn_id == quic_conn_id_active(source));
 	if (cb->path && !quic_conn_id_select_alt(dest, active)) {
 		number = quic_conn_id_first_number(dest);
