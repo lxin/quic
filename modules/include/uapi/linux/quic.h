@@ -12,8 +12,10 @@
 #define __uapi_quic_h__
 
 #ifdef __KERNEL__
+#include <linux/socket.h>
 #include <linux/types.h>
 #else
+#include <sys/socket.h>
 #include <stdint.h>
 #endif
 
@@ -36,15 +38,15 @@ enum quic_cmsg_type {
 
 enum quic_msg_flags {
 	/* flags for stream_flags */
-	MSG_STREAM_NEW		= 0x400,
-	MSG_STREAM_FIN		= 0x200,
-	MSG_STREAM_UNI		= 0x800,
-	MSG_STREAM_DONTWAIT	= 0x10000,
-	MSG_STREAM_SNDBLOCK	= 0x20000,
+	MSG_STREAM_NEW		= MSG_SYN,
+	MSG_STREAM_FIN		= MSG_FIN,
+	MSG_STREAM_UNI		= MSG_CONFIRM,
+	MSG_STREAM_DONTWAIT	= MSG_WAITFORONE,
+	MSG_STREAM_SNDBLOCK	= MSG_ERRQUEUE,
 
 	/* extented flags for msg_flags */
-	MSG_DATAGRAM		= 0x10,
-	MSG_NOTIFICATION	= 0x8000,
+	MSG_DATAGRAM		= MSG_RST,
+	MSG_NOTIFICATION	= MSG_MORE,
 };
 
 enum quic_crypto_level {
