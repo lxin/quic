@@ -12,6 +12,8 @@
 #define QUIC_CONN_ID_DEF	7
 #define QUIC_CONN_ID_LEAST	2
 
+#define QUIC_CONN_ID_TOKEN_LEN	16
+
 struct quic_common_conn_id {
 	struct quic_conn_id id;
 	struct list_head list;
@@ -28,7 +30,7 @@ struct quic_source_conn_id {
 
 struct quic_dest_conn_id {
 	struct quic_common_conn_id common;
-	u8 token[16];
+	u8 token[QUIC_CONN_ID_TOKEN_LEN];
 };
 
 struct quic_conn_id_set {
@@ -119,7 +121,7 @@ static inline struct sock *quic_conn_id_sk(struct quic_conn_id *conn_id)
 
 static inline void quic_conn_id_set_token(struct quic_conn_id *conn_id, u8 *token)
 {
-	memcpy(((struct quic_dest_conn_id *)conn_id)->token, token, 16);
+	memcpy(((struct quic_dest_conn_id *)conn_id)->token, token, QUIC_CONN_ID_TOKEN_LEN);
 }
 
 static inline int quic_conn_id_cmp(struct quic_conn_id *a, struct quic_conn_id *b)

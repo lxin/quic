@@ -11,6 +11,9 @@
 #define QUIC_DEF_STREAMS	100
 #define QUIC_MAX_STREAMS	4096ULL
 
+#define QUIC_STREAM_TYPE_BITS	2
+#define QUIC_STREAM_ID_STEP	(1 << QUIC_STREAM_TYPE_BITS)
+
 #define QUIC_STREAM_TYPE_CLIENT_BIDI	0x00
 #define QUIC_STREAM_TYPE_SERVER_BIDI	0x01
 #define QUIC_STREAM_TYPE_CLIENT_UNI	0x02
@@ -90,12 +93,12 @@ struct quic_stream_table {
 
 static inline u64 quic_stream_id_to_streams(s64 stream_id)
 {
-	return (u64)(stream_id >> 2) + 1;
+	return (u64)(stream_id >> QUIC_STREAM_TYPE_BITS) + 1;
 }
 
 static inline s64 quic_stream_streams_to_id(u64 streams, u8 type)
 {
-	return (s64)((streams - 1) << 2) | type;
+	return (s64)((streams - 1) << QUIC_STREAM_TYPE_BITS) | type;
 }
 
 struct quic_stream *quic_stream_send_get(struct quic_stream_table *streams, s64 stream_id,

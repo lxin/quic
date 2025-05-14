@@ -1095,11 +1095,8 @@ static int quic_sock_apply_config(struct sock *sk, struct quic_config *c)
 		config->validate_peer_address = c->validate_peer_address;
 	if (c->receive_session_ticket)
 		config->receive_session_ticket = c->receive_session_ticket;
-	if (c->certificate_request) {
-		if (c->certificate_request > 3)
-			return -EINVAL;
+	if (c->certificate_request)
 		config->certificate_request = c->certificate_request;
-	}
 	if (c->initial_smoothed_rtt) {
 		if (c->initial_smoothed_rtt < QUIC_RTO_MIN ||
 		    c->initial_smoothed_rtt > QUIC_RTO_MAX)
@@ -1644,7 +1641,7 @@ static int quic_sock_set_token(struct sock *sk, void *data, u32 len)
 		return 0;
 	}
 
-	if (!len || len > 120)
+	if (!len || len > QUIC_TOKEN_MAX_LEN)
 		return -EINVAL;
 
 	return quic_data_dup(quic_token(sk), data, len);
@@ -1652,18 +1649,20 @@ static int quic_sock_set_token(struct sock *sk, void *data, u32 len)
 
 static int quic_sock_set_session_ticket(struct sock *sk, u8 *data, u32 len)
 {
-	if (len < 64 || len > 4096)
+	if (len < QUIC_TICKET_MIN_LEN || len > QUIC_TICKET_MAX_LEN)
 		return -EINVAL;
 
 	return quic_data_dup(quic_ticket(sk), data, len);
 }
+
+#define QUIC_TP_EXT_MAX_LEN	256
 
 static int quic_sock_set_transport_params_ext(struct sock *sk, u8 *p, u32 len)
 {
 	struct quic_transport_param param = {};
 	u32 errcode;
 
-	if (!quic_is_establishing(sk))
+	if (!quic_is_establishing(sk) || len > QUIC_TP_EXT_MAX_LEN)
 		return -EINVAL;
 
 	param.remote = 1;
@@ -1923,9 +1922,9 @@ static int quic_sock_get_connection_id(struct sock *sk, u32 len, sockptr_t optva
 static int quic_sock_get_connection_close(struct sock *sk, u32 len, sockptr_t optval,
 					  sockptr_t optlen)
 {
+	u8 *phrase, frame[QUIC_FRAME_BUF_LARGE] = {};
 	struct quic_outqueue *outq = quic_outq(sk);
 	struct quic_connection_close *close;
-	u8 *phrase, frame[100] = {};
 	u32 phrase_len = 0;
 
 	phrase = outq->close_phrase;
@@ -1982,7 +1981,7 @@ static int quic_sock_get_config(struct sock *sk, u32 len, sockptr_t optval, sock
 static int quic_sock_get_alpn(struct sock *sk, u32 len, sockptr_t optval, sockptr_t optlen)
 {
 	struct quic_data *alpns = quic_alpn(sk);
-	u8 data[128];
+	u8 data[QUIC_ALPN_MAX_LEN];
 
 	if (!alpns->len) {
 		len = 0;
@@ -2012,11 +2011,13 @@ static int quic_sock_get_token(struct sock *sk, u32 len, sockptr_t optval, sockp
 	return 0;
 }
 
+#define QUIC_TICKET_MASTER_KEY_LEN		64
+
 static int quic_sock_get_session_ticket(struct sock *sk, u32 len,
 					sockptr_t optval, sockptr_t optlen)
 {
+	u8 *ticket = quic_ticket(sk)->data, key[QUIC_TICKET_MASTER_KEY_LEN];
 	struct quic_crypto *crypto = quic_crypto(sk, QUIC_CRYPTO_APP);
-	u8 *ticket = quic_ticket(sk)->data, key[64];
 	u32 tlen = quic_ticket(sk)->len;
 	union quic_addr a;
 
@@ -2034,10 +2035,11 @@ static int quic_sock_get_session_ticket(struct sock *sk, u32 len,
 	crypto = quic_crypto(sk, QUIC_CRYPTO_INITIAL);
 	memcpy(&a, quic_path_daddr(quic_paths(sk), 0), sizeof(a));
 	a.v4.sin_port = 0;
-	if (quic_crypto_generate_session_ticket_key(crypto, &a, sizeof(a), key, 64))
+	if (quic_crypto_generate_session_ticket_key(crypto, &a, sizeof(a), key,
+						    QUIC_TICKET_MASTER_KEY_LEN))
 		return -EINVAL;
 	ticket = key;
-	tlen = 64;
+	tlen = QUIC_TICKET_MASTER_KEY_LEN;
 out:
 	if (len < tlen)
 		return -EINVAL;
@@ -2052,8 +2054,8 @@ static int quic_sock_get_transport_params_ext(struct sock *sk, u32 len,
 					      sockptr_t optval, sockptr_t optlen)
 {
 	struct quic_transport_param param = {};
+	u8 data[QUIC_TP_EXT_MAX_LEN];
 	u32 datalen = 0;
-	u8 data[256];
 
 	if (!quic_is_establishing(sk))
 		return -EINVAL;

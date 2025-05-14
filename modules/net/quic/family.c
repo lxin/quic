@@ -346,12 +346,12 @@ static void quic_v4_get_pref_addr(struct sock *sk, union quic_addr *addr, u8 **p
 {
 	u8 *p = *pp;
 
-	memcpy(&addr->v4.sin_addr, p, 4);
-	p += 4;
-	memcpy(&addr->v4.sin_port, p, 2);
-	p += 2;
-	p += 16; /* skip ipv6 address */
-	p += 2;
+	memcpy(&addr->v4.sin_addr, p, QUIC_ADDR4_LEN);
+	p += QUIC_ADDR4_LEN;
+	memcpy(&addr->v4.sin_port, p, QUIC_PORT_LEN);
+	p += QUIC_PORT_LEN;
+	p += QUIC_ADDR6_LEN; /* skip ipv6 address */
+	p += QUIC_PORT_LEN;
 
 	addr->v4.sin_family = AF_INET;
 	*plen -= (p - *pp);
@@ -362,12 +362,12 @@ static void quic_v6_get_pref_addr(struct sock *sk, union quic_addr *addr, u8 **p
 {
 	u8 *p = *pp;
 
-	p += 4; /* try ipv6 address first */
-	p += 2;
-	memcpy(&addr->v6.sin6_addr, p, 16);
-	p += 16;
-	memcpy(&addr->v6.sin6_port, p, 2);
-	p += 2;
+	p += QUIC_ADDR4_LEN; /* try ipv6 address first */
+	p += QUIC_PORT_LEN;
+	memcpy(&addr->v6.sin6_addr, p, QUIC_ADDR6_LEN);
+	p += QUIC_ADDR6_LEN;
+	memcpy(&addr->v6.sin6_port, p, QUIC_PORT_LEN);
+	p += QUIC_PORT_LEN;
 
 	if (ipv6_only_sock(sk) ||
 	    addr->v6.sin6_port || !ipv6_addr_any(&addr->v6.sin6_addr)) {
@@ -382,13 +382,13 @@ static void quic_v6_get_pref_addr(struct sock *sk, union quic_addr *addr, u8 **p
 
 static void quic_v4_set_pref_addr(struct sock *sk, u8 *p, union quic_addr *addr)
 {
-	memcpy(p, &addr->v4.sin_addr, 4);
-	p += 4;
-	memcpy(p, &addr->v4.sin_port, 2);
-	p += 2;
-	memset(p, 0, 16);
-	p += 16;
-	memset(p, 0, 2);
+	memcpy(p, &addr->v4.sin_addr, QUIC_ADDR4_LEN);
+	p += QUIC_ADDR4_LEN;
+	memcpy(p, &addr->v4.sin_port, QUIC_PORT_LEN);
+	p += QUIC_PORT_LEN;
+	memset(p, 0, QUIC_ADDR6_LEN);
+	p += QUIC_ADDR6_LEN;
+	memset(p, 0, QUIC_PORT_LEN);
 }
 
 static void quic_v6_set_pref_addr(struct sock *sk, u8 *p, union quic_addr *addr)
@@ -396,13 +396,13 @@ static void quic_v6_set_pref_addr(struct sock *sk, u8 *p, union quic_addr *addr)
 	if (addr->sa.sa_family == AF_INET)
 		return quic_v4_set_pref_addr(sk, p, addr);
 
-	memset(p, 0, 4);
-	p += 4;
-	memset(p, 0, 2);
-	p += 2;
-	memcpy(p, &addr->v6.sin6_addr, 16);
-	p += 16;
-	memcpy(p, &addr->v6.sin6_port, 2);
+	memset(p, 0, QUIC_ADDR4_LEN);
+	p += QUIC_ADDR4_LEN;
+	memset(p, 0, QUIC_PORT_LEN);
+	p += QUIC_PORT_LEN;
+	memcpy(p, &addr->v6.sin6_addr, QUIC_ADDR6_LEN);
+	p += QUIC_ADDR6_LEN;
+	memcpy(p, &addr->v6.sin6_port, QUIC_PORT_LEN);
 }
 
 static bool quic_v4_cmp_sk_addr(struct sock *sk, union quic_addr *a, union quic_addr *addr)

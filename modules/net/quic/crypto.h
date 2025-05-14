@@ -10,7 +10,13 @@
 
 #define QUIC_TAG_LEN	16
 #define QUIC_IV_LEN	12
+#define QUIC_KEY_LEN	32
 #define QUIC_SECRET_LEN	48
+
+#define QUIC_TOKEN_FLAG_REGULAR		0
+#define QUIC_TOKEN_FLAG_RETRY		1
+#define QUIC_TOKEN_TIMEOUT_REGULAR	3000000
+#define QUIC_TOKEN_TIMEOUT_RETRY	600000000
 
 struct quic_cipher {
 	u32 secretlen;

@@ -25,7 +25,7 @@ static int quic_pnspace_grow(struct quic_pnspace *space, u16 size)
 	inc = ALIGN((size - space->pn_map_len), BITS_PER_LONG) + QUIC_PN_MAP_INCREMENT;
 	len = (u16)min(space->pn_map_len + inc, QUIC_PN_MAP_SIZE);
 
-	new = kzalloc(len >> 3, GFP_ATOMIC);
+	new = kzalloc(BITS_TO_BYTES(len), GFP_ATOMIC);
 	if (!new)
 		return 0;
 
@@ -41,7 +41,7 @@ static int quic_pnspace_grow(struct quic_pnspace *space, u16 size)
 int quic_pnspace_init(struct quic_pnspace *space)
 {
 	if (!space->pn_map) {
-		space->pn_map = kzalloc(QUIC_PN_MAP_INITIAL >> 3, GFP_KERNEL);
+		space->pn_map = kzalloc(BITS_TO_BYTES(QUIC_PN_MAP_INITIAL), GFP_KERNEL);
 		if (!space->pn_map)
 			return -ENOMEM;
 		space->pn_map_len = QUIC_PN_MAP_INITIAL;

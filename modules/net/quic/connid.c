@@ -48,14 +48,14 @@ bool quic_conn_id_token_exists(struct quic_conn_id_set *id_set, u8 *token)
 	struct quic_dest_conn_id *dcid;
 
 	dcid = (struct quic_dest_conn_id *)id_set->active;
-	if (!memcmp(dcid->token, token, 16)) /* fast path */
+	if (!memcmp(dcid->token, token, QUIC_CONN_ID_TOKEN_LEN)) /* fast path */
 		return true;
 
 	list_for_each_entry(common, &id_set->head, list) {
 		dcid = (struct quic_dest_conn_id *)common;
 		if (common == id_set->active)
 			continue;
-		if (!memcmp(dcid->token, token, 16))
+		if (!memcmp(dcid->token, token, QUIC_CONN_ID_TOKEN_LEN))
 			return true;
 	}
 	return false;
@@ -125,7 +125,7 @@ int quic_conn_id_add(struct quic_conn_id_set *id_set,
 	if (id_set->entry_size == sizeof(struct quic_dest_conn_id)) {
 		if (data) {
 			d_conn_id = (struct quic_dest_conn_id *)common;
-			memcpy(d_conn_id->token, data, 16);
+			memcpy(d_conn_id->token, data, QUIC_CONN_ID_TOKEN_LEN);
 		}
 	} else {
 		common->hashed = 1;

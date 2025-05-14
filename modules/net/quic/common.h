@@ -11,6 +11,8 @@
 #include <net/netns/hash.h>
 #include <linux/jhash.h>
 
+#define QUIC_HT_SIZE		64
+
 #define QUIC_MAX_ACK_DELAY	(16384 * 1000)
 #define QUIC_DEF_ACK_DELAY	25000
 
@@ -157,17 +159,6 @@ static inline u32 quic_ahash(const struct net *net, const union quic_addr *s,
 	return  jhash_3words(saddr, ports, net_hash_mix(net), daddr);
 }
 
-static inline u32 quic_var_len(u64 n)
-{
-	if (n < 64)
-		return 1;
-	if (n < 16384)
-		return 2;
-	if (n < 1073741824)
-		return 4;
-	return 8;
-}
-
 struct quic_data {
 	u8 *data;
 	u32 len;
@@ -204,13 +195,16 @@ struct quic_hash_head *quic_sock_hash(u32 hash);
 void quic_hash_tables_destroy(void);
 int quic_hash_tables_init(void);
 
+u32 quic_get_data(u8 **pp, u32 *plen, u8 *data, u32 len);
 u32 quic_get_int(u8 **pp, u32 *plen, u64 *val, u32 len);
 s64 quic_get_num(s64 max_pkt_num, s64 pkt_num, u32 n);
-int quic_get_param(u64 *pdest, u8 **pp, u32 *plen);
+u8 quic_get_param(u64 *pdest, u8 **pp, u32 *plen);
 u8 quic_get_var(u8 **pp, u32 *plen, u64 *val);
+u8 quic_var_len(u64 n);
 
 u8 *quic_put_param(u8 *p, u16 id, u64 value);
 u8 *quic_put_data(u8 *p, u8 *data, u32 len);
+u8 *quic_put_varint(u8 *p, u64 num, u8 len);
 u8 *quic_put_int(u8 *p, u64 num, u8 len);
 u8 *quic_put_var(u8 *p, u64 num);
 

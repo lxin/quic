@@ -29,7 +29,7 @@ static int quic_outq_limit_check(struct sock *sk, struct quic_frame *frame)
 			return -1;
 	}
 
-	/* amplificationlimit */
+	/* rfc9000#section-21.1.1.1: Anti-Amplification */
 	if (quic_is_serv(sk) && !paths->validated) {
 		len = packet->len + frame->len + quic_packet_taglen(packet);
 		if (paths->ampl_sndlen + len > paths->ampl_rcvlen * 3) {
@@ -493,16 +493,14 @@ void quic_outq_transmit_probe(struct sock *sk)
 void quic_outq_transmit_close(struct sock *sk, u8 type, u32 errcode, u8 level)
 {
 	struct quic_outqueue *outq = quic_outq(sk);
-	struct quic_connection_close *close;
-	u8 buf[16] = {};
+	struct quic_connection_close close = {};
 
 	if (!errcode)
 		return;
 
-	close = (void *)buf;
-	close->errcode = errcode;
-	close->frame = type;
-	quic_inq_event_recv(sk, QUIC_EVENT_CONNECTION_CLOSE, close);
+	close.errcode = errcode;
+	close.frame = type;
+	quic_inq_event_recv(sk, QUIC_EVENT_CONNECTION_CLOSE, &close);
 
 	outq->close_errcode = errcode;
 	outq->close_frame = type;
@@ -551,6 +549,8 @@ static void quic_outq_psent_sack_frames(struct sock *sk, struct quic_packet_sent
 	quic_outq_wfree(acked, sk);
 }
 
+#define QUIC_PMTUD_RAISE_TIMER_FACTOR	30
+
 static void quic_outq_path_confirm(struct sock *sk, u8 level, s64 largest, s64 smallest)
 {
 	struct quic_path_group *paths = quic_paths(sk);
@@ -571,9 +571,11 @@ static void quic_outq_path_confirm(struct sock *sk, u8 level, s64 largest, s64 s
 	if (!complete)
 		quic_outq_transmit_probe(sk);
 	if (raise_timer) /* reuse probe timer as raise timer */
-		quic_timer_reset(sk, QUIC_TIMER_PMTU, (u64)c->plpmtud_probe_interval * 30);
+		quic_timer_reset(sk, QUIC_TIMER_PMTU,
+				 (u64)c->plpmtud_probe_interval * QUIC_PMTUD_RAISE_TIMER_FACTOR);
 }
 
+/* rfc9002#section-a.7: OnAckReceived() */
 void quic_outq_transmitted_sack(struct sock *sk, u8 level, s64 largest, s64 smallest,
 				s64 ack_largest, u32 ack_delay)
 {
@@ -620,7 +622,7 @@ void quic_outq_transmitted_sack(struct sock *sk, u8 level, s64 largest, s64 smal
 	quic_cong_on_ack_recv(cong, acked, READ_ONCE(sk->sk_max_pacing_rate));
 }
 
-/* GetLossTimeAndSpace() */
+/* rfc9002#section-a.8: GetLossTimeAndSpace() */
 static u32 quic_outq_get_loss_time(struct sock *sk, u8 *level)
 {
 	struct quic_pnspace *s;
@@ -648,7 +650,7 @@ static u32 quic_outq_get_loss_time(struct sock *sk, u8 *level)
 	return time;
 }
 
-/* GetPtoTimeAndSpace() */
+/* rfc9002#section-a.8: GetPtoTimeAndSpace() */
 static u32 quic_outq_get_pto_time(struct sock *sk, u8 *level)
 {
 	u32 duration, t, time = 0, now = jiffies_to_usecs(jiffies);
@@ -696,7 +698,7 @@ static u32 quic_outq_get_pto_time(struct sock *sk, u8 *level)
 	return time;
 }
 
-/* SetLossDetectionTimer() */
+/* rfc9002#section-a.8: SetLossDetectionTimer() */
 void quic_outq_update_loss_timer(struct sock *sk)
 {
 	struct quic_path_group *paths = quic_paths(sk);
@@ -802,7 +804,7 @@ static void quic_outq_psent_retransmit_frames(struct sock *sk, struct quic_packe
 	quic_outq_wfree(bytes, sk);
 }
 
-/* DetectAndRemoveLostPackets() */
+/* rfc9002#section-a.10: DetectAndRemoveLostPackets() */
 void quic_outq_retransmit_mark(struct sock *sk, u8 level, u8 immediate)
 {
 	struct quic_pnspace *space = quic_pnspace(sk, level);
@@ -852,7 +854,7 @@ void quic_outq_retransmit_list(struct sock *sk, struct list_head *head)
 	}
 }
 
-/* OnLossDetectionTimeout() */
+/* rfc9002#section-a.9: OnLossDetectionTimeout() */
 void quic_outq_transmit_pto(struct sock *sk)
 {
 	struct quic_outqueue *outq = quic_outq(sk);

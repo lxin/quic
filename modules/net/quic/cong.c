@@ -17,6 +17,27 @@
 #include "common.h"
 #include "cong.h"
 
+/* rfc9002#section-7.3: Congestion Control States
+ *
+ *                  New path or      +------------+
+ *             persistent congestion |   Slow     |
+ *         (O)---------------------->|   Start    |
+ *                                   +------------+
+ *                                         |
+ *                                 Loss or |
+ *                         ECN-CE increase |
+ *                                         v
+ *  +------------+     Loss or       +------------+
+ *  | Congestion |  ECN-CE increase  |  Recovery  |
+ *  | Avoidance  |------------------>|   Period   |
+ *  +------------+                   +------------+
+ *            ^                            |
+ *            |                            |
+ *            +----------------------------+
+ *               Acknowledgment of packet
+ *                 sent during recovery
+ */
+
 /* CUBIC APIs */
 struct quic_cubic {
 	u32 pending_w_add;
@@ -237,7 +258,9 @@ static void quic_cubic_on_packet_lost(struct quic_cong *cong, u32 time, u32 byte
 	time_ssthresh = cong->smoothed_rtt + max(4 * cong->rttvar, 1000U);
 	time_ssthresh = (time_ssthresh + cong->max_ack_delay) * 3;
 	if (cong->time - time > time_ssthresh) {
-		/* persistent congestion: cong_avoid -> slow_start or recovery -> slow_start */
+		/* rfc9002#section-7.6: Persistent Congestion:
+		 * cong_avoid -> slow_start or recovery -> slow_start
+		 */
 		pr_debug("%s: permanent congestion, cwnd: %u, ssthresh: %u\n",
 			 __func__, cong->window, cong->ssthresh);
 		cong->min_rtt_valid = 0;
@@ -376,7 +399,9 @@ static void quic_reno_on_packet_lost(struct quic_cong *cong, u32 time, u32 bytes
 	time_ssthresh = cong->smoothed_rtt + max(4 * cong->rttvar, 1000U);
 	time_ssthresh = (time_ssthresh + cong->max_ack_delay) * 3;
 	if (cong->time - time > time_ssthresh) {
-		/* persistent congestion: cong_avoid -> slow_start or recovery -> slow_start */
+		/* rfc9002#section-7.6: Persistent Congestion:
+		 * cong_avoid -> slow_start or recovery -> slow_start
+		 */
 		pr_debug("%s: permanent congestion, cwnd: %u, ssthresh: %u\n",
 			 __func__, cong->window, cong->ssthresh);
 		cong->min_rtt_valid = 0;
@@ -559,7 +584,7 @@ void quic_cong_on_ack_recv(struct quic_cong *cong, u32 bytes, u32 max_rate)
 }
 EXPORT_SYMBOL_GPL(quic_cong_on_ack_recv);
 
-/* Estimating the Round-Trip Time */
+/* rfc9002#section-5: Estimating the Round-Trip Time */
 void quic_cong_rtt_update(struct quic_cong *cong, u32 time, u32 ack_delay)
 {
 	u32 adjusted_rtt, rttvar_sample;

@@ -303,7 +303,7 @@ static void quic_inq_handshake_tail(struct sock *sk, struct quic_frame *frame)
 		return;
 	}
 
-	if (!crypto->ticket_ready && crypto->recv_offset <= 4096) {
+	if (!crypto->ticket_ready && crypto->recv_offset <= QUIC_TICKET_MAX_LEN) {
 		quic_data_append(ticket, frame->data, frame->len);
 		if (ticket->len >= 4) {
 			p = ticket->data;

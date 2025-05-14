@@ -12,6 +12,17 @@
 
 #include "common.h"
 
+#define QUIC_VARINT_1BYTE_MAX		0x3fULL
+#define QUIC_VARINT_2BYTE_MAX		0x3fffULL
+#define QUIC_VARINT_4BYTE_MAX		0x3fffffffULL
+
+#define QUIC_VARINT_2BYTE_PREFIX	0x40
+#define QUIC_VARINT_4BYTE_PREFIX	0x80
+#define QUIC_VARINT_8BYTE_PREFIX	0xc0
+
+#define QUIC_VARINT_LENGTH(p)		(1u << ((*(p)) >> 6))
+#define QUIC_VARINT_VALUE_MASK		0x3f
+
 static struct quic_hash_table quic_hash_tables[QUIC_HT_MAX_TABLES];
 
 struct quic_hash_head *quic_sock_hash(u32 hash)
@@ -66,7 +77,7 @@ void quic_hash_tables_destroy(void)
 
 	for (table = 0; table < QUIC_HT_MAX_TABLES; table++) {
 		ht = &quic_hash_tables[table];
-		ht->size = 64;
+		ht->size = QUIC_HT_SIZE;
 		kfree(ht->hash);
 	}
 }
@@ -79,7 +90,7 @@ int quic_hash_tables_init(void)
 
 	for (table = 0; table < QUIC_HT_MAX_TABLES; table++) {
 		ht = &quic_hash_tables[table];
-		ht->size = 64;
+		ht->size = QUIC_HT_SIZE;
 		head = kmalloc_array(ht->size, sizeof(*head), GFP_KERNEL);
 		if (!head) {
 			quic_hash_tables_destroy();
@@ -102,6 +113,17 @@ union quic_var {
 	__be64	be64;
 };
 
+u8 quic_var_len(u64 n)
+{
+	if (n <= QUIC_VARINT_1BYTE_MAX)
+		return 1;
+	if (n <= QUIC_VARINT_2BYTE_MAX)
+		return 2;
+	if (n <= QUIC_VARINT_4BYTE_MAX)
+		return 4;
+	return 8;
+}
+
 u8 quic_get_var(u8 **pp, u32 *plen, u64 *val)
 {
 	union quic_var n = {};
@@ -111,7 +133,7 @@ u8 quic_get_var(u8 **pp, u32 *plen, u64 *val)
 	if (!*plen)
 		return 0;
 
-	len = (u8)(1u << (*p >> 6));
+	len = QUIC_VARINT_LENGTH(p);
 	if (*plen < len)
 		return 0;
 
@@ -121,17 +143,17 @@ u8 quic_get_var(u8 **pp, u32 *plen, u64 *val)
 		break;
 	case 2:
 		memcpy(&n.be16, p, 2);
-		n.u8 &= 0x3f;
+		n.u8 &= QUIC_VARINT_VALUE_MASK;
 		v = be16_to_cpu(n.be16);
 		break;
 	case 4:
 		memcpy(&n.be32, p, 4);
-		n.u8 &= 0x3f;
+		n.u8 &= QUIC_VARINT_VALUE_MASK;
 		v = be32_to_cpu(n.be32);
 		break;
 	case 8:
 		memcpy(&n.be64, p, 8);
-		n.u8 &= 0x3f;
+		n.u8 &= QUIC_VARINT_VALUE_MASK;
 		v = be64_to_cpu(n.be64);
 		break;
 	default:
@@ -183,29 +205,41 @@ u32 quic_get_int(u8 **pp, u32 *plen, u64 *val, u32 len)
 	return len;
 }
 
+u32 quic_get_data(u8 **pp, u32 *plen, u8 *data, u32 len)
+{
+	if (*plen < len)
+		return 0;
+
+	memcpy(data, *pp, len);
+	*pp += len;
+	*plen -= len;
+
+	return len;
+}
+
 u8 *quic_put_var(u8 *p, u64 num)
 {
 	union quic_var n;
 
-	if (num < 64) {
+	if (num <= QUIC_VARINT_1BYTE_MAX) {
 		*p++ = (u8)(num & 0xff);
 		return p;
 	}
-	if (num < 16384) {
+	if (num <= QUIC_VARINT_2BYTE_MAX) {
 		n.be16 = cpu_to_be16((u16)num);
 		*((__be16 *)p) = n.be16;
-		*p |= 0x40;
+		*p |= QUIC_VARINT_2BYTE_PREFIX;
 		return p + 2;
 	}
-	if (num < 1073741824) {
+	if (num <= QUIC_VARINT_4BYTE_MAX) {
 		n.be32 = cpu_to_be32((u32)num);
 		*((__be32 *)p) = n.be32;
-		*p |= 0x80;
+		*p |= QUIC_VARINT_4BYTE_PREFIX;
 		return p + 4;
 	}
 	n.be64 = cpu_to_be64(num);
 	*((__be64 *)p) = n.be64;
-	*p |= 0xc0;
+	*p |= QUIC_VARINT_8BYTE_PREFIX;
 	return p + 8;
 }
 
@@ -230,6 +264,29 @@ u8 *quic_put_int(u8 *p, u64 num, u8 len)
 	}
 }
 
+u8 *quic_put_varint(u8 *p, u64 num, u8 len)
+{
+	union quic_var n;
+
+	switch (len) {
+	case 1:
+		*p++ = (u8)(num & 0xff);
+		return p;
+	case 2:
+		n.be16 = cpu_to_be16((u16)(num & 0xffff));
+		*((__be16 *)p) = n.be16;
+		*p |= QUIC_VARINT_2BYTE_PREFIX;
+		return p + 2;
+	case 4:
+		n.be32 = cpu_to_be32((u32)num);
+		*((__be32 *)p) = n.be32;
+		*p |= QUIC_VARINT_4BYTE_PREFIX;
+		return p + 4;
+	default:
+		return NULL;
+	}
+}
+
 u8 *quic_put_data(u8 *p, u8 *data, u32 len)
 {
 	if (!len)
@@ -246,19 +303,20 @@ u8 *quic_put_param(u8 *p, u16 id, u64 value)
 	return quic_put_var(p, value);
 }
 
-int quic_get_param(u64 *pdest, u8 **pp, u32 *plen)
+u8 quic_get_param(u64 *pdest, u8 **pp, u32 *plen)
 {
 	u64 valuelen;
 
 	if (!quic_get_var(pp, plen, &valuelen))
-		return -1;
+		return 0;
 
 	if (*plen < valuelen)
-		return -1;
+		return 0;
 
 	if (!quic_get_var(pp, plen, pdest))
-		return -1;
-	return 0;
+		return 0;
+
+	return (u8)valuelen;
 }
 
 s64 quic_get_num(s64 max_pkt_num, s64 pkt_num, u32 n)

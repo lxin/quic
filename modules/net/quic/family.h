@@ -8,6 +8,12 @@
  *    Xin Long <lucien.xin@gmail.com>
  */
 
+#define QUIC_PORT_LEN		2
+#define QUIC_ADDR4_LEN		4
+#define QUIC_ADDR6_LEN		16
+
+#define QUIC_PREF_ADDR_LEN	(QUIC_ADDR4_LEN + QUIC_PORT_LEN + QUIC_ADDR6_LEN + QUIC_PORT_LEN)
+
 int quic_common_setsockopt(struct sock *sk, int level, int optname, sockptr_t optval,
 			   unsigned int optlen);
 int quic_common_getsockopt(struct sock *sk, int level, int optname, char __user *optval,

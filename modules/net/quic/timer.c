@@ -18,28 +18,26 @@ void quic_timer_sack_handler(struct sock *sk)
 {
 	struct quic_pnspace *space = quic_pnspace(sk, QUIC_CRYPTO_APP);
 	struct quic_inqueue *inq = quic_inq(sk);
-	struct quic_connection_close *close;
-	u8 buf[16] = {};
+	struct quic_connection_close close = {};
 
 	if (quic_is_closed(sk))
 		return;
 
-	if (!inq->need_sack) {
-		close = (void *)buf;
-		quic_inq_event_recv(sk, QUIC_EVENT_CONNECTION_CLOSE, close);
+	if (inq->sack_flag == QUIC_SACK_FLAG_NONE) {
+		quic_inq_event_recv(sk, QUIC_EVENT_CONNECTION_CLOSE, &close);
 		quic_set_state(sk, QUIC_SS_CLOSED);
 
 		pr_debug("%s: idle timeout\n", __func__);
 		return;
 	}
 
-	if (inq->need_sack == 2) {
+	if (inq->sack_flag == QUIC_SACK_FLAG_APP) {
 		space->need_sack = 1;
 		space->sack_path = 0;
 	}
 
 	quic_outq_transmit(sk);
-	inq->need_sack = 0;
+	inq->sack_flag = QUIC_SACK_FLAG_NONE;
 	quic_timer_start(sk, QUIC_TIMER_IDLE, inq->timeout);
 }
 
@@ -87,6 +85,8 @@ out:
 	sock_put(sk);
 }
 
+#define QUIC_MAX_ALT_PROBES	3
+
 void quic_timer_path_handler(struct sock *sk)
 {
 	struct quic_path_group *paths = quic_paths(sk);
@@ -99,7 +99,7 @@ void quic_timer_path_handler(struct sock *sk)
 	if (!path)
 		goto out;
 
-	if (paths->alt_probes++ < 3)
+	if (paths->alt_probes++ < QUIC_MAX_ALT_PROBES)
 		goto out;
 
 	path = 0;
@@ -131,7 +131,7 @@ out:
 void quic_timer_reset_path(struct sock *sk)
 {
 	struct quic_cong *cong = quic_cong(sk);
-	u64 timeout = cong->pto * 3;
+	u64 timeout = cong->pto * 2;
 
 	if (timeout < QUIC_MIN_PATH_TIMEOUT)
 		timeout = QUIC_MIN_PATH_TIMEOUT;

@@ -14,6 +14,8 @@
 #define QUIC_MIN_UDP_PAYLOAD	1200
 #define QUIC_MAX_UDP_PAYLOAD	65527
 
+#define QUIC_PATH_ENTROPY_LEN	8
+
 enum {
 	QUIC_PATH_ALT_NONE,
 	QUIC_PATH_ALT_PENDING,
@@ -43,13 +45,13 @@ struct quic_path {
 };
 
 struct quic_path_group {
+	u8 entropy[QUIC_PATH_ENTROPY_LEN];
 	struct quic_conn_id retry_dcid;
 	struct quic_conn_id orig_dcid;
 	struct quic_path path[2];
 	struct flowi fl;
 	u16 ampl_sndlen; /* amplificationlimit send counting */
 	u16 ampl_rcvlen; /* amplificationlimit recv counting */
-	u8 entropy[8];
 
 	u32 mtu_info;
 	u32 pathmtu;

@@ -199,7 +199,7 @@ static int quic_seq_show(struct seq_file *seq, void *v)
 	struct quic_outqueue *outq;
 	struct sock *sk;
 
-	if (hash >= 64)
+	if (hash >= QUIC_HT_SIZE)
 		return -ENOMEM;
 
 	head = quic_sock_hash(hash);
@@ -225,7 +225,7 @@ static int quic_seq_show(struct seq_file *seq, void *v)
 
 static void *quic_seq_start(struct seq_file *seq, loff_t *pos)
 {
-	if (*pos >= 64)
+	if (*pos >= QUIC_HT_SIZE)
 		return NULL;
 
 	if (*pos < 0)
@@ -240,7 +240,7 @@ static void *quic_seq_start(struct seq_file *seq, loff_t *pos)
 
 static void *quic_seq_next(struct seq_file *seq, void *v, loff_t *pos)
 {
-	if (++*pos >= 64)
+	if (++*pos >= QUIC_HT_SIZE)
 		return NULL;
 
 	return pos;
@@ -533,6 +533,7 @@ static __init int quic_init(void)
 	if (err)
 		goto err_def_ops;
 
+	/* similar to the calculation of sysctl_quic_(r/w)mem in sctp_init() */
 	limit = nr_free_buffer_pages() / 8;
 	limit = max(limit, 128UL);
 	sysctl_quic_mem[0] = (long)limit / 4 * 3;

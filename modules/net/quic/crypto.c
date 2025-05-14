@@ -20,7 +20,9 @@
 #include "common.h"
 #include "crypto.h"
 
-static u8 quic_random_data[32] __read_mostly;
+#define QUIC_RANDOM_DATA_LEN	32
+
+static u8 quic_random_data[QUIC_RANDOM_DATA_LEN] __read_mostly;
 
 static int quic_crypto_hkdf_extract(struct crypto_shash *tfm, struct quic_data *srt,
 				    struct quic_data *hash, struct quic_data *key)
@@ -34,27 +36,26 @@ static int quic_crypto_hkdf_extract(struct crypto_shash *tfm, struct quic_data *
 	return crypto_shash_tfm_digest(tfm, hash->data, hash->len, key->data);
 }
 
+#define QUIC_MAX_INFO_LEN	256
+
 static int quic_crypto_hkdf_expand(struct crypto_shash *tfm, struct quic_data *srt,
 				   struct quic_data *label, struct quic_data *hash,
 				   struct quic_data *key)
 {
-	u8 cnt = 1, info[256], *p = info, *prev = NULL;
-	u8 LABEL[] = "tls13 ", tmp[48];
+	u8 cnt = 1, info[QUIC_MAX_INFO_LEN], *p = info, *prev = NULL;
+	u8 LABEL[] = "tls13 ", tmp[QUIC_SECRET_LEN];
 	SHASH_DESC_ON_STACK(desc, tfm);
 	u32 i, infolen;
 	int err;
 
-	*p++ = (u8)(key->len / 256);
-	*p++ = (u8)(key->len % 256);
+	*p++ = (u8)(key->len / QUIC_MAX_INFO_LEN);
+	*p++ = (u8)(key->len % QUIC_MAX_INFO_LEN);
 	*p++ = (u8)(sizeof(LABEL) - 1 + label->len);
-	memcpy(p, LABEL, sizeof(LABEL) - 1);
-	p += sizeof(LABEL) - 1;
-	memcpy(p, label->data, label->len);
-	p += label->len;
+	p = quic_put_data(p, LABEL, sizeof(LABEL) - 1);
+	p = quic_put_data(p, label->data, label->len);
 	if (hash) {
 		*p++ = (u8)hash->len;
-		memcpy(p, hash->data, hash->len);
-		p += hash->len;
+		p = quic_put_data(p, hash->data, hash->len);
 	} else {
 		*p++ = 0;
 	}
@@ -108,15 +109,16 @@ static int quic_crypto_keys_derive(struct crypto_shash *tfm, struct quic_data *s
 				   struct quic_data *k, struct quic_data *i,
 				   struct quic_data *hp_k, u32 version)
 {
-	struct quic_data hp_k_l = {HP_KEY_LABEL_V1, 7}, k_l = {KEY_LABEL_V1, 8};
-	struct quic_data i_l = {IV_LABEL_V1, 7};
+	struct quic_data hp_k_l = {HP_KEY_LABEL_V1, strlen(HP_KEY_LABEL_V1)};
+	struct quic_data k_l = {KEY_LABEL_V1, strlen(KEY_LABEL_V1)};
+	struct quic_data i_l = {IV_LABEL_V1, strlen(IV_LABEL_V1)};
 	struct quic_data z = {};
 	int err;
 
 	if (version == QUIC_VERSION_V2) {
-		quic_data(&hp_k_l, HP_KEY_LABEL_V2, 9);
-		quic_data(&k_l, KEY_LABEL_V2, 10);
-		quic_data(&i_l, IV_LABEL_V2, 9);
+		quic_data(&hp_k_l, HP_KEY_LABEL_V2, strlen(HP_KEY_LABEL_V2));
+		quic_data(&k_l, KEY_LABEL_V2, strlen(KEY_LABEL_V2));
+		quic_data(&i_l, IV_LABEL_V2, strlen(IV_LABEL_V2));
 	}
 
 	err = quic_crypto_hkdf_expand(tfm, s, &k_l, &z, k);
@@ -135,9 +137,9 @@ static int quic_crypto_keys_derive(struct crypto_shash *tfm, struct quic_data *s
 static int quic_crypto_tx_keys_derive_and_install(struct quic_crypto *crypto)
 {
 	struct quic_data srt = {}, k, iv, hp_k = {}, *hp = NULL;
+	u8 tx_key[QUIC_KEY_LEN], tx_hp_key[QUIC_KEY_LEN];
 	int err, phase = crypto->key_phase;
 	u32 keylen, ivlen = QUIC_IV_LEN;
-	u8 tx_key[32], tx_hp_key[32];
 
 	keylen = crypto->cipher->keylen;
 	quic_data(&srt, crypto->tx_secret, crypto->cipher->secretlen);
@@ -166,9 +168,9 @@ static int quic_crypto_tx_keys_derive_and_install(struct quic_crypto *crypto)
 static int quic_crypto_rx_keys_derive_and_install(struct quic_crypto *crypto)
 {
 	struct quic_data srt = {}, k, iv, hp_k = {}, *hp = NULL;
+	u8 rx_key[QUIC_KEY_LEN], rx_hp_key[QUIC_KEY_LEN];
 	int err, phase = crypto->key_phase;
 	u32 keylen, ivlen = QUIC_IV_LEN;
-	u8 rx_key[32], rx_hp_key[32];
 
 	keylen = crypto->cipher->keylen;
 	quic_data(&srt, crypto->rx_secret, crypto->cipher->secretlen);
@@ -221,6 +223,13 @@ static void *quic_crypto_skcipher_mem_alloc(struct crypto_skcipher *tfm, u32 mas
 	return (void *)mem;
 }
 
+#define QUIC_SAMPLE_LEN		16
+#define QUIC_MAX_PN_LEN		4
+
+#define QUIC_HEADER_FORM_BIT	0x80
+#define QUIC_LONG_HEADER_MASK	0x0f
+#define QUIC_SHORT_HEADER_MASK	0x1f
+
 static int quic_crypto_header_encrypt(struct crypto_skcipher *tfm, struct sk_buff *skb, bool chacha)
 {
 	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
@@ -229,20 +238,22 @@ static int quic_crypto_header_encrypt(struct crypto_skcipher *tfm, struct sk_buf
 	u8 *mask, *iv, *p;
 	int err, i;
 
-	mask = quic_crypto_skcipher_mem_alloc(tfm, 16, &iv, &req);
+	mask = quic_crypto_skcipher_mem_alloc(tfm, QUIC_SAMPLE_LEN, &iv, &req);
 	if (!mask)
 		return -ENOMEM;
 
-	memcpy((chacha ? iv : mask), skb->data + cb->number_offset + 4, 16);
-	sg_init_one(&sg, mask, 16);
+	memcpy((chacha ? iv : mask), skb->data + cb->number_offset + QUIC_MAX_PN_LEN,
+	       QUIC_SAMPLE_LEN);
+	sg_init_one(&sg, mask, QUIC_SAMPLE_LEN);
 	skcipher_request_set_tfm(req, tfm);
-	skcipher_request_set_crypt(req, &sg, &sg, 16, iv);
+	skcipher_request_set_crypt(req, &sg, &sg, QUIC_SAMPLE_LEN, iv);
 	err = crypto_skcipher_encrypt(req);
 	if (err)
 		goto err;
 
 	p = skb->data;
-	*p = (u8)(*p ^ (mask[0] & (((*p & 0x80) == 0x80) ? 0x0f : 0x1f)));
+	*p = (u8)(*p ^ (mask[0] & (((*p & QUIC_HEADER_FORM_BIT) == QUIC_HEADER_FORM_BIT) ?
+				   QUIC_LONG_HEADER_MASK : QUIC_SHORT_HEADER_MASK)));
 	p = skb->data + cb->number_offset;
 	for (i = 1; i <= cb->number_len; i++)
 		*p++ ^= mask[i];
@@ -334,8 +345,8 @@ static int quic_crypto_payload_encrypt(struct crypto_aead *tfm, struct sk_buff *
 	hlen = cb->number_offset + cb->number_len;
 	memcpy(nonce, tx_iv, QUIC_IV_LEN);
 	n = cpu_to_be64(cb->number);
-	for (i = 0; i < 8; i++)
-		nonce[QUIC_IV_LEN - 8 + i] ^= ((u8 *)&n)[i];
+	for (i = 0; i < sizeof(n); i++)
+		nonce[QUIC_IV_LEN - sizeof(n) + i] ^= ((u8 *)&n)[i];
 
 	iv[0] = TLS_AES_CCM_IV_B0_BYTE;
 	memcpy(&iv[ccm], nonce, QUIC_IV_LEN);
@@ -387,8 +398,8 @@ static int quic_crypto_payload_decrypt(struct crypto_aead *tfm, struct sk_buff *
 
 	memcpy(nonce, rx_iv, QUIC_IV_LEN);
 	n = cpu_to_be64(cb->number);
-	for (i = 0; i < 8; i++)
-		nonce[QUIC_IV_LEN - 8 + i] ^= ((u8 *)&n)[i];
+	for (i = 0; i < sizeof(n); i++)
+		nonce[QUIC_IV_LEN - sizeof(n) + i] ^= ((u8 *)&n)[i];
 
 	iv[0] = TLS_AES_CCM_IV_B0_BYTE;
 	memcpy(&iv[ccm], nonce, QUIC_IV_LEN);
@@ -412,8 +423,8 @@ static void quic_crypto_get_header(struct sk_buff *skb)
 {
 	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
 	struct quichdr *hdr = quic_hdr(skb);
+	u32 len = QUIC_MAX_PN_LEN;
 	u8 *p = (u8 *)hdr;
-	u32 len = 4;
 
 	p += cb->number_offset;
 	cb->key_phase = hdr->key;
@@ -425,6 +436,8 @@ static void quic_crypto_get_header(struct sk_buff *skb)
 		cb->number_max = cb->number;
 }
 
+#define QUIC_PN_LEN_BITS_MASK	0x03
+
 static int quic_crypto_header_decrypt(struct crypto_skcipher *tfm, struct sk_buff *skb, bool chacha)
 {
 	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
@@ -434,26 +447,27 @@ static int quic_crypto_header_decrypt(struct crypto_skcipher *tfm, struct sk_buf
 	struct scatterlist sg;
 	u8 *mask, *iv, *p;
 
-	mask = quic_crypto_skcipher_mem_alloc(tfm, 16, &iv, &req);
+	mask = quic_crypto_skcipher_mem_alloc(tfm, QUIC_SAMPLE_LEN, &iv, &req);
 	if (!mask)
 		return -ENOMEM;
 
-	if (len < 4 + 16) {
+	if (len < QUIC_MAX_PN_LEN + QUIC_SAMPLE_LEN) {
 		err = -EINVAL;
 		goto err;
 	}
 	p = (u8 *)hdr + cb->number_offset;
-	memcpy((chacha ? iv : mask), p + 4, 16);
-	sg_init_one(&sg, mask, 16);
+	memcpy((chacha ? iv : mask), p + QUIC_MAX_PN_LEN, QUIC_SAMPLE_LEN);
+	sg_init_one(&sg, mask, QUIC_SAMPLE_LEN);
 	skcipher_request_set_tfm(req, tfm);
-	skcipher_request_set_crypt(req, &sg, &sg, 16, iv);
+	skcipher_request_set_crypt(req, &sg, &sg, QUIC_SAMPLE_LEN, iv);
 	err = crypto_skcipher_encrypt(req);
 	if (err)
 		goto err;
 
 	p = (u8 *)hdr;
-	*p = (u8)(*p ^ (mask[0] & (((*p & 0x80) == 0x80) ? 0x0f : 0x1f)));
-	cb->number_len = (*p & 0x03) + 1;
+	*p = (u8)(*p ^ (mask[0] & (((*p & QUIC_HEADER_FORM_BIT) == QUIC_HEADER_FORM_BIT) ?
+				   QUIC_LONG_HEADER_MASK : QUIC_SHORT_HEADER_MASK)));
+	cb->number_len = (*p & QUIC_PN_LEN_BITS_MASK) + 1;
 	p += cb->number_offset;
 	for (i = 0; i < cb->number_len; ++i)
 		*(p + i) = *((u8 *)hdr + cb->number_offset + i) ^ mask[i + 1];
@@ -697,7 +711,8 @@ int quic_crypto_get_secret(struct quic_crypto *crypto, struct quic_crypto_secret
 int quic_crypto_key_update(struct quic_crypto *crypto)
 {
 	u8 tx_secret[QUIC_SECRET_LEN], rx_secret[QUIC_SECRET_LEN];
-	struct quic_data l = {LABEL_V1, 7}, z = {}, k, srt;
+	struct quic_data l = {LABEL_V1, strlen(LABEL_V1)};
+	struct quic_data z = {}, k, srt;
 	u32 secret_len;
 	int err;
 
@@ -706,7 +721,7 @@ int quic_crypto_key_update(struct quic_crypto *crypto)
 
 	secret_len = crypto->cipher->secretlen;
 	if (crypto->version == QUIC_VERSION_V2)
-		quic_data(&l, LABEL_V2, 9);
+		quic_data(&l, LABEL_V2, strlen(LABEL_V2));
 
 	crypto->key_pending = 1;
 	memcpy(tx_secret, crypto->tx_secret, secret_len);
@@ -768,14 +783,16 @@ EXPORT_SYMBOL_GPL(quic_crypto_free);
 #define QUIC_INITIAL_SALT_V2    \
 	"\x0d\xed\xe3\xde\xf7\x00\xa6\xdb\x81\x93\x81\xbe\x6e\x26\x9d\xcb\xf9\xbd\x2e\xd9"
 
+#define QUIC_INITIAL_SALT_LEN	20
+
 int quic_crypto_initial_keys_install(struct quic_crypto *crypto, struct quic_conn_id *conn_id,
 				     u32 version, bool is_serv)
 {
+	u8 secret[TLS_CIPHER_AES_GCM_128_SECRET_SIZE];
 	struct quic_data salt, s, k, l, dcid, z = {};
 	struct quic_crypto_secret srt = {};
 	struct crypto_shash *tfm;
 	char *tl, *rl, *sal;
-	u8 secret[32];
 	int err;
 
 	tfm = crypto_alloc_shash("hmac(sha256)", 0, 0);
@@ -792,15 +809,15 @@ int quic_crypto_initial_keys_install(struct quic_crypto *crypto, struct quic_con
 	sal = QUIC_INITIAL_SALT_V1;
 	if (version == QUIC_VERSION_V2)
 		sal = QUIC_INITIAL_SALT_V2;
-	quic_data(&salt, sal, 20);
+	quic_data(&salt, sal, QUIC_INITIAL_SALT_LEN);
 	quic_data(&dcid, conn_id->data, conn_id->len);
-	quic_data(&s, secret, 32);
+	quic_data(&s, secret, TLS_CIPHER_AES_GCM_128_SECRET_SIZE);
 	err = quic_crypto_hkdf_extract(tfm, &salt, &dcid, &s);
 	if (err)
 		goto out;
 
-	quic_data(&l, tl, 9);
-	quic_data(&k, srt.secret, 32);
+	quic_data(&l, tl, strlen(tl));
+	quic_data(&k, srt.secret, TLS_CIPHER_AES_GCM_128_SECRET_SIZE);
 	srt.type = TLS_CIPHER_AES_GCM_128;
 	srt.send = 1;
 	err = quic_crypto_hkdf_expand(tfm, &s, &l, &z, &k);
@@ -810,8 +827,8 @@ int quic_crypto_initial_keys_install(struct quic_crypto *crypto, struct quic_con
 	if (err)
 		goto out;
 
-	quic_data(&l, rl, 9);
-	quic_data(&k, srt.secret, 32);
+	quic_data(&l, rl, strlen(rl));
+	quic_data(&k, srt.secret, TLS_CIPHER_AES_GCM_128_SECRET_SIZE);
 	srt.type = TLS_CIPHER_AES_GCM_128;
 	srt.send = 0;
 	err = quic_crypto_hkdf_expand(tfm, &s, &l, &z, &k);
@@ -846,30 +863,30 @@ int quic_crypto_get_retry_tag(struct quic_crypto *crypto, struct sk_buff *skb,
 	key = QUIC_RETRY_KEY_V1;
 	if (version == QUIC_VERSION_V2)
 		key = QUIC_RETRY_KEY_V2;
-	err = crypto_aead_setkey(tfm, key, 16);
+	err = crypto_aead_setkey(tfm, key, TLS_CIPHER_AES_GCM_128_KEY_SIZE);
 	if (err)
 		return err;
 
-	plen = 1 + odcid->len + skb->len - 16;
-	pseudo_retry = quic_crypto_aead_mem_alloc(tfm, plen + 16, &iv, &req, &sg, 1);
+	plen = 1 + odcid->len + skb->len - QUIC_TAG_LEN;
+	pseudo_retry = quic_crypto_aead_mem_alloc(tfm, plen + QUIC_TAG_LEN, &iv, &req, &sg, 1);
 	if (!pseudo_retry)
 		return -ENOMEM;
 
 	p = pseudo_retry;
 	p = quic_put_int(p, odcid->len, 1);
 	p = quic_put_data(p, odcid->data, odcid->len);
-	p = quic_put_data(p, skb->data, skb->len - 16);
-	sg_init_one(sg, pseudo_retry, plen + 16);
+	p = quic_put_data(p, skb->data, skb->len - QUIC_TAG_LEN);
+	sg_init_one(sg, pseudo_retry, plen + QUIC_TAG_LEN);
 
-	memcpy(iv, QUIC_RETRY_NONCE_V1, 12);
+	memcpy(iv, QUIC_RETRY_NONCE_V1, QUIC_IV_LEN);
 	if (version == QUIC_VERSION_V2)
-		memcpy(iv, QUIC_RETRY_NONCE_V2, 12);
+		memcpy(iv, QUIC_RETRY_NONCE_V2, QUIC_IV_LEN);
 	aead_request_set_tfm(req, tfm);
 	aead_request_set_ad(req, plen);
 	aead_request_set_crypt(req, sg, sg, 0, iv);
 	err = crypto_aead_encrypt(req);
 	if (!err)
-		memcpy(tag, p, 16);
+		memcpy(tag, p, QUIC_TAG_LEN);
 	kfree(pseudo_retry);
 	return err;
 }
@@ -878,7 +895,7 @@ EXPORT_SYMBOL_GPL(quic_crypto_get_retry_tag);
 int quic_crypto_generate_token(struct quic_crypto *crypto, void *addr, u32 addrlen,
 			       struct quic_conn_id *conn_id, u8 *token, u32 *tlen)
 {
-	u8 key[16], iv[12], *retry_token, *tx_iv, *p;
+	u8 key[TLS_CIPHER_AES_GCM_128_KEY_SIZE], iv[QUIC_IV_LEN], *retry_token, *tx_iv, *p;
 	struct crypto_aead *tfm = crypto->tag_tfm;
 	u32 ts = jiffies_to_usecs(jiffies), len;
 	struct quic_data srt = {}, k, i;
@@ -886,16 +903,16 @@ int quic_crypto_generate_token(struct quic_crypto *crypto, void *addr, u32 addrl
 	struct scatterlist *sg;
 	int err;
 
-	quic_data(&srt, quic_random_data, 32);
-	quic_data(&k, key, 16);
-	quic_data(&i, iv, 12);
+	quic_data(&srt, quic_random_data, QUIC_RANDOM_DATA_LEN);
+	quic_data(&k, key, TLS_CIPHER_AES_GCM_128_KEY_SIZE);
+	quic_data(&i, iv, QUIC_IV_LEN);
 	err = quic_crypto_keys_derive(crypto->secret_tfm, &srt, &k, &i, NULL, QUIC_VERSION_V1);
 	if (err)
 		return err;
 	err = crypto_aead_setauthsize(tfm, QUIC_TAG_LEN);
 	if (err)
 		return err;
-	err = crypto_aead_setkey(tfm, key, 16);
+	err = crypto_aead_setkey(tfm, key, TLS_CIPHER_AES_GCM_128_KEY_SIZE);
 	if (err)
 		return err;
 	token++;
@@ -925,8 +942,9 @@ EXPORT_SYMBOL_GPL(quic_crypto_generate_token);
 int quic_crypto_verify_token(struct quic_crypto *crypto, void *addr, u32 addrlen,
 			     struct quic_conn_id *conn_id, u8 *token, u32 len)
 {
-	u8 key[16], iv[12], *retry_token, *rx_iv, *p, retry = *token;
-	u32 ts = jiffies_to_usecs(jiffies), timeout = 3000000;
+	u32 ts = jiffies_to_usecs(jiffies), timeout = QUIC_TOKEN_TIMEOUT_RETRY;
+	u8 key[TLS_CIPHER_AES_GCM_128_KEY_SIZE], iv[QUIC_IV_LEN];
+	u8 *retry_token, *rx_iv, *p, flag = *token;
 	struct crypto_aead *tfm = crypto->tag_tfm;
 	struct quic_data srt = {}, k, i;
 	struct aead_request *req;
@@ -934,16 +952,16 @@ int quic_crypto_verify_token(struct quic_crypto *crypto, void *addr, u32 addrlen
 	int err;
 	u64 t;
 
-	quic_data(&srt, quic_random_data, 32);
-	quic_data(&k, key, 16);
-	quic_data(&i, iv, 12);
+	quic_data(&srt, quic_random_data, QUIC_RANDOM_DATA_LEN);
+	quic_data(&k, key, TLS_CIPHER_AES_GCM_128_KEY_SIZE);
+	quic_data(&i, iv, QUIC_IV_LEN);
 	err = quic_crypto_keys_derive(crypto->secret_tfm, &srt, &k, &i, NULL, QUIC_VERSION_V1);
 	if (err)
 		return err;
 	err = crypto_aead_setauthsize(tfm, QUIC_TAG_LEN);
 	if (err)
 		return err;
-	err = crypto_aead_setkey(tfm, key, 16);
+	err = crypto_aead_setkey(tfm, key, TLS_CIPHER_AES_GCM_128_KEY_SIZE);
 	if (err)
 		return err;
 	len--;
@@ -967,15 +985,15 @@ int quic_crypto_verify_token(struct quic_crypto *crypto, void *addr, u32 addrlen
 		goto out;
 	p += addrlen;
 	len -= addrlen;
-	if (!retry)
-		timeout = 36000000;
-	if (!quic_get_int(&p, &len, &t, 4) || t + timeout < ts)
+	if (flag == QUIC_TOKEN_FLAG_REGULAR)
+		timeout = QUIC_TOKEN_TIMEOUT_REGULAR;
+	if (!quic_get_int(&p, &len, &t, sizeof(ts)) || t + timeout < ts)
 		goto out;
 	len -= QUIC_TAG_LEN;
 	if (len > QUIC_CONN_ID_MAX_LEN)
 		goto out;
 
-	if (retry)
+	if (flag == QUIC_TOKEN_FLAG_RETRY)
 		quic_conn_id_update(conn_id, p, len);
 	err = 0;
 out:
@@ -988,13 +1006,13 @@ static int quic_crypto_generate_key(struct quic_crypto *crypto, void *data, u32 
 				    char *label, u8 *token, u32 key_len)
 {
 	struct crypto_shash *tfm = crypto->secret_tfm;
+	u8 secret[TLS_CIPHER_AES_GCM_128_SECRET_SIZE];
 	struct quic_data salt, s, l, k, z = {};
-	u8 secret[32];
 	int err;
 
 	quic_data(&salt, data, len);
-	quic_data(&k, quic_random_data, 32);
-	quic_data(&s, secret, 32);
+	quic_data(&k, quic_random_data, QUIC_RANDOM_DATA_LEN);
+	quic_data(&s, secret, TLS_CIPHER_AES_GCM_128_SECRET_SIZE);
 	err = quic_crypto_hkdf_extract(tfm, &salt, &k, &s);
 	if (err)
 		return err;
@@ -1020,5 +1038,5 @@ EXPORT_SYMBOL_GPL(quic_crypto_generate_session_ticket_key);
 
 void quic_crypto_init(void)
 {
-	get_random_bytes(quic_random_data, 32);
+	get_random_bytes(quic_random_data, QUIC_RANDOM_DATA_LEN);
 }

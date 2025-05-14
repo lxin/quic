@@ -12,7 +12,10 @@
 
 #include "socket.h"
 
-#define QUIC_HLEN(dcid, scid)	(1 + QUIC_VERSION_LEN + 1 + (dcid)->len + 1 + (scid)->len)
+#define QUIC_HLEN		1
+
+#define QUIC_LONG_HLEN(dcid, scid) \
+	(QUIC_HLEN + QUIC_VERSION_LEN + 1 + (dcid)->len + 1 + (scid)->len)
 
 #define QUIC_VERSION_NUM	2
 
@@ -77,8 +80,8 @@ static int quic_packet_get_version_and_connid(struct quic_conn_id *dcid, struct 
 {
 	u64 len, v;
 
-	if (!quic_get_int(pp, plen, &v, 1))
-		return -EINVAL;
+	*pp += QUIC_HLEN;
+	*plen -= QUIC_HLEN;
 
 	if (!quic_get_int(pp, plen, &v, QUIC_VERSION_LEN))
 		return -EINVAL;
@@ -239,10 +242,10 @@ int quic_packet_get_dcid(struct quic_conn_id *dcid, struct sk_buff *skb)
 	u8 *p = skb->data;
 	u64 len;
 
-	if (plen < 1 + QUIC_VERSION_LEN)
+	if (plen < QUIC_HLEN + QUIC_VERSION_LEN)
 		return -EINVAL;
-	plen -= (1 + QUIC_VERSION_LEN);
-	p += (1 + QUIC_VERSION_LEN);
+	plen -= (QUIC_HLEN + QUIC_VERSION_LEN);
+	p += (QUIC_HLEN + QUIC_VERSION_LEN);
 
 	if (!quic_get_int(&p, &plen, &len, 1) ||
 	    len > plen || len > QUIC_CONN_ID_MAX_LEN)
@@ -259,13 +262,14 @@ static struct sock *quic_packet_get_sock(struct sk_buff *skb)
 	union quic_addr daddr, saddr;
 	struct sock *sk = NULL;
 
-	if (skb->len < sizeof(struct quichdr))
+	if (skb->len < QUIC_HLEN)
 		return NULL;
 
 	if (!quic_hdr(skb)->form) {
-		if (skb->len < 1 + QUIC_CONN_ID_DEF_LEN)
+		if (skb->len < QUIC_HLEN + QUIC_CONN_ID_DEF_LEN)
 			return NULL;
-		conn_id = quic_conn_id_lookup(net, skb->data + 1, QUIC_CONN_ID_DEF_LEN);
+		conn_id = quic_conn_id_lookup(net, skb->data + QUIC_HLEN,
+					      QUIC_CONN_ID_DEF_LEN);
 		if (conn_id) {
 			cb->conn_id = conn_id;
 			return quic_conn_id_sk(conn_id);
@@ -343,20 +347,20 @@ err:
 static struct sk_buff *quic_packet_retry_create(struct sock *sk)
 {
 	struct quic_crypto *crypto = quic_crypto(sk, QUIC_CRYPTO_INITIAL);
+	u8 *p, buf[QUIC_FRAME_BUF_LARGE], tag[QUIC_TAG_LEN];
 	struct quic_packet *packet = quic_packet(sk);
-	u8 *p, token[72], tag[16];
 	struct quic_conn_id dcid;
 	struct quichshdr *hdr;
 	struct sk_buff *skb;
 	u32 len, tlen, hlen;
 
-	quic_put_int(token, 1, 1); /* retry token flag */
+	quic_put_int(buf, QUIC_TOKEN_FLAG_RETRY, 1); /* retry token flag */
 	if (quic_crypto_generate_token(crypto, &packet->daddr, sizeof(packet->daddr),
-				       &packet->dcid, token, &tlen))
+				       &packet->dcid, buf, &tlen))
 		return NULL;
 
 	quic_conn_id_generate(&dcid); /* new dcid for retry */
-	len = QUIC_HLEN(&dcid, &packet->scid) + tlen + 16;
+	len = QUIC_LONG_HLEN(&dcid, &packet->scid) + tlen + QUIC_TAG_LEN;
 	hlen = packet->hlen + MAX_HEADER;
 	skb = alloc_skb(hlen + len, GFP_ATOMIC);
 	if (!skb)
@@ -371,18 +375,18 @@ static struct sk_buff *quic_packet_retry_create(struct sock *sk)
 	hdr->pnl = 0;
 	skb_reset_transport_header(skb);
 
-	p = (u8 *)hdr + 1;
+	p = (u8 *)hdr + QUIC_HLEN;
 	p = quic_put_int(p, packet->version, QUIC_VERSION_LEN);
 	p = quic_put_int(p, packet->scid.len, 1);
 	p = quic_put_data(p, packet->scid.data, packet->scid.len);
 	p = quic_put_int(p, dcid.len, 1);
 	p = quic_put_data(p, dcid.data, dcid.len);
-	p = quic_put_data(p, token, tlen);
+	p = quic_put_data(p, buf, tlen);
 	if (quic_crypto_get_retry_tag(crypto, skb, &packet->dcid, packet->version, tag)) {
 		kfree_skb(skb);
 		return NULL;
 	}
-	quic_put_data(p, tag, 16);
+	quic_put_data(p, tag, QUIC_TAG_LEN);
 
 	return skb;
 }
@@ -425,10 +429,11 @@ static struct sk_buff *quic_packet_version_create(struct sock *sk)
 	struct quic_packet *packet = quic_packet(sk);
 	struct quichshdr *hdr;
 	struct sk_buff *skb;
-	u32 len, hlen;
+	u32 len, hlen, i;
 	u8 *p;
 
-	len = QUIC_HLEN(&packet->dcid, &packet->scid) + QUIC_VERSION_LEN * 2;
+	len = QUIC_LONG_HLEN(&packet->dcid, &packet->scid) +
+		QUIC_VERSION_LEN * QUIC_VERSION_NUM;
 	hlen = packet->hlen + MAX_HEADER;
 	skb = alloc_skb(hlen + len, GFP_ATOMIC);
 	if (!skb)
@@ -443,14 +448,15 @@ static struct sk_buff *quic_packet_version_create(struct sock *sk)
 	hdr->pnl = 0;
 	skb_reset_transport_header(skb);
 
-	p = (u8 *)hdr + 1;
+	p = (u8 *)hdr + QUIC_HLEN;
 	p = quic_put_int(p, 0, QUIC_VERSION_LEN);
 	p = quic_put_int(p, packet->scid.len, 1);
 	p = quic_put_data(p, packet->scid.data, packet->scid.len);
 	p = quic_put_int(p, packet->dcid.len, 1);
 	p = quic_put_data(p, packet->dcid.data, packet->dcid.len);
-	p = quic_put_int(p, QUIC_VERSION_V1, QUIC_VERSION_LEN);
-	quic_put_int(p, QUIC_VERSION_V2, QUIC_VERSION_LEN);
+
+	for (i = 0; i < QUIC_VERSION_NUM; i++)
+		p = quic_put_int(p, quic_versions[i][0], QUIC_VERSION_LEN);
 
 	return skb;
 }
@@ -483,19 +489,23 @@ static int quic_packet_version_transmit(struct sock *sk)
  * }
  */
 
+#define QUIC_STATELESS_RESET_DEF_LEN	64
+#define QUIC_STATELESS_RESET_MIN_LEN	(QUIC_HLEN + 5 + QUIC_CONN_ID_TOKEN_LEN)
+
 static struct sk_buff *quic_packet_stateless_reset_create(struct sock *sk)
 {
 	struct quic_crypto *crypto = quic_crypto(sk, QUIC_CRYPTO_INITIAL);
 	struct quic_packet *packet = quic_packet(sk);
+	u8 *p, token[QUIC_CONN_ID_TOKEN_LEN];
 	struct sk_buff *skb;
-	u8 *p, token[16];
 	u32 len, hlen;
 
 	if (quic_crypto_generate_stateless_reset_token(crypto, packet->dcid.data,
-						       packet->dcid.len, token, 16))
+						       packet->dcid.len, token,
+						       QUIC_CONN_ID_TOKEN_LEN))
 		return NULL;
 
-	len = 64;
+	len = QUIC_STATELESS_RESET_DEF_LEN;
 	hlen = packet->hlen + MAX_HEADER;
 	skb = alloc_skb(hlen + len, GFP_ATOMIC);
 	if (!skb)
@@ -509,8 +519,8 @@ static struct sk_buff *quic_packet_stateless_reset_create(struct sock *sk)
 	quic_hdr(skb)->form = 0;
 	quic_hdr(skb)->fixed = 1;
 
-	p += (len - 16);
-	quic_put_data(p, token, 16);
+	p += (len - QUIC_CONN_ID_TOKEN_LEN);
+	quic_put_data(p, token, QUIC_CONN_ID_TOKEN_LEN);
 
 	return skb;
 }
@@ -541,15 +551,13 @@ static int quic_packet_refuse_close_transmit(struct sock *sk, u32 errcode)
 	struct quic_conn_id_set *id_set = quic_source(sk);
 	struct quic_path_group *paths = quic_paths(sk);
 	struct quic_packet *packet = quic_packet(sk);
-	union quic_addr *sa = &packet->saddr;
-	union quic_addr *da = &packet->daddr;
 	u8 level = QUIC_CRYPTO_INITIAL;
 	struct quic_conn_id *active;
 
 	active = quic_conn_id_active(id_set);
 	quic_conn_id_update(active, packet->dcid.data, packet->dcid.len);
-	quic_path_set_saddr(paths, 1, sa);
-	quic_path_set_daddr(paths, 1, da);
+	quic_path_set_saddr(paths, 1, &packet->saddr);
+	quic_path_set_daddr(paths, 1, &packet->daddr);
 
 	if (quic_packet_version_change(sk, active, packet->version))
 		return -EINVAL;
@@ -570,13 +578,14 @@ static int quic_packet_listen_process(struct sock *sk, struct sk_buff *skb)
 	int err = 0;
 
 	if (!quic_hshdr(skb)->form) { /* stateless reset always by listen sock */
-		if (len < 17) {
+		if (len < QUIC_HLEN + QUIC_CONN_ID_DEF_LEN) {
 			QUIC_INC_STATS(net, QUIC_MIB_PKT_INVHDRDROP);
 			err = -EINVAL;
 			kfree_skb(skb);
 			goto out;
 		}
-		quic_conn_id_update(&packet->dcid, (u8 *)quic_hdr(skb) + 1, 16);
+		quic_conn_id_update(&packet->dcid, (u8 *)quic_hdr(skb) + QUIC_HLEN,
+				    QUIC_CONN_ID_DEF_LEN);
 		err = quic_packet_stateless_reset_transmit(sk);
 		consume_skb(skb);
 		goto out;
@@ -632,7 +641,7 @@ static int quic_packet_listen_process(struct sock *sk, struct sk_buff *skb)
 			consume_skb(skb);
 			goto out;
 		}
-		retry = *(u8 *)token.data;
+		retry = *(u8 *)token.data == QUIC_TOKEN_FLAG_RETRY;
 	}
 
 	err = quic_request_sock_enqueue(sk, &odcid, retry);
@@ -659,19 +668,18 @@ out:
 static int quic_packet_stateless_reset_process(struct sock *sk, struct sk_buff *skb)
 {
 	struct quic_conn_id_set *id_set = quic_dest(sk);
-	struct quic_connection_close *close;
-	u8 *token, buf[16] = {};
+	struct quic_connection_close close = {};
+	u8 *token;
 
-	if (skb->len < 22)
+	if (skb->len < QUIC_STATELESS_RESET_MIN_LEN)
 		return -EINVAL;
 
-	token = skb->data + skb->len - 16;
+	token = skb->data + skb->len - QUIC_CONN_ID_TOKEN_LEN;
 	if (!quic_conn_id_token_exists(id_set, token))
 		return -EINVAL; /* not a stateless reset and the caller will free skb */
 
-	close = (void *)buf;
-	close->errcode = QUIC_TRANSPORT_ERROR_CRYPTO;
-	quic_inq_event_recv(sk, QUIC_EVENT_CONNECTION_CLOSE, close);
+	close.errcode = QUIC_TRANSPORT_ERROR_CRYPTO;
+	quic_inq_event_recv(sk, QUIC_EVENT_CONNECTION_CLOSE, &close);
 	quic_set_state(sk, QUIC_SS_CLOSED);
 	consume_skb(skb);
 	pr_debug("%s: peer reset\n", __func__);
@@ -684,19 +692,19 @@ static int quic_packet_handshake_retry_process(struct sock *sk, struct sk_buff *
 	struct quic_path_group *paths = quic_paths(sk);
 	struct quic_packet *packet = quic_packet(sk);
 	struct quic_conn_id *active;
+	u8 *p, tag[QUIC_TAG_LEN];
 	u32 hlen, len, version;
-	u8 *p, tag[16];
 
-	hlen = QUIC_HLEN(&packet->dcid, &packet->scid);
+	hlen = QUIC_LONG_HLEN(&packet->dcid, &packet->scid);
 	len = skb->len - hlen;
-	if (len < 16)
+	if (len < QUIC_TAG_LEN)
 		goto err;
 	p = skb->data + hlen;
 	version = packet->version;
 	if (quic_crypto_get_retry_tag(crypto, skb, &paths->orig_dcid, version, tag) ||
-	    memcmp(tag, p + len - 16, 16))
+	    memcmp(tag, p + len - QUIC_TAG_LEN, QUIC_TAG_LEN))
 		goto err;
-	if (quic_data_dup(quic_token(sk), p, len - 16))
+	if (quic_data_dup(quic_token(sk), p, len - QUIC_TAG_LEN))
 		goto err;
 	/* similar to version change, update the initial keys */
 	if (quic_packet_version_change(sk, &packet->scid, version))
@@ -723,13 +731,13 @@ static int quic_packet_handshake_version_process(struct sock *sk, struct sk_buff
 	u32 hlen, len;
 	u8 *p;
 
-	hlen = QUIC_HLEN(&packet->dcid, &packet->scid);
+	hlen = QUIC_LONG_HLEN(&packet->dcid, &packet->scid);
 	len = skb->len - hlen;
-	if (len < 4)
+	if (len < QUIC_VERSION_LEN)
 		goto err;
 
 	p = skb->data + hlen;
-	while (len >= 4) {
+	while (len >= QUIC_VERSION_LEN) {
 		quic_get_int(&p, &len, &version, QUIC_VERSION_LEN);
 		if (quic_packet_compatible_versions(version) && best < version)
 			best = version;
@@ -846,8 +854,8 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb)
 		if (!quic_hshdr(skb)->form) { /* handle it later when setting 1RTT key */
 			/* treat it as a padding if dcid does not match */
 			conn_id = &packet->dcid;
-			if (conn_id->len > skb->len - 1 ||
-			    memcmp(conn_id->data, skb->data + 1, conn_id->len)) {
+			if (conn_id->len > skb->len - QUIC_HLEN ||
+			    memcmp(conn_id->data, skb->data + QUIC_HLEN, conn_id->len)) {
 				if (!paths->validated)
 					paths->ampl_rcvlen += skb->len;
 				break;
@@ -955,9 +963,9 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb)
 	/* in case userspace doesn't send any packets, use SACK
 	 * timer to send these SACK frames out.
 	 */
-	if (!inq->need_sack) {
+	if (inq->sack_flag == QUIC_SACK_FLAG_NONE) {
 		quic_timer_reset(sk, QUIC_TIMER_SACK, inq->max_ack_delay);
-		inq->need_sack = 1;
+		inq->sack_flag = QUIC_SACK_FLAG_XMIT;
 	}
 	if (paths->blocked) {
 		paths->blocked = 0;
@@ -1036,9 +1044,9 @@ static int quic_packet_app_process_done(struct sock *sk, struct sk_buff *skb)
 		goto out;
 
 	if (!packet->ack_immediate) {
-		if (!inq->need_sack)
+		if (inq->sack_flag == QUIC_SACK_FLAG_NONE)
 			quic_timer_reset(sk, QUIC_TIMER_SACK, inq->max_ack_delay);
-		inq->need_sack = 2;
+		inq->sack_flag = QUIC_SACK_FLAG_APP;
 		goto out;
 	}
 	space->need_sack = 1;
@@ -1046,11 +1054,11 @@ static int quic_packet_app_process_done(struct sock *sk, struct sk_buff *skb)
 
 out:
 	if (quic_is_established(sk)) {
-		if (!inq->need_sack)
+		if (inq->sack_flag == QUIC_SACK_FLAG_NONE)
 			quic_timer_reset(sk, QUIC_TIMER_IDLE, inq->timeout);
 		quic_outq_transmit(sk);
-	} else if (!inq->need_sack) {
-		inq->need_sack = 1;
+	} else if (inq->sack_flag == QUIC_SACK_FLAG_NONE) {
+		inq->sack_flag = QUIC_SACK_FLAG_XMIT;
 		quic_timer_reset(sk, QUIC_TIMER_SACK, inq->max_ack_delay);
 	}
 	consume_skb(skb);
@@ -1085,14 +1093,15 @@ static int quic_packet_app_process(struct sock *sk, struct sk_buff *skb)
 
 	/* Do decryption */
 	if (!cb->conn_id) {
-		cb->conn_id = quic_conn_id_get(source, skb->data + 1, QUIC_CONN_ID_DEF_LEN);
+		cb->conn_id = quic_conn_id_get(source, skb->data + QUIC_HLEN,
+					       QUIC_CONN_ID_DEF_LEN);
 		if (!cb->conn_id) {
 			if (!quic_packet_stateless_reset_process(sk, skb))
 				return 0;
 			goto err;
 		}
 	}
-	cb->number_offset = cb->conn_id->len + 1;
+	cb->number_offset = cb->conn_id->len + QUIC_HLEN;
 	cb->length = (u16)(skb->len - cb->number_offset);
 	cb->number_max = space->max_pn_seen;
 
@@ -1196,6 +1205,30 @@ int quic_packet_process(struct sock *sk, struct sk_buff *skb)
 #define TLS_MT_CLIENT_HELLO	1
 #define TLS_EXT_alpn		16
 
+/*  TLS Client Hello Msg:
+ *
+ *    uint16 ProtocolVersion;
+ *    opaque Random[32];
+ *    uint8 CipherSuite[2];
+ *
+ *    struct {
+ *        ExtensionType extension_type;
+ *        opaque extension_data<0..2^16-1>;
+ *    } Extension;
+ *
+ *    struct {
+ *        ProtocolVersion legacy_version = 0x0303;
+ *        Random rand;
+ *        opaque legacy_session_id<0..32>;
+ *        CipherSuite cipher_suites<2..2^16-2>;
+ *        opaque legacy_compression_methods<1..2^8-1>;
+ *        Extension extensions<8..2^16-1>;
+ *    } ClientHello;
+ */
+
+#define TLS_CH_RANDOM_LEN	32
+#define TLS_CH_VERSION_LEN	2
+
 static int quic_packet_get_alpn(struct quic_data *alpn, u8 *p, u32 len)
 {
 	int err = -EINVAL, found = 0;
@@ -1203,12 +1236,17 @@ static int quic_packet_get_alpn(struct quic_data *alpn, u8 *p, u32 len)
 
 	if (!quic_get_int(&p, &len, &type, 1) || type != TLS_MT_CLIENT_HELLO)
 		return err;
-	if (!quic_get_int(&p, &len, &length, 3) || length < 35)
+	if (!quic_get_int(&p, &len, &length, 3) ||
+	    length < TLS_CH_RANDOM_LEN + TLS_CH_VERSION_LEN)
 		return err;
 	if (len > (u32)length) /* incomplete TLS msg */
 		len = length;
-	len -= 35;
-	p += 35; /* legacy_version + random + legacy_session_id. */
+	/* legacy_version + random */
+	p += TLS_CH_RANDOM_LEN + TLS_CH_VERSION_LEN;
+	len -= TLS_CH_RANDOM_LEN + TLS_CH_VERSION_LEN;
+	/* legacy_session_id must be empty for QUIC */
+	if (!quic_get_int(&p, &len, &length, 1) || length)
+		return err;
 
 	if (!quic_get_int(&p, &len, &length, 2) || length > (u64)len) /* cipher_suites */
 		return err;
@@ -1336,6 +1374,8 @@ out:
 #define QUIC_PACKET_NUMBER_LEN	4
 #define QUIC_PACKET_LENGTH_LEN	4
 
+#define QUIC_MAX_ECN_PROBES	3
+
 static u8 *quic_packet_pack_frames(struct sock *sk, struct sk_buff *skb,
 				   struct quic_packet_sent *sent, u16 off)
 {
@@ -1393,7 +1433,7 @@ static u8 *quic_packet_pack_frames(struct sock *sk, struct sk_buff *skb,
 	if (!sent)
 		return p;
 
-	if (!packet->level && paths->ecn_probes < 3) {
+	if (!packet->level && paths->ecn_probes < QUIC_MAX_ECN_PROBES) {
 		paths->ecn_probes++;
 		cb->ecn = INET_ECN_ECT_0;
 		sent->ecn = INET_ECN_ECT_0;
@@ -1514,7 +1554,7 @@ static struct sk_buff *quic_packet_handshake_create(struct sock *sk)
 	hdr->pnl = QUIC_PACKET_NUMBER_LEN - 1;
 	skb_reset_transport_header(skb);
 
-	p = (u8 *)hdr + 1;
+	p = (u8 *)hdr + QUIC_HLEN;
 	p = quic_put_int(p, packet->version, QUIC_VERSION_LEN);
 
 	active = quic_conn_id_active(dest);
@@ -1534,8 +1574,7 @@ static struct sk_buff *quic_packet_handshake_create(struct sock *sk)
 	}
 
 	off = (u16)(p + QUIC_PACKET_LENGTH_LEN - skb->data);
-	p = quic_put_int(p, len - off + QUIC_TAG_LEN, QUIC_PACKET_LENGTH_LEN);
-	*(p - 4) |= (QUIC_PACKET_LENGTH_LEN << 5);
+	p = quic_put_varint(p, len - off + QUIC_TAG_LEN, QUIC_PACKET_LENGTH_LEN);
 
 	p = quic_packet_pack_frames(sk, skb, sent, off);
 	if (plen)
@@ -1555,12 +1594,9 @@ static int quic_packet_number_check(struct sock *sk)
 	quic_outq_retransmit_list(sk, &packet->frame_list);
 
 	if (!quic_is_closed(sk)) {
-		struct quic_connection_close *close;
-		u8 buf[16] = {};
+		struct quic_connection_close close = {};
 
-		close = (void *)buf;
-		close->errcode = 0;
-		quic_inq_event_recv(sk, QUIC_EVENT_CONNECTION_CLOSE, close);
+		quic_inq_event_recv(sk, QUIC_EVENT_CONNECTION_CLOSE, &close);
 		quic_set_state(sk, QUIC_SS_CLOSED);
 	}
 	return -EPIPE;
@@ -1622,7 +1658,7 @@ static struct sk_buff *quic_packet_app_create(struct sock *sk)
 	skb_reset_transport_header(skb);
 
 	active = quic_conn_id_choose(id_set, packet->path);
-	quic_put_data((u8 *)hdr + 1, active->data, active->len);
+	quic_put_data((u8 *)hdr + QUIC_HLEN, active->data, active->len);
 	off = (u16)(active->len + sizeof(struct quichdr));
 
 	quic_packet_pack_frames(sk, skb, sent, off);
@@ -1676,7 +1712,7 @@ int quic_packet_config(struct sock *sk, u8 level, u8 path)
 	struct quic_conn_id_set *dest = quic_dest(sk), *source = quic_source(sk);
 	struct quic_packet *packet = quic_packet(sk);
 	struct quic_config *c = quic_config(sk);
-	u32 hlen = sizeof(struct quichdr);
+	u32 hlen = QUIC_HLEN;
 
 	if (!quic_packet_empty(packet))
 		return 0;
@@ -1689,7 +1725,7 @@ int quic_packet_config(struct sock *sk, u8 level, u8 path)
 	hlen += QUIC_PACKET_NUMBER_LEN; /* packet number */
 	hlen += quic_conn_id_choose(dest, path)->len;
 	if (level) {
-		hlen += 1;
+		hlen += 1; /* dest conn_id len */
 		hlen += 1 + quic_conn_id_active(source)->len;
 		if (level == QUIC_CRYPTO_INITIAL)
 			hlen += quic_var_len(quic_token(sk)->len) + quic_token(sk)->len;

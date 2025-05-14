@@ -11,6 +11,12 @@
 #define QUIC_MAX_ACK_DELAY_EXPONENT	20
 #define QUIC_DEF_ACK_DELAY_EXPONENT	3
 
+enum {
+	QUIC_SACK_FLAG_NONE,
+	QUIC_SACK_FLAG_XMIT,
+	QUIC_SACK_FLAG_APP,
+};
+
 struct quic_inqueue {
 	struct sk_buff_head backlog_list;
 	struct list_head handshake_list;
@@ -35,7 +41,7 @@ struct quic_inqueue {
 	u8 disable_1rtt_encryption:1;
 	u8 grease_quic_bit:1;
 	u8 stateless_reset:1;
-	u8 need_sack:2;
+	u8 sack_flag:2;
 };
 
 int quic_inq_handshake_recv(struct sock *sk, struct quic_frame *frame);

@@ -97,17 +97,17 @@ static struct quic_stream *quic_stream_send_create(struct quic_stream_table *str
 			stream->send.window = streams->send.max_stream_data_uni;
 			stream->send.max_bytes = stream->send.window;
 
-			if (streams->send.next_uni_stream_id < stream_id + 4)
-				streams->send.next_uni_stream_id = stream_id + 4;
+			if (streams->send.next_uni_stream_id < stream_id + QUIC_STREAM_ID_STEP)
+				streams->send.next_uni_stream_id = stream_id + QUIC_STREAM_ID_STEP;
 			streams->send.streams_uni++;
 
 			quic_stream_add(streams, stream);
-			stream_id += 4;
+			stream_id += QUIC_STREAM_ID_STEP;
 			continue;
 		}
 
-		if (streams->send.next_bidi_stream_id < stream_id + 4)
-			streams->send.next_bidi_stream_id = stream_id + 4;
+		if (streams->send.next_bidi_stream_id < stream_id + QUIC_STREAM_ID_STEP)
+			streams->send.next_bidi_stream_id = stream_id + QUIC_STREAM_ID_STEP;
 		streams->send.streams_bidi++;
 
 		if (quic_stream_id_local(stream_id, is_serv)) {
@@ -121,7 +121,7 @@ static struct quic_stream *quic_stream_send_create(struct quic_stream_table *str
 		stream->recv.max_bytes = stream->recv.window;
 
 		quic_stream_add(streams, stream);
-		stream_id += 4;
+		stream_id += QUIC_STREAM_ID_STEP;
 	}
 	return stream;
 }
@@ -146,17 +146,17 @@ static struct quic_stream *quic_stream_recv_create(struct quic_stream_table *str
 			stream->recv.window = streams->recv.max_stream_data_uni;
 			stream->recv.max_bytes = stream->recv.window;
 
-			if (streams->recv.next_uni_stream_id < stream_id + 4)
-				streams->recv.next_uni_stream_id = stream_id + 4;
+			if (streams->recv.next_uni_stream_id < stream_id + QUIC_STREAM_ID_STEP)
+				streams->recv.next_uni_stream_id = stream_id + QUIC_STREAM_ID_STEP;
 			streams->recv.streams_uni++;
 
 			quic_stream_add(streams, stream);
-			stream_id += 4;
+			stream_id += QUIC_STREAM_ID_STEP;
 			continue;
 		}
 
-		if (streams->recv.next_bidi_stream_id < stream_id + 4)
-			streams->recv.next_bidi_stream_id = stream_id + 4;
+		if (streams->recv.next_bidi_stream_id < stream_id + QUIC_STREAM_ID_STEP)
+			streams->recv.next_bidi_stream_id = stream_id + QUIC_STREAM_ID_STEP;
 		streams->recv.streams_bidi++;
 
 		if (quic_stream_id_local(stream_id, is_serv)) {
@@ -170,7 +170,7 @@ static struct quic_stream *quic_stream_recv_create(struct quic_stream_table *str
 		stream->recv.max_bytes = stream->recv.window;
 
 		quic_stream_add(streams, stream);
-		stream_id += 4;
+		stream_id += QUIC_STREAM_ID_STEP;
 	}
 	return stream;
 }
@@ -373,14 +373,18 @@ out:
 bool quic_stream_max_streams_update(struct quic_stream_table *streams, s64 *max_uni, s64 *max_bidi)
 {
 	if (streams->recv.uni_pending) {
-		streams->recv.max_uni_stream_id = streams->recv.next_uni_stream_id - 4 +
-			((streams->recv.max_streams_uni - streams->recv.streams_uni) << 2);
+		streams->recv.max_uni_stream_id =
+			streams->recv.next_uni_stream_id - QUIC_STREAM_ID_STEP +
+			((streams->recv.max_streams_uni - streams->recv.streams_uni) <<
+			 QUIC_STREAM_TYPE_BITS);
 		*max_uni = quic_stream_id_to_streams(streams->recv.max_uni_stream_id);
 		streams->recv.uni_pending = 0;
 	}
 	if (streams->recv.bidi_pending) {
-		streams->recv.max_bidi_stream_id = streams->recv.next_bidi_stream_id - 4 +
-			((streams->recv.max_streams_bidi - streams->recv.streams_bidi) << 2);
+		streams->recv.max_bidi_stream_id =
+			streams->recv.next_bidi_stream_id - QUIC_STREAM_ID_STEP +
+			((streams->recv.max_streams_bidi - streams->recv.streams_bidi) <<
+			 QUIC_STREAM_TYPE_BITS);
 		*max_bidi = quic_stream_id_to_streams(streams->recv.max_bidi_stream_id);
 		streams->recv.bidi_pending = 0;
 	}
@@ -392,7 +396,7 @@ int quic_stream_init(struct quic_stream_table *streams)
 {
 	struct quic_hash_table *ht = &streams->ht;
 	struct quic_hash_head *head;
-	int i, size = 16;
+	int i, size = QUIC_HT_SIZE;
 
 	head = kmalloc_array(size, sizeof(*head), GFP_KERNEL);
 	if (!head)
