@@ -24,7 +24,7 @@ void quic_timer_sack_handler(struct sock *sk)
 	if (quic_is_closed(sk))
 		return;
 
-	if (!quic_inq_need_sack(inq)) {
+	if (!inq->need_sack) {
 		close = (void *)buf;
 		quic_inq_event_recv(sk, QUIC_EVENT_CONNECTION_CLOSE, close);
 		quic_set_state(sk, QUIC_SS_CLOSED);
@@ -33,14 +33,14 @@ void quic_timer_sack_handler(struct sock *sk)
 		return;
 	}
 
-	if (quic_inq_need_sack(inq) == 2) {
-		quic_pnspace_set_need_sack(space, 1);
-		quic_pnspace_set_sack_path(space, 0);
+	if (inq->need_sack == 2) {
+		space->need_sack = 1;
+		space->sack_path = 0;
 	}
 
 	quic_outq_transmit(sk);
-	quic_inq_set_need_sack(inq, 0);
-	quic_timer_start(sk, QUIC_TIMER_IDLE, quic_inq_timeout(inq));
+	inq->need_sack = 0;
+	quic_timer_start(sk, QUIC_TIMER_IDLE, inq->timeout);
 }
 
 static void quic_timer_sack_timeout(struct timer_list *t)
@@ -99,7 +99,7 @@ void quic_timer_path_handler(struct sock *sk)
 	if (!path)
 		goto out;
 
-	if (quic_path_inc_alt_probes(paths) < 3)
+	if (paths->alt_probes++ < 3)
 		goto out;
 
 	path = 0;
@@ -131,7 +131,7 @@ out:
 void quic_timer_reset_path(struct sock *sk)
 {
 	struct quic_cong *cong = quic_cong(sk);
-	u64 timeout = quic_cong_pto(cong) * 3;
+	u64 timeout = cong->pto * 3;
 
 	if (timeout < QUIC_MIN_PATH_TIMEOUT)
 		timeout = QUIC_MIN_PATH_TIMEOUT;

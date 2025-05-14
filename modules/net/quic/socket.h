@@ -159,7 +159,7 @@ static inline struct quic_path_group *quic_paths(const struct sock *sk)
 
 static inline bool quic_is_serv(const struct sock *sk)
 {
-	return quic_path_serv(quic_paths(sk));
+	return quic_paths(sk)->serv;
 }
 
 static inline struct quic_cong *quic_cong(const struct sock *sk)

@@ -88,56 +88,6 @@ struct quic_stream_table {
 	} recv;
 };
 
-static inline s64 quic_stream_send_next_bidi_id(struct quic_stream_table *streams)
-{
-	return streams->send.next_bidi_stream_id;
-}
-
-static inline s64 quic_stream_send_next_uni_id(struct quic_stream_table *streams)
-{
-	return streams->send.next_uni_stream_id;
-}
-
-static inline s64 quic_stream_send_active_id(struct quic_stream_table *streams)
-{
-	return streams->send.active_stream_id;
-}
-
-static inline void quic_stream_set_send_active_id(struct quic_stream_table *streams, s64 active)
-{
-	streams->send.active_stream_id = active;
-}
-
-static inline s64 quic_stream_send_max_bidi_id(struct quic_stream_table *streams)
-{
-	return streams->send.max_bidi_stream_id;
-}
-
-static inline void quic_stream_set_send_max_bidi_id(struct quic_stream_table *streams, s64 max)
-{
-	streams->send.max_bidi_stream_id = max;
-}
-
-static inline s64 quic_stream_send_max_uni_id(struct quic_stream_table *streams)
-{
-	return streams->send.max_uni_stream_id;
-}
-
-static inline void quic_stream_set_send_max_uni_id(struct quic_stream_table *streams, s64 max)
-{
-	streams->send.max_uni_stream_id = max;
-}
-
-static inline s64 quic_stream_recv_max_bidi_id(struct quic_stream_table *streams)
-{
-	return streams->recv.max_bidi_stream_id;
-}
-
-static inline s64 quic_stream_recv_max_uni_id(struct quic_stream_table *streams)
-{
-	return streams->send.max_uni_stream_id;
-}
-
 static inline u64 quic_stream_id_to_streams(s64 stream_id)
 {
 	return (u64)(stream_id >> 2) + 1;
@@ -146,26 +96,6 @@ static inline u64 quic_stream_id_to_streams(s64 stream_id)
 static inline s64 quic_stream_streams_to_id(u64 streams, u8 type)
 {
 	return (s64)((streams - 1) << 2) | type;
-}
-
-static inline u8 quic_stream_send_uni_blocked(struct quic_stream_table *streams)
-{
-	return streams->send.uni_blocked;
-}
-
-static inline void quic_stream_set_send_uni_blocked(struct quic_stream_table *streams, u8 blocked)
-{
-	streams->send.uni_blocked = blocked;
-}
-
-static inline u8 quic_stream_send_bidi_blocked(struct quic_stream_table *streams)
-{
-	return streams->send.bidi_blocked;
-}
-
-static inline void quic_stream_set_send_bidi_blocked(struct quic_stream_table *streams, u8 blocked)
-{
-	streams->send.bidi_blocked = blocked;
 }
 
 struct quic_stream *quic_stream_send_get(struct quic_stream_table *streams, s64 stream_id,

@@ -50,61 +50,6 @@ struct quic_crypto {
 	u64 recv_offset;
 };
 
-static inline u32 quic_crypto_cipher_type(struct quic_crypto *crypto)
-{
-	return crypto->cipher_type;
-}
-
-static inline void quic_crypto_set_cipher_type(struct quic_crypto *crypto, u32 type)
-{
-	crypto->cipher_type = type;
-}
-
-static inline u64 quic_crypto_recv_offset(struct quic_crypto *crypto)
-{
-	return crypto->recv_offset;
-}
-
-static inline void quic_crypto_inc_recv_offset(struct quic_crypto *crypto, u64 offset)
-{
-	crypto->recv_offset += offset;
-}
-
-static inline u64 quic_crypto_send_offset(struct quic_crypto *crypto)
-{
-	return crypto->send_offset;
-}
-
-static inline void quic_crypto_inc_send_offset(struct quic_crypto *crypto, u64 offset)
-{
-	crypto->send_offset += offset;
-}
-
-static inline u8 quic_crypto_recv_ready(struct quic_crypto *crypto)
-{
-	return crypto->recv_ready;
-}
-
-static inline u8 quic_crypto_send_ready(struct quic_crypto *crypto)
-{
-	return crypto->send_ready;
-}
-
-static inline u8 quic_crypto_ticket_ready(struct quic_crypto *crypto)
-{
-	return crypto->ticket_ready;
-}
-
-static inline void quic_crypto_set_ticket_ready(struct quic_crypto *crypto, u8 ready)
-{
-	crypto->ticket_ready = ready;
-}
-
-static inline void quic_crypto_set_key_update_time(struct quic_crypto *crypto, u32 key_update_time)
-{
-	crypto->key_update_time = key_update_time;
-}
-
 int quic_crypto_set_secret(struct quic_crypto *crypto, struct quic_crypto_secret *srt,
 			   u32 version, u8 flag);
 int quic_crypto_get_secret(struct quic_crypto *crypto, struct quic_crypto_secret *srt);

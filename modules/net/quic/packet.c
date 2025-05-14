@@ -152,7 +152,7 @@ int quic_packet_select_version(struct sock *sk, u32 *versions, u8 count)
 	if (packet->version == best)
 		return 0;
 
-	return quic_packet_version_change(sk, quic_path_orig_dcid(quic_paths(sk)), best);
+	return quic_packet_version_change(sk, &quic_paths(sk)->orig_dcid, best);
 }
 
 static int quic_packet_get_token(struct quic_data *token, u8 **pp, u32 *plen)
@@ -179,7 +179,7 @@ void quic_packet_rcv_err_pmtu(struct sock *sk)
 	if (!ip_sk_accept_pmtu(sk))
 		return;
 
-	info = clamp(quic_path_mtu_info(paths), QUIC_PATH_MIN_PMTU, QUIC_PATH_MAX_PMTU);
+	info = clamp(paths->mtu_info, QUIC_PATH_MIN_PMTU, QUIC_PATH_MAX_PMTU);
 	if (!c->plpmtud_probe_interval) {
 		if (quic_packet_route(sk) < 0)
 			return;
@@ -221,7 +221,7 @@ static int quic_packet_rcv_err(struct sk_buff *skb)
 		goto out;
 
 	ret = 1; /* processed with common mtud */
-	quic_path_set_mtu_info(quic_paths(sk), info);
+	quic_paths(sk)->mtu_info = info;
 	if (sock_owned_by_user(sk)) {
 		if (!test_and_set_bit(QUIC_MTU_REDUCED_DEFERRED, &sk->sk_tsq_flags))
 			sock_hold(sk);
@@ -365,7 +365,7 @@ static struct sk_buff *quic_packet_retry_create(struct sock *sk)
 
 	hdr = skb_push(skb, len);
 	hdr->form = 1;
-	hdr->fixed = !quic_outq_grease_quic_bit(quic_outq(sk));
+	hdr->fixed = !quic_outq(sk)->grease_quic_bit;
 	hdr->type = quic_packet_version_put_type(packet->version, QUIC_PACKET_RETRY);
 	hdr->reserved = 0;
 	hdr->pnl = 0;
@@ -437,7 +437,7 @@ static struct sk_buff *quic_packet_version_create(struct sock *sk)
 
 	hdr = skb_push(skb, len);
 	hdr->form = 1;
-	hdr->fixed = !quic_outq_grease_quic_bit(quic_outq(sk));
+	hdr->fixed = !quic_outq(sk)->grease_quic_bit;
 	hdr->type = 0;
 	hdr->reserved = 0;
 	hdr->pnl = 0;
@@ -553,7 +553,7 @@ static int quic_packet_refuse_close_transmit(struct sock *sk, u32 errcode)
 
 	if (quic_packet_version_change(sk, active, packet->version))
 		return -EINVAL;
-	quic_outq_set_close_errcode(quic_outq(sk), errcode);
+	quic_outq(sk)->close_errcode = errcode;
 	quic_outq_transmit_frame(sk, QUIC_FRAME_CONNECTION_CLOSE, &level, 1, false);
 	return 0;
 }
@@ -693,7 +693,7 @@ static int quic_packet_handshake_retry_process(struct sock *sk, struct sk_buff *
 		goto err;
 	p = skb->data + hlen;
 	version = packet->version;
-	if (quic_crypto_get_retry_tag(crypto, skb, quic_path_orig_dcid(paths), version, tag) ||
+	if (quic_crypto_get_retry_tag(crypto, skb, &paths->orig_dcid, version, tag) ||
 	    memcmp(tag, p + len - 16, 16))
 		goto err;
 	if (quic_data_dup(quic_token(sk), p, len - 16))
@@ -703,8 +703,8 @@ static int quic_packet_handshake_retry_process(struct sock *sk, struct sk_buff *
 		goto err;
 	active = quic_conn_id_active(quic_dest(sk));
 	quic_conn_id_update(active, packet->scid.data, packet->scid.len);
-	quic_path_set_retry(paths, 1);
-	quic_path_set_retry_dcid(paths, active);
+	paths->retry = 1;
+	paths->retry_dcid = *active;
 	quic_outq_retransmit_mark(sk, QUIC_CRYPTO_INITIAL, 1);
 	quic_outq_update_loss_timer(sk);
 	quic_outq_transmit(sk);
@@ -782,7 +782,7 @@ static int quic_packet_handshake_header_process(struct sock *sk, struct sk_buff 
 	if (version != packet->version) {
 		if (type != QUIC_PACKET_INITIAL || !quic_packet_compatible_versions(version))
 			return -EINVAL;
-		if (quic_packet_version_change(sk, quic_path_orig_dcid(quic_paths(sk)), version))
+		if (quic_packet_version_change(sk, &quic_paths(sk)->orig_dcid, version))
 			return -EINVAL;
 	}
 	switch (type) {
@@ -796,14 +796,14 @@ static int quic_packet_handshake_header_process(struct sock *sk, struct sk_buff 
 		}
 		break;
 	case QUIC_PACKET_HANDSHAKE:
-		if (!quic_crypto_recv_ready(quic_crypto(sk, QUIC_CRYPTO_HANDSHAKE))) {
+		if (!quic_crypto(sk, QUIC_CRYPTO_HANDSHAKE)->recv_ready) {
 			quic_inq_backlog_tail(sk, skb);
 			return 0;
 		}
 		packet->level = QUIC_CRYPTO_HANDSHAKE;
 		break;
 	case QUIC_PACKET_0RTT:
-		if (!quic_crypto_recv_ready(quic_crypto(sk, QUIC_CRYPTO_EARLY))) {
+		if (!quic_crypto(sk, QUIC_CRYPTO_EARLY)->recv_ready) {
 			quic_inq_backlog_tail(sk, skb);
 			return 0;
 		}
@@ -848,8 +848,8 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb)
 			conn_id = &packet->dcid;
 			if (conn_id->len > skb->len - 1 ||
 			    memcmp(conn_id->data, skb->data + 1, conn_id->len)) {
-				if (!quic_path_validated(paths))
-					quic_path_inc_ampl_rcvlen(paths, skb->len);
+				if (!paths->validated)
+					paths->ampl_rcvlen += skb->len;
 				break;
 			}
 			cb->number_offset = 0;
@@ -868,7 +868,7 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb)
 		crypto = quic_crypto(sk, packet->level);
 		space = quic_pnspace(sk, packet->level);
 
-		cb->number_max = quic_pnspace_max_pn_seen(space);
+		cb->number_max = space->max_pn_seen;
 		cb->crypto_done = quic_packet_decrypt_done;
 		err = quic_crypto_decrypt(crypto, skb);
 		if (err) {
@@ -891,7 +891,7 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb)
 		pr_debug("%s: recvd, num: %llu, level: %d, len: %d\n",
 			 __func__, cb->number, packet->level, skb->len);
 
-		quic_pnspace_set_time(space, cb->time);
+		space->time = cb->time;
 		err = quic_pnspace_check(space, cb->number);
 		if (err) {
 			QUIC_INC_STATS(net, QUIC_MIB_PKT_INVNUMDROP);
@@ -899,7 +899,7 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb)
 			goto err;
 		}
 
-		quic_cong_set_time(cong, cb->time);
+		cong->time = cb->time;
 		frame.data = skb->data + cb->number_offset + cb->number_len;
 		frame.len = cb->length - cb->number_len - packet->taglen[1];
 		frame.level = packet->level;
@@ -920,10 +920,10 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb)
 			quic_outq_update_loss_timer(sk);
 		}
 
-		if (!quic_path_validated(paths)) {
-			quic_path_inc_ampl_rcvlen(paths, cb->number_offset + cb->length);
+		if (!paths->validated) {
+			paths->ampl_rcvlen += cb->number_offset + cb->length;
 			if (packet->level == QUIC_CRYPTO_HANDSHAKE) {
-				quic_path_set_validated(paths, 1);
+				paths->validated = 1;
 				quic_outq_transmitted_sack(sk, QUIC_CRYPTO_INITIAL,
 							   QUIC_PN_MAP_MAX_PN, 0, -1, 0);
 			}
@@ -935,8 +935,8 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb)
 		if (!packet->ack_requested)
 			continue;
 
-		quic_pnspace_set_need_sack(space, 1);
-		quic_pnspace_set_sack_path(space, 0);
+		space->need_sack = 1;
+		space->sack_path = 0;
 
 		if (packet->level == QUIC_CRYPTO_INITIAL) {
 			if (!is_serv) {
@@ -955,12 +955,12 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb)
 	/* in case userspace doesn't send any packets, use SACK
 	 * timer to send these SACK frames out.
 	 */
-	if (!quic_inq_need_sack(inq)) {
-		quic_timer_reset(sk, QUIC_TIMER_SACK, quic_inq_max_ack_delay(inq));
-		quic_inq_set_need_sack(inq, 1);
+	if (!inq->need_sack) {
+		quic_timer_reset(sk, QUIC_TIMER_SACK, inq->max_ack_delay);
+		inq->need_sack = 1;
 	}
-	if (quic_path_blocked(paths)) {
-		quic_path_set_blocked(paths, 0);
+	if (paths->blocked) {
+		paths->blocked = 0;
 		quic_outq_update_loss_timer(sk);
 	}
 
@@ -1013,8 +1013,8 @@ static int quic_packet_app_process_done(struct sock *sk, struct sk_buff *skb)
 	 */
 	quic_packet_path_alt_process(sk, skb);
 
-	if (!quic_path_validated(paths))
-		quic_path_inc_ampl_rcvlen(paths, skb->len);
+	if (!paths->validated)
+		paths->ampl_rcvlen += skb->len;
 
 	if (packet->has_sack) {
 		quic_outq_retransmit_mark(sk, 0, 0);
@@ -1036,22 +1036,22 @@ static int quic_packet_app_process_done(struct sock *sk, struct sk_buff *skb)
 		goto out;
 
 	if (!packet->ack_immediate) {
-		if (!quic_inq_need_sack(inq))
-			quic_timer_reset(sk, QUIC_TIMER_SACK, quic_inq_max_ack_delay(inq));
-		quic_inq_set_need_sack(inq, 2);
+		if (!inq->need_sack)
+			quic_timer_reset(sk, QUIC_TIMER_SACK, inq->max_ack_delay);
+		inq->need_sack = 2;
 		goto out;
 	}
-	quic_pnspace_set_need_sack(space, 1);
-	quic_pnspace_set_sack_path(space, cb->path);
+	space->need_sack = 1;
+	space->sack_path = cb->path;
 
 out:
 	if (quic_is_established(sk)) {
-		if (!quic_inq_need_sack(inq))
-			quic_timer_reset(sk, QUIC_TIMER_IDLE, quic_inq_timeout(inq));
+		if (!inq->need_sack)
+			quic_timer_reset(sk, QUIC_TIMER_IDLE, inq->timeout);
 		quic_outq_transmit(sk);
-	} else if (!quic_inq_need_sack(inq)) {
-		quic_inq_set_need_sack(inq, 1);
-		quic_timer_reset(sk, QUIC_TIMER_SACK, quic_inq_max_ack_delay(inq));
+	} else if (!inq->need_sack) {
+		inq->need_sack = 1;
+		quic_timer_reset(sk, QUIC_TIMER_SACK, inq->max_ack_delay);
 	}
 	consume_skb(skb);
 	return 0;
@@ -1073,12 +1073,12 @@ static int quic_packet_app_process(struct sock *sk, struct sk_buff *skb)
 	WARN_ON(!skb_set_owner_sk_safe(skb, sk));
 
 	quic_packet_reset(packet);
-	if (!quic_hdr(skb)->fixed && !quic_inq_grease_quic_bit(quic_inq(sk))) {
+	if (!quic_hdr(skb)->fixed && !quic_inq(sk)->grease_quic_bit) {
 		QUIC_INC_STATS(net, QUIC_MIB_PKT_INVHDRDROP);
 		goto err;
 	}
 
-	if (!quic_crypto_recv_ready(crypto)) {
+	if (!crypto->recv_ready) {
 		quic_inq_backlog_tail(sk, skb);
 		return 0;
 	}
@@ -1094,7 +1094,7 @@ static int quic_packet_app_process(struct sock *sk, struct sk_buff *skb)
 	}
 	cb->number_offset = cb->conn_id->len + 1;
 	cb->length = (u16)(skb->len - cb->number_offset);
-	cb->number_max = quic_pnspace_max_pn_seen(space);
+	cb->number_max = space->max_pn_seen;
 
 	taglen = quic_packet_taglen(packet);
 	cb->crypto_done = quic_packet_decrypt_done;
@@ -1129,7 +1129,7 @@ static int quic_packet_app_process(struct sock *sk, struct sk_buff *skb)
 
 	pr_debug("%s: recvd, num: %llu, len: %d\n", __func__, cb->number, skb->len);
 
-	quic_pnspace_set_time(space, cb->time);
+	space->time = cb->time;
 	err = quic_pnspace_check(space, cb->number);
 	if (err) {
 		if (err > 0) { /* dup packet, send ack immediately */
@@ -1152,7 +1152,7 @@ static int quic_packet_app_process(struct sock *sk, struct sk_buff *skb)
 		goto err;
 	}
 
-	quic_cong_set_time(quic_cong(sk), cb->time);
+	quic_cong(sk)->time = cb->time;
 	frame.data = skb->data + cb->number_offset + cb->number_len;
 	frame.len = cb->length - cb->number_len - taglen;
 	frame.path = cb->path;
@@ -1352,7 +1352,7 @@ static u8 *quic_packet_pack_frames(struct sock *sk, struct sk_buff *skb,
 	u16 i = 0;
 
 	space = quic_pnspace(sk, packet->level);
-	number = quic_pnspace_inc_next_pn(space);
+	number = space->next_pn++;
 
 	cb->number_len = QUIC_PACKET_NUMBER_LEN;
 	cb->number_offset = off;
@@ -1375,26 +1375,26 @@ static u8 *quic_packet_pack_frames(struct sock *sk, struct sk_buff *skb,
 		}
 		if (frame->offset < 0) {
 			frame->offset = number;
-			quic_outq_dec_unsent_bytes(outq, frame->bytes);
+			outq->unsent_bytes -= frame->bytes;
 		}
 		quic_outq_transmitted_tail(sk, frame);
 		sent->frame_array[i++] = quic_frame_get(frame);
 	}
 
-	if (quic_is_serv(sk) && !quic_path_validated(paths))
-		quic_path_inc_ampl_sndlen(paths, (u16)skb->len + quic_packet_taglen(packet));
+	if (quic_is_serv(sk) && !paths->validated)
+		paths->ampl_sndlen += skb->len + quic_packet_taglen(packet);
 
 	if (quic_is_established(sk) && !quic_path_alt_state(paths, QUIC_PATH_ALT_PROBING))
 		quic_timer_reset_path(sk);
 
 	if (packet->ack_eliciting)
-		quic_pnspace_set_last_sent_time(space, now);
+		space->last_sent_time = now;
 
 	if (!sent)
 		return p;
 
-	if (!packet->level && quic_path_ecn_probes(paths) < 3) {
-		quic_path_inc_ecn_probes(paths);
+	if (!packet->level && paths->ecn_probes < 3) {
+		paths->ecn_probes++;
 		cb->ecn = INET_ECN_ECT_0;
 		sent->ecn = INET_ECN_ECT_0;
 	}
@@ -1403,8 +1403,8 @@ static u8 *quic_packet_pack_frames(struct sock *sk, struct sk_buff *skb,
 	sent->frame_len = packet->frame_len;
 	sent->level = (packet->level % QUIC_CRYPTO_EARLY);
 
-	quic_pnspace_inc_inflight(space, sent->frame_len);
-	quic_outq_inc_inflight(outq, sent->frame_len);
+	space->inflight += sent->frame_len;
+	outq->inflight += sent->frame_len;
 	quic_outq_packet_sent_tail(sk, sent);
 
 	quic_cong_on_packet_sent(quic_cong(sk), sent->sent_time, sent->frame_len, number);
@@ -1475,7 +1475,7 @@ static struct sk_buff *quic_packet_handshake_create(struct sock *sk)
 	type = QUIC_PACKET_INITIAL;
 	if (level == QUIC_CRYPTO_HANDSHAKE) {
 		type = QUIC_PACKET_HANDSHAKE;
-		fixed = !quic_outq_grease_quic_bit(quic_outq(sk));
+		fixed = !quic_outq(sk)->grease_quic_bit;
 	} else if (level == QUIC_CRYPTO_EARLY) {
 		type = QUIC_PACKET_0RTT;
 	}
@@ -1549,7 +1549,7 @@ static int quic_packet_number_check(struct sock *sk)
 	struct quic_pnspace *space;
 
 	space = quic_pnspace(sk, packet->level);
-	if (quic_pnspace_next_pn(space) + 1 <= QUIC_PN_MAP_MAX_PN)
+	if (space->next_pn + 1 <= QUIC_PN_MAP_MAX_PN)
 		return 0;
 
 	quic_outq_retransmit_list(sk, &packet->frame_list);
@@ -1615,7 +1615,7 @@ static struct sk_buff *quic_packet_app_create(struct sock *sk)
 
 	hdr = skb_push(skb, len);
 	hdr->form = 0;
-	hdr->fixed = !quic_outq_grease_quic_bit(quic_outq(sk));
+	hdr->fixed = !quic_outq(sk)->grease_quic_bit;
 	hdr->spin = 0;
 	hdr->reserved = 0;
 	hdr->pnl = QUIC_PACKET_NUMBER_LEN - 1;
@@ -1634,21 +1634,17 @@ void quic_packet_mss_update(struct sock *sk, u32 mss)
 	struct quic_packet *packet = quic_packet(sk);
 	struct quic_outqueue *outq = quic_outq(sk);
 	struct quic_cong *cong = quic_cong(sk);
-	u32 max_udp, mss_dgram;
 
-	max_udp = quic_outq_max_udp(outq);
-	if (max_udp && mss > max_udp)
-		mss = max_udp;
+	if (outq->max_udp_payload_size && mss > outq->max_udp_payload_size)
+		mss = outq->max_udp_payload_size;
 	packet->mss[0] = (u16)mss;
-	quic_cong_set_mss(cong, packet->mss[0] - packet->taglen[0]);
-	quic_outq_sync_window(sk, quic_cong_window(cong));
 
-	mss_dgram = quic_outq_max_dgram(outq);
-	if (!mss_dgram)
-		return;
-	if (mss_dgram > mss)
-		mss_dgram = mss;
-	packet->mss[1] = (u16)mss_dgram;
+	quic_cong_set_mss(cong, packet->mss[0] - packet->taglen[0]);
+	quic_outq_sync_window(sk, cong->window);
+
+	if (outq->max_datagram_frame_size && mss > outq->max_datagram_frame_size)
+		mss = outq->max_datagram_frame_size;
+	packet->mss[1] = (u16)mss;
 }
 
 int quic_packet_route(struct sock *sk)
@@ -1662,7 +1658,7 @@ int quic_packet_route(struct sock *sk)
 
 	da = quic_path_daddr(paths, packet->path);
 	sa = quic_path_saddr(paths, packet->path);
-	err = quic_flow_route(sk, da, sa, quic_path_flowi(paths));
+	err = quic_flow_route(sk, da, sa, &paths->fl);
 	if (err)
 		return err;
 
@@ -1829,8 +1825,7 @@ void quic_packet_flush(struct sock *sk)
 
 	if (packet->head) {
 		quic_lower_xmit(sk, packet->head,
-				quic_path_daddr(paths, packet->path),
-				quic_path_flowi(paths));
+				quic_path_daddr(paths, packet->path), &paths->fl);
 		packet->head = NULL;
 	}
 }

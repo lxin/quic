@@ -58,11 +58,6 @@ struct quic_cong_ops {
 	void (*on_rtt_update)(struct quic_cong *cong);
 };
 
-static inline void quic_cong_set_time(struct quic_cong *cong, u32 time)
-{
-	cong->time = time;
-}
-
 static inline void quic_cong_set_mss(struct quic_cong *cong, u32 mss)
 {
 	if (cong->mss == mss)
@@ -75,39 +70,9 @@ static inline void quic_cong_set_mss(struct quic_cong *cong, u32 mss)
 		cong->window = cong->min_window;
 }
 
-static inline void quic_cong_set_max_window(struct quic_cong *cong, u32 window)
-{
-	cong->max_window = window;
-}
-
-static inline void quic_cong_set_max_ack_delay(struct quic_cong *cong, u32 max_ack_delay)
-{
-	cong->max_ack_delay = max_ack_delay;
-}
-
 static inline void *quic_cong_priv(struct quic_cong *cong)
 {
 	return (void *)cong->priv;
-}
-
-static inline u32 quic_cong_time(struct quic_cong *cong)
-{
-	return cong->time;
-}
-
-static inline u32 quic_cong_window(struct quic_cong *cong)
-{
-	return cong->window;
-}
-
-static inline u32 quic_cong_pto(struct quic_cong *cong)
-{
-	return cong->pto;
-}
-
-static inline u64 quic_cong_pacing_time(struct quic_cong *cong)
-{
-	return cong->pacing_time;
 }
 
 void quic_cong_on_packet_acked(struct quic_cong *cong, u32 time, u32 bytes, s64 number);

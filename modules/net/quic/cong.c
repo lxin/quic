@@ -624,8 +624,8 @@ EXPORT_SYMBOL_GPL(quic_cong_set_srtt);
 
 void quic_cong_init(struct quic_cong *cong)
 {
-	quic_cong_set_max_ack_delay(cong, QUIC_DEF_ACK_DELAY);
+	cong->max_ack_delay = QUIC_DEF_ACK_DELAY;
+	cong->max_window = S32_MAX / 2;
 	quic_cong_set_algo(cong, QUIC_CONG_ALG_RENO);
-	quic_cong_set_max_window(cong, S32_MAX / 2);
 	quic_cong_set_srtt(cong, QUIC_RTT_INIT);
 }

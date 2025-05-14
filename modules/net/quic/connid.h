@@ -96,11 +96,6 @@ static inline struct quic_conn_id *quic_conn_id_choose(struct quic_conn_id_set *
 	return (alt && id_set->alt) ? &id_set->alt->id : &id_set->active->id;
 }
 
-static inline u8 quic_conn_id_max_count(struct quic_conn_id_set *id_set)
-{
-	return id_set->max_count;
-}
-
 static inline struct quic_conn_id *quic_conn_id_active(struct quic_conn_id_set *id_set)
 {
 	return &id_set->active->id;

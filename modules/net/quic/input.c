@@ -107,7 +107,7 @@ void quic_inq_flow_control(struct sock *sk, struct quic_stream *stream, u32 byte
 	}
 
 	if (frame) {
-		quic_pnspace_set_need_sack(space, 1);
+		space->need_sack = 1;
 		quic_outq_transmit(sk);
 	}
 }
@@ -277,7 +277,7 @@ static void quic_inq_handshake_tail(struct sock *sk, struct quic_frame *frame)
 	u32 len;
 	u8 *p;
 
-	overlap = quic_crypto_recv_offset(crypto) - frame->offset;
+	overlap = crypto->recv_offset - frame->offset;
 	if (overlap) {
 		quic_inq_rfree((int)frame->len, sk);
 		frame->data += overlap;
@@ -285,7 +285,7 @@ static void quic_inq_handshake_tail(struct sock *sk, struct quic_frame *frame)
 		quic_inq_set_owner_r((int)frame->len, sk);
 		frame->offset += overlap;
 	}
-	quic_crypto_inc_recv_offset(crypto, frame->len);
+	crypto->recv_offset += frame->len;
 
 	if (frame->level) {
 		/* always put handshake msg ahead of data and event */
@@ -303,7 +303,7 @@ static void quic_inq_handshake_tail(struct sock *sk, struct quic_frame *frame)
 		return;
 	}
 
-	if (!quic_crypto_ticket_ready(crypto) && quic_crypto_recv_offset(crypto) <= 4096) {
+	if (!crypto->ticket_ready && crypto->recv_offset <= 4096) {
 		quic_data_append(ticket, frame->data, frame->len);
 		if (ticket->len >= 4) {
 			p = ticket->data;
@@ -311,7 +311,7 @@ static void quic_inq_handshake_tail(struct sock *sk, struct quic_frame *frame)
 			quic_get_int(&p, &len, &type, 1);
 			quic_get_int(&p, &len, &length, 3);
 			if (ticket->len >= length + 4) {
-				quic_crypto_set_ticket_ready(crypto, 1);
+				crypto->ticket_ready  = 1;
 				quic_inq_event_recv(sk, QUIC_EVENT_NEW_SESSION_TICKET, ticket);
 			}
 		}
@@ -330,7 +330,7 @@ int quic_inq_handshake_recv(struct sock *sk, struct quic_frame *frame)
 	struct quic_frame *pos;
 
 	crypto = quic_crypto(sk, level);
-	crypto_offset = quic_crypto_recv_offset(crypto);
+	crypto_offset = crypto->recv_offset;
 	pr_debug("%s: recv_offset: %llu, offset: %llu, level: %u, len: %u\n",
 		 __func__, crypto_offset, offset, level, frame->len);
 
@@ -377,10 +377,10 @@ int quic_inq_handshake_recv(struct sock *sk, struct quic_frame *frame)
 			continue;
 		if (frame->level > level)
 			break;
-		if (frame->offset > quic_crypto_recv_offset(crypto))
+		if (frame->offset > crypto->recv_offset)
 			break;
 		list_del(&frame->list);
-		if (quic_crypto_recv_offset(crypto) >= frame->offset + frame->len) { /* dup */
+		if (crypto->recv_offset >= frame->offset + frame->len) { /* dup */
 			quic_inq_rfree((int)frame->len, sk);
 			quic_frame_put(frame);
 			continue;

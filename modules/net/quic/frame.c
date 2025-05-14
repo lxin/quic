@@ -49,16 +49,16 @@ static struct quic_frame *quic_frame_ack_create(struct sock *sk, void *data, u8 
 	frame_len = sizeof(type) + sizeof(u32) * 7;
 	frame_len += sizeof(struct quic_gap_ack_block) * num_gabs;
 
-	largest = quic_pnspace_max_pn_seen(space);
-	smallest = quic_pnspace_min_pn_seen(space);
+	largest = space->max_pn_seen;
+	smallest = space->min_pn_seen;
 	if (num_gabs)
-		smallest = quic_pnspace_base_pn(space) + gabs[num_gabs - 1].end;
+		smallest = space->base_pn + gabs[num_gabs - 1].end;
 	range = largest - smallest;
 	frame = quic_frame_alloc(frame_len, NULL, GFP_ATOMIC);
 	if (!frame)
 		return NULL;
-	delay = jiffies_to_usecs(jiffies) - quic_pnspace_max_pn_time(space);
-	delay >>= quic_outq_ack_delay_exponent(outq);
+	delay = jiffies_to_usecs(jiffies) - space->max_pn_time;
+	delay >>= outq->ack_delay_exponent;
 	p = quic_put_var(frame->data, type);
 	p = quic_put_var(p, largest); /* Largest Acknowledged */
 	p = quic_put_var(p, delay); /* ACK Delay */
@@ -72,12 +72,12 @@ static struct quic_frame *quic_frame_ack_create(struct sock *sk, void *data, u8 
 			p = quic_put_var(p, gabs[i].start - gabs[i - 1].end - 2);
 		}
 		p = quic_put_var(p, gabs[0].end - gabs[0].start); /* Gap */
-		range = gabs[0].start - 1 + quic_pnspace_base_pn(space);
-		range -= (quic_pnspace_min_pn_seen(space) + 1);
+		range = gabs[0].start - 1 + space->base_pn;
+		range -= (space->min_pn_seen + 1);
 		p = quic_put_var(p, range); /* ACK Range Length */
 	}
 	if (type == QUIC_FRAME_ACK_ECN) {
-		ecn_count = quic_pnspace_ecn_count(space);
+		ecn_count = space->ecn_count[0];
 		p = quic_put_var(p, ecn_count[1]); /* ECT0 Count */
 		p = quic_put_var(p, ecn_count[0]); /* ECT1 Count */
 		p = quic_put_var(p, ecn_count[2]); /* ECN-CE Count */
@@ -151,7 +151,7 @@ static struct quic_frame *quic_frame_new_token_create(struct sock *sk, void *dat
 	p = quic_put_data(p, token, tlen);
 	frame->len = (u16)(p - frame->data);
 	frame->size = frame->len;
-	quic_outq_set_token_pending(outq, 1);
+	outq->token_pending = 1;
 
 	return frame;
 }
@@ -281,7 +281,7 @@ static struct quic_frame *quic_frame_crypto_create(struct sock *sk, void *data, 
 	msg_len = iov_iter_count(info->msg);
 	wspace = sk_stream_wspace(sk);
 
-	offset = quic_crypto_send_offset(crypto);
+	offset = crypto->send_offset;
 	hlen += quic_var_len(offset);
 	hlen += quic_var_len(max_frame_len);
 	if (msg_len > wspace)
@@ -305,7 +305,7 @@ static struct quic_frame *quic_frame_crypto_create(struct sock *sk, void *data, 
 	frame->size = frame->len;
 
 	frame->level = info->level;
-	quic_crypto_inc_send_offset(crypto, msg_len);
+	crypto->send_offset += msg_len;
 	return frame;
 }
 
@@ -404,7 +404,7 @@ static struct quic_frame *quic_frame_path_challenge_create(struct sock *sk, void
 		return NULL;
 
 	frame_len = QUIC_MIN_UDP_PAYLOAD - packet->overhead;
-	entropy = quic_path_entropy(quic_paths(sk));
+	entropy = quic_paths(sk)->entropy;
 	get_random_bytes(entropy, 8);
 
 	frame = quic_frame_alloc(frame_len, NULL, GFP_ATOMIC);
@@ -443,8 +443,8 @@ static struct quic_frame *quic_frame_reset_stream_create(struct sock *sk, void *
 	stream->send.errcode = info->errcode;
 	frame->stream = stream;
 
-	if (quic_stream_send_active_id(streams) == stream->id)
-		quic_stream_set_send_active_id(streams, -1);
+	if (streams->send.active_stream_id == stream->id)
+		streams->send.active_stream_id = -1;
 
 	return frame;
 }
@@ -484,7 +484,7 @@ static struct quic_frame *quic_frame_max_data_create(struct sock *sk, void *data
 	u32 frame_len;
 
 	p = quic_put_var(buf, type);
-	p = quic_put_var(p, quic_inq_max_bytes(inq));
+	p = quic_put_var(p, inq->max_bytes);
 	frame_len = (u32)(p - buf);
 
 	frame = quic_frame_alloc(frame_len, NULL, GFP_ATOMIC);
@@ -561,12 +561,12 @@ static struct quic_frame *quic_frame_connection_close_create(struct sock *sk, vo
 	struct quic_frame *frame;
 
 	p = quic_put_var(buf, type);
-	p = quic_put_var(p, quic_outq_close_errcode(outq));
+	p = quic_put_var(p, outq->close_errcode);
 
 	if (type == QUIC_FRAME_CONNECTION_CLOSE)
-		p = quic_put_var(p, quic_outq_close_frame(outq));
+		p = quic_put_var(p, outq->close_frame);
 
-	phrase = quic_outq_close_phrase(outq);
+	phrase = outq->close_phrase;
 	if (phrase)
 		phrase_len = strlen(phrase);
 	p = quic_put_var(p, phrase_len);
@@ -591,7 +591,7 @@ static struct quic_frame *quic_frame_data_blocked_create(struct sock *sk, void *
 	u32 frame_len;
 
 	p = quic_put_var(buf, type);
-	p = quic_put_var(p, quic_outq_max_bytes(outq));
+	p = quic_put_var(p, outq->max_bytes);
 	frame_len = (u32)(p - buf);
 
 	frame = quic_frame_alloc(frame_len, NULL, GFP_ATOMIC);
@@ -641,7 +641,7 @@ static struct quic_frame *quic_frame_streams_blocked_uni_create(struct sock *sk,
 	if (!frame)
 		return NULL;
 	quic_put_data(frame->data, buf, frame_len);
-	quic_stream_set_send_uni_blocked(streams, 1);
+	streams->send.uni_blocked = 1;
 
 	return frame;
 }
@@ -663,7 +663,7 @@ static struct quic_frame *quic_frame_streams_blocked_bidi_create(struct sock *sk
 	if (!frame)
 		return NULL;
 	quic_put_data(frame->data, buf, frame_len);
-	quic_stream_set_send_bidi_blocked(streams, 1);
+	streams->send.bidi_blocked = 1;
 
 	return frame;
 }
@@ -773,13 +773,13 @@ static int quic_frame_ack_process(struct sock *sk, struct quic_frame *frame, u8 
 		return -EINVAL;
 
 	space = quic_pnspace(sk, level);
-	if ((s64)largest >= quic_pnspace_next_pn(space)) {
+	if ((s64)largest >= space->next_pn) {
 		frame->errcode = QUIC_TRANSPORT_ERROR_PROTOCOL_VIOLATION;
 		return -EINVAL;
 	}
 
 	smallest = largest - range;
-	delay <<= quic_inq_ack_delay_exponent(inq);
+	delay <<= inq->ack_delay_exponent;
 	quic_outq_transmitted_sack(sk, level, (s64)largest, (s64)smallest, (s64)largest, delay);
 
 	for (i = 0; i < count; i++) {
@@ -798,7 +798,7 @@ static int quic_frame_ack_process(struct sock *sk, struct quic_frame *frame, u8 
 			return -EINVAL;
 		if (quic_pnspace_set_ecn_count(space, ecn_count)) {
 			quic_cong_on_process_ecn(cong);
-			quic_outq_sync_window(sk, quic_cong_window(cong));
+			quic_outq_sync_window(sk, cong->window);
 		}
 	}
 
@@ -832,7 +832,7 @@ static int quic_frame_new_conn_id_process(struct sock *sk, struct quic_frame *fr
 		goto out;
 	if (prior < first)
 		prior = first;
-	if (seqno - prior + 1 > quic_conn_id_max_count(id_set)) {
+	if (seqno - prior + 1 > id_set->max_count) {
 		frame->errcode = QUIC_TRANSPORT_ERROR_CONNECTION_ID_LIMIT;
 		return -EINVAL;
 	}
@@ -923,10 +923,10 @@ static int quic_frame_handshake_done_process(struct sock *sk, struct quic_frame 
 
 	quic_outq_transmitted_sack(sk, QUIC_CRYPTO_HANDSHAKE, QUIC_PN_MAP_MAX_PN, 0, -1, 0);
 
-	if (!quic_path_pref_addr(paths))
+	if (!paths->pref_addr)
 		return 0;
 
-	quic_path_set_pref_addr(paths, 0);
+	paths->pref_addr = 0;
 	if (quic_packet_config(sk, 0, 1))
 		return 0;
 
@@ -1069,8 +1069,8 @@ static int quic_frame_max_data_process(struct sock *sk, struct quic_frame *frame
 	if (!quic_get_var(&p, &len, &max_bytes))
 		return -EINVAL;
 
-	if (max_bytes >= quic_outq_max_bytes(outq)) {
-		quic_outq_set_max_bytes(outq, max_bytes);
+	if (max_bytes >= outq->max_bytes) {
+		outq->max_bytes = max_bytes;
 		sk->sk_write_space(sk);
 	}
 
@@ -1115,7 +1115,7 @@ static int quic_frame_max_stream_data_process(struct sock *sk, struct quic_frame
 static int quic_frame_max_streams_uni_process(struct sock *sk, struct quic_frame *frame, u8 type)
 {
 	struct quic_stream_table *streams = quic_streams(sk);
-	s64 stream_id = quic_stream_send_max_uni_id(streams);
+	s64 stream_id = streams->send.max_uni_stream_id;
 	u32 len = frame->len;
 	u8 *p = frame->data;
 	u64 max;
@@ -1132,7 +1132,7 @@ static int quic_frame_max_streams_uni_process(struct sock *sk, struct quic_frame
 	stream_id = quic_stream_streams_to_id(max, type);
 	quic_inq_event_recv(sk, QUIC_EVENT_STREAM_MAX_STREAM, &stream_id);
 
-	quic_stream_set_send_max_uni_id(streams, stream_id);
+	streams->send.max_uni_stream_id = stream_id;
 	sk->sk_write_space(sk);
 out:
 	return (int)(frame->len - len);
@@ -1149,7 +1149,7 @@ static int quic_frame_max_streams_bidi_process(struct sock *sk, struct quic_fram
 	if (!quic_get_var(&p, &len, &max))
 		return -EINVAL;
 
-	stream_id = quic_stream_send_max_bidi_id(streams);
+	stream_id = streams->send.max_bidi_stream_id;
 	if (max <= quic_stream_id_to_streams(stream_id))
 		goto out;
 
@@ -1159,7 +1159,7 @@ static int quic_frame_max_streams_bidi_process(struct sock *sk, struct quic_fram
 	stream_id = quic_stream_streams_to_id(max, type);
 	quic_inq_event_recv(sk, QUIC_EVENT_STREAM_MAX_STREAM, &stream_id);
 
-	quic_stream_set_send_max_bidi_id(streams, stream_id);
+	streams->send.max_bidi_stream_id = stream_id;
 	sk->sk_write_space(sk);
 out:
 	return (int)(frame->len - len);
@@ -1210,15 +1210,15 @@ static int quic_frame_data_blocked_process(struct sock *sk, struct quic_frame *f
 
 	if (!quic_get_var(&p, &len, &max_bytes))
 		return -EINVAL;
-	recv_max_bytes = quic_inq_max_bytes(inq);
+	recv_max_bytes = inq->max_bytes;
 
-	window = quic_inq_max_data(inq);
+	window = inq->max_data;
 	if (quic_under_memory_pressure(sk))
 		window >>= 1;
 
-	quic_inq_set_max_bytes(inq, quic_inq_bytes(inq) + window);
+	inq->max_bytes = inq->bytes + window;
 	if (quic_outq_transmit_frame(sk, QUIC_FRAME_MAX_DATA, inq, 0, true)) {
-		quic_inq_set_max_bytes(inq, recv_max_bytes);
+		inq->max_bytes = recv_max_bytes;
 		return -ENOMEM;
 	}
 	return (int)(frame->len - len);
@@ -1269,7 +1269,7 @@ static int quic_frame_streams_blocked_uni_process(struct sock *sk, struct quic_f
 						  u8 type)
 {
 	struct quic_stream_table *streams = quic_streams(sk);
-	s64 stream_id = quic_stream_recv_max_uni_id(streams);
+	s64 stream_id = streams->send.max_uni_stream_id;
 	u32 len = frame->len;
 	u8 *p = frame->data;
 	u64 max;
@@ -1296,7 +1296,7 @@ static int quic_frame_streams_blocked_bidi_process(struct sock *sk, struct quic_
 
 	if (!quic_get_var(&p, &len, &max))
 		return -EINVAL;
-	stream_id = quic_stream_recv_max_bidi_id(streams);
+	stream_id = streams->recv.max_bidi_stream_id;
 	if (max > quic_stream_id_to_streams(stream_id))
 		goto out;
 	max = quic_stream_id_to_streams(stream_id);
@@ -1316,7 +1316,7 @@ static int quic_frame_path_response_process(struct sock *sk, struct quic_frame *
 		return -EINVAL;
 
 	memcpy(entropy, frame->data, 8);
-	if (memcmp(quic_path_entropy(paths), entropy, 8))
+	if (memcmp(paths->entropy, entropy, 8))
 		goto out;
 
 	quic_outq_transmitted_sack(sk, QUIC_CRYPTO_HANDSHAKE, QUIC_PN_MAP_MAX_PN, 0, -1, 0);
@@ -1401,7 +1401,7 @@ static int quic_frame_datagram_process(struct sock *sk, struct quic_frame *frame
 			return -EINVAL;
 	}
 
-	if (payload_len + (p - frame->data) + 1 > quic_inq_max_dgram(inq)) {
+	if (payload_len + (p - frame->data) + 1 > inq->max_datagram_frame_size) {
 		frame->errcode = QUIC_TRANSPORT_ERROR_PROTOCOL_VIOLATION;
 		return -EINVAL;
 	}
@@ -1461,7 +1461,7 @@ static void quic_frame_new_token_ack(struct sock *sk, struct quic_frame *frame)
 {
 	struct quic_outqueue *outq = quic_outq(sk);
 
-	quic_outq_set_token_pending(outq, 0);
+	outq->token_pending = 0;
 }
 
 static void quic_frame_stream_ack(struct sock *sk, struct quic_frame *frame)
@@ -1503,7 +1503,7 @@ static void quic_frame_data_blocked_ack(struct sock *sk, struct quic_frame *fram
 {
 	struct quic_outqueue *outq = quic_outq(sk);
 
-	quic_outq_set_data_blocked(outq, 0);
+	outq->data_blocked = 0;
 }
 
 static void quic_frame_stream_data_blocked_ack(struct sock *sk, struct quic_frame *frame)
@@ -1517,14 +1517,14 @@ static void quic_frame_streams_blocked_bidi_ack(struct sock *sk, struct quic_fra
 {
 	struct quic_stream_table *streams = quic_streams(sk);
 
-	quic_stream_set_send_bidi_blocked(streams, 0);
+	streams->send.bidi_blocked = 0;
 }
 
 static void quic_frame_streams_blocked_uni_ack(struct sock *sk, struct quic_frame *frame)
 {
 	struct quic_stream_table *streams = quic_streams(sk);
 
-	quic_stream_set_send_uni_blocked(streams, 0);
+	streams->send.uni_blocked = 0;
 }
 
 static void quic_frame_new_conn_id_ack(struct sock *sk, struct quic_frame *frame)
@@ -1921,7 +1921,7 @@ int quic_frame_parse_transport_params_ext(struct sock *sk, struct quic_transport
 				return -1;
 			if (quic_frame_get_conn_id(&conn_id, &p, &len))
 				return -1;
-			if (quic_conn_id_cmp(quic_path_orig_dcid(paths), &conn_id))
+			if (quic_conn_id_cmp(&paths->orig_dcid, &conn_id))
 				return -1;
 			break;
 		case QUIC_TRANSPORT_PARAM_RETRY_SOURCE_CONNECTION_ID:
@@ -1929,7 +1929,7 @@ int quic_frame_parse_transport_params_ext(struct sock *sk, struct quic_transport
 				return -1;
 			if (quic_frame_get_conn_id(&conn_id, &p, &len))
 				return -1;
-			if (quic_conn_id_cmp(quic_path_retry_dcid(paths), &conn_id))
+			if (quic_conn_id_cmp(&paths->retry_dcid, &conn_id))
 				return -1;
 			break;
 		case QUIC_TRANSPORT_PARAM_INITIAL_SOURCE_CONNECTION_ID:
@@ -2061,7 +2061,7 @@ int quic_frame_parse_transport_params_ext(struct sock *sk, struct quic_transport
 				return -1;
 			if (addr.v4.sin_port &&
 			    !quic_cmp_sk_addr(sk, quic_path_daddr(paths, 0), &addr)) {
-				quic_path_set_pref_addr(paths, 1);
+				paths->pref_addr = 1;
 				quic_path_set_daddr(paths, 1, &addr);
 			}
 			break;
@@ -2134,7 +2134,7 @@ int quic_frame_build_transport_params_ext(struct sock *sk, struct quic_transport
 	if (quic_is_serv(sk)) {
 		crypto = quic_crypto(sk, QUIC_CRYPTO_INITIAL);
 		param_id = QUIC_TRANSPORT_PARAM_ORIGINAL_DESTINATION_CONNECTION_ID;
-		p = quic_frame_put_conn_id(p, param_id, quic_path_orig_dcid(paths));
+		p = quic_frame_put_conn_id(p, param_id, &paths->orig_dcid);
 		if (params->stateless_reset) {
 			p = quic_put_var(p, QUIC_TRANSPORT_PARAM_STATELESS_RESET_TOKEN);
 			p = quic_put_var(p, 16);
@@ -2143,11 +2143,11 @@ int quic_frame_build_transport_params_ext(struct sock *sk, struct quic_transport
 				return -1;
 			p = quic_put_data(p, token, 16);
 		}
-		if (quic_path_retry(paths)) {
+		if (paths->retry) {
 			param_id = QUIC_TRANSPORT_PARAM_RETRY_SOURCE_CONNECTION_ID;
-			p = quic_frame_put_conn_id(p, param_id, quic_path_retry_dcid(paths));
+			p = quic_frame_put_conn_id(p, param_id, &paths->retry_dcid);
 		}
-		if (quic_path_pref_addr(paths)) {
+		if (paths->pref_addr) {
 			quic_conn_id_generate(&conn_id);
 			if (quic_crypto_generate_stateless_reset_token(crypto, conn_id.data,
 								       conn_id.len, token, 16))

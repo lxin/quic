@@ -64,51 +64,6 @@ struct quic_pnspace {
 	s64 next_pn; /* next packet number to send */
 };
 
-static inline void quic_pnspace_set_time(struct quic_pnspace *space, u32 time)
-{
-	space->time = time;
-}
-
-static inline u32 quic_pnspace_time(struct quic_pnspace *space)
-{
-	return space->time;
-}
-
-static inline void quic_pnspace_set_sack_path(struct quic_pnspace *space, u8 path)
-{
-	space->sack_path = path;
-}
-
-static inline u8 quic_pnspace_sack_path(const struct quic_pnspace *space)
-{
-	return space->sack_path;
-}
-
-static inline void quic_pnspace_set_need_sack(struct quic_pnspace *space, u8 need_sack)
-{
-	space->need_sack = need_sack;
-}
-
-static inline u8 quic_pnspace_need_sack(const struct quic_pnspace *space)
-{
-	return space->need_sack;
-}
-
-static inline void quic_pnspace_set_max_time_limit(struct quic_pnspace *space, u32 max_time_limit)
-{
-	space->max_time_limit = max_time_limit;
-}
-
-static inline s64 quic_pnspace_min_pn_seen(const struct quic_pnspace *space)
-{
-	return space->min_pn_seen;
-}
-
-static inline s64 quic_pnspace_max_pn_seen(const struct quic_pnspace *space)
-{
-	return space->max_pn_seen;
-}
-
 static inline void quic_pnspace_set_max_pn_acked_seen(struct quic_pnspace *space,
 						      s64 max_pn_acked_seen)
 {
@@ -116,66 +71,6 @@ static inline void quic_pnspace_set_max_pn_acked_seen(struct quic_pnspace *space
 		return;
 	space->max_pn_acked_seen = max_pn_acked_seen;
 	space->max_pn_acked_time = jiffies_to_usecs(jiffies);
-}
-
-static inline s64 quic_pnspace_max_pn_acked_seen(const struct quic_pnspace *space)
-{
-	return space->max_pn_acked_seen;
-}
-
-static inline u32 quic_pnspace_max_pn_acked_time(const struct quic_pnspace *space)
-{
-	return space->max_pn_acked_time;
-}
-
-static inline void quic_pnspace_set_loss_time(struct quic_pnspace *space, u32 loss_time)
-{
-	space->loss_time = loss_time;
-}
-
-static inline u32 quic_pnspace_loss_time(const struct quic_pnspace *space)
-{
-	return space->loss_time;
-}
-
-static inline void quic_pnspace_set_last_sent_time(struct quic_pnspace *space, u32 last_sent_time)
-{
-	space->last_sent_time = last_sent_time;
-}
-
-static inline u32 quic_pnspace_last_sent_time(const struct quic_pnspace *space)
-{
-	return space->last_sent_time;
-}
-
-static inline s64 quic_pnspace_next_pn(const struct quic_pnspace *space)
-{
-	return space->next_pn;
-}
-
-static inline s64 quic_pnspace_inc_next_pn(struct quic_pnspace *space)
-{
-	return space->next_pn++;
-}
-
-static inline u32 quic_pnspace_inflight(struct quic_pnspace *space)
-{
-	return space->inflight;
-}
-
-static inline void quic_pnspace_inc_inflight(struct quic_pnspace *space, u16 bytes)
-{
-	space->inflight += bytes;
-}
-
-static inline void quic_pnspace_dec_inflight(struct quic_pnspace *space, u16 bytes)
-{
-	space->inflight -= bytes;
-}
-
-static inline s64 quic_pnspace_base_pn(const struct quic_pnspace *space)
-{
-	return space->base_pn;
 }
 
 static inline void quic_pnspace_set_base_pn(struct quic_pnspace *space, s64 pn)
@@ -187,11 +82,6 @@ static inline void quic_pnspace_set_base_pn(struct quic_pnspace *space, s64 pn)
 
 	space->max_pn_time = space->time;
 	space->mid_pn_time = space->max_pn_time;
-}
-
-static inline u32 quic_pnspace_max_pn_time(const struct quic_pnspace *space)
-{
-	return space->max_pn_time;
 }
 
 static inline bool quic_pnspace_has_gap(const struct quic_pnspace *space)
@@ -217,11 +107,6 @@ static inline int quic_pnspace_set_ecn_count(struct quic_pnspace *space, u64 *ec
 		return 1;
 	}
 	return 0;
-}
-
-static inline u64 *quic_pnspace_ecn_count(struct quic_pnspace *space)
-{
-	return space->ecn_count[0];
 }
 
 static inline bool quic_pnspace_has_ecn_count(struct quic_pnspace *space)

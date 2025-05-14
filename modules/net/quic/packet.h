@@ -68,24 +68,14 @@ struct quic_packet_sent {
 
 #define QUIC_VERSION_LEN		4
 
-static inline void quic_packet_set_version(struct quic_packet *packet, u32 version)
-{
-	packet->version = version;
-}
-
-static inline u16 quic_packet_len(struct quic_packet *packet)
-{
-	return packet->len;
-}
-
-static inline u16 quic_packet_frame_len(struct quic_packet *packet)
-{
-	return packet->frame_len;
-}
-
 static inline u8 quic_packet_taglen(struct quic_packet *packet)
 {
 	return packet->taglen[!!packet->level];
+}
+
+static inline void quic_packet_set_taglen(struct quic_packet *packet, u8 taglen)
+{
+	packet->taglen[0] = taglen;
 }
 
 static inline u32 quic_packet_mss(struct quic_packet *packet)
@@ -101,11 +91,6 @@ static inline u32 quic_packet_max_payload(struct quic_packet *packet)
 static inline u32 quic_packet_max_payload_dgram(struct quic_packet *packet)
 {
 	return packet->mss[1] - packet->overhead - packet->taglen[!!packet->level];
-}
-
-static inline void quic_packet_set_taglen(struct quic_packet *packet, u8 taglen)
-{
-	packet->taglen[0] = taglen;
 }
 
 static inline int quic_packet_empty(struct quic_packet *packet)

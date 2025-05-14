@@ -82,7 +82,7 @@ static int quic_inet_listen(struct socket *sock, int backlog)
 	if (err)
 		goto free;
 	active = quic_conn_id_active(dest);
-	quic_path_set_serv(paths);
+	paths->serv = 1;
 
 	err = quic_crypto_initial_keys_install(crypto, active, packet->version, 1);
 	if (err)
@@ -128,7 +128,7 @@ static __poll_t quic_inet_poll(struct file *file, struct socket *sock, poll_tabl
 	if (sk->sk_err || !skb_queue_empty_lockless(&sk->sk_error_queue))
 		mask |= EPOLLERR | (sock_flag(sk, SOCK_SELECT_ERR_QUEUE) ? EPOLLPRI : 0);
 
-	head = quic_inq_recv_list(quic_inq(sk));
+	head = &quic_inq(sk)->recv_list;
 	if (!list_empty(head))
 		mask |= EPOLLIN | EPOLLRDNORM;
 
@@ -214,9 +214,9 @@ static int quic_seq_show(struct seq_file *seq, void *v)
 		quic_seq_dump_addr(seq, quic_path_uaddr(paths, 0));
 
 		outq = quic_outq(sk);
-		seq_printf(seq, "%d\t%lld\t%d\t%d\t%d\t%d\t%d\t%d\n", sk->sk_state,
-			   quic_outq_window(outq), quic_packet_mss(quic_packet(sk)),
-			   quic_outq_inflight(outq), READ_ONCE(sk->sk_wmem_queued),
+		seq_printf(seq, "%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n", sk->sk_state,
+			   outq->window, quic_packet_mss(quic_packet(sk)),
+			   outq->inflight, READ_ONCE(sk->sk_wmem_queued),
 			   sk_rmem_alloc_get(sk), sk->sk_sndbuf, sk->sk_rcvbuf);
 	}
 	spin_unlock(&head->lock);
