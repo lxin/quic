@@ -251,23 +251,30 @@ static void cubic_recovery(struct quic_cong *cong)
 	cong->window = cong->ssthresh;
 }
 
+static int quic_cong_check_persistent_congestion(struct quic_cong *cong, u32 time)
+{
+	u32 ssthresh;
+
+	ssthresh = cong->smoothed_rtt + max(4 * cong->rttvar, QUIC_KGRANULARITY);
+	ssthresh = (ssthresh + cong->max_ack_delay) * QUIC_KPERSISTENT_CONGESTION_THRESHOLD;
+	if (cong->time - time <= ssthresh)
+		return 0;
+
+	/* rfc9002#section-7.6: Persistent Congestion:
+	 * cong_avoid -> slow_start or recovery -> slow_start
+	 */
+	pr_debug("%s: permanent congestion, cwnd: %u, ssthresh: %u\n",
+		 __func__, cong->window, cong->ssthresh);
+	cong->min_rtt_valid = 0;
+	cong->window = cong->min_window;
+	cong->state = QUIC_CONG_SLOW_START;
+	return 1;
+}
+
 static void quic_cubic_on_packet_lost(struct quic_cong *cong, u32 time, u32 bytes, s64 number)
 {
-	u32 time_ssthresh;
-
-	time_ssthresh = cong->smoothed_rtt + max(4 * cong->rttvar, 1000U);
-	time_ssthresh = (time_ssthresh + cong->max_ack_delay) * 3;
-	if (cong->time - time > time_ssthresh) {
-		/* rfc9002#section-7.6: Persistent Congestion:
-		 * cong_avoid -> slow_start or recovery -> slow_start
-		 */
-		pr_debug("%s: permanent congestion, cwnd: %u, ssthresh: %u\n",
-			 __func__, cong->window, cong->ssthresh);
-		cong->min_rtt_valid = 0;
-		cong->window = cong->min_window;
-		cong->state = QUIC_CONG_SLOW_START;
+	if (quic_cong_check_persistent_congestion(cong, time))
 		return;
-	}
 
 	switch (cong->state) {
 	case QUIC_CONG_SLOW_START:
@@ -394,21 +401,8 @@ static void quic_cubic_on_rtt_update(struct quic_cong *cong)
 /* NEW RENO APIs */
 static void quic_reno_on_packet_lost(struct quic_cong *cong, u32 time, u32 bytes, s64 number)
 {
-	u32 time_ssthresh;
-
-	time_ssthresh = cong->smoothed_rtt + max(4 * cong->rttvar, 1000U);
-	time_ssthresh = (time_ssthresh + cong->max_ack_delay) * 3;
-	if (cong->time - time > time_ssthresh) {
-		/* rfc9002#section-7.6: Persistent Congestion:
-		 * cong_avoid -> slow_start or recovery -> slow_start
-		 */
-		pr_debug("%s: permanent congestion, cwnd: %u, ssthresh: %u\n",
-			 __func__, cong->window, cong->ssthresh);
-		cong->min_rtt_valid = 0;
-		cong->window = cong->min_window;
-		cong->state = QUIC_CONG_SLOW_START;
+	if (quic_cong_check_persistent_congestion(cong, time))
 		return;
-	}
 
 	switch (cong->state) {
 	case QUIC_CONG_SLOW_START:
@@ -525,9 +519,12 @@ EXPORT_SYMBOL_GPL(quic_cong_on_process_ecn);
 
 static void quic_cong_pto_update(struct quic_cong *cong)
 {
-	u32 pto = cong->smoothed_rtt + cong->rttvar * 4;
+	u32 pto, loss_delay;
 
-	cong->pto = clamp(pto, QUIC_RTO_MIN, QUIC_RTO_MAX);
+	pto = cong->smoothed_rtt + max(4 * cong->rttvar, QUIC_KGRANULARITY);
+	cong->pto = pto + cong->max_ack_delay;
+	loss_delay = QUIC_KTIME_THRESHOLD(max(cong->smoothed_rtt, cong->latest_rtt));
+	cong->loss_delay = max(loss_delay, QUIC_KGRANULARITY);
 
 	pr_debug("%s: update pto: %u\n", __func__, pto);
 }

@@ -1098,8 +1098,8 @@ static int quic_sock_apply_config(struct sock *sk, struct quic_config *c)
 	if (c->certificate_request)
 		config->certificate_request = c->certificate_request;
 	if (c->initial_smoothed_rtt) {
-		if (c->initial_smoothed_rtt < QUIC_RTO_MIN ||
-		    c->initial_smoothed_rtt > QUIC_RTO_MAX)
+		if (c->initial_smoothed_rtt < QUIC_RTT_MIN ||
+		    c->initial_smoothed_rtt > QUIC_RTT_MAX)
 			return -EINVAL;
 		config->initial_smoothed_rtt = c->initial_smoothed_rtt;
 		quic_cong_set_srtt(cong, config->initial_smoothed_rtt);

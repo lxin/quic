@@ -823,10 +823,11 @@ void quic_outq_retransmit_mark(struct sock *sk, u8 level, u8 immediate)
 		if (!immediate && sent->number > space->max_pn_acked_seen)
 			break;
 
-		if (!immediate && sent->sent_time + cong->pto > cong->time &&
-		    sent->number + 3 > space->max_pn_acked_seen) {
-			if (!space->loss_time || space->loss_time > sent->sent_time + cong->pto)
-				space->loss_time = sent->sent_time + cong->pto;
+		if (!immediate && sent->sent_time + cong->loss_delay > cong->time &&
+		    sent->number + QUIC_KPACKET_THRESHOLD > space->max_pn_acked_seen) {
+			if (!space->loss_time ||
+			    space->loss_time > sent->sent_time + cong->loss_delay)
+				space->loss_time = sent->sent_time + cong->loss_delay;
 			break;
 		}
 

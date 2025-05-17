@@ -8,9 +8,14 @@
  *    Xin Long <lucien.xin@gmail.com>
  */
 
+#define QUIC_KPERSISTENT_CONGESTION_THRESHOLD	3
+#define QUIC_KPACKET_THRESHOLD			3
+#define QUIC_KTIME_THRESHOLD(rtt)		((rtt) * 9 / 8)
+#define QUIC_KGRANULARITY			1000U
+
 #define QUIC_RTT_INIT		333000U
-#define QUIC_RTO_MIN		30000U
-#define QUIC_RTO_MAX		6000000U
+#define QUIC_RTT_MAX		2000000U
+#define QUIC_RTT_MIN		QUIC_KGRANULARITY
 
 enum quic_cong_state {
 	QUIC_CONG_SLOW_START,
@@ -20,6 +25,7 @@ enum quic_cong_state {
 
 struct quic_cong {
 	u32 smoothed_rtt;
+	u32 loss_delay;
 	u32 latest_rtt;
 	u32 min_rtt;
 	u32 rttvar;

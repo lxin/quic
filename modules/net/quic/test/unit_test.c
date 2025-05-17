@@ -513,7 +513,7 @@ static void quic_cong_test1(struct kunit *test)
 	cong.is_rtt_set = 1;
 
 	KUNIT_EXPECT_EQ(test, cong.rttvar, 166500);
-	KUNIT_EXPECT_EQ(test, cong.pto, 999000);
+	KUNIT_EXPECT_EQ(test, cong.pto, 1024000);
 
 	cong.time = jiffies_to_usecs(jiffies);
 	time = cong.time - 30000;
@@ -526,7 +526,7 @@ static void quic_cong_test1(struct kunit *test)
 	/* (rttvar * 3 + rttvar_sample) / 4 */
 	KUNIT_EXPECT_EQ(test, cong.rttvar, 191156);
 	/* smoothed_rtt + rttvar * 4 */
-	KUNIT_EXPECT_EQ(test, cong.pto, 1059749);
+	KUNIT_EXPECT_EQ(test, cong.pto, 1084749);
 
 	time = cong.time - 30000;
 	ack_delay = 2500 * 8;
@@ -681,16 +681,7 @@ static void quic_cong_test1(struct kunit *test)
 	KUNIT_EXPECT_EQ(test, cong.min_rtt, 30000);
 	KUNIT_EXPECT_EQ(test, cong.smoothed_rtt, 728054);
 	KUNIT_EXPECT_EQ(test, cong.rttvar, 1069036);
-	KUNIT_EXPECT_EQ(test, cong.pto, 5004198);
-
-	time = cong.time - 3000000;
-	ack_delay = 2500 * 8;
-	quic_cong_rtt_update(&cong, time, ack_delay);
-	KUNIT_EXPECT_EQ(test, cong.latest_rtt, 3000000);
-	KUNIT_EXPECT_EQ(test, cong.min_rtt, 30000);
-	KUNIT_EXPECT_EQ(test, cong.smoothed_rtt, 1009547);
-	KUNIT_EXPECT_EQ(test, cong.rttvar, 1294390);
-	KUNIT_EXPECT_EQ(test, cong.pto, 6000000);
+	KUNIT_EXPECT_EQ(test, cong.pto, 5029198);
 }
 
 static void quic_cong_test2(struct kunit *test)
@@ -857,7 +848,7 @@ static void quic_cong_test3(struct kunit *test)
 	s64 number;
 
 	cong.max_ack_delay = 25000;
-	cong.window = 106496;
+	cong.max_window = 106496;
 	quic_cong_set_mss(&cong, 1400);
 
 	quic_cong_set_algo(&cong, QUIC_CONG_ALG_CUBIC);
