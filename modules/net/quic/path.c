@@ -10,8 +10,8 @@
  *    Xin Long <lucien.xin@gmail.com>
  */
 
-#include <uapi/linux/quic.h>
 #include <net/udp_tunnel.h>
+#include <linux/quic.h>
 
 #include "common.h"
 #include "family.h"

@@ -10,13 +10,13 @@
  *    Xin Long <lucien.xin@gmail.com>
  */
 
-#include <uapi/linux/quic.h>
-#include <uapi/linux/tls.h>
 #include <linux/version.h>
 #include <linux/skbuff.h>
 #include <linux/delay.h>
+#include <linux/quic.h>
 #include <kunit/test.h>
 #include <net/sock.h>
+#include <net/tls.h>
 
 #include "../pnspace.h"
 #include "../common.h"

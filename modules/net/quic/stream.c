@@ -10,7 +10,7 @@
  *    Xin Long <lucien.xin@gmail.com>
  */
 
-#include <uapi/linux/quic.h>
+#include <linux/quic.h>
 
 #include "common.h"
 #include "stream.h"

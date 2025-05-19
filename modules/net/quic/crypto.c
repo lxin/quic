@@ -10,11 +10,11 @@
  *    Xin Long <lucien.xin@gmail.com>
  */
 
-#include <uapi/linux/quic.h>
 #include <crypto/skcipher.h>
 #include <linux/skbuff.h>
 #include <crypto/aead.h>
 #include <crypto/hash.h>
+#include <linux/quic.h>
 #include <net/tls.h>
 
 #include "common.h"
