@@ -657,7 +657,7 @@ static u32 quic_outq_get_pto_time(struct sock *sk, u8 *level)
 	struct quic_outqueue *outq = quic_outq(sk);
 	struct quic_pnspace *s;
 
-	duration = quic_cong(sk)->pto * (1 << outq->pto_count);
+	duration = quic_cong(sk)->pto * BIT(outq->pto_count);
 
 	if (!outq->inflight) {
 		*level = QUIC_CRYPTO_INITIAL;
@@ -687,7 +687,7 @@ static u32 quic_outq_get_pto_time(struct sock *sk, u8 *level)
 
 	s =  quic_pnspace(sk, QUIC_CRYPTO_APP);
 	if (s->inflight) {
-		duration += (outq->max_ack_delay * (1 << outq->pto_count));
+		duration += (outq->max_ack_delay * BIT(outq->pto_count));
 		t = s->last_sent_time + duration;
 		if (!time || time > t) {
 			time = t;

@@ -20,7 +20,7 @@
 #define QUIC_VARINT_4BYTE_PREFIX	0x80
 #define QUIC_VARINT_8BYTE_PREFIX	0xc0
 
-#define QUIC_VARINT_LENGTH(p)		(1u << ((*(p)) >> 6))
+#define QUIC_VARINT_LENGTH(p)		BIT((*(p)) >> 6)
 #define QUIC_VARINT_VALUE_MASK		0x3f
 
 static struct quic_hash_table quic_hash_tables[QUIC_HT_MAX_TABLES];
@@ -322,7 +322,7 @@ u8 quic_get_param(u64 *pdest, u8 **pp, u32 *plen)
 s64 quic_get_num(s64 max_pkt_num, s64 pkt_num, u32 n)
 {
 	s64 expected = max_pkt_num + 1;
-	s64 win = (s64)1 << (n * 8);
+	s64 win = BIT_ULL(n * 8);
 	s64 hwin = win / 2;
 	s64 mask = win - 1;
 	s64 cand;

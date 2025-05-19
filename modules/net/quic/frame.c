@@ -1846,7 +1846,7 @@ static int quic_frame_get_conn_id(struct quic_conn_id *conn_id, u8 **pp, u32 *pl
 }
 
 #define USEC_TO_MSEC(usec)	DIV_ROUND_UP((usec), 1000)
-#define MSEC_TO_USEC(msec)	(msec * 1000)
+#define MSEC_TO_USEC(msec)	((msec) * 1000)
 
 #define QUIC_MAX_VERSIONS	16
 

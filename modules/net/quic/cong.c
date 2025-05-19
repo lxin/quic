@@ -74,7 +74,7 @@ static u64 cubic_root(u64 n)
 		return 0;
 
 	d = (64 - __builtin_clzll(n)) / 3;
-	a = 1ULL << (d + 1);
+	a = BIT_ULL(d + 1);
 
 	for (; a * a * a > n;) {
 		d = div64_ul(n, a * a);

@@ -450,7 +450,7 @@ int quic_inq_event_recv(struct sock *sk, u8 event, void *args)
 	if (!event || event > QUIC_EVENT_MAX)
 		return -EINVAL;
 
-	if (!(quic_inq(sk)->events & (1 << event)))
+	if (!(quic_inq(sk)->events & BIT(event)))
 		return 0;
 
 	switch (event) {

@@ -1317,10 +1317,10 @@ static int quic_sock_set_event(struct sock *sk, struct quic_event_option *event,
 		return -EINVAL;
 
 	if (event->on) {
-		inq->events |= (1 << (event->type));
+		inq->events |= BIT(event->type);
 		return 0;
 	}
-	inq->events &= ~(1 << event->type);
+	inq->events &= ~BIT(event->type);
 	return 0;
 }
 
@@ -1857,7 +1857,7 @@ static int quic_sock_get_event(struct sock *sk, u32 len, sockptr_t optval, sockp
 
 	if (!event.type || event.type > QUIC_EVENT_MAX)
 		return -EINVAL;
-	event.on = !!(inq->events & (1 << event.type));
+	event.on = !!(inq->events & BIT(event.type));
 
 	if (copy_to_sockptr(optlen, &len, sizeof(len)) || copy_to_sockptr(optval, &event, len))
 		return -EFAULT;
