@@ -27,8 +27,8 @@
 #include "frame.h"
 
 #include "protocol.h"
-#include "output.h"
-#include "input.h"
+#include "outqueue.h"
+#include "inqueue.h"
 #include "timer.h"
 
 extern struct proto quic_prot;
