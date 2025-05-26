@@ -13,7 +13,7 @@
 
 #include <uapi/linux/quic.h>
 
-int quic_sock_setopt(struct sock *sk, int optname, void *optval, unsigned int optlen);
-int quic_sock_getopt(struct sock *sk, int optname, void *optval, unsigned int *optlen);
+int quic_kernel_setsockopt(struct sock *sk, int optname, void *optval, unsigned int optlen);
+int quic_kernel_getsockopt(struct sock *sk, int optname, void *optval, unsigned int *optlen);
 
 #endif
