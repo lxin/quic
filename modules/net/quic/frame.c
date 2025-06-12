@@ -398,25 +398,21 @@ static struct quic_frame *quic_frame_path_response_create(struct sock *sk, void 
 
 static struct quic_frame *quic_frame_path_challenge_create(struct sock *sk, void *data, u8 type)
 {
-	struct quic_packet *packet = quic_packet(sk);
-	u8 *p, *entropy, *path = data;
+	u8 *p, *entropy, buf[QUIC_FRAME_BUF_SMALL];
 	struct quic_frame *frame;
 	u32 frame_len;
 
-	if (quic_packet_config(sk, QUIC_CRYPTO_APP, *path))
-		return NULL;
-
-	frame_len = QUIC_MIN_UDP_PAYLOAD - packet->overhead;
 	entropy = quic_paths(sk)->entropy;
 	get_random_bytes(entropy, QUIC_PATH_ENTROPY_LEN);
+
+	p = quic_put_var(buf, type);
+	p = quic_put_data(p, entropy, QUIC_PATH_ENTROPY_LEN);
+	frame_len = (u32)(p - buf);
 
 	frame = quic_frame_alloc(frame_len, NULL, GFP_ATOMIC);
 	if (!frame)
 		return NULL;
-	p = quic_put_var(frame->data, type);
-	p = quic_put_data(p, entropy, QUIC_PATH_ENTROPY_LEN);
-	memset(p, 0, frame_len - 1 - QUIC_PATH_ENTROPY_LEN);
-	frame->padding = 1;
+	quic_put_data(frame->data, buf, frame_len);
 
 	return frame;
 }

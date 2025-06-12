@@ -894,7 +894,6 @@ int quic_outq_probe_path_alt(struct sock *sk, u8 cork)
 {
 	struct quic_conn_id_set *id_set = quic_dest(sk);
 	struct quic_path_group *paths = quic_paths(sk);
-	u8 path = 1;
 	u64 number;
 
 	if (!quic_conn_id_select_alt(id_set, false)) {
@@ -911,7 +910,7 @@ int quic_outq_probe_path_alt(struct sock *sk, u8 cork)
 
 	quic_path_set_alt_state(paths, QUIC_PATH_ALT_PROBING);
 	quic_set_sk_ecn(sk, 0); /* clear ecn during path migration */
-	quic_outq_transmit_frame(sk, QUIC_FRAME_PATH_CHALLENGE, &path, path, cork);
+	quic_outq_transmit_frame(sk, QUIC_FRAME_PATH_CHALLENGE, NULL, 1, cork);
 	quic_timer_reset_path(sk);
 	return 0;
 }

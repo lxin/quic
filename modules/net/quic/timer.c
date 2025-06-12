@@ -106,7 +106,7 @@ void quic_timer_path_handler(struct sock *sk)
 	quic_path_free(sk, paths, 1);
 
 out:
-	quic_outq_transmit_frame(sk, QUIC_FRAME_PATH_CHALLENGE, &path, path, false);
+	quic_outq_transmit_frame(sk, QUIC_FRAME_PATH_CHALLENGE, NULL, path, false);
 	quic_timer_reset_path(sk);
 }
 
