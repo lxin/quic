@@ -800,6 +800,7 @@ static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 			}
 			bytes += frame->bytes;
 			outq->force_delay = delay;
+			crypto->send_offset += frame->bytes;
 			quic_outq_ctrl_tail(sk, frame, delay);
 			len = 1;
 		}

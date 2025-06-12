@@ -301,12 +301,12 @@ static struct quic_frame *quic_frame_crypto_create(struct sock *sk, void *data, 
 		return NULL;
 	}
 	p += msg_len;
+
 	frame->bytes = (u16)msg_len;
 	frame->len = (u16)(p - frame->data);
 	frame->size = frame->len;
-
 	frame->level = info->level;
-	crypto->send_offset += msg_len;
+
 	return frame;
 }
 
