@@ -30,43 +30,6 @@ static void quic_inq_set_owner_r(int len, struct sock *sk)
 	sk_mem_charge(sk, len);
 }
 
-static void quic_inq_stream_tail(struct sock *sk, struct quic_stream *stream,
-				 struct quic_frame *frame)
-{
-	struct quic_inqueue *inq = quic_inq(sk);
-	struct quic_stream_update update = {};
-	u64 overlap;
-
-	overlap = stream->recv.offset - frame->offset;
-	if (overlap) {
-		quic_inq_rfree((int)frame->len, sk);
-		frame->data += overlap;
-		frame->len -= overlap;
-		quic_inq_set_owner_r((int)frame->len, sk);
-		frame->offset += overlap;
-	}
-	stream->recv.offset += frame->len;
-
-	if (frame->stream_fin) {
-		update.id = stream->id;
-		update.state = QUIC_STREAM_RECV_STATE_RECVD;
-		update.finalsz = frame->offset + frame->len;
-		quic_inq_event_recv(sk, QUIC_EVENT_STREAM_UPDATE, &update);
-
-		stream->recv.state = update.state;
-		quic_stream_recv_put(quic_streams(sk), stream, quic_is_serv(sk));
-	}
-
-	frame->offset = 0;
-	if (frame->level) {
-		frame->level = 0;
-		list_add_tail(&frame->list, &inq->early_list);
-		return;
-	}
-	list_add_tail(&frame->list, &inq->recv_list);
-	sk->sk_data_ready(sk);
-}
-
 #define QUIC_INQ_RWND_SHIFT	4
 
 void quic_inq_flow_control(struct sock *sk, struct quic_stream *stream, u32 bytes)
@@ -110,6 +73,43 @@ void quic_inq_flow_control(struct sock *sk, struct quic_stream *stream, u32 byte
 		space->need_sack = 1;
 		quic_outq_transmit(sk);
 	}
+}
+
+static void quic_inq_stream_tail(struct sock *sk, struct quic_stream *stream,
+				 struct quic_frame *frame)
+{
+	struct quic_inqueue *inq = quic_inq(sk);
+	struct quic_stream_update update = {};
+	u64 overlap;
+
+	overlap = stream->recv.offset - frame->offset;
+	if (overlap) {
+		quic_inq_rfree((int)frame->len, sk);
+		frame->data += overlap;
+		frame->len -= overlap;
+		quic_inq_set_owner_r((int)frame->len, sk);
+		frame->offset += overlap;
+	}
+	stream->recv.offset += frame->len;
+
+	if (frame->stream_fin) {
+		update.id = stream->id;
+		update.state = QUIC_STREAM_RECV_STATE_RECVD;
+		update.finalsz = frame->offset + frame->len;
+		quic_inq_event_recv(sk, QUIC_EVENT_STREAM_UPDATE, &update);
+
+		stream->recv.state = update.state;
+		quic_stream_recv_put(quic_streams(sk), stream, quic_is_serv(sk));
+	}
+
+	frame->offset = 0;
+	if (frame->level) {
+		frame->level = 0;
+		list_add_tail(&frame->list, &inq->early_list);
+		return;
+	}
+	list_add_tail(&frame->list, &inq->recv_list);
+	sk->sk_data_ready(sk);
 }
 
 static bool quic_sk_rmem_schedule(struct sock *sk, int size)
