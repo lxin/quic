@@ -101,9 +101,13 @@ out:
 #define IV_LABEL_V1		"quic iv"
 #define HP_KEY_LABEL_V1		"quic hp"
 
+#define KU_LABEL_V1		"quic ku"
+
 #define KEY_LABEL_V2		"quicv2 key"
 #define IV_LABEL_V2		"quicv2 iv"
 #define HP_KEY_LABEL_V2		"quicv2 hp"
+
+#define KU_LABEL_V2		"quicv2 ku"
 
 static int quic_crypto_keys_derive(struct crypto_shash *tfm, struct quic_data *s,
 				   struct quic_data *k, struct quic_data *i,
@@ -257,6 +261,65 @@ static int quic_crypto_header_encrypt(struct crypto_skcipher *tfm, struct sk_buf
 	p = skb->data + cb->number_offset;
 	for (i = 1; i <= cb->number_len; i++)
 		*p++ ^= mask[i];
+err:
+	kfree(mask);
+	return err;
+}
+
+static void quic_crypto_get_header(struct sk_buff *skb)
+{
+	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
+	struct quichdr *hdr = quic_hdr(skb);
+	u32 len = QUIC_MAX_PN_LEN;
+	u8 *p = (u8 *)hdr;
+
+	p += cb->number_offset;
+	cb->key_phase = hdr->key;
+	cb->number_len = hdr->pnl + 1;
+	quic_get_int(&p, &len, &cb->number, cb->number_len);
+	cb->number = quic_get_num(cb->number_max, cb->number, cb->number_len);
+
+	if (cb->number > cb->number_max)
+		cb->number_max = cb->number;
+}
+
+#define QUIC_PN_LEN_BITS_MASK	0x03
+
+static int quic_crypto_header_decrypt(struct crypto_skcipher *tfm, struct sk_buff *skb, bool chacha)
+{
+	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
+	struct quichdr *hdr = quic_hdr(skb);
+	int err, i, len = cb->length;
+	struct skcipher_request *req;
+	struct scatterlist sg;
+	u8 *mask, *iv, *p;
+
+	mask = quic_crypto_skcipher_mem_alloc(tfm, QUIC_SAMPLE_LEN, &iv, &req);
+	if (!mask)
+		return -ENOMEM;
+
+	if (len < QUIC_MAX_PN_LEN + QUIC_SAMPLE_LEN) {
+		err = -EINVAL;
+		goto err;
+	}
+	p = (u8 *)hdr + cb->number_offset;
+	memcpy((chacha ? iv : mask), p + QUIC_MAX_PN_LEN, QUIC_SAMPLE_LEN);
+	sg_init_one(&sg, mask, QUIC_SAMPLE_LEN);
+	skcipher_request_set_tfm(req, tfm);
+	skcipher_request_set_crypt(req, &sg, &sg, QUIC_SAMPLE_LEN, iv);
+	err = crypto_skcipher_encrypt(req);
+	if (err)
+		goto err;
+
+	p = (u8 *)hdr;
+	*p = (u8)(*p ^ (mask[0] & (((*p & QUIC_HEADER_FORM_BIT) == QUIC_HEADER_FORM_BIT) ?
+				   QUIC_LONG_HEADER_MASK : QUIC_SHORT_HEADER_MASK)));
+	cb->number_len = (*p & QUIC_PN_LEN_BITS_MASK) + 1;
+	p += cb->number_offset;
+	for (i = 0; i < cb->number_len; ++i)
+		*(p + i) = *((u8 *)hdr + cb->number_offset + i) ^ mask[i + 1];
+	quic_crypto_get_header(skb);
+
 err:
 	kfree(mask);
 	return err;
@@ -416,65 +479,6 @@ static int quic_crypto_payload_decrypt(struct crypto_aead *tfm, struct sk_buff *
 	}
 err:
 	kfree(ctx);
-	return err;
-}
-
-static void quic_crypto_get_header(struct sk_buff *skb)
-{
-	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
-	struct quichdr *hdr = quic_hdr(skb);
-	u32 len = QUIC_MAX_PN_LEN;
-	u8 *p = (u8 *)hdr;
-
-	p += cb->number_offset;
-	cb->key_phase = hdr->key;
-	cb->number_len = hdr->pnl + 1;
-	quic_get_int(&p, &len, &cb->number, cb->number_len);
-	cb->number = quic_get_num(cb->number_max, cb->number, cb->number_len);
-
-	if (cb->number > cb->number_max)
-		cb->number_max = cb->number;
-}
-
-#define QUIC_PN_LEN_BITS_MASK	0x03
-
-static int quic_crypto_header_decrypt(struct crypto_skcipher *tfm, struct sk_buff *skb, bool chacha)
-{
-	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
-	struct quichdr *hdr = quic_hdr(skb);
-	int err, i, len = cb->length;
-	struct skcipher_request *req;
-	struct scatterlist sg;
-	u8 *mask, *iv, *p;
-
-	mask = quic_crypto_skcipher_mem_alloc(tfm, QUIC_SAMPLE_LEN, &iv, &req);
-	if (!mask)
-		return -ENOMEM;
-
-	if (len < QUIC_MAX_PN_LEN + QUIC_SAMPLE_LEN) {
-		err = -EINVAL;
-		goto err;
-	}
-	p = (u8 *)hdr + cb->number_offset;
-	memcpy((chacha ? iv : mask), p + QUIC_MAX_PN_LEN, QUIC_SAMPLE_LEN);
-	sg_init_one(&sg, mask, QUIC_SAMPLE_LEN);
-	skcipher_request_set_tfm(req, tfm);
-	skcipher_request_set_crypt(req, &sg, &sg, QUIC_SAMPLE_LEN, iv);
-	err = crypto_skcipher_encrypt(req);
-	if (err)
-		goto err;
-
-	p = (u8 *)hdr;
-	*p = (u8)(*p ^ (mask[0] & (((*p & QUIC_HEADER_FORM_BIT) == QUIC_HEADER_FORM_BIT) ?
-				   QUIC_LONG_HEADER_MASK : QUIC_SHORT_HEADER_MASK)));
-	cb->number_len = (*p & QUIC_PN_LEN_BITS_MASK) + 1;
-	p += cb->number_offset;
-	for (i = 0; i < cb->number_len; ++i)
-		*(p + i) = *((u8 *)hdr + cb->number_offset + i) ^ mask[i + 1];
-	quic_crypto_get_header(skb);
-
-err:
-	kfree(mask);
 	return err;
 }
 
@@ -705,13 +709,10 @@ int quic_crypto_get_secret(struct quic_crypto *crypto, struct quic_crypto_secret
 	return 0;
 }
 
-#define LABEL_V1	"quic ku"
-#define LABEL_V2	"quicv2 ku"
-
 int quic_crypto_key_update(struct quic_crypto *crypto)
 {
 	u8 tx_secret[QUIC_SECRET_LEN], rx_secret[QUIC_SECRET_LEN];
-	struct quic_data l = {LABEL_V1, strlen(LABEL_V1)};
+	struct quic_data l = {KU_LABEL_V1, strlen(KU_LABEL_V1)};
 	struct quic_data z = {}, k, srt;
 	u32 secret_len;
 	int err;
@@ -721,7 +722,7 @@ int quic_crypto_key_update(struct quic_crypto *crypto)
 
 	secret_len = crypto->cipher->secretlen;
 	if (crypto->version == QUIC_VERSION_V2)
-		quic_data(&l, LABEL_V2, strlen(LABEL_V2));
+		quic_data(&l, KU_LABEL_V2, strlen(KU_LABEL_V2));
 
 	crypto->key_pending = 1;
 	memcpy(tx_secret, crypto->tx_secret, secret_len);
