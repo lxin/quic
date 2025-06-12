@@ -1225,7 +1225,8 @@ out:
 	return err;
 }
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 10, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 10, 0) || \
+	(defined(RHEL_RELEASE_CODE) && RHEL_RELEASE_CODE >= 2310) /* RHEL-9.6 */
 static struct sock *quic_accept(struct sock *sk, struct proto_accept_arg *arg)
 {
 	int flags = arg->flags, *errp = &arg->err;
