@@ -26,6 +26,10 @@ enum {
 
 #define SOL_QUIC	288
 
+/* NOTE: Structure descriptions are specified in:
+ * https://datatracker.ietf.org/doc/html/draft-lxin-quic-socket-apis
+ */
+
 /* Send or Receive Options APIs */
 enum quic_cmsg_type {
 	QUIC_STREAM_INFO,

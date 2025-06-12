@@ -17,6 +17,26 @@
 #define QUIC_RTT_MAX		2000000U
 #define QUIC_RTT_MIN		QUIC_KGRANULARITY
 
+/* rfc9002#section-7.3: Congestion Control States
+ *
+ *                  New path or      +------------+
+ *             persistent congestion |   Slow     |
+ *         (O)---------------------->|   Start    |
+ *                                   +------------+
+ *                                         |
+ *                                 Loss or |
+ *                         ECN-CE increase |
+ *                                         v
+ *  +------------+     Loss or       +------------+
+ *  | Congestion |  ECN-CE increase  |  Recovery  |
+ *  | Avoidance  |------------------>|   Period   |
+ *  +------------+                   +------------+
+ *            ^                            |
+ *            |                            |
+ *            +----------------------------+
+ *               Acknowledgment of packet
+ *                 sent during recovery
+ */
 enum quic_cong_state {
 	QUIC_CONG_SLOW_START,
 	QUIC_CONG_RECOVERY_PERIOD,
@@ -24,41 +44,46 @@ enum quic_cong_state {
 };
 
 struct quic_cong {
-	u32 smoothed_rtt;
-	u32 loss_delay;
-	u32 latest_rtt;
-	u32 min_rtt;
-	u32 rttvar;
-	u32 pto;
+	/* RTT tracking */
+	u32 smoothed_rtt;	/* Smoothed RTT */
+	u32 latest_rtt;		/* Latest RTT sample */
+	u32 min_rtt;		/* Lowest observed RTT */
+	u32 rttvar;		/* RTT variation */
+	u32 loss_delay;		/* Time before marking loss */
+	u32 pto;		/* Probe timeout */
 
-	u32 recovery_time;
-	u32 max_ack_delay;
-	u32 pacing_rate;
-	u64 pacing_time; /* planned time to send next packet */
-	u32 time; /* current time cache */
+	/* Timing & pacing */
+	u32 max_ack_delay;	/* max_ack_delay from rfc9000#section-18.2 */
+	u32 recovery_time;	/* Recovery period start */
+	u32 pacing_rate;	/* Packet sending speed Bytes/sec */
+	u64 pacing_time;	/* Next send time */
+	u32 time;		/* Cached time */
 
-	u32 max_window;
-	u32 min_window;
-	u32 ssthresh;
-	u32 window;
-	u32 mss;
+	/* Congestion window */
+	u32 max_window;		/* Max growth cap */
+	u32 min_window;		/* Min window limit */
+	u32 ssthresh;		/* Slow start threshold */
+	u32 window;		/* Bytes in flight allowed */
+	u32 mss;		/* QUIC MSS (excl. UDP) */
 
+	/* Algorithm-specific */
 	struct quic_cong_ops *ops;
-	u64 priv[8];
+	u64 priv[8];		/* Algo private data */
 
-	u8 min_rtt_valid;
-	u8 is_rtt_set;
-	u8 state;
+	/* Flags & state */
+	u8 min_rtt_valid;	/* min_rtt initialized */
+	u8 is_rtt_set;		/* RTT samples exist */
+	u8 state;		/* State machine in rfc9002#section-7.3 */
 };
 
+/* Hooks for congestion control algorithms */
 struct quic_cong_ops {
-	/* required */
 	void (*on_packet_acked)(struct quic_cong *cong, u32 time, u32 bytes, s64 number);
 	void (*on_packet_lost)(struct quic_cong *cong, u32 time, u32 bytes, s64 number);
 	void (*on_process_ecn)(struct quic_cong *cong);
 	void (*on_init)(struct quic_cong *cong);
 
-	/* optional */
+	/* Optional callbacks */
 	void (*on_packet_sent)(struct quic_cong *cong, u32 time, u32 bytes, s64 number);
 	void (*on_ack_recv)(struct quic_cong *cong, u32 bytes, u32 max_rate);
 	void (*on_rtt_update)(struct quic_cong *cong);

@@ -9,11 +9,11 @@
  */
 
 enum {
-	QUIC_TIMER_LOSS,
-	QUIC_TIMER_SACK,
-	QUIC_TIMER_PATH,
-	QUIC_TIMER_PMTU,
-	QUIC_TIMER_PACE,
+	QUIC_TIMER_LOSS,	/* Loss detection timer: triggers retransmission on packet loss */
+	QUIC_TIMER_SACK,	/* ACK delay timer, also used as idle timer alias */
+	QUIC_TIMER_PATH,	/* Path validation timer: verifies network path connectivity */
+	QUIC_TIMER_PMTU,	/* Packetization Layer Path MTU Discovery probing timer */
+	QUIC_TIMER_PACE,	/* Pacing timer: controls packet transmission pacing */
 	QUIC_TIMER_MAX,
 	QUIC_TIMER_IDLE = QUIC_TIMER_SACK,
 };

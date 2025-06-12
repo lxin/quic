@@ -72,18 +72,21 @@ enum {
 	QUIC_TRANSPORT_PARAM_DISABLE_1RTT_ENCRYPTION = 0xbaad,
 };
 
+/* Arguments passed to create a STREAM frame */
 struct quic_msginfo {
-	struct quic_stream *stream;
-	struct iov_iter *msg;
-	u32 flags;
-	u8 level;
+	struct quic_stream *stream;	/* The QUIC stream associated with this frame */
+	struct iov_iter *msg;		/* Iterator over message data to send */
+	u32 flags;			/* Flags controlling stream frame creation */
+	u8 level;			/* Encryption level for this frame */
 };
 
+/* Arguments passed to create a PING frame */
 struct quic_probeinfo {
-	u16 size;
-	u8 level;
+	u16 size;	/* Size of the PING packet */
+	u8 level;	/* Encryption level for this frame */
 };
 
+/* Operations for creating, processing, and acknowledging QUIC frames */
 struct quic_frame_ops {
 	struct quic_frame *(*frame_create)(struct sock *sk, void *data, u8 type);
 	int (*frame_process)(struct sock *sk, struct quic_frame *frame, u8 type);
@@ -91,38 +94,39 @@ struct quic_frame_ops {
 	u8 ack_eliciting;
 };
 
+/* Fragment of data appended to a STREAM frame */
 struct quic_frame_frag {
-	struct quic_frame_frag *next;
-	u16 size;
-	u8 data[];
+	struct quic_frame_frag *next;	/* Next fragment in the linked list */
+	u16 size;			/* Size of this data fragment */
+	u8 data[];			/* Flexible array member holding fragment data */
 };
 
 struct quic_frame {
 	union {
-		struct quic_frame_frag *flist;
-		struct sk_buff *skb;
+		struct quic_frame_frag *flist;	/* For TX: linked list of appended data fragments */
+		struct sk_buff *skb;		/* For RX: skb containing the raw frame data */
 	};
-	struct quic_stream *stream;
-	struct list_head list;
-	s64 offset;	/* stream/crypto/read offset or first packet number */
-	u8  *data;
+	struct quic_stream *stream;		/* Stream related to this frame, NULL if none */
+	struct list_head list;			/* Linked list node for queuing frames */
+	s64 offset;		/* Stream offset, crypto data offset, or first pkt number */
+	u8  *data;		/* Pointer to the actual frame data buffer */
 
 	refcount_t refcnt;
-	u16 errcode;
-	u8  level;
-	u8  type;
-	u16 bytes;	/* user data bytes */
-	u16 size;	/* alloc data size */
-	u16 len;	/* frame length including data in flist */
+	u16 errcode;		/* Error code set during frame processing */
+	u8  level;		/* Packet number space: Initial, Handshake, or App */
+	u8  type;		/* Frame type identifier */
+	u16 bytes;		/* Number of user data bytes */
+	u16 size;		/* Allocated data buffer size */
+	u16 len;		/* Total frame length including appended fragments */
 
-	u8  ack_eliciting:1;
-	u8  transmitted:1;
-	u8  stream_fin:1;
-	u8  nodelay:1;
-	u8  padding:1;
-	u8  dgram:1;
-	u8  event:1;
-	u8  path:1;
+	u8  ack_eliciting:1;	/* Frame requires acknowledgment */
+	u8  transmitted:1;	/* Frame is in the transmitted queue */
+	u8  stream_fin:1;	/* Frame includes FIN flag for stream */
+	u8  nodelay:1;		/* Frame bypasses Nagle's algorithm for sending */
+	u8  padding:1;		/* Padding is needed after this frame */
+	u8  dgram:1;		/* Frame represents a datagram message (RX only) */
+	u8  event:1;		/* Frame represents an event (RX only) */
+	u8  path:1;		/* Path index used to send this frame */
 };
 
 static inline bool quic_frame_new_conn_id(u8 type)
@@ -150,6 +154,11 @@ static inline bool quic_frame_ping(u8 type)
 	return type == QUIC_FRAME_PING;
 }
 
+/* Check if a given frame type is valid for the specified encryption level,
+ * based on the Frame Types table from rfc9000#section-12.4.
+ *
+ * Returns 0 if valid, 1 otherwise.
+ */
 static inline int quic_frame_level_check(u8 level, u8 type)
 {
 	if (level == QUIC_CRYPTO_APP)

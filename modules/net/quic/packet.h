@@ -9,46 +9,46 @@
  */
 
 struct quic_packet {
-	struct quic_conn_id dcid;
-	struct quic_conn_id scid;
-	union quic_addr daddr;
-	union quic_addr saddr;
+	struct quic_conn_id dcid;	/* Dest Connection ID from received packet */
+	struct quic_conn_id scid;	/* Source Connection ID from received packet */
+	union quic_addr daddr;		/* Dest address from received packet */
+	union quic_addr saddr;		/* Source address from received packet */
 
-	struct list_head frame_list;
-	struct sk_buff *head;
-	u16 frame_len;
-	u8 taglen[2];
-	u32 version;
-	u8 errframe;
-	u8 overhead;
-	u16 errcode;
-	u16 frames;
-	u16 mss[2];
-	u16 hlen;
-	u16 len;
+	struct list_head frame_list;	/* List of frames to pack into packet for send */
+	struct sk_buff *head;		/* Head skb for packet bundling on send */
+	u16 frame_len;		/* Length of all ack-eliciting frames excluding PING */
+	u8 taglen[2];		/* Tag length for short and long packets */
+	u32 version;		/* QUIC version used/selected during handshake */
+	u8 errframe;		/* Frame type causing packet processing failure */
+	u8 overhead;		/* QUIC header length excluding frames */
+	u16 errcode;		/* Error code on packet processing failure */
+	u16 frames;		/* Number of ack-eliciting frames excluding PING */
+	u16 mss[2];		/* MSS for datagram and non-datagram packets */
+	u16 hlen;		/* UDP + IP header length for sending */
+	u16 len;		/* QUIC packet length excluding taglen for sending */
 
-	u8 ack_eliciting:1;
-	u8 ack_requested:1;
-	u8 ack_immediate:1;
-	u8 non_probing:1;
-	u8 has_sack:1;
-	u8 ipfragok:1;
-	u8 padding:1;
-	u8 path:1;
-	u8 level;
+	u8 ack_eliciting:1;	/* Packet contains ack-eliciting frames to send */
+	u8 ack_requested:1;	/* Packet contains ack-eliciting frames received */
+	u8 ack_immediate:1;	/* Send ACK immediately (skip ack_delay timer) */
+	u8 non_probing:1;	/* Packet has ack-eliciting frames excluding NEW_CONNECTION_ID */
+	u8 has_sack:1;		/* Packet has ACK frames received */
+	u8 ipfragok:1;		/* Allow IP fragmentation */
+	u8 padding:1;		/* Packet has padding frames */
+	u8 path:1;		/* Path identifier used to send this packet */
+	u8 level;		/* Encryption level used */
 };
 
 struct quic_packet_sent {
-	struct list_head list;
-	u32 sent_time;
-	u16 frame_len;
-	u16 frames;
+	struct list_head list;	/* Link in sent packet list for ACK tracking */
+	u32 sent_time;		/* Time when packet was sent */
+	u16 frame_len;		/* Combined length of all frames held */
+	u16 frames;		/* Number of frames held */
 
-	s64 number;
-	u8  level;
-	u8  ecn:2;
+	s64 number;		/* Packet number */
+	u8  level;		/* Packet number space */
+	u8  ecn:2;		/* ECN bits */
 
-	struct quic_frame *frame_array[];
+	struct quic_frame *frame_array[];	/* Array of pointers to held frames */
 };
 
 #define QUIC_PACKET_INITIAL_V1		0

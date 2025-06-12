@@ -12,36 +12,41 @@
 #define QUIC_DEF_ACK_DELAY_EXPONENT	3
 
 enum {
-	QUIC_SACK_FLAG_NONE,
-	QUIC_SACK_FLAG_XMIT,
-	QUIC_SACK_FLAG_APP,
+	QUIC_SACK_FLAG_NONE,	/* No SACK pending; used for idle timeout handling */
+	QUIC_SACK_FLAG_XMIT,	/* Send previously queued SACK frames */
+	QUIC_SACK_FLAG_APP,	/* Generate and send new APP-level SACK frames */
 };
 
 struct quic_inqueue {
-	struct sk_buff_head backlog_list;
-	struct list_head handshake_list;
-	struct list_head stream_list;
-	struct list_head early_list;
-	struct list_head recv_list;
-	struct work_struct work;
-	u64 max_bytes;
-	u64 max_data;
-	u64 highest;
-	u64 bytes;
+	struct sk_buff_head backlog_list;	/* Packets waiting for crypto keys */
+	struct list_head handshake_list;	/* CRYPTO frames awaiting reassembly */
+	struct list_head stream_list;		/* STREAM frames awaiting reassembly */
+	struct list_head early_list;		/* 0-RTT STREAM frames already reassembled */
+	struct list_head recv_list;		/* Reassembled frames ready for user delivery */
+	struct work_struct work;	/* Workqueue item to process async crypto completion */
 
-	u16 max_datagram_frame_size;
-	u16 max_udp_payload_size;
-	u8 ack_delay_exponent;
-	u32 max_idle_timeout;
-	u32 max_ack_delay;
-	u32 timeout;
-	u32 events;
+	/* Flow Control */
+	u64 max_bytes;			/* Maximum data allowed to be received */
+	u64 bytes;			/* Data already read by the application */
 
+	/* Transport Parameters (local) */
+	u16 max_datagram_frame_size;	/* Transport parameter in and rfc9000#section-18.2 */
+	u16 max_udp_payload_size;	/* Transport parameter in rfc9000#section-18.2 */
+	/* Transport parameter Version Information related in rfc9368#section-3 */
 	u8 disable_compatible_version:1;
+	/* Transport parameter in draft-banks-quic-disable-encryption#section-2.1 */
 	u8 disable_1rtt_encryption:1;
-	u8 grease_quic_bit:1;
-	u8 stateless_reset:1;
-	u8 sack_flag:2;
+	u8 grease_quic_bit:1;		/* Transport parameter in rfc9287.html#section-3 */
+	u8 stateless_reset:1;		/* Transport parameter in rfc9000#section-18.2 */
+	u8 ack_delay_exponent;		/* Transport parameter in rfc9000#section-18.2 */
+	u32 max_idle_timeout;		/* Transport parameter in rfc9000#section-18.2 */
+	u32 max_ack_delay;		/* Transport parameter in rfc9000#section-18.2 */
+	u64 max_data;			/* Transport parameter in rfc9000#section-18.2 */
+	u64 highest;			/* Highest received offset across all streams */
+	u32 timeout;			/* Idle timeout duration*/
+	u32 events;			/* Event bitmask for notifications */
+
+	u8 sack_flag:2;			/* SACK timer handling flag; See QUIC_SACK_FLAG_* */
 };
 
 int quic_inq_handshake_recv(struct sock *sk, struct quic_frame *frame);

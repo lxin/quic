@@ -9,47 +9,53 @@
  */
 
 struct quic_outqueue {
-	struct list_head packet_sent_list;
-	struct list_head transmitted_list;
-	struct list_head datagram_list;
-	struct list_head control_list;
-	struct list_head stream_list;
-	struct work_struct work;
-	u64 last_max_bytes;
-	u64 max_bytes;
-	u64 max_data;
-	u64 bytes;
+	struct list_head packet_sent_list;	/* Sent packets, for ACK + loss detection */
+	struct list_head transmitted_list;	/* Frames needing retransmission if lost */
+	struct list_head datagram_list;		/* DATAGRAM frames waiting to be sent */
+	struct list_head control_list;		/* ACK, PING, CONNECTION_CLOSE, etc. */
+	struct list_head stream_list;		/* STREAM frames queued for transmission */
+	struct work_struct work;	/* Workqueue item to process async crypto completion */
 
-	u16 max_datagram_frame_size;
-	u16 max_udp_payload_size;
-	u8 ack_delay_exponent;
-	u32 max_idle_timeout;
-	u32 stream_list_len;	/* all frames len in stream list */
-	u32 max_ack_delay;
-	u32 unsent_bytes;
-	u32 inflight;		/* all inflight ack_eliciting frames len */
-	u32 window;
-	u16 count;
+	/* Flow Control */
+	u64 last_max_bytes;		/* Maximum send bytes advertised by peer at last update */
+	u64 max_bytes;			/* Current maximum bytes we are allowed to send to */
+	u64 bytes;			/* Bytes already sent to peer */
 
-	/* Use for 0-RTT/1-RTT DATA (re)transmit,
-	 * as QUIC_SKB_CB(skb)->level is always QUIC_CRYPTO_APP.
-	 * Set this level to QUIC_CRYPTO_EARLY or QUIC_CRYPTO_APP
+	/* Transport Parameters (from peer) */
+	u16 max_datagram_frame_size;	/* Transport parameter in rfc9000#section-18.2 */
+	u16 max_udp_payload_size;	/* Transport parameter in rfc9000#section-18.2 */
+	/* Transport parameter Version Information related in rfc9368#section-3 */
+	u8 disable_compatible_version:1;
+	/* Transport parameter in draft-banks-quic-disable-encryption#section-2.1 */
+	u8 disable_1rtt_encryption:1;
+	u8 grease_quic_bit:1;		/* Transport parameter in rfc9287.html#section-3 */
+	u8 stateless_reset:1;		/* Transport parameter in rfc9000#section-18.2 */
+	u8 ack_delay_exponent;		/* Transport parameter in rfc9000#section-18.2 */
+	u32 max_idle_timeout;		/* Transport parameter in rfc9000#section-18.2 */
+	u32 max_ack_delay;		/* Transport parameter in rfc9000#section-18.2 */
+	u64 max_data;			/* Transport parameter in rfc9000#section-18.2 */
+
+	u32 stream_list_len;		/* Combined payload length in stream_list */
+	u32 unsent_bytes;		/* Bytes queued but never transmitted */
+	u32 inflight;			/* Bytes from ack-eliciting frames in flight */
+	u32 window;			/* Congestion-controlled send window size */
+	u16 count;			/* Packets sent in current transmit round */
+
+	/* Close Information */
+	u8 *close_phrase;	/* Optional phrase to send in CONNECTION_CLOSE frame */
+	u32 close_errcode;	/* Application or transport close error code */
+	u8  close_frame;	/* Frame type to use in CONNECTION_CLOSE */
+
+	/* Use for 0-RTT/1-RTT DATA (re)transmit, as QUIC_SKB_CB(skb)->level is always
+	 * QUIC_CRYPTO_APP. Set this level to QUIC_CRYPTO_EARLY or QUIC_CRYPTO_APP
 	 * when the corresponding crypto is ready for send.
 	 */
 	u8 data_level;
-	u8 *close_phrase;
-	u32 close_errcode;
-	u8 close_frame;
-	u8 pto_count;
-
-	u8 disable_compatible_version:1;
-	u8 disable_1rtt_encryption:1;
-	u8 grease_quic_bit:1;
-	u8 stateless_reset:1;
-	u8 token_pending:1;
-	u8 data_blocked:1;
-	u8 force_delay:1;
-	u8 single:1;
+	u8 pto_count;		/* PTO (Probe Timeout) count since last packet received */
+	u8 token_pending:1;	/* NEW_TOKEN sent, awaiting ACK */
+	u8 data_blocked:1;	/* Blocked by flow control (needs MAX_DATA) */
+	u8 force_delay:1;	/* Delay send due to MSG_MORE / Nagle logic */
+	u8 single:1;		/* Transmit only one packet this round */
 };
 
 void quic_outq_stream_tail(struct sock *sk, struct quic_frame *frame, bool cork);

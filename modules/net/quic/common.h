@@ -36,27 +36,28 @@ static inline void quic_conn_id_update(struct quic_conn_id *conn_id, u8 *data, u
 }
 
 struct quic_skb_cb {
+	/* Callback when encryption/decryption completes in async mode */
 	void (*crypto_done)(struct sk_buff *skb, int err);
 	union {
-		struct sk_buff *last;
-		s64 seqno;
+		struct sk_buff *last;		/* Last packet in TX bundle */
+		s64 seqno;			/* Dest connection ID number on RX */
 	};
-	s64 number_max;
-	s64 number;
-	u16 errcode;
-	u16 length;
-	u32 time;
+	s64 number_max;		/* Largest packet number seen before parsing this one */
+	s64 number;		/* Parsed packet number */
+	u16 errcode;		/* Error code if encryption/decryption fails */
+	u16 length;		/* Payload length + packet number length */
+	u32 time;		/* Arrival time in UDP tunnel */
 
-	u16 number_offset;
-	u16 udph_offset;
-	u8 number_len;
-	u8 level;
+	u16 number_offset;	/* Offset of packet number field */
+	u16 udph_offset;	/* Offset of UDP header */
+	u8 number_len;		/* Length of the packet number field */
+	u8 level;		/* Encryption level: Initial, Handshake, App, or Early */
 
-	u8 key_update:1;
-	u8 key_phase:1;
-	u8 resume:1;
-	u8 path:1;
-	u8 ecn:2;
+	u8 key_update:1;	/* Key update triggered by this packet */
+	u8 key_phase:1;		/* Key phase used (0 or 1) */
+	u8 resume:1;		/* Crypto already processed (encrypted or decrypted) */
+	u8 path:1;		/* Packet arrived from a new or migrating path */
+	u8 ecn:2;		/* ECN marking used on TX */
 };
 
 #define QUIC_SKB_CB(skb)	((struct quic_skb_cb *)&((skb)->cb[0]))
@@ -122,7 +123,7 @@ static inline union quic_addr *quic_addr(const void *addr)
 }
 
 struct quic_hash_head {
-	spinlock_t		lock; /* protect the 'head' member access */
+	spinlock_t		lock; /* Protect the 'head' member access */
 	struct hlist_head	head;
 };
 
@@ -132,10 +133,10 @@ struct quic_hash_table {
 };
 
 enum  {
-	QUIC_HT_SOCK,
-	QUIC_HT_UDP_SOCK,
-	QUIC_HT_CONNECTION_ID,
-	QUIC_HT_BIND_PORT,
+	QUIC_HT_SOCK,		/* Hash table for QUIC sockets */
+	QUIC_HT_UDP_SOCK,	/* Hash table for UDP tunnel sockets */
+	QUIC_HT_CONNECTION_ID,	/* Hash table for source connection IDs */
+	QUIC_HT_BIND_PORT,	/* Hash table for bound ports */
 	QUIC_HT_MAX_TABLES,
 };
 
