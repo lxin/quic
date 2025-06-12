@@ -326,8 +326,7 @@ u32 quic_path_pl_send(struct quic_path_group *paths, s64 number)
 			paths->pl.state = QUIC_PL_ERROR; /* Base -> Error */
 
 			paths->pl.pmtu = QUIC_BASE_PLPMTU;
-			paths->pathmtu = QUIC_BASE_PLPMTU;
-			pathmtu = paths->pathmtu;
+			pathmtu = QUIC_BASE_PLPMTU;
 		}
 	} else if (paths->pl.state == QUIC_PL_SEARCH) {
 		if (paths->pl.pmtu == paths->pl.probe_size) { /* Black Hole Detected */
@@ -336,8 +335,7 @@ u32 quic_path_pl_send(struct quic_path_group *paths, s64 number)
 			paths->pl.probe_high = 0;
 
 			paths->pl.pmtu = QUIC_BASE_PLPMTU;
-			paths->pathmtu = QUIC_BASE_PLPMTU;
-			pathmtu = paths->pathmtu;
+			pathmtu = QUIC_BASE_PLPMTU;
 		} else { /* Normal probe failure. */
 			paths->pl.probe_high = paths->pl.probe_size;
 			paths->pl.probe_size = paths->pl.pmtu;
@@ -348,8 +346,7 @@ u32 quic_path_pl_send(struct quic_path_group *paths, s64 number)
 			paths->pl.probe_size = QUIC_BASE_PLPMTU;
 
 			paths->pl.pmtu = QUIC_BASE_PLPMTU;
-			paths->pathmtu = QUIC_BASE_PLPMTU;
-			pathmtu = paths->pathmtu;
+			pathmtu = QUIC_BASE_PLPMTU;
 		}
 	}
 
@@ -378,8 +375,7 @@ u32 quic_path_pl_recv(struct quic_path_group *paths, bool *raise_timer, bool *co
 		paths->pl.state = QUIC_PL_SEARCH; /* Error -> Search */
 
 		paths->pl.pmtu = paths->pl.probe_size;
-		paths->pathmtu = (u32)paths->pl.pmtu;
-		pathmtu = paths->pathmtu;
+		pathmtu = (u32)paths->pl.pmtu;
 		paths->pl.probe_size += QUIC_PL_BIG_STEP;
 	} else if (paths->pl.state == QUIC_PL_SEARCH) {
 		if (!paths->pl.probe_high) {
@@ -398,8 +394,7 @@ u32 quic_path_pl_recv(struct quic_path_group *paths, bool *raise_timer, bool *co
 			paths->pl.state = QUIC_PL_COMPLETE; /* Search -> Search Complete */
 
 			paths->pl.probe_size = paths->pl.pmtu;
-			paths->pathmtu = (u32)paths->pl.pmtu;
-			pathmtu = paths->pathmtu;
+			pathmtu = (u32)paths->pl.pmtu;
 			*raise_timer = true;
 		}
 	} else if (paths->pl.state == QUIC_PL_COMPLETE) {
@@ -429,8 +424,7 @@ u32 quic_path_pl_toobig(struct quic_path_group *paths, u32 pmtu, bool *reset_tim
 			paths->pl.state = QUIC_PL_ERROR; /* Base -> Error */
 
 			paths->pl.pmtu = QUIC_BASE_PLPMTU;
-			paths->pathmtu = QUIC_BASE_PLPMTU;
-			pathmtu = paths->pathmtu;
+			pathmtu = QUIC_BASE_PLPMTU;
 		}
 	} else if (paths->pl.state == QUIC_PL_SEARCH) {
 		if (pmtu >= QUIC_BASE_PLPMTU && pmtu < (u32)paths->pl.pmtu) {
@@ -440,8 +434,7 @@ u32 quic_path_pl_toobig(struct quic_path_group *paths, u32 pmtu, bool *reset_tim
 
 			paths->pl.probe_high = 0;
 			paths->pl.pmtu = QUIC_BASE_PLPMTU;
-			paths->pathmtu = QUIC_BASE_PLPMTU;
-			pathmtu = paths->pathmtu;
+			pathmtu = QUIC_BASE_PLPMTU;
 		} else if (pmtu > (u32)paths->pl.pmtu && pmtu < (u32)paths->pl.probe_size) {
 			paths->pl.probe_size = (u16)pmtu;
 			paths->pl.probe_count = 0;
@@ -454,8 +447,7 @@ u32 quic_path_pl_toobig(struct quic_path_group *paths, u32 pmtu, bool *reset_tim
 
 			paths->pl.probe_high = 0;
 			paths->pl.pmtu = QUIC_BASE_PLPMTU;
-			paths->pathmtu = QUIC_BASE_PLPMTU;
-			pathmtu = paths->pathmtu;
+			pathmtu = QUIC_BASE_PLPMTU;
 			*reset_timer = true;
 		}
 	}

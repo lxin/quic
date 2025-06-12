@@ -121,7 +121,7 @@ struct sock *quic_sock_lookup(struct sk_buff *skb, union quic_addr *sa, union qu
 		paths = quic_paths(sk);
 		if (quic_cmp_sk_addr(sk, quic_path_saddr(paths, 0), sa) &&
 		    quic_cmp_sk_addr(sk, quic_path_daddr(paths, 0), da) &&
-		    (!dcid || !quic_conn_id_cmp(quic_path_dcid(paths), dcid)))
+		    (!dcid || !quic_conn_id_cmp(quic_path_orig_dcid(paths), dcid)))
 			break;
 	}
 	spin_unlock(&head->lock);

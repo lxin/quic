@@ -54,7 +54,6 @@ struct quic_path_group {
 	u16 ampl_rcvlen; /* amplificationlimit recv counting */
 
 	u32 mtu_info;
-	u32 pathmtu;
 	struct {
 		s64 number;
 		u16 pmtu;
@@ -120,7 +119,7 @@ static inline void quic_path_set_alt_state(struct quic_path_group *paths, u8 sta
 	paths->alt_state = state;
 }
 
-static inline struct quic_conn_id *quic_path_dcid(struct quic_path_group *paths)
+static inline struct quic_conn_id *quic_path_orig_dcid(struct quic_path_group *paths)
 {
 	return paths->retry ? &paths->retry_dcid : &paths->orig_dcid;
 }
