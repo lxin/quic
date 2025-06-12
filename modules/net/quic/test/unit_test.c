@@ -48,7 +48,7 @@ static void quic_pnspace_test1(struct kunit *test)
 	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 3));
 	KUNIT_EXPECT_EQ(test, 4, space->base_pn);
 	KUNIT_EXPECT_EQ(test, 0, space->min_pn_seen);
-	KUNIT_EXPECT_EQ(test, 0, space->mid_pn_seen);
+	KUNIT_EXPECT_EQ(test, 0, space->last_max_pn_seen);
 	KUNIT_EXPECT_EQ(test, 3, space->max_pn_seen);
 	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_num_gabs(space, gabs));
 
@@ -60,7 +60,7 @@ static void quic_pnspace_test1(struct kunit *test)
 	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 24));
 	KUNIT_EXPECT_EQ(test, 5, space->base_pn);
 	KUNIT_EXPECT_EQ(test, 0, space->min_pn_seen);
-	KUNIT_EXPECT_EQ(test, 0, space->mid_pn_seen);
+	KUNIT_EXPECT_EQ(test, 0, space->last_max_pn_seen);
 	KUNIT_EXPECT_EQ(test, 24, space->max_pn_seen);
 	KUNIT_EXPECT_EQ(test, 5, quic_pnspace_num_gabs(space, gabs));
 	KUNIT_EXPECT_EQ(test, 6, gabs[0].start + space->base_pn);
@@ -102,16 +102,16 @@ static void quic_pnspace_test1(struct kunit *test)
 	KUNIT_EXPECT_EQ(test, 19, space->base_pn);
 	KUNIT_EXPECT_EQ(test, 0, space->min_pn_seen);
 	KUNIT_EXPECT_EQ(test, 128, space->max_pn_seen);
-	KUNIT_EXPECT_EQ(test, 0, space->mid_pn_seen);
+	KUNIT_EXPECT_EQ(test, 0, space->last_max_pn_seen);
 	KUNIT_EXPECT_EQ(test, 128 + QUIC_PN_MAP_INITIAL, space->pn_map_len);
 	KUNIT_EXPECT_EQ(test, 2, quic_pnspace_num_gabs(space, gabs));
 
-	/* ! space->max_pn_seen <= space->mid_pn_seen + QUIC_PN_MAP_LIMIT */
+	/* ! space->max_pn_seen <= space->last_max_pn_seen + QUIC_PN_MAP_LIMIT */
 	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 3073));
 	KUNIT_EXPECT_EQ(test, 19, space->base_pn);
 	KUNIT_EXPECT_EQ(test, 0, space->min_pn_seen);
 	KUNIT_EXPECT_EQ(test, 3073, space->max_pn_seen);
-	KUNIT_EXPECT_EQ(test, 3073, space->mid_pn_seen);
+	KUNIT_EXPECT_EQ(test, 3073, space->last_max_pn_seen);
 	KUNIT_EXPECT_EQ(test, 3136, space->pn_map_len);
 	KUNIT_EXPECT_EQ(test, 3, quic_pnspace_num_gabs(space, gabs));
 
@@ -120,7 +120,7 @@ static void quic_pnspace_test1(struct kunit *test)
 	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 3090));
 	KUNIT_EXPECT_EQ(test, 19, space->base_pn);
 	KUNIT_EXPECT_EQ(test, 3090, space->max_pn_seen);
-	KUNIT_EXPECT_EQ(test, 3073, space->mid_pn_seen);
+	KUNIT_EXPECT_EQ(test, 3073, space->last_max_pn_seen);
 	KUNIT_EXPECT_EQ(test, 3136, space->pn_map_len);
 	KUNIT_EXPECT_EQ(test, 4, quic_pnspace_num_gabs(space, gabs));
 
@@ -128,14 +128,14 @@ static void quic_pnspace_test1(struct kunit *test)
 	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 3190));
 	KUNIT_EXPECT_EQ(test, 3076, space->base_pn);
 	KUNIT_EXPECT_EQ(test, 3190, space->max_pn_seen);
-	KUNIT_EXPECT_EQ(test, 3190, space->mid_pn_seen);
+	KUNIT_EXPECT_EQ(test, 3190, space->last_max_pn_seen);
 	KUNIT_EXPECT_EQ(test, 3264, space->pn_map_len);
 	KUNIT_EXPECT_EQ(test, 2, quic_pnspace_num_gabs(space, gabs));
 
 	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 3290));
 	KUNIT_EXPECT_EQ(test, 3076, space->base_pn);
 	KUNIT_EXPECT_EQ(test, 3290, space->max_pn_seen);
-	KUNIT_EXPECT_EQ(test, 3190, space->mid_pn_seen);
+	KUNIT_EXPECT_EQ(test, 3190, space->last_max_pn_seen);
 	KUNIT_EXPECT_EQ(test, 3264, space->pn_map_len);
 	KUNIT_EXPECT_EQ(test, 3, quic_pnspace_num_gabs(space, gabs));
 
@@ -145,7 +145,7 @@ static void quic_pnspace_test1(struct kunit *test)
 	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 3191));
 	KUNIT_EXPECT_EQ(test, 3076, space->base_pn);
 	KUNIT_EXPECT_EQ(test, 3290, space->max_pn_seen);
-	KUNIT_EXPECT_EQ(test, 3190, space->mid_pn_seen);
+	KUNIT_EXPECT_EQ(test, 3190, space->last_max_pn_seen);
 	KUNIT_EXPECT_EQ(test, 3264, space->pn_map_len);
 	KUNIT_EXPECT_EQ(test, 3, quic_pnspace_num_gabs(space, gabs));
 
@@ -175,7 +175,7 @@ static void quic_pnspace_test2(struct kunit *test)
 	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 5));
 	KUNIT_EXPECT_EQ(test, 1, space->base_pn);
 	KUNIT_EXPECT_EQ(test, 0, space->min_pn_seen);
-	KUNIT_EXPECT_EQ(test, 0, space->mid_pn_seen);
+	KUNIT_EXPECT_EQ(test, 0, space->last_max_pn_seen);
 	KUNIT_EXPECT_EQ(test, 5, space->max_pn_seen);
 	KUNIT_EXPECT_EQ(test, 2, quic_pnspace_num_gabs(space, gabs));
 	KUNIT_EXPECT_EQ(test, 2, gabs[0].start + space->base_pn);
@@ -187,28 +187,28 @@ static void quic_pnspace_test2(struct kunit *test)
 
 	msleep(50);
 	space->time = jiffies_to_usecs(jiffies);
-	/* ! space->max_pn_time - space->mid_pn_time < space->max_time_limit */
+	/* ! space->max_pn_time - space->last_max_pn_time < space->max_time_limit */
 	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 4));
 	KUNIT_EXPECT_EQ(test, 1, space->base_pn);
 	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 1));
 	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 6));
 	KUNIT_EXPECT_EQ(test, 7, space->base_pn);
 	KUNIT_EXPECT_EQ(test, 0, space->min_pn_seen);
-	KUNIT_EXPECT_EQ(test, 6, space->mid_pn_seen);
+	KUNIT_EXPECT_EQ(test, 6, space->last_max_pn_seen);
 	KUNIT_EXPECT_EQ(test, 6, space->max_pn_seen);
 	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_num_gabs(space, gabs));
 
 	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 8));
 	KUNIT_EXPECT_EQ(test, 7, space->base_pn);
 	KUNIT_EXPECT_EQ(test, 0, space->min_pn_seen);
-	KUNIT_EXPECT_EQ(test, 6, space->mid_pn_seen);
+	KUNIT_EXPECT_EQ(test, 6, space->last_max_pn_seen);
 	KUNIT_EXPECT_EQ(test, 8, space->max_pn_seen);
 	KUNIT_EXPECT_EQ(test, 1, quic_pnspace_num_gabs(space, gabs));
 
 	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 7));
 	KUNIT_EXPECT_EQ(test, 9, space->base_pn);
 	KUNIT_EXPECT_EQ(test, 0, space->min_pn_seen);
-	KUNIT_EXPECT_EQ(test, 6, space->mid_pn_seen);
+	KUNIT_EXPECT_EQ(test, 6, space->last_max_pn_seen);
 	KUNIT_EXPECT_EQ(test, 8, space->max_pn_seen);
 	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_num_gabs(space, gabs));
 
@@ -216,7 +216,7 @@ static void quic_pnspace_test2(struct kunit *test)
 	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 10));
 	KUNIT_EXPECT_EQ(test, 9, space->base_pn);
 	KUNIT_EXPECT_EQ(test, 0, space->min_pn_seen);
-	KUNIT_EXPECT_EQ(test, 6, space->mid_pn_seen);
+	KUNIT_EXPECT_EQ(test, 6, space->last_max_pn_seen);
 	KUNIT_EXPECT_EQ(test, 11, space->max_pn_seen);
 	KUNIT_EXPECT_EQ(test, 1, quic_pnspace_num_gabs(space, gabs));
 
@@ -225,14 +225,14 @@ static void quic_pnspace_test2(struct kunit *test)
 	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 18));
 	KUNIT_EXPECT_EQ(test, 9, space->base_pn);
 	KUNIT_EXPECT_EQ(test, 6, space->min_pn_seen);
-	KUNIT_EXPECT_EQ(test, 18, space->mid_pn_seen);
+	KUNIT_EXPECT_EQ(test, 18, space->last_max_pn_seen);
 	KUNIT_EXPECT_EQ(test, 18, space->max_pn_seen);
 	KUNIT_EXPECT_EQ(test, 2, quic_pnspace_num_gabs(space, gabs));
 
 	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 9));
 	KUNIT_EXPECT_EQ(test, 12, space->base_pn);
 	KUNIT_EXPECT_EQ(test, 6, space->min_pn_seen);
-	KUNIT_EXPECT_EQ(test, 18, space->mid_pn_seen);
+	KUNIT_EXPECT_EQ(test, 18, space->last_max_pn_seen);
 	KUNIT_EXPECT_EQ(test, 18, space->max_pn_seen);
 	KUNIT_EXPECT_EQ(test, 1, quic_pnspace_num_gabs(space, gabs));
 
@@ -241,14 +241,14 @@ static void quic_pnspace_test2(struct kunit *test)
 	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 17));
 	KUNIT_EXPECT_EQ(test, 12, space->base_pn);
 	KUNIT_EXPECT_EQ(test, 6, space->min_pn_seen);
-	KUNIT_EXPECT_EQ(test, 18, space->mid_pn_seen);
+	KUNIT_EXPECT_EQ(test, 18, space->last_max_pn_seen);
 	KUNIT_EXPECT_EQ(test, 18, space->max_pn_seen);
 	KUNIT_EXPECT_EQ(test, 1, quic_pnspace_num_gabs(space, gabs));
 
 	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 19));
 	KUNIT_EXPECT_EQ(test, 20, space->base_pn);
 	KUNIT_EXPECT_EQ(test, 19, space->max_pn_seen);
-	KUNIT_EXPECT_EQ(test, 19, space->mid_pn_seen);
+	KUNIT_EXPECT_EQ(test, 19, space->last_max_pn_seen);
 	KUNIT_EXPECT_EQ(test, 18, space->min_pn_seen);
 	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_num_gabs(space, gabs));
 
@@ -257,7 +257,7 @@ static void quic_pnspace_test2(struct kunit *test)
 	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 29));
 	KUNIT_EXPECT_EQ(test, 20, space->base_pn);
 	KUNIT_EXPECT_EQ(test, 29, space->max_pn_seen);
-	KUNIT_EXPECT_EQ(test, 19, space->mid_pn_seen);
+	KUNIT_EXPECT_EQ(test, 19, space->last_max_pn_seen);
 	KUNIT_EXPECT_EQ(test, 18, space->min_pn_seen);
 	KUNIT_EXPECT_EQ(test, 2, quic_pnspace_num_gabs(space, gabs));
 
@@ -267,7 +267,7 @@ static void quic_pnspace_test2(struct kunit *test)
 	KUNIT_EXPECT_EQ(test, 20, space->base_pn);
 	KUNIT_EXPECT_EQ(test, 30, space->max_pn_seen);
 	KUNIT_EXPECT_EQ(test, 19, space->min_pn_seen);
-	KUNIT_EXPECT_EQ(test, 30, space->mid_pn_seen);
+	KUNIT_EXPECT_EQ(test, 30, space->last_max_pn_seen);
 	KUNIT_EXPECT_EQ(test, 2, quic_pnspace_num_gabs(space, gabs));
 
 	KUNIT_EXPECT_EQ(test, 1, quic_pnspace_check(space, 29));

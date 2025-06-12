@@ -14,30 +14,6 @@
 
 #include "pnspace.h"
 
-static int quic_pnspace_grow(struct quic_pnspace *space, u16 size)
-{
-	u16 len, inc, offset;
-	unsigned long *new;
-
-	if (size > QUIC_PN_MAP_SIZE)
-		return 0;
-
-	inc = ALIGN((size - space->pn_map_len), BITS_PER_LONG) + QUIC_PN_MAP_INCREMENT;
-	len = (u16)min(space->pn_map_len + inc, QUIC_PN_MAP_SIZE);
-
-	new = kzalloc(BITS_TO_BYTES(len), GFP_ATOMIC);
-	if (!new)
-		return 0;
-
-	offset = (u16)(space->max_pn_seen + 1 - space->base_pn);
-	bitmap_copy(new, space->pn_map, offset);
-	kfree(space->pn_map);
-	space->pn_map = new;
-	space->pn_map_len = len;
-
-	return 1;
-}
-
 int quic_pnspace_init(struct quic_pnspace *space)
 {
 	if (!space->pn_map) {
@@ -62,6 +38,30 @@ void quic_pnspace_free(struct quic_pnspace *space)
 	kfree(space->pn_map);
 }
 EXPORT_SYMBOL_GPL(quic_pnspace_free);
+
+static int quic_pnspace_grow(struct quic_pnspace *space, u16 size)
+{
+	u16 len, inc, offset;
+	unsigned long *new;
+
+	if (size > QUIC_PN_MAP_SIZE)
+		return 0;
+
+	inc = ALIGN((size - space->pn_map_len), BITS_PER_LONG) + QUIC_PN_MAP_INCREMENT;
+	len = (u16)min(space->pn_map_len + inc, QUIC_PN_MAP_SIZE);
+
+	new = kzalloc(BITS_TO_BYTES(len), GFP_ATOMIC);
+	if (!new)
+		return 0;
+
+	offset = (u16)(space->max_pn_seen + 1 - space->base_pn);
+	bitmap_copy(new, space->pn_map, offset);
+	kfree(space->pn_map);
+	space->pn_map = new;
+	space->pn_map_len = len;
+
+	return 1;
+}
 
 int quic_pnspace_check(struct quic_pnspace *space, s64 pn)
 {
@@ -94,7 +94,7 @@ static void quic_pnspace_move(struct quic_pnspace *space, s64 pn)
 
 int quic_pnspace_mark(struct quic_pnspace *space, s64 pn)
 {
-	s64 mid_pn_seen;
+	s64 last_max_pn_seen;
 	u16 gap;
 
 	if (pn < space->base_pn)
@@ -118,21 +118,21 @@ int quic_pnspace_mark(struct quic_pnspace *space, s64 pn)
 		set_bit(gap, space->pn_map);
 	}
 
-	/* move forward min and mid_pn_seen only when receiving max_pn */
+	/* move forward min and last_max_pn_seen only when receiving max_pn */
 	if (space->max_pn_seen != pn)
 		return 0;
 
-	mid_pn_seen = min_t(s64, space->mid_pn_seen, space->base_pn);
-	if (space->max_pn_time < space->mid_pn_time + space->max_time_limit &&
-	    space->max_pn_seen <= mid_pn_seen + QUIC_PN_MAP_LIMIT)
+	last_max_pn_seen = min_t(s64, space->last_max_pn_seen, space->base_pn);
+	if (space->max_pn_time < space->last_max_pn_time + space->max_time_limit &&
+	    space->max_pn_seen <= last_max_pn_seen + QUIC_PN_MAP_LIMIT)
 		return 0;
 
-	if (space->mid_pn_seen + 1 > space->base_pn)
-		quic_pnspace_move(space, space->mid_pn_seen);
+	if (space->last_max_pn_seen + 1 > space->base_pn)
+		quic_pnspace_move(space, space->last_max_pn_seen);
 
-	space->min_pn_seen = space->mid_pn_seen;
-	space->mid_pn_seen = space->max_pn_seen;
-	space->mid_pn_time = space->max_pn_time;
+	space->min_pn_seen = space->last_max_pn_seen;
+	space->last_max_pn_seen = space->max_pn_seen;
+	space->last_max_pn_time = space->max_pn_time;
 	return 0;
 }
 EXPORT_SYMBOL_GPL(quic_pnspace_mark);
@@ -165,9 +165,6 @@ u16 quic_pnspace_num_gabs(struct quic_pnspace *space, struct quic_gap_ack_block 
 		return 0;
 
 	iter = space->base_pn;
-	if (!iter) /* use min_pn_seen if base_pn hasn't moved */
-		iter = space->min_pn_seen + 1;
-
 	while (quic_pnspace_next_gap_ack(space, &iter, &start, &end)) {
 		gabs[ngaps].start = start;
 		if (ngaps == QUIC_PN_MAX_GABS - 1) {

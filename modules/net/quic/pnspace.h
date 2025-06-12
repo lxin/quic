@@ -40,16 +40,16 @@ struct quic_gap_ack_block {
 
 /* pn_map:
  * min_pn_seen -->  |----------------------|---------------------|...
- *        base_pn --^        mid_pn_seen --^       max_pn_seen --^
+ *        base_pn --^   last_max_pn_seen --^       max_pn_seen --^
  *
  * move forward:
- *   min_pn_seen = mid_pn_seen;
- *   base_pn = first_zero_bit from mid_pn_seen + 1;
- *   mid_pn_seen = max_pn_seen;
- *   mid_pn_time = now;
+ *   min_pn_seen = last_max_pn_seen;
+ *   base_pn = first_zero_bit from last_max_pn_seen + 1;
+ *   last_max_pn_seen = max_pn_seen;
+ *   last_max_pn_time = now;
  * when:
- *   'max_pn_time - mid_pn_time >= max_time_limit' or
- *   'max_pn_seen - mid_pn_seen > QUIC_PN_MAP_LIMIT'
+ *   'max_pn_time - last_max_pn_time >= max_time_limit' or
+ *   'max_pn_seen - last_max_pn_seen > QUIC_PN_MAP_LIMIT'
  * gaps search:
  *    from base_pn - 1 to max_pn_seen
  */
@@ -60,11 +60,11 @@ struct quic_pnspace {
 	u8  need_sack:1;
 	u8  sack_path:1;
 
+	s64 last_max_pn_seen;
+	u32 last_max_pn_time;
 	u32 max_time_limit;
 	s64 min_pn_seen;
-	s64 mid_pn_seen;
 	s64 max_pn_seen;
-	u32 mid_pn_time;
 	u32 max_pn_time;
 	s64 base_pn;
 	u32 time;
@@ -90,11 +90,11 @@ static inline void quic_pnspace_set_base_pn(struct quic_pnspace *space, s64 pn)
 {
 	space->base_pn = pn;
 	space->max_pn_seen = space->base_pn - 1;
-	space->mid_pn_seen = space->max_pn_seen;
+	space->last_max_pn_seen = space->max_pn_seen;
 	space->min_pn_seen = space->max_pn_seen;
 
 	space->max_pn_time = space->time;
-	space->mid_pn_time = space->max_pn_time;
+	space->last_max_pn_time = space->max_pn_time;
 }
 
 static inline bool quic_pnspace_has_gap(const struct quic_pnspace *space)
@@ -109,6 +109,13 @@ static inline void quic_pnspace_inc_ecn_count(struct quic_pnspace *space, u8 ecn
 	space->ecn_count[QUIC_ECN_LOCAL][ecn - 1]++;
 }
 
+static inline bool quic_pnspace_has_ecn_count(struct quic_pnspace *space)
+{
+	return space->ecn_count[QUIC_ECN_LOCAL][QUIC_ECN_ECT0] ||
+	       space->ecn_count[QUIC_ECN_LOCAL][QUIC_ECN_ECT1] ||
+	       space->ecn_count[QUIC_ECN_LOCAL][QUIC_ECN_CE];
+}
+
 static inline int quic_pnspace_set_ecn_count(struct quic_pnspace *space, u64 *ecn_count)
 {
 	if (space->ecn_count[QUIC_ECN_PEER][QUIC_ECN_ECT0] < ecn_count[QUIC_ECN_ECT0])
@@ -120,13 +127,6 @@ static inline int quic_pnspace_set_ecn_count(struct quic_pnspace *space, u64 *ec
 		return 1;
 	}
 	return 0;
-}
-
-static inline bool quic_pnspace_has_ecn_count(struct quic_pnspace *space)
-{
-	return space->ecn_count[QUIC_ECN_LOCAL][QUIC_ECN_ECT0] ||
-	       space->ecn_count[QUIC_ECN_LOCAL][QUIC_ECN_ECT1] ||
-	       space->ecn_count[QUIC_ECN_LOCAL][QUIC_ECN_CE];
 }
 
 u16 quic_pnspace_num_gabs(struct quic_pnspace *space, struct quic_gap_ack_block *gabs);
