@@ -1886,13 +1886,12 @@ static int quic_sock_stream_open(struct sock *sk, u32 len, sockptr_t optval, soc
 	}
 	sinfo.stream_flags |= MSG_STREAM_NEW;
 
-	if (copy_to_sockptr(optlen, &len, sizeof(len)) || copy_to_sockptr(optval, &sinfo, len))
-		return -EFAULT;
-
 	stream = quic_sock_send_stream(sk, &sinfo);
 	if (IS_ERR(stream))
 		return PTR_ERR(stream);
 
+	if (copy_to_sockptr(optlen, &len, sizeof(len)) || copy_to_sockptr(optval, &sinfo, len))
+		return -EFAULT;
 	return 0;
 }
 
