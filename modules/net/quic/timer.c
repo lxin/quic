@@ -90,19 +90,19 @@ out:
 void quic_timer_path_handler(struct sock *sk)
 {
 	struct quic_path_group *paths = quic_paths(sk);
-	u8 path;
+	u8 path = 0;
 
 	if (quic_is_closed(sk))
 		return;
 
-	path = quic_path_alt_state(paths, QUIC_PATH_ALT_PROBING);
-	if (!path)
+	if (!quic_path_alt_state(paths, QUIC_PATH_ALT_PROBING))
 		goto out;
 
-	if (paths->alt_probes++ < QUIC_MAX_ALT_PROBES)
+	if (paths->alt_probes++ < QUIC_MAX_ALT_PROBES) {
+		path = 1;
 		goto out;
+	}
 
-	path = 0;
 	quic_path_free(sk, paths, 1);
 
 out:
@@ -223,8 +223,11 @@ void quic_timer_start(struct sock *sk, u8 type, u64 timeout)
 
 void quic_timer_stop(struct sock *sk, u8 type)
 {
-	if (type == QUIC_TIMER_PACE)
+	if (type == QUIC_TIMER_PACE) {
+		if (hrtimer_try_to_cancel(quic_timer(sk, type)) == 1)
+			sock_put(sk);
 		return;
+	}
 	if (timer_delete(quic_timer(sk, type)))
 		sock_put(sk);
 }
