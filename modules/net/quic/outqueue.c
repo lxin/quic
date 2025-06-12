@@ -117,8 +117,8 @@ int quic_outq_flow_control(struct sock *sk, struct quic_stream *stream, u16 byte
 
 	/* send flow control */
 	if (stream->send.bytes + bytes > stream->send.max_bytes) {
-		blocked = stream->send.data_blocked;
-		if (!blocked && stream->send.last_max_bytes < stream->send.max_bytes) {
+		if (!stream->send.data_blocked &&
+		    stream->send.last_max_bytes < stream->send.max_bytes) {
 			frame = QUIC_FRAME_STREAM_DATA_BLOCKED;
 			if (sndblock && !quic_outq_transmit_frame(sk, frame, stream, 0, true))
 				transmit = 1;
@@ -128,8 +128,7 @@ int quic_outq_flow_control(struct sock *sk, struct quic_stream *stream, u16 byte
 		blocked = 1;
 	}
 	if (outq->bytes + bytes > outq->max_bytes) {
-		blocked = outq->data_blocked;
-		if (!blocked && outq->last_max_bytes < outq->max_bytes) {
+		if (!outq->data_blocked && outq->last_max_bytes < outq->max_bytes) {
 			frame = QUIC_FRAME_DATA_BLOCKED;
 			if (sndblock && !quic_outq_transmit_frame(sk, frame, outq, 0, true))
 				transmit = 1;
@@ -855,6 +854,8 @@ void quic_outq_retransmit_list(struct sock *sk, struct list_head *head)
 	}
 }
 
+#define QUIC_MAX_PTO_COUNT	8
+
 /* rfc9002#section-a.9: OnLossDetectionTimeout() */
 void quic_outq_transmit_pto(struct sock *sk)
 {
@@ -886,7 +887,7 @@ void quic_outq_transmit_pto(struct sock *sk)
 	quic_outq_transmit_frame(sk, QUIC_FRAME_PING, &info, 0, false);
 
 out:
-	if (outq->pto_count < 8)
+	if (outq->pto_count < QUIC_MAX_PTO_COUNT)
 		outq->pto_count++;
 	quic_outq_update_loss_timer(sk);
 }
@@ -990,7 +991,7 @@ int quic_outq_transmit_retire_conn_id(struct sock *sk, u64 prior, u8 path, u8 co
 	struct quic_conn_id_set *id_set = quic_dest(sk);
 	u64 seqno;
 
-	for (seqno = quic_conn_id_first_number(id_set); seqno <= prior; seqno++) {
+	for (seqno = quic_conn_id_first_number(id_set); seqno < prior; seqno++) {
 		if (quic_outq_transmit_frame(sk, QUIC_FRAME_RETIRE_CONNECTION_ID, &seqno,
 					     path, cork))
 			return -ENOMEM;

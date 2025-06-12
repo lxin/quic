@@ -1375,8 +1375,7 @@ static int quic_sock_set_connection_id(struct sock *sk,
 	}
 	old = quic_conn_id_active(id_set);
 	if (info->active) {
-		active = quic_conn_id_active(id_set);
-		if (info->active <= quic_conn_id_number(active))
+		if (info->active <= quic_conn_id_number(old))
 			return -EINVAL;
 		active = quic_conn_id_find(id_set, info->active);
 		if (!active)
@@ -1403,7 +1402,6 @@ static int quic_sock_set_connection_id(struct sock *sk,
 		return 0;
 	}
 
-	number--;
 	if (quic_outq_transmit_retire_conn_id(sk, number, 0, false)) {
 		quic_conn_id_set_active(id_set, old);
 		return -ENOMEM;

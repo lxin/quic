@@ -844,7 +844,6 @@ static int quic_frame_new_conn_id_process(struct sock *sk, struct quic_frame *fr
 		return err;
 
 	if (prior > first) {
-		prior--;
 		if (quic_outq_transmit_retire_conn_id(sk, prior, frame->path, true))
 			return -ENOMEM;
 	}
