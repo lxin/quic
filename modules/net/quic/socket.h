@@ -41,19 +41,6 @@ enum quic_state {
 	QUIC_SS_ESTABLISHED	= TCP_ESTABLISHED,
 };
 
-struct quic_request_sock {
-	struct list_head	list;
-
-	struct quic_conn_id	dcid;
-	struct quic_conn_id	scid;
-	union quic_addr		daddr;
-	union quic_addr		saddr;
-
-	struct quic_conn_id	orig_dcid;
-	u32			version;
-	u8			retry;
-};
-
 enum quic_tsq_enum {
 	QUIC_MTU_REDUCED_DEFERRED,
 	QUIC_LOSS_DEFERRED,
@@ -78,6 +65,19 @@ enum quic_tsq_flags {
 			   QUIC_F_PATH_DEFERRED |		\
 			   QUIC_F_PMTU_DEFERRED |		\
 			   QUIC_F_TSQ_DEFERRED)
+
+struct quic_request_sock {
+	struct list_head	list;
+
+	struct quic_conn_id	dcid;
+	struct quic_conn_id	scid;
+	union quic_addr		daddr;
+	union quic_addr		saddr;
+
+	struct quic_conn_id	orig_dcid;
+	u32			version;
+	u8			retry;
+};
 
 struct quic_sock {
 	struct inet_sock		inet;
@@ -254,7 +254,7 @@ struct sock *quic_sock_lookup(struct sk_buff *skb, union quic_addr *sa, union qu
 			      struct quic_conn_id *dcid);
 struct sock *quic_listen_sock_lookup(struct sk_buff *skb, union quic_addr *sa,
 				     union quic_addr *da);
-int quic_accept_sock_exists(struct sock *sk, struct sk_buff *skb);
+bool quic_accept_sock_exists(struct sock *sk, struct sk_buff *skb);
 
 int quic_request_sock_enqueue(struct sock *sk, struct quic_conn_id *odcid, u8 retry);
 bool quic_request_sock_exists(struct sock *sk);

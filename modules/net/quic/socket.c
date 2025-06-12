@@ -75,14 +75,14 @@ static struct quic_request_sock *quic_request_sock_dequeue(struct sock *sk)
 	return req;
 }
 
-int quic_accept_sock_exists(struct sock *sk, struct sk_buff *skb)
+bool quic_accept_sock_exists(struct sock *sk, struct sk_buff *skb)
 {
 	struct quic_pnspace *space = quic_pnspace(sk, QUIC_CRYPTO_INITIAL);
 	struct quic_packet *packet = quic_packet(sk);
-	int ret = 0;
+	bool exist = false;
 
 	if (QUIC_SKB_CB(skb)->time > space->time)
-		return ret;
+		return exist;
 
 	local_bh_disable();
 	sk = quic_sock_lookup(skb, &packet->saddr, &packet->daddr, &packet->dcid);
@@ -98,10 +98,10 @@ int quic_accept_sock_exists(struct sock *sk, struct sk_buff *skb)
 		sk->sk_backlog_rcv(sk, skb);
 	}
 	bh_unlock_sock(sk);
-	ret = 1;
+	exist = true;
 out:
 	local_bh_enable();
-	return ret;
+	return exist;
 }
 
 struct sock *quic_sock_lookup(struct sk_buff *skb, union quic_addr *sa, union quic_addr *da,
@@ -378,23 +378,23 @@ static int quic_connect(struct sock *sk, struct sockaddr *addr, int addr_len)
 	err = quic_conn_id_add(source, &conn_id, 0, sk);
 	if (err)
 		goto free;
-	err = sk->sk_prot->hash(sk);
-	if (err)
-		goto free;
 	active = quic_conn_id_active(dest);
 	err = quic_crypto_initial_keys_install(crypto, active, packet->version, 0);
 	if (err)
 		goto free;
 
-	quic_timer_start(sk, QUIC_TIMER_IDLE, inq->timeout);
+	err = sk->sk_prot->hash(sk);
+	if (err)
+		goto free;
 	quic_set_state(sk, QUIC_SS_ESTABLISHING);
+	quic_timer_start(sk, QUIC_TIMER_IDLE, inq->timeout);
 out:
 	release_sock(sk);
 	return err;
 free:
-	quic_conn_id_set_free(dest);
 	quic_conn_id_set_free(source);
-	sk->sk_prot->unhash(sk);
+	quic_conn_id_set_free(dest);
+	quic_crypto_free(crypto);
 	goto out;
 }
 
@@ -946,14 +946,13 @@ static int quic_recvmsg(struct sock *sk, struct msghdr *msg, size_t len, int non
 			int flags, int *addr_len)
 {
 #endif
-	u32 off, flen, copy, copied = 0, freed = 0, bytes = 0;
+	u32 copy, copied = 0, freed = 0, bytes = 0;
 	struct quic_handshake_info hinfo = {};
 	struct quic_stream_info sinfo = {};
 	struct quic_stream *stream = NULL;
 	struct quic_frame *frame, *next;
-	u8 fin, dgram, level, event = 0;
 	struct list_head *head;
-	int err;
+	int err, fin;
 
 	lock_sock(sk);
 
@@ -963,11 +962,9 @@ static int quic_recvmsg(struct sock *sk, struct msghdr *msg, size_t len, int non
 
 	head = &quic_inq(sk)->recv_list;
 	list_for_each_entry_safe(frame, next, head, list) {
-		off = (u32)frame->offset;
-		flen = (u32)frame->len;
-		copy = min((u32)(flen - off), (u32)(len - copied));
+		copy = min((u32)(frame->len - frame->offset), (u32)(len - copied));
 		if (copy) {
-			copy = copy_to_iter(frame->data + off, copy, &msg->msg_iter);
+			copy = copy_to_iter(frame->data + frame->offset, copy, &msg->msg_iter);
 			if (!copy) {
 				if (!copied) {
 					err = -EFAULT;
@@ -978,41 +975,33 @@ static int quic_recvmsg(struct sock *sk, struct msghdr *msg, size_t len, int non
 			copied += copy;
 		}
 		fin = frame->stream_fin;
-		event = frame->event;
-		dgram = frame->dgram;
-		level = frame->level;
 		stream = frame->stream;
-		if (event) {
+		if (frame->event) {
 			msg->msg_flags |= MSG_NOTIFICATION;
-		} else if (level) {
-			hinfo.crypto_level = level;
+		} else if (frame->level) {
+			hinfo.crypto_level = frame->level;
 			put_cmsg(msg, SOL_QUIC, QUIC_HANDSHAKE_INFO, sizeof(hinfo), &hinfo);
 			if (msg->msg_flags & MSG_CTRUNC) {
 				err = -EINVAL;
 				goto out;
 			}
-		} else if (dgram) {
+		} else if (frame->dgram) {
 			msg->msg_flags |= MSG_DATAGRAM;
 		}
 		if (flags & MSG_PEEK)
 			break;
-		if (copy != flen - off) {
+		if (copy != frame->len - frame->offset) {
 			frame->offset += copy;
 			break;
 		}
 		msg->msg_flags |= MSG_EOR;
-		bytes += flen;
-		if (event) {
+		bytes += frame->len;
+		if (frame->event || frame->level || frame->dgram) {
 			list_del(&frame->list);
 			quic_frame_put(frame);
 			break;
 		}
-		if (level || dgram) {
-			list_del(&frame->list);
-			quic_frame_put(frame);
-			break;
-		}
-		freed += flen;
+		freed += frame->len;
 		list_del(&frame->list);
 		quic_frame_put(frame);
 		if (fin) {
@@ -1133,7 +1122,7 @@ static int quic_sock_apply_config(struct sock *sk, struct quic_config *c)
 
 static int quic_copy_sock(struct sock *nsk, struct sock *sk, struct quic_request_sock *req)
 {
-	struct quic_crypto *crypto = quic_crypto(sk, QUIC_CRYPTO_APP);
+	struct quic_pnspace *space = quic_pnspace(sk, QUIC_CRYPTO_INITIAL);
 	struct quic_packet *packet = quic_packet(sk);
 	struct quic_inqueue *inq = quic_inq(sk);
 	struct quic_transport_param param = {};
@@ -1165,20 +1154,22 @@ static int quic_copy_sock(struct sock *nsk, struct sock *sk, struct quic_request
 		}
 	}
 
+	space->time = jiffies_to_usecs(jiffies);
+
 	if (sk->sk_family == AF_INET6) /* nsk uses quicv6 ops in this case */
 		inet_sk(nsk)->pinet6 = &((struct quic6_sock *)nsk)->inet6;
+
+	quic_inq(nsk)->events = inq->events;
+	quic_paths(nsk)->serv = 1;
 
 	quic_sock_apply_config(nsk, quic_config(sk));
 	quic_sock_fetch_transport_param(sk, &param);
 	quic_sock_apply_transport_param(nsk, &param);
 
-	quic_inq(nsk)->events = inq->events;
-	quic_crypto(nsk, QUIC_CRYPTO_APP)->cipher_type = crypto->cipher_type;
-
 	return 0;
 }
 
-static int quic_accept_sock_init(struct sock *sk, struct quic_request_sock *req)
+static int quic_accept_sock_setup(struct sock *sk, struct quic_request_sock *req)
 {
 	struct quic_crypto *crypto = quic_crypto(sk, QUIC_CRYPTO_INITIAL);
 	struct quic_path_group *paths = quic_paths(sk);
@@ -1218,9 +1209,8 @@ static int quic_accept_sock_init(struct sock *sk, struct quic_request_sock *req)
 	err = sk->sk_prot->hash(sk);
 	if (err)
 		goto out;
-
-	quic_timer_start(sk, QUIC_TIMER_IDLE, inq->timeout);
 	quic_set_state(sk, QUIC_SS_ESTABLISHING);
+	quic_timer_start(sk, QUIC_TIMER_IDLE, inq->timeout);
 
 	__skb_queue_head_init(&tmpq);
 	skb_queue_splice_init(&inq->backlog_list, &tmpq);
@@ -1244,7 +1234,6 @@ static struct sock *quic_accept(struct sock *sk, struct proto_accept_arg *arg)
 static struct sock *quic_accept(struct sock *sk, int flags, int *errp, bool kern)
 {
 #endif
-	struct quic_pnspace *space = quic_pnspace(sk, QUIC_CRYPTO_INITIAL);
 	struct quic_request_sock *req = NULL;
 	struct sock *nsk = NULL;
 	int err = -EINVAL;
@@ -1266,8 +1255,6 @@ static struct sock *quic_accept(struct sock *sk, int flags, int *errp, bool kern
 	}
 	sock_init_data(NULL, nsk);
 
-	quic_paths(nsk)->serv = 1;
-
 	err = nsk->sk_prot->init(nsk);
 	if (err)
 		goto free;
@@ -1279,11 +1266,10 @@ static struct sock *quic_accept(struct sock *sk, int flags, int *errp, bool kern
 	if (err)
 		goto free;
 
-	err = quic_accept_sock_init(nsk, req);
+	err = quic_accept_sock_setup(nsk, req);
 	if (err)
 		goto free;
 
-	space->time = jiffies_to_usecs(jiffies);
 out:
 	release_sock(sk);
 	*errp = err;
@@ -1460,8 +1446,7 @@ static int quic_sock_connection_migrate(struct sock *sk, struct sockaddr *addr, 
 
 	if (quic_get_user_addr(sk, &a, addr, addr_len))
 		return -EINVAL;
-	if (!quic_path_saddr(paths, 0)->v4.sin_port ||
-	    quic_cmp_sk_addr(sk, quic_path_saddr(paths, 0), &a))
+	if (quic_is_closed(sk) || quic_cmp_sk_addr(sk, quic_path_saddr(paths, 0), &a))
 		return -EINVAL;
 
 	if (!quic_is_established(sk)) { /* set preferred address param */
@@ -2040,11 +2025,12 @@ static int quic_sock_get_session_ticket(struct sock *sk, u32 len,
 		goto out;
 	}
 
+	if (quic_is_closed(sk))
+		return -EINVAL;
+
 	if (tlen)
 		goto out;
 
-	if (quic_is_closed(sk))
-		return -EINVAL;
 	crypto = quic_crypto(sk, QUIC_CRYPTO_INITIAL);
 	memcpy(&a, quic_path_daddr(quic_paths(sk), 0), sizeof(a));
 	a.v4.sin_port = 0;
