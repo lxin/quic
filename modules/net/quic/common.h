@@ -38,8 +38,8 @@ static inline void quic_conn_id_update(struct quic_conn_id *conn_id, u8 *data, u
 struct quic_skb_cb {
 	void (*crypto_done)(struct sk_buff *skb, int err);
 	union {
-		struct quic_conn_id *conn_id;
 		struct sk_buff *last;
+		s64 seqno;
 	};
 	s64 number_max;
 	s64 number;

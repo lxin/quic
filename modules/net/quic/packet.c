@@ -271,7 +271,7 @@ static struct sock *quic_packet_get_sock(struct sk_buff *skb)
 		conn_id = quic_conn_id_lookup(net, skb->data + QUIC_HLEN,
 					      QUIC_CONN_ID_DEF_LEN);
 		if (conn_id) {
-			cb->conn_id = conn_id;
+			cb->seqno = quic_conn_id_number(conn_id);
 			return quic_conn_id_sk(conn_id);
 		}
 
@@ -285,8 +285,10 @@ static struct sock *quic_packet_get_sock(struct sk_buff *skb)
 	if (quic_packet_get_dcid(&dcid, skb))
 		return NULL;
 	conn_id = quic_conn_id_lookup(net, dcid.data, dcid.len);
-	if (conn_id)
+	if (conn_id) {
+		cb->seqno = quic_conn_id_number(conn_id);
 		return quic_conn_id_sk(conn_id);
+	}
 
 	quic_get_msg_addrs(&daddr, &saddr, skb);
 	sk = quic_sock_lookup(skb, &daddr, &saddr, &dcid);
@@ -1000,7 +1002,7 @@ static void quic_packet_path_alt_process(struct sock *sk, struct sk_buff *skb)
 
 	quic_path_free(sk, paths, 1);
 	quic_conn_id_set_alt(quic_dest(sk), NULL);
-	quic_conn_id_set_active(quic_source(sk), cb->conn_id);
+	quic_conn_id_update_active(quic_source(sk), cb->seqno);
 }
 
 static int quic_packet_app_process_done(struct sock *sk, struct sk_buff *skb)
@@ -1074,9 +1076,8 @@ static int quic_packet_app_process(struct sock *sk, struct sk_buff *skb)
 	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
 	struct net *net = sock_net(sk);
 	struct quic_frame frame = {};
-	u8 taglen, key_phase, active;
+	u8 taglen, key_phase;
 	int err = -EINVAL;
-	u64 number;
 
 	WARN_ON(!skb_set_owner_sk_safe(skb, sk));
 
@@ -1092,16 +1093,12 @@ static int quic_packet_app_process(struct sock *sk, struct sk_buff *skb)
 	}
 
 	/* Do decryption */
-	if (!cb->conn_id) {
-		cb->conn_id = quic_conn_id_get(source, skb->data + QUIC_HLEN,
-					       QUIC_CONN_ID_DEF_LEN);
-		if (!cb->conn_id) {
-			if (!quic_packet_stateless_reset_process(sk, skb))
-				return 0;
-			goto err;
-		}
+	if (cb->seqno == -1) {
+		if (!quic_packet_stateless_reset_process(sk, skb))
+			return 0;
+		goto err;
 	}
-	cb->number_offset = cb->conn_id->len + QUIC_HLEN;
+	cb->number_offset = QUIC_CONN_ID_DEF_LEN + QUIC_HLEN;
 	cb->length = (u16)(skb->len - cb->number_offset);
 	cb->number_max = space->max_pn_seen;
 
@@ -1154,10 +1151,10 @@ static int quic_packet_app_process(struct sock *sk, struct sk_buff *skb)
 	quic_get_msg_addrs(&packet->saddr, &packet->daddr, skb);
 	/* Set path so that the replies will choose the correct path */
 	cb->path = quic_path_detect_alt(quic_paths(sk), &packet->saddr, &packet->daddr, sk);
-	active = (cb->conn_id == quic_conn_id_active(source));
-	if (cb->path && !quic_conn_id_select_alt(dest, active)) {
-		number = quic_conn_id_first_number(dest);
-		quic_outq_transmit_frame(sk, QUIC_FRAME_RETIRE_CONNECTION_ID, &number, 0, false);
+	if (cb->path && !quic_conn_id_select_alt(dest, cb->seqno == source->active->number)) {
+		u64 seqno = quic_conn_id_first_number(dest);
+
+		quic_outq_transmit_frame(sk, QUIC_FRAME_RETIRE_CONNECTION_ID, &seqno, 0, false);
 		goto err;
 	}
 

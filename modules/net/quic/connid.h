@@ -134,9 +134,9 @@ int quic_conn_id_add(struct quic_conn_id_set *id_set, struct quic_conn_id *conn_
 bool quic_conn_id_token_exists(struct quic_conn_id_set *id_set, u8 *token);
 void quic_conn_id_remove(struct quic_conn_id_set *id_set, u32 number);
 
-struct quic_conn_id *quic_conn_id_get(struct quic_conn_id_set *id_set, u8 *scid, u32 len);
 struct quic_conn_id *quic_conn_id_find(struct quic_conn_id_set *id_set, u32 number);
 struct quic_conn_id *quic_conn_id_lookup(struct net *net, u8 *scid, u32 len);
+void quic_conn_id_update_active(struct quic_conn_id_set *id_set, u32 number);
 
 void quic_conn_id_get_param(struct quic_conn_id_set *id_set, struct quic_transport_param *p);
 void quic_conn_id_set_param(struct quic_conn_id_set *id_set, struct quic_transport_param *p);

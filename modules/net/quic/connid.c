@@ -32,16 +32,6 @@ struct quic_conn_id *quic_conn_id_lookup(struct net *net, u8 *scid, u32 len)
 	return &s_conn_id->common.id;
 }
 
-struct quic_conn_id *quic_conn_id_get(struct quic_conn_id_set *id_set, u8 *scid, u32 len)
-{
-	struct quic_common_conn_id *common;
-
-	list_for_each_entry(common, &id_set->head, list)
-		if (common->id.len == len && !memcmp(scid, &common->id.data, common->id.len))
-			return &common->id;
-	return NULL;
-}
-
 bool quic_conn_id_token_exists(struct quic_conn_id_set *id_set, u8 *token)
 {
 	struct quic_common_conn_id *common;
@@ -178,6 +168,18 @@ struct quic_conn_id *quic_conn_id_find(struct quic_conn_id_set *id_set, u32 numb
 		if (common->number == number)
 			return &common->id;
 	return NULL;
+}
+
+void quic_conn_id_update_active(struct quic_conn_id_set *id_set, u32 number)
+{
+	struct quic_conn_id *conn_id;
+
+	if (number == id_set->active->number)
+		return;
+	conn_id = quic_conn_id_find(id_set, number);
+	if (!conn_id)
+		return;
+	quic_conn_id_set_active(id_set, conn_id);
 }
 
 void quic_conn_id_set_init(struct quic_conn_id_set *id_set, bool source)
