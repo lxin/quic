@@ -1826,6 +1826,162 @@ int quic_frame_stream_append(struct sock *sk, struct quic_frame *frame,
 	return msg_len;
 }
 
+static u8 *quic_frame_put_conn_id(u8 *p, u16 id, struct quic_conn_id *conn_id)
+{
+	p = quic_put_var(p, id);
+	p = quic_put_var(p, conn_id->len);
+	p = quic_put_data(p, conn_id->data, conn_id->len);
+	return p;
+}
+
+static u8 *quic_frame_put_version_info(u8 *p, u16 id, u32 version)
+{
+	u32 *versions, i, len = QUIC_VERSION_LEN;
+
+	versions = quic_packet_compatible_versions(version);
+	if (!versions)
+		return p;
+
+	for (i = 1; versions[i]; i++)
+		len += QUIC_VERSION_LEN;
+	p = quic_put_var(p, id);
+	p = quic_put_var(p, len);
+	p = quic_put_int(p, version, QUIC_VERSION_LEN);
+
+	for (i = 1; versions[i]; i++)
+		p = quic_put_int(p, versions[i], QUIC_VERSION_LEN);
+
+	return p;
+}
+
+static u8 *quic_frame_put_address(u8 *p, u16 id, union quic_addr *addr,
+				  struct quic_conn_id *conn_id, u8 *token, struct sock *sk)
+{
+	p = quic_put_var(p, id);
+	p = quic_put_var(p, QUIC_PREF_ADDR_LEN + 1 + conn_id->len + QUIC_CONN_ID_TOKEN_LEN);
+	quic_set_pref_addr(sk, p, addr);
+	p += QUIC_PREF_ADDR_LEN;
+
+	p = quic_put_int(p, conn_id->len, 1);
+	p = quic_put_data(p, conn_id->data, conn_id->len);
+	p = quic_put_data(p, token, QUIC_CONN_ID_TOKEN_LEN);
+	return p;
+}
+
+#define USEC_TO_MSEC(usec)	DIV_ROUND_UP((usec), 1000)
+#define MSEC_TO_USEC(msec)	((msec) * 1000)
+
+int quic_frame_build_transport_params_ext(struct sock *sk, struct quic_transport_param *params,
+					  u8 *data, u32 *len)
+{
+	struct quic_conn_id_set *id_set = quic_source(sk);
+	struct quic_path_group *paths = quic_paths(sk);
+	u8 *p = data, token[QUIC_CONN_ID_TOKEN_LEN];
+	struct quic_conn_id *scid, conn_id;
+	struct quic_crypto *crypto;
+	u16 param_id;
+
+	scid = quic_conn_id_active(id_set);
+	if (quic_is_serv(sk)) {
+		crypto = quic_crypto(sk, QUIC_CRYPTO_INITIAL);
+		param_id = QUIC_TRANSPORT_PARAM_ORIGINAL_DESTINATION_CONNECTION_ID;
+		p = quic_frame_put_conn_id(p, param_id, &paths->orig_dcid);
+		if (params->stateless_reset) {
+			p = quic_put_var(p, QUIC_TRANSPORT_PARAM_STATELESS_RESET_TOKEN);
+			p = quic_put_var(p, QUIC_CONN_ID_TOKEN_LEN);
+			if (quic_crypto_generate_stateless_reset_token(crypto, scid->data,
+								       scid->len, token,
+								       QUIC_CONN_ID_TOKEN_LEN))
+				return -1;
+			p = quic_put_data(p, token, QUIC_CONN_ID_TOKEN_LEN);
+		}
+		if (paths->retry) {
+			param_id = QUIC_TRANSPORT_PARAM_RETRY_SOURCE_CONNECTION_ID;
+			p = quic_frame_put_conn_id(p, param_id, &paths->retry_dcid);
+		}
+		if (paths->pref_addr) {
+			quic_conn_id_generate(&conn_id);
+			if (quic_crypto_generate_stateless_reset_token(crypto, conn_id.data,
+								       conn_id.len, token,
+								       QUIC_CONN_ID_TOKEN_LEN))
+				return -1;
+			if (quic_conn_id_add(id_set, &conn_id, 1, sk))
+				return -1;
+			param_id = QUIC_TRANSPORT_PARAM_PREFERRED_ADDRESS;
+			p = quic_frame_put_address(p, param_id, quic_path_saddr(paths, 1),
+						   &conn_id, token, sk);
+		}
+	}
+	p = quic_frame_put_conn_id(p, QUIC_TRANSPORT_PARAM_INITIAL_SOURCE_CONNECTION_ID, scid);
+	if (params->max_stream_data_bidi_local) {
+		p = quic_put_param(p, QUIC_TRANSPORT_PARAM_INITIAL_MAX_STREAM_DATA_BIDI_LOCAL,
+				   params->max_stream_data_bidi_local);
+	}
+	if (params->max_stream_data_bidi_remote) {
+		p = quic_put_param(p, QUIC_TRANSPORT_PARAM_INITIAL_MAX_STREAM_DATA_BIDI_REMOTE,
+				   params->max_stream_data_bidi_remote);
+	}
+	if (params->max_stream_data_uni) {
+		p = quic_put_param(p, QUIC_TRANSPORT_PARAM_INITIAL_MAX_STREAM_DATA_UNI,
+				   params->max_stream_data_uni);
+	}
+	if (params->max_data) {
+		p = quic_put_param(p, QUIC_TRANSPORT_PARAM_INITIAL_MAX_DATA,
+				   params->max_data);
+	}
+	if (params->max_streams_bidi) {
+		p = quic_put_param(p, QUIC_TRANSPORT_PARAM_INITIAL_MAX_STREAMS_BIDI,
+				   params->max_streams_bidi);
+	}
+	if (params->max_streams_uni) {
+		p = quic_put_param(p, QUIC_TRANSPORT_PARAM_INITIAL_MAX_STREAMS_UNI,
+				   params->max_streams_uni);
+	}
+	if (params->max_udp_payload_size != QUIC_MAX_UDP_PAYLOAD) {
+		p = quic_put_param(p, QUIC_TRANSPORT_PARAM_MAX_UDP_PAYLOAD_SIZE,
+				   params->max_udp_payload_size);
+	}
+	if (params->ack_delay_exponent != QUIC_DEF_ACK_DELAY_EXPONENT) {
+		p = quic_put_param(p, QUIC_TRANSPORT_PARAM_ACK_DELAY_EXPONENT,
+				   params->ack_delay_exponent);
+	}
+	if (params->disable_active_migration) {
+		p = quic_put_var(p, QUIC_TRANSPORT_PARAM_DISABLE_ACTIVE_MIGRATION);
+		p = quic_put_var(p, 0);
+	}
+	if (params->disable_1rtt_encryption) {
+		p = quic_put_var(p, QUIC_TRANSPORT_PARAM_DISABLE_1RTT_ENCRYPTION);
+		p = quic_put_var(p, 0);
+	}
+	if (!params->disable_compatible_version) {
+		p = quic_frame_put_version_info(p, QUIC_TRANSPORT_PARAM_VERSION_INFORMATION,
+						quic_packet(sk)->version);
+	}
+	if (params->grease_quic_bit) {
+		p = quic_put_var(p, QUIC_TRANSPORT_PARAM_GREASE_QUIC_BIT);
+		p = quic_put_var(p, 0);
+	}
+	if (params->max_ack_delay != QUIC_DEF_ACK_DELAY) {
+		p = quic_put_param(p, QUIC_TRANSPORT_PARAM_MAX_ACK_DELAY,
+				   USEC_TO_MSEC(params->max_ack_delay));
+	}
+	if (params->max_idle_timeout) {
+		p = quic_put_param(p, QUIC_TRANSPORT_PARAM_MAX_IDLE_TIMEOUT,
+				   USEC_TO_MSEC(params->max_idle_timeout));
+	}
+	if (params->active_connection_id_limit &&
+	    params->active_connection_id_limit != QUIC_CONN_ID_LEAST) {
+		p = quic_put_param(p, QUIC_TRANSPORT_PARAM_ACTIVE_CONNECTION_ID_LIMIT,
+				   params->active_connection_id_limit);
+	}
+	if (params->max_datagram_frame_size) {
+		p = quic_put_param(p, QUIC_TRANSPORT_PARAM_MAX_DATAGRAM_FRAME_SIZE,
+				   params->max_datagram_frame_size);
+	}
+	*len = p - data;
+	return 0;
+}
+
 static int quic_frame_get_conn_id(struct quic_conn_id *conn_id, u8 **pp, u32 *plen)
 {
 	u64 valuelen;
@@ -1843,9 +1999,6 @@ static int quic_frame_get_conn_id(struct quic_conn_id *conn_id, u8 **pp, u32 *pl
 	*plen -= valuelen;
 	return 0;
 }
-
-#define USEC_TO_MSEC(usec)	DIV_ROUND_UP((usec), 1000)
-#define MSEC_TO_USEC(msec)	((msec) * 1000)
 
 #define QUIC_MAX_VERSIONS	16
 
@@ -1906,13 +2059,14 @@ int quic_frame_parse_transport_params_ext(struct sock *sk, struct quic_transport
 	u64 type, value, valuelen;
 	union quic_addr addr;
 
+	/* Apply default values if the peer omits these transport parameters. */
 	params->max_udp_payload_size = QUIC_MAX_UDP_PAYLOAD;
 	params->ack_delay_exponent = QUIC_DEF_ACK_DELAY_EXPONENT;
 	params->max_ack_delay = QUIC_DEF_ACK_DELAY;
 	params->active_connection_id_limit = QUIC_CONN_ID_LEAST;
+
 	active = quic_conn_id_active(id_set);
 	versions[0] = packet->version;
-
 	while (len > 0) {
 		if (!quic_get_var(&p, &len, &type))
 			return -1;
@@ -2078,157 +2232,4 @@ int quic_frame_parse_transport_params_ext(struct sock *sk, struct quic_transport
 	}
 
 	return quic_packet_select_version(sk, versions, count);
-}
-
-static u8 *quic_frame_put_conn_id(u8 *p, u16 id, struct quic_conn_id *conn_id)
-{
-	p = quic_put_var(p, id);
-	p = quic_put_var(p, conn_id->len);
-	p = quic_put_data(p, conn_id->data, conn_id->len);
-	return p;
-}
-
-static u8 *quic_frame_put_version_info(u8 *p, u16 id, u32 version)
-{
-	u32 *versions, i, len = QUIC_VERSION_LEN;
-
-	versions = quic_packet_compatible_versions(version);
-	if (!versions)
-		return p;
-
-	for (i = 1; versions[i]; i++)
-		len += QUIC_VERSION_LEN;
-	p = quic_put_var(p, id);
-	p = quic_put_var(p, len);
-	p = quic_put_int(p, version, QUIC_VERSION_LEN);
-
-	for (i = 1; versions[i]; i++)
-		p = quic_put_int(p, versions[i], QUIC_VERSION_LEN);
-
-	return p;
-}
-
-static u8 *quic_frame_put_address(u8 *p, u16 id, union quic_addr *addr,
-				  struct quic_conn_id *conn_id, u8 *token, struct sock *sk)
-{
-	p = quic_put_var(p, id);
-	p = quic_put_var(p, QUIC_PREF_ADDR_LEN + 1 + conn_id->len + QUIC_CONN_ID_TOKEN_LEN);
-	quic_set_pref_addr(sk, p, addr);
-	p += QUIC_PREF_ADDR_LEN;
-
-	p = quic_put_int(p, conn_id->len, 1);
-	p = quic_put_data(p, conn_id->data, conn_id->len);
-	p = quic_put_data(p, token, QUIC_CONN_ID_TOKEN_LEN);
-	return p;
-}
-
-int quic_frame_build_transport_params_ext(struct sock *sk, struct quic_transport_param *params,
-					  u8 *data, u32 *len)
-{
-	struct quic_conn_id_set *id_set = quic_source(sk);
-	struct quic_path_group *paths = quic_paths(sk);
-	u8 *p = data, token[QUIC_CONN_ID_TOKEN_LEN];
-	struct quic_conn_id *scid, conn_id;
-	struct quic_crypto *crypto;
-	u16 param_id;
-
-	scid = quic_conn_id_active(id_set);
-	if (quic_is_serv(sk)) {
-		crypto = quic_crypto(sk, QUIC_CRYPTO_INITIAL);
-		param_id = QUIC_TRANSPORT_PARAM_ORIGINAL_DESTINATION_CONNECTION_ID;
-		p = quic_frame_put_conn_id(p, param_id, &paths->orig_dcid);
-		if (params->stateless_reset) {
-			p = quic_put_var(p, QUIC_TRANSPORT_PARAM_STATELESS_RESET_TOKEN);
-			p = quic_put_var(p, QUIC_CONN_ID_TOKEN_LEN);
-			if (quic_crypto_generate_stateless_reset_token(crypto, scid->data,
-								       scid->len, token,
-								       QUIC_CONN_ID_TOKEN_LEN))
-				return -1;
-			p = quic_put_data(p, token, QUIC_CONN_ID_TOKEN_LEN);
-		}
-		if (paths->retry) {
-			param_id = QUIC_TRANSPORT_PARAM_RETRY_SOURCE_CONNECTION_ID;
-			p = quic_frame_put_conn_id(p, param_id, &paths->retry_dcid);
-		}
-		if (paths->pref_addr) {
-			quic_conn_id_generate(&conn_id);
-			if (quic_crypto_generate_stateless_reset_token(crypto, conn_id.data,
-								       conn_id.len, token,
-								       QUIC_CONN_ID_TOKEN_LEN))
-				return -1;
-			if (quic_conn_id_add(id_set, &conn_id, 1, sk))
-				return -1;
-			param_id = QUIC_TRANSPORT_PARAM_PREFERRED_ADDRESS;
-			p = quic_frame_put_address(p, param_id, quic_path_saddr(paths, 1),
-						   &conn_id, token, sk);
-		}
-	}
-	p = quic_frame_put_conn_id(p, QUIC_TRANSPORT_PARAM_INITIAL_SOURCE_CONNECTION_ID, scid);
-	if (params->max_stream_data_bidi_local) {
-		p = quic_put_param(p, QUIC_TRANSPORT_PARAM_INITIAL_MAX_STREAM_DATA_BIDI_LOCAL,
-				   params->max_stream_data_bidi_local);
-	}
-	if (params->max_stream_data_bidi_remote) {
-		p = quic_put_param(p, QUIC_TRANSPORT_PARAM_INITIAL_MAX_STREAM_DATA_BIDI_REMOTE,
-				   params->max_stream_data_bidi_remote);
-	}
-	if (params->max_stream_data_uni) {
-		p = quic_put_param(p, QUIC_TRANSPORT_PARAM_INITIAL_MAX_STREAM_DATA_UNI,
-				   params->max_stream_data_uni);
-	}
-	if (params->max_data) {
-		p = quic_put_param(p, QUIC_TRANSPORT_PARAM_INITIAL_MAX_DATA,
-				   params->max_data);
-	}
-	if (params->max_streams_bidi) {
-		p = quic_put_param(p, QUIC_TRANSPORT_PARAM_INITIAL_MAX_STREAMS_BIDI,
-				   params->max_streams_bidi);
-	}
-	if (params->max_streams_uni) {
-		p = quic_put_param(p, QUIC_TRANSPORT_PARAM_INITIAL_MAX_STREAMS_UNI,
-				   params->max_streams_uni);
-	}
-	if (params->max_udp_payload_size != QUIC_MAX_UDP_PAYLOAD) {
-		p = quic_put_param(p, QUIC_TRANSPORT_PARAM_MAX_UDP_PAYLOAD_SIZE,
-				   params->max_udp_payload_size);
-	}
-	if (params->ack_delay_exponent != QUIC_DEF_ACK_DELAY_EXPONENT) {
-		p = quic_put_param(p, QUIC_TRANSPORT_PARAM_ACK_DELAY_EXPONENT,
-				   params->ack_delay_exponent);
-	}
-	if (params->disable_active_migration) {
-		p = quic_put_var(p, QUIC_TRANSPORT_PARAM_DISABLE_ACTIVE_MIGRATION);
-		p = quic_put_var(p, 0);
-	}
-	if (params->disable_1rtt_encryption) {
-		p = quic_put_var(p, QUIC_TRANSPORT_PARAM_DISABLE_1RTT_ENCRYPTION);
-		p = quic_put_var(p, 0);
-	}
-	if (!params->disable_compatible_version) {
-		p = quic_frame_put_version_info(p, QUIC_TRANSPORT_PARAM_VERSION_INFORMATION,
-						quic_packet(sk)->version);
-	}
-	if (params->grease_quic_bit) {
-		p = quic_put_var(p, QUIC_TRANSPORT_PARAM_GREASE_QUIC_BIT);
-		p = quic_put_var(p, 0);
-	}
-	if (params->max_ack_delay != QUIC_DEF_ACK_DELAY) {
-		p = quic_put_param(p, QUIC_TRANSPORT_PARAM_MAX_ACK_DELAY,
-				   USEC_TO_MSEC(params->max_ack_delay));
-	}
-	if (params->max_idle_timeout) {
-		p = quic_put_param(p, QUIC_TRANSPORT_PARAM_MAX_IDLE_TIMEOUT,
-				   USEC_TO_MSEC(params->max_idle_timeout));
-	}
-	if (params->active_connection_id_limit &&
-	    params->active_connection_id_limit != QUIC_CONN_ID_LEAST) {
-		p = quic_put_param(p, QUIC_TRANSPORT_PARAM_ACTIVE_CONNECTION_ID_LIMIT,
-				   params->active_connection_id_limit);
-	}
-	if (params->max_datagram_frame_size) {
-		p = quic_put_param(p, QUIC_TRANSPORT_PARAM_MAX_DATAGRAM_FRAME_SIZE,
-				   params->max_datagram_frame_size);
-	}
-	*len = p - data;
-	return 0;
 }
