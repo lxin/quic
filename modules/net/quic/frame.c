@@ -189,9 +189,9 @@ static struct quic_frame *quic_frame_stream_create(struct sock *sk, void *data, 
 
 	stream = info->stream;
 	hlen += quic_var_len(stream->id);
-	if (stream->send.offset) {
+	if (stream->send.bytes) {
 		type |= QUIC_STREAM_BIT_OFF;
-		hlen += quic_var_len(stream->send.offset);
+		hlen += quic_var_len(stream->send.bytes);
 	}
 	type |= QUIC_STREAM_BIT_LEN;
 	max_frame_len = quic_packet_max_payload(quic_packet(sk));
@@ -239,7 +239,7 @@ static struct quic_frame *quic_frame_stream_create(struct sock *sk, void *data, 
 	p = quic_put_var(frame->data, type);
 	p = quic_put_var(p, stream->id);
 	if (type & QUIC_STREAM_BIT_OFF)
-		p = quic_put_var(p, stream->send.offset);
+		p = quic_put_var(p, stream->send.bytes);
 	p = quic_put_var(p, msg_len);
 
 	frame->type = type;
@@ -435,7 +435,7 @@ static struct quic_frame *quic_frame_reset_stream_create(struct sock *sk, void *
 	p = quic_put_var(buf, type);
 	p = quic_put_var(p, info->stream_id);
 	p = quic_put_var(p, info->errcode);
-	p = quic_put_var(p, stream->send.offset);
+	p = quic_put_var(p, stream->send.bytes);
 	frame_len = (u32)(p - buf);
 
 	frame = quic_frame_alloc(frame_len, NULL, GFP_ATOMIC);
@@ -1763,7 +1763,7 @@ int quic_frame_stream_append(struct sock *sk, struct quic_frame *frame,
 	u64 wspace, offset = 0;
 
 	hlen += quic_var_len(stream->id);
-	offset = stream->send.offset - frame->bytes;
+	offset = stream->send.bytes - frame->bytes;
 	if (offset)
 		hlen += quic_var_len(offset);
 	max_frame_len = quic_packet_max_payload(quic_packet(sk));

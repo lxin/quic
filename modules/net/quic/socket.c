@@ -562,8 +562,7 @@ static int quic_sock_stream_available(struct sock *sk, s64 stream_id, u32 flags)
 	struct quic_stream_table *streams = quic_streams(sk);
 	u8 type, blocked;
 
-	if (!quic_stream_id_send_exceeds(streams, stream_id) &&
-	    !quic_stream_id_send_overflow(streams, stream_id))
+	if (!quic_stream_id_send_exceeds(streams, stream_id))
 		return 1;
 
 	if (!(flags & MSG_STREAM_SNDBLOCK))

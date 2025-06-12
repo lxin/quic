@@ -94,8 +94,7 @@ static struct quic_stream *quic_stream_send_create(struct quic_stream_table *str
 
 		stream->id = stream_id;
 		if (quic_stream_id_uni(stream_id)) {
-			stream->send.window = streams->send.max_stream_data_uni;
-			stream->send.max_bytes = stream->send.window;
+			stream->send.max_bytes = streams->send.max_stream_data_uni;
 
 			if (streams->send.next_uni_stream_id < stream_id + QUIC_STREAM_ID_STEP)
 				streams->send.next_uni_stream_id = stream_id + QUIC_STREAM_ID_STEP;
@@ -111,14 +110,13 @@ static struct quic_stream *quic_stream_send_create(struct quic_stream_table *str
 		streams->send.streams_bidi++;
 
 		if (quic_stream_id_local(stream_id, is_serv)) {
-			stream->send.window = streams->send.max_stream_data_bidi_remote;
-			stream->recv.window = streams->recv.max_stream_data_bidi_local;
+			stream->send.max_bytes = streams->send.max_stream_data_bidi_remote;
+			stream->recv.max_bytes = streams->recv.max_stream_data_bidi_local;
 		} else {
-			stream->send.window = streams->send.max_stream_data_bidi_local;
-			stream->recv.window = streams->recv.max_stream_data_bidi_remote;
+			stream->send.max_bytes = streams->send.max_stream_data_bidi_local;
+			stream->recv.max_bytes = streams->recv.max_stream_data_bidi_remote;
 		}
-		stream->send.max_bytes = stream->send.window;
-		stream->recv.max_bytes = stream->recv.window;
+		stream->recv.window = stream->recv.max_bytes;
 
 		quic_stream_add(streams, stream);
 		stream_id += QUIC_STREAM_ID_STEP;
@@ -160,14 +158,13 @@ static struct quic_stream *quic_stream_recv_create(struct quic_stream_table *str
 		streams->recv.streams_bidi++;
 
 		if (quic_stream_id_local(stream_id, is_serv)) {
-			stream->send.window = streams->send.max_stream_data_bidi_remote;
-			stream->recv.window = streams->recv.max_stream_data_bidi_local;
+			stream->send.max_bytes = streams->send.max_stream_data_bidi_remote;
+			stream->recv.max_bytes = streams->recv.max_stream_data_bidi_local;
 		} else {
-			stream->send.window = streams->send.max_stream_data_bidi_local;
-			stream->recv.window = streams->recv.max_stream_data_bidi_remote;
+			stream->send.max_bytes = streams->send.max_stream_data_bidi_local;
+			stream->recv.max_bytes = streams->recv.max_stream_data_bidi_remote;
 		}
-		stream->send.max_bytes = stream->send.window;
-		stream->recv.max_bytes = stream->recv.window;
+		stream->recv.window = stream->recv.max_bytes;
 
 		quic_stream_add(streams, stream);
 		stream_id += QUIC_STREAM_ID_STEP;
@@ -213,6 +210,8 @@ static bool quic_stream_id_recv_exceeds(struct quic_stream_table *streams, s64 s
 
 bool quic_stream_id_send_exceeds(struct quic_stream_table *streams, s64 stream_id)
 {
+	u64 nstreams;
+
 	if (quic_stream_id_uni(stream_id)) {
 		if (stream_id > streams->send.max_uni_stream_id)
 			return true;
@@ -220,12 +219,6 @@ bool quic_stream_id_send_exceeds(struct quic_stream_table *streams, s64 stream_i
 		if (stream_id > streams->send.max_bidi_stream_id)
 			return true;
 	}
-	return false;
-}
-
-bool quic_stream_id_send_overflow(struct quic_stream_table *streams, s64 stream_id)
-{
-	u64 nstreams;
 
 	if (quic_stream_id_uni(stream_id)) {
 		stream_id -= streams->send.next_uni_stream_id;
@@ -263,8 +256,7 @@ struct quic_stream *quic_stream_send_get(struct quic_stream_table *streams, s64 
 	if (!(flags & MSG_STREAM_NEW))
 		return ERR_PTR(-EINVAL);
 
-	if (quic_stream_id_send_exceeds(streams, stream_id) ||
-	    quic_stream_id_send_overflow(streams, stream_id))
+	if (quic_stream_id_send_exceeds(streams, stream_id))
 		return ERR_PTR(-EAGAIN);
 
 	stream = quic_stream_send_create(streams, stream_id, is_serv);

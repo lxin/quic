@@ -25,8 +25,6 @@ struct quic_stream {
 	struct {
 		u64 last_max_bytes;
 		u64 max_bytes;
-		u64 window; /* congestion control in stream level? not now */
-		u64 offset;
 		u64 bytes;
 
 		u32 errcode;
@@ -112,7 +110,6 @@ void quic_stream_recv_put(struct quic_stream_table *streams, struct quic_stream 
 
 bool quic_stream_max_streams_update(struct quic_stream_table *streams, s64 *max_uni, s64 *max_bidi);
 struct quic_stream *quic_stream_find(struct quic_stream_table *streams, s64 stream_id);
-bool quic_stream_id_send_overflow(struct quic_stream_table *streams, s64 stream_id);
 bool quic_stream_id_send_exceeds(struct quic_stream_table *streams, s64 stream_id);
 
 void quic_stream_get_param(struct quic_stream_table *streams, struct quic_transport_param *p,

@@ -322,7 +322,6 @@ int quic_outq_stream_append(struct sock *sk, struct quic_msginfo *info, u8 pack)
 	}
 
 	stream->send.bytes += bytes;
-	stream->send.offset += bytes;
 
 	outq->bytes += bytes;
 	outq->stream_list_len += (frame->len - len);
@@ -350,7 +349,6 @@ void quic_outq_stream_tail(struct sock *sk, struct quic_frame *frame, bool cork)
 
 	stream->send.frags++;
 	stream->send.bytes += frame->bytes;
-	stream->send.offset += frame->bytes;
 
 	outq->bytes += frame->bytes;
 	outq->stream_list_len += frame->len;
