@@ -807,6 +807,7 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb)
 	int err = -EINVAL;
 
 	WARN_ON(!skb_set_owner_sk_safe(skb, sk));
+	sock_rps_save_rxhash(sk, skb);
 
 	while (skb->len > 0) {
 		if (!quic_hshdr(skb)->form) { /* handle it later when setting 1RTT key */
@@ -858,14 +859,18 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb)
 			 __func__, cb->number, packet->level, skb->len);
 
 		space->time = cb->time;
+		cong->time = cb->time;
 		err = quic_pnspace_check(space, cb->number);
 		if (err) {
+			if (err > 0) {
+				packet->ack_requested = 1;
+				goto next;
+			}
 			QUIC_INC_STATS(net, QUIC_MIB_PKT_INVNUMDROP);
 			err = -EINVAL;
 			goto err;
 		}
 
-		cong->time = cb->time;
 		frame.data = skb->data + cb->number_offset + cb->number_len;
 		frame.len = cb->length - cb->number_len - packet->taglen[1];
 		frame.level = packet->level;
@@ -894,6 +899,8 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb)
 							   QUIC_PN_MAP_MAX_PN, 0, -1, 0);
 			}
 		}
+
+next:
 		skb_pull(skb, cb->number_offset + cb->length);
 
 		cb->resume = 0;
@@ -902,7 +909,6 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb)
 			continue;
 
 		space->need_sack = 1;
-		space->sack_path = 0;
 
 		if (packet->level == QUIC_CRYPTO_INITIAL) {
 			if (!is_serv) {
@@ -1036,6 +1042,7 @@ static int quic_packet_app_process(struct sock *sk, struct sk_buff *skb)
 	int err = -EINVAL;
 
 	WARN_ON(!skb_set_owner_sk_safe(skb, sk));
+	sock_rps_save_rxhash(sk, skb);
 
 	quic_packet_reset(packet);
 	if (!quic_hdr(skb)->fixed && !quic_inq(sk)->grease_quic_bit) {
@@ -1057,9 +1064,9 @@ static int quic_packet_app_process(struct sock *sk, struct sk_buff *skb)
 	cb->number_offset = QUIC_CONN_ID_DEF_LEN + QUIC_HLEN;
 	cb->length = (u16)(skb->len - cb->number_offset);
 	cb->number_max = space->max_pn_seen;
+	cb->crypto_done = quic_packet_decrypt_done;
 
 	taglen = quic_packet_taglen(packet);
-	cb->crypto_done = quic_packet_decrypt_done;
 	if (!taglen)
 		cb->resume = 1; /* !taglen means disable_1rtt_encryption */
 	err = quic_crypto_decrypt(crypto, skb);
@@ -1092,6 +1099,7 @@ static int quic_packet_app_process(struct sock *sk, struct sk_buff *skb)
 	pr_debug("%s: recvd, num: %llu, len: %d\n", __func__, cb->number, skb->len);
 
 	space->time = cb->time;
+	quic_cong(sk)->time = cb->time;
 	err = quic_pnspace_check(space, cb->number);
 	if (err) {
 		if (err > 0) { /* dup packet, send ack immediately */
@@ -1114,7 +1122,6 @@ static int quic_packet_app_process(struct sock *sk, struct sk_buff *skb)
 		goto err;
 	}
 
-	quic_cong(sk)->time = cb->time;
 	frame.data = skb->data + cb->number_offset + cb->number_len;
 	frame.len = cb->length - cb->number_len - taglen;
 	frame.path = cb->path;
