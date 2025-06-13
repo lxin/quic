@@ -826,8 +826,10 @@ static int quic_frame_new_conn_id_process(struct sock *sk, struct quic_frame *fr
 	dcid.len = (u8)length;
 	token = p + length;
 
-	if (prior > seqno)
+	if (prior > seqno) {
+		frame->errcode = QUIC_TRANSPORT_ERROR_FRAME_ENCODING;
 		return -EINVAL;
+	}
 
 	first = quic_conn_id_first_number(id_set);
 	if (seqno < first) /* dup */
