@@ -65,10 +65,8 @@ static int quic_pnspace_grow(struct quic_pnspace *space, u16 size)
 
 int quic_pnspace_check(struct quic_pnspace *space, s64 pn)
 {
-	if (space->base_pn == -1) {
-		quic_pnspace_set_base_pn(space, pn + 1);
+	if (space->base_pn == -1)
 		return 0;
-	}
 
 	if (pn < space->min_pn_seen || pn >= space->base_pn + QUIC_PN_MAP_SIZE)
 		return -1;
@@ -96,6 +94,11 @@ int quic_pnspace_mark(struct quic_pnspace *space, s64 pn)
 {
 	s64 last_max_pn_seen;
 	u16 gap;
+
+	if (space->base_pn == -1) {
+		quic_pnspace_set_base_pn(space, pn + 1);
+		return 0;
+	}
 
 	if (pn < space->base_pn)
 		return 0;
