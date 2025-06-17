@@ -111,6 +111,9 @@ static void quic_udp_sock_put(struct quic_udp_sock *us)
 	}
 }
 
+/* Lookup a quic_udp_sock in the global hash table. If not found, creates and returns a new one
+ * associated with the given kernel socket.
+ */
 static struct quic_udp_sock *quic_udp_sock_lookup(struct sock *sk, union quic_addr *a)
 {
 	struct quic_udp_sock *tmp, *us = NULL;
@@ -134,6 +137,9 @@ static struct quic_udp_sock *quic_udp_sock_lookup(struct sock *sk, union quic_ad
 	return us;
 }
 
+/* Sets the UDP socket for the given path index in the connection's path group.  Replaces the
+ * old reference (if any) and installs a new one.
+ */
 static int quic_path_set_udp_sock(struct sock *sk, struct quic_path_group *paths, u8 path)
 {
 	struct quic_udp_sock *usk;
@@ -161,6 +167,9 @@ static void quic_path_put_bind_port(struct sock *sk, struct quic_bind_port *pp)
 	spin_unlock(&head->lock);
 }
 
+/* Attempts to bind a QUIC path to a local port.  If the address already has a port, it tries
+ * to register that port.  Otherwise, it dynamically selects a port in the ephemeral range.
+ */
 static int quic_path_set_bind_port(struct sock *sk, struct quic_path_group *paths, u8 path)
 {
 	struct quic_bind_port *port = quic_path_bind_port(paths, path);
@@ -214,6 +223,7 @@ next:
 	return -EADDRINUSE;
 }
 
+/* Binds a QUIC path to a local port and sets up a UDP socket. */
 int quic_path_bind(struct sock *sk, struct quic_path_group *paths, u8 path)
 {
 	int err;
@@ -227,6 +237,15 @@ int quic_path_bind(struct sock *sk, struct quic_path_group *paths, u8 path)
 	return err;
 }
 
+/* Swaps the active and alternate QUIC paths.
+ *
+ * Promotes the alternate path (path[1]) to become the new active path (path[0]).  If the
+ * alternate path has a valid UDP socket, the entire path is swapped.  Otherwise, only the
+ * destination address is exchanged, assuming the source address is the same and no rebind is
+ * needed.
+ *
+ * This is typically used during path migration or alternate path promotion.
+ */
 void quic_path_swap(struct quic_path_group *paths)
 {
 	struct quic_path path = paths->path[0];
@@ -240,11 +259,14 @@ void quic_path_swap(struct quic_path_group *paths)
 		return;
 	}
 
-	/* both paths have the same saddr, so swap the daddr only */
 	paths->path[0].daddr = paths->path[1].daddr;
 	paths->path[1].daddr = path.daddr;
 }
 
+/* Frees resources associated with a QUIC path.
+ *
+ * This is used for cleanup during error handling or when the path is no longer needed.
+ */
 void quic_path_free(struct sock *sk, struct quic_path_group *paths, u8 path)
 {
 	paths->alt_probes = 0;
@@ -258,6 +280,17 @@ void quic_path_free(struct sock *sk, struct quic_path_group *paths, u8 path)
 	memset(quic_path_saddr(paths, path), 0, sizeof(union quic_addr));
 }
 
+/* Detects and records a potential alternate path.
+ *
+ * If the new source or destination address differs from the active path, and alternate path
+ * detection is not disabled, the function pdates the alternate path slot (path[1]) with the
+ * new addresses.
+ *
+ * This is typically called on packet receive to detect new possible network paths (e.g., NAT
+ * rebinding, mobility).
+ *
+ * Returns 1 if a new alternate path was detected and updated, 0 otherwise.
+ */
 int quic_path_detect_alt(struct quic_path_group *paths, union quic_addr *sa, union quic_addr *da,
 			 struct sock *sk)
 {
@@ -295,6 +328,7 @@ void quic_path_set_param(struct quic_path_group *paths, struct quic_transport_pa
 	paths->disable_daddr_alt = p->disable_active_migration;
 }
 
+/* State Machine defined in rfc8899#section-5.2 */
 enum quic_plpmtud_state {
 	QUIC_PL_DISABLED,
 	QUIC_PL_BASE,
@@ -312,6 +346,15 @@ enum quic_plpmtud_state {
 #define QUIC_PL_BIG_STEP        32
 #define QUIC_PL_MIN_STEP        4
 
+/* Handle PLPMTUD probe failure on a QUIC path.
+ *
+ * Called immediately after sending a probe packet in QUIC Path MTU Discovery.  Tracks probe
+ * count and manages state transitions based on the number of probes sent and current PLPMTUD
+ * state (BASE, SEARCH, COMPLETE, ERROR).  Detects probe failures and black holes, adjusting
+ * PMTU and probe sizes accordingly.
+ *
+ * Return: New PMTU value if updated, else 0.
+ */
 u32 quic_path_pl_send(struct quic_path_group *paths, s64 number)
 {
 	u32 pathmtu = 0;
@@ -357,6 +400,14 @@ out:
 	return pathmtu;
 }
 
+/* Handle successful reception of a PMTU probe.
+ *
+ * Called when a probe packet is acknowledged. Updates probe size and transitions state if
+ * needed (e.g., from SEARCH to COMPLETE).  Expands PMTU using binary or linear search
+ * depending on state.
+ *
+ * Return: New PMTU to apply if search completes, or 0 if no change.
+ */
 u32 quic_path_pl_recv(struct quic_path_group *paths, bool *raise_timer, bool *complete)
 {
 	u32 pathmtu = 0;
@@ -408,6 +459,14 @@ u32 quic_path_pl_recv(struct quic_path_group *paths, bool *raise_timer, bool *co
 	return pathmtu;
 }
 
+/* Handle ICMP "Packet Too Big" messages.
+ *
+ * Responds to an incoming ICMP error by reducing the probe size or falling back to a safe
+ * baseline PMTU depending on current state.  Also handles cases where the PMTU hint lies
+ * between probe and current PMTU.
+ *
+ * Return: New PMTU to apply if state changes, or 0 if no change.
+ */
 u32 quic_path_pl_toobig(struct quic_path_group *paths, u32 pmtu, bool *reset_timer)
 {
 	u32 pathmtu = 0;
@@ -454,6 +513,11 @@ u32 quic_path_pl_toobig(struct quic_path_group *paths, u32 pmtu, bool *reset_tim
 	return pathmtu;
 }
 
+/* Reset PLPMTUD state for a path.
+ *
+ * Resets all PLPMTUD-related state to its initial configuration.  Called when a new path is
+ * initialized or when recovering from errors.
+ */
 void quic_path_pl_reset(struct quic_path_group *paths)
 {
 	paths->pl.number = 0;
@@ -462,6 +526,13 @@ void quic_path_pl_reset(struct quic_path_group *paths)
 	paths->pl.probe_size = QUIC_BASE_PLPMTU;
 }
 
+/* Check if a packet number confirms PLPMTUD probe.
+ *
+ * Checks whether the last probe (tracked by .number) has been acknowledged.  If the probe
+ * number lies within the ACK range, confirmation is successful.
+ *
+ * Return: true if probe is confirmed, false otherwise.
+ */
 bool quic_path_pl_confirm(struct quic_path_group *paths, s64 largest, s64 smallest)
 {
 	return paths->pl.number && paths->pl.number >= smallest && paths->pl.number <= largest;

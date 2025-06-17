@@ -59,20 +59,23 @@ static int quic_inet_listen(struct socket *sock, int backlog)
 	source = quic_source(sk);
 	dest = quic_dest(sk);
 
-	if (!backlog)
+	if (!backlog) /* Exit listen state if backlog is zero. */
 		goto free;
 
-	if (!sk_unhashed(sk))
+	if (!sk_unhashed(sk)) /* Already hashed/listening. */
 		goto out;
 
 	paths = quic_paths(sk);
 	a = quic_path_saddr(paths, 0);
-	if (!a->v4.sin_port) { /* auto bind */
+	if (!a->v4.sin_port) { /* Auto-bind if not already bound. */
 		err = quic_path_bind(sk, paths, 0);
 		if (err)
 			goto free;
 		quic_set_sk_addr(sk, a, true);
 	}
+	/* Generate and add destination and source connection IDs for sending Initial-level
+	 * CLOSE frames to refuse connection attempts in case of verification failure.
+	 */
 	quic_conn_id_generate(&conn_id);
 	err = quic_conn_id_add(dest, &conn_id, 0, NULL);
 	if (err)
@@ -82,11 +85,14 @@ static int quic_inet_listen(struct socket *sock, int backlog)
 	if (err)
 		goto free;
 	active = quic_conn_id_active(dest);
-	paths->serv = 1;
+	paths->serv = 1; /* Mark this as a server. */
 
+	/* Install initial keys to generate Retry/Stateless Reset tokens. */
 	err = quic_crypto_initial_keys_install(crypto, active, packet->version, 1);
 	if (err)
 		goto free;
+
+	/* Set socket state to LISTENING and add to sock hash table. */
 	quic_set_state(sk, QUIC_SS_LISTENING);
 	sk->sk_max_ack_backlog = backlog;
 	err = sk->sk_prot->hash(sk);
@@ -118,26 +124,24 @@ static __poll_t quic_inet_poll(struct file *file, struct socket *sock, poll_tabl
 
 	poll_wait(file, sk_sleep(sk), wait);
 
-	/* comment it out for compiling on the old kernel version for now */
+	/* Comment it out for compiling on the old kernel version for now. */
 	/* sock_rps_record_flow(sk); */
 
+	/* A listening socket becomes readable when the accept queue is not empty. */
 	if (quic_is_listen(sk))
 		return !list_empty(quic_reqs(sk)) ? (EPOLLIN | EPOLLRDNORM) : 0;
 
 	mask = 0;
-	if (sk->sk_err || !skb_queue_empty_lockless(&sk->sk_error_queue))
+	if (sk->sk_err || !skb_queue_empty_lockless(&sk->sk_error_queue)) /* Error check. */
 		mask |= EPOLLERR | (sock_flag(sk, SOCK_SELECT_ERR_QUEUE) ? EPOLLPRI : 0);
 
 	head = &quic_inq(sk)->recv_list;
-	if (!list_empty(head))
+	if (!list_empty(head)) /* Readable check. */
 		mask |= EPOLLIN | EPOLLRDNORM;
 
 	if (quic_is_closed(sk)) {
-		/*
-		 * A broken connection should
-		 * report almost everything
-		 * in order to let applications
-		 * to detect it reliable.
+		/* A broken connection should report almost everything in order to let
+		 * applications to detect it reliable.
 		 */
 		mask |= EPOLLHUP;
 		mask |= EPOLLERR;
@@ -146,10 +150,13 @@ static __poll_t quic_inet_poll(struct file *file, struct socket *sock, poll_tabl
 		return mask;
 	}
 
-	if (sk_stream_wspace(sk) > 0 && quic_outq_wspace(sk, NULL) > 0) {
+	if (sk_stream_wspace(sk) > 0 && quic_outq_wspace(sk, NULL) > 0) { /* Writable check. */
 		mask |= EPOLLOUT | EPOLLWRNORM;
 	} else {
 		sk_set_bit(SOCKWQ_ASYNC_NOSPACE, sk);
+		/* Do writeable check again after the bit is set to avoid a lost I/O siginal,
+		 * similar to sctp_poll().
+		 */
 		if (sk_stream_wspace(sk) > 0 && quic_outq_wspace(sk, NULL) > 0)
 			mask |= EPOLLOUT | EPOLLWRNORM;
 	}
@@ -533,7 +540,7 @@ static __init int quic_init(void)
 	if (err)
 		goto err_def_ops;
 
-	/* similar to the calculation of sysctl_quic_(r/w)mem in sctp_init() */
+	/* Set QUIC memory limits based on available system memory, similar to sctp_init(). */
 	limit = nr_free_buffer_pages() / 8;
 	limit = max(limit, 128UL);
 	sysctl_quic_mem[0] = (long)limit / 4 * 3;

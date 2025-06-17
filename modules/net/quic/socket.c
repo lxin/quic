@@ -25,6 +25,9 @@ static void quic_enter_memory_pressure(struct sock *sk)
 	WRITE_ONCE(quic_memory_pressure, 1);
 }
 
+/* Check if a matching request sock already exists.  Match is based on source/destination
+ * addresses and DCID.
+ */
 bool quic_request_sock_exists(struct sock *sk)
 {
 	struct quic_packet *packet = quic_packet(sk);
@@ -39,12 +42,13 @@ bool quic_request_sock_exists(struct sock *sk)
 	return false;
 }
 
+/* Create and enqueue a QUIC request sock for a new incoming connection. */
 int quic_request_sock_enqueue(struct sock *sk, struct quic_conn_id *odcid, u8 retry)
 {
 	struct quic_packet *packet = quic_packet(sk);
 	struct quic_request_sock *req;
 
-	if (sk_acceptq_is_full(sk))
+	if (sk_acceptq_is_full(sk)) /* Refuse new request if the accept queue is full. */
 		return -ENOMEM;
 
 	req = kzalloc(sizeof(*req), GFP_ATOMIC);
@@ -59,6 +63,7 @@ int quic_request_sock_enqueue(struct sock *sk, struct quic_conn_id *odcid, u8 re
 	req->orig_dcid = *odcid;
 	req->retry = retry;
 
+	/* Enqueue request into the listen socket’s pending list for accept(). */
 	list_add_tail(&req->list, quic_reqs(sk));
 	sk_acceptq_added(sk);
 	return 0;
@@ -75,27 +80,36 @@ static struct quic_request_sock *quic_request_sock_dequeue(struct sock *sk)
 	return req;
 }
 
+/* Check if a matching accept socket exists.  This is needed because an accept socket
+ * might have been created after this packet was enqueued in the listen socket's backlog.
+ */
 bool quic_accept_sock_exists(struct sock *sk, struct sk_buff *skb)
 {
 	struct quic_pnspace *space = quic_pnspace(sk, QUIC_CRYPTO_INITIAL);
 	struct quic_packet *packet = quic_packet(sk);
 	bool exist = false;
 
+	/* Skip if packet is newer than the last accept socket creation time.  No matching
+	 * socket could exist in this case.
+	 */
 	if (QUIC_SKB_CB(skb)->time > space->time)
 		return exist;
 
+	/* Look up an accepted socket that matches the packet's addresses and DCID. */
 	local_bh_disable();
 	sk = quic_sock_lookup(skb, &packet->saddr, &packet->daddr, &packet->dcid);
 	if (!sk)
 		goto out;
 
-	/* the request sock was just accepted */
+	/* Found a matching accept socket. Process the packet with this socket. */
 	bh_lock_sock(sk);
 	if (sock_owned_by_user(sk)) {
+		/* Socket is busy (owned by user context): queue to backlog. */
 		if (sk_add_backlog(sk, skb, READ_ONCE(sk->sk_rcvbuf)))
 			kfree_skb(skb);
 	} else {
-		sk->sk_backlog_rcv(sk, skb);
+		/* Socket not busy: process immediately. */
+		sk->sk_backlog_rcv(sk, skb); /* quic_packet_process(). */
 	}
 	bh_unlock_sock(sk);
 	exist = true;
@@ -104,6 +118,18 @@ out:
 	return exist;
 }
 
+/* Lookup a connected QUIC socket based on address and dest connection ID.
+ *
+ * This function searches the established (non-listening) QUIC socket table for a socket that
+ * matches the source and dest addresses and, optionally, the dest connection ID (DCID). The
+ * value returned by quic_path_orig_dcid() might be the original dest connection ID from the
+ * ClientHello or the Source Connection ID from a Retry packet before.
+ *
+ * The DCID is provided from a handshake packet when searching by source connection ID fails,
+ * such as when the peer has not yet received server's response and updated the DCID.
+ *
+ * Return: A pointer to the matching connected socket, or NULL if no match is found.
+ */
 struct sock *quic_sock_lookup(struct sk_buff *skb, union quic_addr *sa, union quic_addr *da,
 			      struct quic_conn_id *dcid)
 {
@@ -112,7 +138,6 @@ struct sock *quic_sock_lookup(struct sk_buff *skb, union quic_addr *sa, union qu
 	struct quic_hash_head *head;
 	struct sock *sk;
 
-	/* Search for regular socket first */
 	head = quic_sock_head(net, sa, da);
 	spin_lock(&head->lock);
 	sk_for_each(sk, &head->head) {
@@ -129,6 +154,15 @@ struct sock *quic_sock_lookup(struct sk_buff *skb, union quic_addr *sa, union qu
 	return sk;
 }
 
+/* Find the listening QUIC socket for an incoming packet.
+ *
+ * This function searches the QUIC socket table for a listening socket that matches the dest
+ * address and port, and the ALPN(s) if presented in the ClientHello.  If multiple listening
+ * sockets are bound to the same address, port, and ALPN(s) (e.g., via SO_REUSEPORT), this
+ * function selects a socket from the reuseport group.
+ *
+ * Return: A pointer to the matching listening socket, or NULL if no match is found.
+ */
 struct sock *quic_listen_sock_lookup(struct sk_buff *skb, union quic_addr *sa, union quic_addr *da)
 {
 	struct net *net = dev_net(skb->dev);
@@ -146,22 +180,23 @@ struct sock *quic_listen_sock_lookup(struct sk_buff *skb, union quic_addr *sa, u
 	if (hlist_empty(&head->head) || quic_packet_parse_alpn(skb, &alpns))
 		goto unlock;
 
-	if (!alpns.len) {
+	if (!alpns.len) { /* No ALPN entries present or failed to parse the ALPNs. */
 		sk_for_each(tmp, &head->head) {
-			/* alpns.data != NULL means TLS parse succeed but no ALPN was found,
-			 * in such case it only matches the sock with no ALPN set.
+			/* If alpns.data != NULL, TLS parsing succeeded but no ALPN was found.
+			 * In this case, only match sockets that have no ALPN set.
 			 */
 			a = quic_path_saddr(quic_paths(tmp), 0);
 			if (net == sock_net(tmp) && quic_is_listen(tmp) &&
 			    quic_cmp_sk_addr(tmp, a, sa) && (!alpns.data || !quic_alpn(tmp)->len)) {
 				sk = tmp;
-				if (!quic_is_any_addr(a))
+				if (!quic_is_any_addr(a)) /* Prefer specific address match. */
 					break;
 			}
 		}
 		goto unlock;
 	}
 
+	/* ALPN present: loop through each ALPN entry. */
 	for (p = alpns.data, len = alpns.len; len; len -= length, p += length) {
 		quic_get_int(&p, &len, &length, 1);
 		quic_data(&alpn, p, length);
@@ -196,6 +231,7 @@ static void quic_write_space(struct sock *sk)
 	rcu_read_unlock();
 }
 
+/* Apply QUIC transport parameters to subcomponents of the socket. */
 static void quic_sock_apply_transport_param(struct sock *sk, struct quic_transport_param *p)
 {
 	struct quic_conn_id_set *id_set = p->remote ? quic_source(sk) : quic_dest(sk);
@@ -207,6 +243,7 @@ static void quic_sock_apply_transport_param(struct sock *sk, struct quic_transpo
 	quic_stream_set_param(quic_streams(sk), p, quic_is_serv(sk));
 }
 
+/* Fetch QUIC transport parameters from subcomponents of the socket. */
 static void quic_sock_fetch_transport_param(struct sock *sk, struct quic_transport_param *p)
 {
 	struct quic_conn_id_set *id_set = p->remote ? quic_source(sk) : quic_dest(sk);
@@ -355,6 +392,7 @@ static int quic_connect(struct sock *sk, struct sockaddr *addr, int addr_len)
 	if (!quic_is_closed(sk) || quic_get_user_addr(sk, &a, addr, addr_len))
 		goto out;
 
+	/* Set destination address and resolve route (may also auto-set source address). */
 	quic_path_set_daddr(paths, 0, &a);
 	err = quic_packet_route(sk);
 	if (err < 0)
@@ -362,27 +400,32 @@ static int quic_connect(struct sock *sk, struct sockaddr *addr, int addr_len)
 	quic_set_sk_addr(sk, &a, false);
 
 	sa = quic_path_saddr(paths, 0);
-	if (!sa->v4.sin_port) { /* auto bind */
+	if (!sa->v4.sin_port) { /* Auto-bind if not already bound. */
 		err = quic_path_bind(sk, paths, 0);
 		if (err)
 			goto out;
 		quic_set_sk_addr(sk, sa, true);
 	}
 
+	/* Generate and add destination and source connection IDs. */
 	quic_conn_id_generate(&conn_id);
 	err = quic_conn_id_add(dest, &conn_id, 0, NULL);
 	if (err)
 		goto out;
+	/* Save original DCID for validating server's transport parameters. */
 	paths->orig_dcid = conn_id;
 	quic_conn_id_generate(&conn_id);
 	err = quic_conn_id_add(source, &conn_id, 0, sk);
 	if (err)
 		goto free;
 	active = quic_conn_id_active(dest);
+
+	/* Install initial encryption keys for handshake. */
 	err = quic_crypto_initial_keys_install(crypto, active, packet->version, 0);
 	if (err)
 		goto free;
 
+	/* Add socket to hash table, change state to ESTABLISHING, and start idle timer. */
 	err = sk->sk_prot->hash(sk);
 	if (err)
 		goto free;
@@ -410,7 +453,7 @@ static int quic_hash(struct sock *sk)
 
 	sa = quic_path_saddr(paths, 0);
 	da = quic_path_daddr(paths, 0);
-	if (!sk->sk_max_ack_backlog) {
+	if (!sk->sk_max_ack_backlog) { /* Hash a regular socket with source and dest addrs/ports. */
 		head = quic_sock_head(net, sa, da);
 		spin_lock(&head->lock);
 		__sk_add_node(sk, &head->head);
@@ -418,6 +461,7 @@ static int quic_hash(struct sock *sk)
 		return 0;
 	}
 
+	/* Hash a listen socket with source port only. */
 	head = quic_listen_sock_head(net, ntohs(sa->v4.sin_port));
 	spin_lock(&head->lock);
 
@@ -425,15 +469,22 @@ static int quic_hash(struct sock *sk)
 	sk_for_each(nsk, &head->head) {
 		if (net == sock_net(nsk) && quic_is_listen(nsk) &&
 		    quic_cmp_sk_addr(nsk, quic_path_saddr(paths, 0), sa)) {
+			/* Take the ALPNs into account, which allows directing the request to
+			 * different listening sockets based on the ALPNs.
+			 */
 			if (!quic_data_cmp(alpns, quic_alpn(nsk))) {
 				err = -EADDRINUSE;
 				if (sk->sk_reuseport && nsk->sk_reuseport) {
+					/* Support SO_REUSEPORT: allow multiple sockets with
+					 * same addr/port/ALPNs.
+					 */
 					err = reuseport_add_sock(sk, nsk, any);
 					if (!err)
 						__sk_add_node(sk, &head->head);
 				}
 				goto out;
 			}
+			/* If ALPNs partially match, also consider address in use. */
 			if (quic_data_match(alpns, quic_alpn(nsk))) {
 				err = -EADDRINUSE;
 				goto out;
@@ -441,7 +492,7 @@ static int quic_hash(struct sock *sk)
 		}
 	}
 
-	if (sk->sk_reuseport) {
+	if (sk->sk_reuseport) { /* If socket uses reuseport, allocate reuseport group. */
 		err = reuseport_alloc(sk, any);
 		if (err)
 			goto out;
@@ -467,6 +518,7 @@ static void quic_unhash(struct sock *sk)
 	sa = quic_path_saddr(paths, 0);
 	da = quic_path_daddr(paths, 0);
 	if (sk->sk_max_ack_backlog) {
+		/* Unhash a listen socket: clean up all pending connection requests. */
 		list_for_each_entry_safe(req, tmp, quic_reqs(sk), list) {
 			list_del(&req->list);
 			kfree(req);
@@ -479,7 +531,7 @@ static void quic_unhash(struct sock *sk)
 out:
 	spin_lock(&head->lock);
 	if (rcu_access_pointer(sk->sk_reuseport_cb))
-		reuseport_detach_sock(sk);
+		reuseport_detach_sock(sk); /* If socket was part of a reuseport group, detach it. */
 	__sk_del_node_init(sk);
 	spin_unlock(&head->lock);
 }
@@ -490,6 +542,7 @@ out:
 #define QUIC_MSG_FLAGS \
 	(QUIC_MSG_STREAM_FLAGS | MSG_BATCH | MSG_MORE | MSG_DONTWAIT | MSG_DATAGRAM | MSG_NOSIGNAL)
 
+/* Parse control messages and extract stream or handshake metadata from msghdr. */
 static int quic_msghdr_parse(struct sock *sk, struct msghdr *msg, struct quic_handshake_info *hinfo,
 			     struct quic_stream_info *sinfo, bool *has_hinfo)
 {
@@ -499,13 +552,14 @@ static int quic_msghdr_parse(struct sock *sk, struct msghdr *msg, struct quic_ha
 	struct cmsghdr *cmsg;
 	s64 active;
 
-	if (msg->msg_flags & ~QUIC_MSG_FLAGS)
+	if (msg->msg_flags & ~QUIC_MSG_FLAGS) /* Reject unsupported flags. */
 		return -EINVAL;
 
 	if (quic_is_closed(sk))
 		return -EPIPE;
 
 	sinfo->stream_id = -1;
+	/* Iterate over control messages and parse recognized QUIC-level metadata. */
 	for_each_cmsghdr(cmsg, msg) {
 		if (!CMSG_OK(msg, cmsg))
 			return -EINVAL;
@@ -534,29 +588,34 @@ static int quic_msghdr_parse(struct sock *sk, struct msghdr *msg, struct quic_ha
 		}
 	}
 
-	if (h) {
+	if (h) { /* If handshake metadata was provided, skip stream handling. */
 		*has_hinfo = true;
 		return 0;
 	}
 
-	if (!s) /* in case someone uses 'flags' argument to set stream_flags */
+	if (!s) /* If no stream info was provided, inherit stream_flags from msg_flags. */
 		sinfo->stream_flags |= msg->msg_flags;
 
 	if (sinfo->stream_id != -1)
 		return 0;
 
+	/* No explicit stream, fallback to the active stream (the most recently opened stream). */
 	streams = quic_streams(sk);
 	active = streams->send.active_stream_id;
 	if (active != -1) {
 		sinfo->stream_id = active;
 		return 0;
 	}
+	/* No active stream, pick the next to open based on stream direction. */
 	sinfo->stream_id = streams->send.next_bidi_stream_id;
 	if (sinfo->stream_flags & MSG_STREAM_UNI)
 		sinfo->stream_id = streams->send.next_uni_stream_id;
 	return 0;
 }
 
+/* Returns 1 if stream_id is within allowed limits or 0 otherwise.  If MSG_STREAM_SNDBLOCK is
+ * set, may send a STREAMS_BLOCKED frame.
+ */
 static int quic_sock_stream_available(struct sock *sk, s64 stream_id, u32 flags)
 {
 	struct quic_stream_table *streams = quic_streams(sk);
@@ -580,6 +639,7 @@ static int quic_sock_stream_available(struct sock *sk, s64 stream_id, u32 flags)
 	return 0;
 }
 
+/* Wait until the given stream ID becomes available for sending. */
 static int quic_wait_for_stream(struct sock *sk, s64 stream_id, u32 flags)
 {
 	long timeo = sock_sndtimeo(sk, flags & MSG_STREAM_DONTWAIT);
@@ -617,6 +677,9 @@ static int quic_wait_for_stream(struct sock *sk, s64 stream_id, u32 flags)
 	return err;
 }
 
+/* Get the send stream object for the given stream ID.  May wait if the stream isn't
+ * immediately available.
+ */
 static struct quic_stream *quic_sock_send_stream(struct sock *sk, struct quic_stream_info *sinfo)
 {
 	struct quic_crypto *crypto = quic_crypto(sk, QUIC_CRYPTO_APP);
@@ -628,13 +691,15 @@ static struct quic_stream *quic_sock_send_stream(struct sock *sk, struct quic_st
 				      sinfo->stream_flags, quic_is_serv(sk));
 	if (!IS_ERR(stream)) {
 		if (stream->send.state >= QUIC_STREAM_SEND_STATE_SENT)
-			return ERR_PTR(-EINVAL);
+			return ERR_PTR(-EINVAL); /* Can't send on a closed or finished stream. */
 		return stream;
 	} else if (PTR_ERR(stream) != -EAGAIN) {
 		return stream;
 	}
 
-	/* 0rtt data should return err if stream is not found */
+	/* App send keys are not ready yet, likely sending 0-RTT data.  Do not wait for stream
+	 * availability if it's beyond the current limit; return an error immediately instead.
+	 */
 	if (!crypto->send_ready)
 		return ERR_PTR(-EINVAL);
 
@@ -644,10 +709,12 @@ static struct quic_stream *quic_sock_send_stream(struct sock *sk, struct quic_st
 			return ERR_PTR(err);
 	}
 
+	/* Stream should now be available, retry getting the stream. */
 	return quic_stream_send_get(streams, sinfo->stream_id,
 				    sinfo->stream_flags, quic_is_serv(sk));
 }
 
+/* Wait until send buffer has enough space for sending. */
 static int quic_wait_for_send(struct sock *sk, u32 flags, u32 len)
 {
 	long timeo = sock_sndtimeo(sk, flags & MSG_DONTWAIT);
@@ -685,16 +752,20 @@ static int quic_wait_for_send(struct sock *sk, u32 flags, u32 len)
 	return err;
 }
 
+/* Check if a QUIC stream is writable. */
 static int quic_sock_stream_writable(struct sock *sk, struct quic_stream *stream,
 				     u32 flags, u32 len)
 {
+	/* Check if flow control limits allow sending 'len' bytes. */
 	if (quic_outq_flow_control(sk, stream, len, flags & MSG_STREAM_SNDBLOCK))
 		return 0;
+	/* Check socket send buffer space and memory scheduling capacity. */
 	if (sk_stream_wspace(sk) < len || !sk_wmem_schedule(sk, len))
 		return 0;
 	return 1;
 }
 
+/* Wait until a QUIC stream is writable for sending data. */
 static int quic_wait_for_stream_send(struct sock *sk, struct quic_stream *stream, u32 flags,
 				     u32 len)
 {
@@ -720,6 +791,11 @@ static int quic_wait_for_stream_send(struct sock *sk, struct quic_stream *stream
 		}
 		if (!timeo) {
 			err = -EAGAIN;
+			/* If the stream is blocked due to flow control limits (not socket
+			 * buffer), return ENOSPC instead. This distinction helps applications
+			 * detect when they should switch to sending on other streams (e.g., to
+			 * implement fair scheduling).
+			 */
 			if (quic_outq_wspace(sk, stream) < (u64)len)
 				err = -ENOSPC;
 			break;
@@ -753,32 +829,37 @@ static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 	if (err)
 		goto err;
 
-	delay = !!(flags & MSG_MORE);
-	if (has_hinfo) {
+	delay = !!(flags & MSG_MORE); /* Determine if this is a delayed send. */
+	if (has_hinfo) { /* Handshake Messages Send Path. */
+		/* Initial, Handshake and App (TLS NewSessionTicket) only. */
 		if (hinfo.crypto_level >= QUIC_CRYPTO_EARLY) {
 			err = -EINVAL;
 			goto err;
 		}
 		crypto = quic_crypto(sk, hinfo.crypto_level);
-		if (!crypto->send_ready) {
+		if (!crypto->send_ready) { /* Can't send if crypto keys aren't ready. */
 			err = -EINVAL;
 			goto err;
 		}
+		/* Set packet context (overhead, MSS, etc.) before fragmentation. */
 		if (quic_packet_config(sk, hinfo.crypto_level, 0)) {
 			err = -ENETUNREACH;
 			goto err;
 		}
 
+		/* Prepare the message info used by the frame creator. */
 		msginfo.level = hinfo.crypto_level;
 		msginfo.msg = &msg->msg_iter;
+		/* Keep sending until all data from the message iterator is consumed. */
 		while (iov_iter_count(&msg->msg_iter) > 0) {
 			if (sk_stream_wspace(sk) < len || !sk_wmem_schedule(sk, len)) {
-				if (delay) {
+				if (delay) { /* Push buffered data if MSG_MORE was used. */
 					outq->force_delay = 0;
 					quic_outq_transmit(sk);
 				}
 				err = quic_wait_for_send(sk, flags, len);
 				if (err) {
+					/* Return error only if EPIPE or nothing was sent. */
 					if (err == -EPIPE || !bytes)
 						goto err;
 					goto out;
@@ -786,7 +867,7 @@ static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 			}
 			frame = quic_frame_create(sk, QUIC_FRAME_CRYPTO, &msginfo);
 			if (!frame) {
-				if (!bytes) {
+				if (!bytes) { /* Return error only if nothing was sent. */
 					err = -ENOMEM;
 					goto err;
 				}
@@ -794,15 +875,16 @@ static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 			}
 			len = frame->bytes;
 			if (!sk_wmem_schedule(sk, len)) {
+				/* Memory pressure: roll back the iterator and discard the frame. */
 				iov_iter_revert(msginfo.msg, len);
 				quic_frame_put(frame);
-				continue;
+				continue; /* Go back to next frame check with len = frame->bytes. */
 			}
 			bytes += frame->bytes;
-			outq->force_delay = delay;
-			crypto->send_offset += frame->bytes;
-			quic_outq_ctrl_tail(sk, frame, delay);
-			len = 1;
+			outq->force_delay = delay; /* Pass the delay flag to outqueue. */
+			crypto->send_offset += frame->bytes; /* Advance crypto offset. */
+			quic_outq_ctrl_tail(sk, frame, delay); /* Queue frame for transmission. */
+			len = 1; /* Reset minimal length guess for next frame check. */
 		}
 		goto out;
 	}
@@ -812,8 +894,8 @@ static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 		goto err;
 	}
 
-	if (flags & MSG_DATAGRAM) {
-		if (!outq->max_datagram_frame_size) {
+	if (flags & MSG_DATAGRAM) { /* Datagram Messages Send Path. */
+		if (!outq->max_datagram_frame_size) { /* Peer doesn't allow datagrams. */
 			err = -EINVAL;
 			goto err;
 		}
@@ -825,6 +907,7 @@ static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 				goto err;
 			}
 		}
+		/* Only sending Datagram frames with a length field is supported for now. */
 		frame = quic_frame_create(sk, QUIC_FRAME_DATAGRAM_LEN, &msg->msg_iter);
 		if (!frame) {
 			err = -EINVAL;
@@ -836,12 +919,14 @@ static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 		goto out;
 	}
 
+	/* Stream Messages Send Path. */
 	stream = quic_sock_send_stream(sk, &sinfo);
 	if (IS_ERR(stream)) {
 		err = PTR_ERR(stream);
 		goto err;
 	}
 
+	/* Logic is similar to handshake messages send path. */
 	msginfo.stream = stream;
 	msginfo.msg = &msg->msg_iter;
 	msginfo.flags = sinfo.stream_flags;
@@ -861,12 +946,12 @@ static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 			}
 		}
 
-		len = quic_outq_stream_append(sk, &msginfo, 0);
+		len = quic_outq_stream_append(sk, &msginfo, 0); /* Probe appendable size. */
 		if (len >= 0) {
 			if (!sk_wmem_schedule(sk, len))
-				continue;
-			bytes += quic_outq_stream_append(sk, &msginfo, 1);
-			len = 1;
+				continue; /* Memory pressure: Retry with new len. */
+			bytes += quic_outq_stream_append(sk, &msginfo, 1); /* Appended. */
+			len = 1; /* Reset minimal length guess for next frame check. */
 			continue;
 		}
 
@@ -888,16 +973,18 @@ static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 		outq->force_delay = delay;
 		quic_outq_stream_tail(sk, frame, delay);
 		len = 1;
+		/* Checking iov_iter_count() after sending allows a FIN-only Stream frame. */
 	} while (iov_iter_count(msginfo.msg) > 0);
 out:
-	err = bytes;
+	err = bytes; /* Return total bytes sent. */
 err:
 	if (err < 0 && !has_hinfo && !(flags & MSG_DATAGRAM))
-		err = sk_stream_error(sk, flags, err);
+		err = sk_stream_error(sk, flags, err); /* Handle error and possibly send SIGPIPE. */
 	release_sock(sk);
 	return err;
 }
 
+/* Wait for an incoming QUIC packet. */
 static int quic_wait_for_packet(struct sock *sk, int nonblock)
 {
 	struct list_head *head = &quic_inq(sk)->recv_list;
@@ -961,24 +1048,29 @@ static int quic_recvmsg(struct sock *sk, struct msghdr *msg, size_t len, int non
 		goto out;
 
 	head = &quic_inq(sk)->recv_list;
+	/* Iterate over each received frame in the list. */
 	list_for_each_entry_safe(frame, next, head, list) {
+		/* Determine how much data to copy: the minimum of the remaining data in the frame
+		 * and the remaining user buffer space.
+		 */
 		copy = min((u32)(frame->len - frame->offset), (u32)(len - copied));
-		if (copy) {
+		if (copy) { /* Copy data from frame to user message iterator. */
 			copy = copy_to_iter(frame->data + frame->offset, copy, &msg->msg_iter);
 			if (!copy) {
-				if (!copied) {
+				if (!copied) { /* Return error only if nothing was coplied. */
 					err = -EFAULT;
 					goto out;
 				}
 				break;
 			}
-			copied += copy;
+			copied += copy; /* Accumulate total copied bytes. */
 		}
 		fin = frame->stream_fin;
 		stream = frame->stream;
 		if (frame->event) {
-			msg->msg_flags |= MSG_NOTIFICATION;
+			msg->msg_flags |= MSG_NOTIFICATION; /* An Event received. */
 		} else if (frame->level) {
+			/* Attach handshake info control message if crypto level present. */
 			hinfo.crypto_level = frame->level;
 			put_cmsg(msg, SOL_QUIC, QUIC_HANDSHAKE_INFO, sizeof(hinfo), &hinfo);
 			if (msg->msg_flags & MSG_CTRUNC) {
@@ -986,30 +1078,39 @@ static int quic_recvmsg(struct sock *sk, struct msghdr *msg, size_t len, int non
 				goto out;
 			}
 		} else if (frame->dgram) {
-			msg->msg_flags |= MSG_DATAGRAM;
+			msg->msg_flags |= MSG_DATAGRAM; /* A Datagram Message received. */
 		}
-		if (flags & MSG_PEEK)
+		if (flags & MSG_PEEK) /* For peek, only look at first frame, don't consume data. */
 			break;
 		if (copy != frame->len - frame->offset) {
+			/* Partial copy, update offset for next read and exit loop. */
 			frame->offset += copy;
 			break;
 		}
 		msg->msg_flags |= MSG_EOR;
-		bytes += frame->len;
+		bytes += frame->len; /* Track bytes fully consumed. */
 		if (frame->event || frame->level || frame->dgram) {
+			/* For these frame types, only read only one frame at a time. */
 			list_del(&frame->list);
 			quic_frame_put(frame);
 			break;
 		}
+		/* A Stream Message received. */
 		freed += frame->len;
 		list_del(&frame->list);
 		quic_frame_put(frame);
 		if (fin) {
+			/* rfc9000#section-3.2:
+			 *
+			 * Once stream data has been delivered, the stream enters the "Data Read"
+			 * state, which is a terminal state.
+			 */
 			stream->recv.state = QUIC_STREAM_RECV_STATE_READ;
 			sinfo.stream_flags |= MSG_STREAM_FIN;
 			break;
 		}
 
+		/* Stop if next frame is not part of this stream or no more data to copy. */
 		if (list_entry_is_head(next, head, list) || copied >= len)
 			break;
 		if (next->event || next->dgram || !next->stream || next->stream != stream)
@@ -1017,25 +1118,30 @@ static int quic_recvmsg(struct sock *sk, struct msghdr *msg, size_t len, int non
 	};
 
 	if (stream) {
+		/* Attach stream info control message if stream data was processed. */
 		sinfo.stream_id = stream->id;
 		put_cmsg(msg, SOL_QUIC, QUIC_STREAM_INFO, sizeof(sinfo), &sinfo);
 		if (msg->msg_flags & MSG_CTRUNC)
 			msg->msg_flags |= sinfo.stream_flags;
 
+		/* Update flow control accounting for freed bytes. */
 		quic_inq_flow_control(sk, stream, freed);
+
+		/* If stream read completed, purge and release resources. */
 		if (stream->recv.state == QUIC_STREAM_RECV_STATE_READ) {
 			quic_inq_stream_list_purge(sk, stream);
 			quic_stream_recv_put(quic_streams(sk), stream, quic_is_serv(sk));
 		}
 	}
 
-	quic_inq_data_read(sk, bytes);
+	quic_inq_data_read(sk, bytes); /* Release receive memory accounting. */
 	err = (int)copied;
 out:
 	release_sock(sk);
 	return err;
 }
 
+/* Wait until a new connection request is available on the listen socket. */
 static int quic_wait_for_accept(struct sock *sk, u32 flags)
 {
 	long timeo = sock_sndtimeo(sk, flags & O_NONBLOCK);
@@ -1074,6 +1180,7 @@ static int quic_wait_for_accept(struct sock *sk, u32 flags)
 	return err;
 }
 
+/* Apply QUIC configuration settings to a socket. */
 static int quic_sock_apply_config(struct sock *sk, struct quic_config *c)
 {
 	struct quic_config *config = quic_config(sk);
@@ -1120,6 +1227,7 @@ static int quic_sock_apply_config(struct sock *sk, struct quic_config *c)
 	return 0;
 }
 
+/* Initialize an accept QUIC socket from a listen socket and a connection request. */
 static int quic_copy_sock(struct sock *nsk, struct sock *sk, struct quic_request_sock *req)
 {
 	struct quic_pnspace *space = quic_pnspace(sk, QUIC_CRYPTO_INITIAL);
@@ -1128,9 +1236,11 @@ static int quic_copy_sock(struct sock *nsk, struct sock *sk, struct quic_request
 	struct quic_transport_param param = {};
 	struct sk_buff *skb, *tmp;
 
+	/* Duplicate ALPN from listen to accept socket for handshake. */
 	if (quic_data_dup(quic_alpn(nsk), quic_alpn(sk)->data, quic_alpn(sk)->len))
 		return -ENOMEM;
 
+	/* Copy socket metadata. */
 	nsk->sk_type = sk->sk_type;
 	nsk->sk_flags = sk->sk_flags;
 	nsk->sk_protocol = IPPROTO_QUIC;
@@ -1143,6 +1253,7 @@ static int quic_copy_sock(struct sock *nsk, struct sock *sk, struct quic_request
 
 	inet_sk(nsk)->pmtudisc = inet_sk(sk)->pmtudisc;
 
+	/* Move matching packets from listen socket's backlog to accept socket. */
 	skb_queue_walk_safe(&inq->backlog_list, skb, tmp) {
 		quic_get_msg_addrs(&packet->saddr, &packet->daddr, skb);
 		quic_packet_get_dcid(&packet->dcid, skb);
@@ -1154,14 +1265,19 @@ static int quic_copy_sock(struct sock *nsk, struct sock *sk, struct quic_request
 		}
 	}
 
+	/* Record the creation time of this accept socket in microseconds.  Used by
+	 * quic_accept_sock_exists() to determine if a packet from sk_backlog of
+	 * listen socket predates this socket.
+	 */
 	space->time = jiffies_to_usecs(jiffies);
 
-	if (sk->sk_family == AF_INET6) /* nsk uses quicv6 ops in this case */
+	if (sk->sk_family == AF_INET6) /* Set IPv6 specific state if applicable. */
 		inet_sk(nsk)->pinet6 = &((struct quic6_sock *)nsk)->inet6;
 
 	quic_inq(nsk)->events = inq->events;
-	quic_paths(nsk)->serv = 1;
+	quic_paths(nsk)->serv = 1; /* Mark this as a server. */
 
+	/* Copy the QUIC settings and transport parameters to accept socket. */
 	quic_sock_apply_config(nsk, quic_config(sk));
 	quic_sock_fetch_transport_param(sk, &param);
 	quic_sock_apply_transport_param(nsk, &param);
@@ -1169,6 +1285,7 @@ static int quic_copy_sock(struct sock *nsk, struct sock *sk, struct quic_request
 	return 0;
 }
 
+/* Finalize setup for an accept QUIC socket. */
 static int quic_accept_sock_setup(struct sock *sk, struct quic_request_sock *req)
 {
 	struct quic_crypto *crypto = quic_crypto(sk, QUIC_CRYPTO_INITIAL);
@@ -1181,12 +1298,14 @@ static int quic_accept_sock_setup(struct sock *sk, struct quic_request_sock *req
 	int err;
 
 	lock_sock(sk);
+	/* Set destination address and resolve route (may also auto-set source address). */
 	quic_path_set_daddr(paths, 0, &req->daddr);
 	err = quic_packet_route(sk);
 	if (err < 0)
 		goto out;
 	quic_set_sk_addr(sk, &req->daddr, false);
 
+	/* Generate and add destination and source connection IDs. */
 	quic_conn_id_generate(&conn_id);
 	err = quic_conn_id_add(quic_source(sk), &conn_id, 0, sk);
 	if (err)
@@ -1195,23 +1314,32 @@ static int quic_accept_sock_setup(struct sock *sk, struct quic_request_sock *req
 	if (err)
 		goto out;
 
+	/* Install initial encryption keys for handshake. */
 	err = quic_crypto_initial_keys_install(crypto, &req->dcid, req->version, 1);
 	if (err)
 		goto out;
+	/* Record the QUIC version offered by the peer. May later change if Compatible Version
+	 * Negotiation is triggered.
+	 */
 	packet->version = req->version;
 
+	/* Save original DCID and retry DCID for building transport parameters, and identifying
+	 * the connection in quic_sock_lookup().
+	 */
 	paths->orig_dcid = req->orig_dcid;
 	if (req->retry) {
 		paths->retry = 1;
 		paths->retry_dcid = req->dcid;
 	}
 
+	/* Add socket to hash table, change state to ESTABLISHING, and start idle timer. */
 	err = sk->sk_prot->hash(sk);
 	if (err)
 		goto out;
 	quic_set_state(sk, QUIC_SS_ESTABLISHING);
 	quic_timer_start(sk, QUIC_TIMER_IDLE, inq->timeout);
 
+	/* Process all packets in backlog list of this socket. */
 	__skb_queue_head_init(&tmpq);
 	skb_queue_splice_init(&inq->backlog_list, &tmpq);
 	skb = __skb_dequeue(&tmpq);
@@ -1303,11 +1431,11 @@ static int quic_sock_set_event(struct sock *sk, struct quic_event_option *event,
 	if (!event->type || event->type > QUIC_EVENT_MAX)
 		return -EINVAL;
 
-	if (event->on) {
+	if (event->on) { /* Enable the specified event by setting the corresponding bit. */
 		inq->events |= BIT(event->type);
 		return 0;
 	}
-	inq->events &= ~BIT(event->type);
+	inq->events &= ~BIT(event->type); /* Disable the specified event by clearing the bit. */
 	return 0;
 }
 
@@ -1324,6 +1452,12 @@ static int quic_sock_stream_reset(struct sock *sk, struct quic_errinfo *info, u3
 	if (IS_ERR(stream))
 		return PTR_ERR(stream);
 
+	/* rfc9000#section-3.1:
+	 *
+	 * From any state that is one of "Ready", "Send", or "Data Sent", an application can
+	 * signal that it wishes to abandon transmission of stream data.  The endpoint sends a
+	 * RESET_STREAM frame, which causes the stream to enter the "Reset Sent" state.
+	 */
 	if (stream->send.state >= QUIC_STREAM_SEND_STATE_RECVD)
 		return -EINVAL;
 
@@ -1349,10 +1483,17 @@ static int quic_sock_stream_stop_sending(struct sock *sk, struct quic_errinfo *i
 	if (IS_ERR(stream))
 		return PTR_ERR(stream);
 
+	/* rfc9000#section-3.3:
+	 *
+	 * A receiver MAY send a STOP_SENDING frame in any state where it has not received a
+	 * RESET_STREAM frame -- that is, states other than "Reset Recvd" or "Reset Read".
+	 * However, there is little value in sending a STOP_SENDING frame in the "Data Recvd"
+	 * state, as all stream data has been received.
+	 */
 	if (stream->recv.state >= QUIC_STREAM_RECV_STATE_RECVD)
 		return -EINVAL;
 
-	if (stream->send.stop_sent)
+	if (stream->send.stop_sent) /* Defer sending; a STOP_SENDING frame is already in flight. */
 		return -EAGAIN;
 
 	return quic_outq_transmit_frame(sk, QUIC_FRAME_STOP_SENDING, info, 0, false);
@@ -1370,11 +1511,18 @@ static int quic_sock_set_connection_id(struct sock *sk,
 
 	if (info->dest) {
 		id_set = quic_dest(sk);
+		/* The alternative connection ID is reserved for the migration path.  Until the
+		 * migration completes and this path becomes active, no modifications should be
+		 * made to the destination connection ID set until then.
+		 */
 		if (id_set->alt)
 			return -EAGAIN;
 	}
 	old = quic_conn_id_active(id_set);
-	if (info->active) {
+	if (info->active) { /* Change active connection ID. */
+		/* Ensure the new active ID is greater than the current one.  All lower-numbered
+		 * IDs are implicitly treated as used.
+		 */
 		if (info->active <= quic_conn_id_number(old))
 			return -EINVAL;
 		active = quic_conn_id_find(id_set, info->active);
@@ -1386,15 +1534,17 @@ static int quic_sock_set_connection_id(struct sock *sk,
 	if (!info->prior_to)
 		return 0;
 
+	/* Retire connection IDs up to (but not including) 'prior_to'. */
 	number = info->prior_to;
 	last = quic_conn_id_last_number(id_set);
 	first = quic_conn_id_first_number(id_set);
 	if (number > last || number <= first) {
+		/* Invalid retirement range: revert any active ID change. */
 		quic_conn_id_set_active(id_set, old);
 		return -EINVAL;
 	}
 
-	if (!info->dest) {
+	if (!info->dest) { /* Retire source connection IDs by sending NEW_CONNECTION_ID frames. */
 		if (quic_outq_transmit_new_conn_id(sk, number, 0, false)) {
 			quic_conn_id_set_active(id_set, old);
 			return -ENOMEM;
@@ -1402,6 +1552,7 @@ static int quic_sock_set_connection_id(struct sock *sk,
 		return 0;
 	}
 
+	/* Retire destination connection IDs by sending RETIRE_CONNECTION_ID frames. */
 	if (quic_outq_transmit_retire_conn_id(sk, number, 0, false)) {
 		quic_conn_id_set_active(id_set, old);
 		return -ENOMEM;
@@ -1419,12 +1570,13 @@ static int quic_sock_set_connection_close(struct sock *sk, struct quic_connectio
 	if (len < sizeof(*close))
 		return -EINVAL;
 
+	/* Remaining length is the length of the phrase (if any). */
 	len -= sizeof(*close);
 	if (len > QUIC_CLOSE_PHRASE_MAX_LEN + 1)
 		return -EINVAL;
 
 	if (len) {
-		if (close->phrase[len - 1])
+		if (close->phrase[len - 1]) /* Phrase must be ended with '\0'. */
 			return -EINVAL;
 		data = kmemdup(close->phrase, len, GFP_KERNEL);
 		if (!data)
@@ -1445,10 +1597,14 @@ static int quic_sock_connection_migrate(struct sock *sk, struct sockaddr *addr, 
 
 	if (quic_get_user_addr(sk, &a, addr, addr_len))
 		return -EINVAL;
+	/* Reject if connection is closed or address matches the current path's source. */
 	if (quic_is_closed(sk) || quic_cmp_sk_addr(sk, quic_path_saddr(paths, 0), &a))
 		return -EINVAL;
 
-	if (!quic_is_established(sk)) { /* set preferred address param */
+	if (!quic_is_established(sk)) {
+		/* Allows setting a preferred address before the handshake completes.
+		 * The address may use a different address family (e.g., IPv4 vs IPv6).
+		 */
 		if (!quic_is_serv(sk) || paths->disable_saddr_alt)
 			return -EINVAL;
 		paths->pref_addr = 1;
@@ -1456,24 +1612,29 @@ static int quic_sock_connection_migrate(struct sock *sk, struct sockaddr *addr, 
 		return 0;
 	}
 
+	/* Migration requires matching address family and a valid port. */
 	if (a.sa.sa_family != quic_path_saddr(paths, 0)->sa.sa_family || !a.v4.sin_port)
 		return -EINVAL;
+	/* Reject if a migration is in progress or a preferred address is already active. */
 	if (!quic_path_alt_state(paths, QUIC_PATH_ALT_NONE) || paths->pref_addr)
 		return -EAGAIN;
 
+	/* Setup path 1 with the new source address and existing destination address. */
 	quic_path_set_saddr(paths, 1, &a);
 	quic_path_set_daddr(paths, 1, quic_path_daddr(paths, 0));
 
+	/* Configure routing and bind to the new source address. */
 	if (quic_packet_config(sk, 0, 1))
 		return -EINVAL;
 	if (quic_path_bind(sk, paths, 1))
 		return -EINVAL;
-	err = quic_outq_probe_path_alt(sk, false);
+	err = quic_outq_probe_path_alt(sk, false); /* Start connection migration using new path. */
 	if (err)
-		quic_path_free(sk, paths, 1);
+		quic_path_free(sk, paths, 1); /* Cleanup path 1 on failure. */
 	return err;
 }
 
+/* Validate and copy QUIC transport parameters. */
 static int quic_param_check_and_copy(struct quic_transport_param *p,
 				     struct quic_transport_param *param)
 {
@@ -1570,6 +1731,9 @@ static int quic_sock_set_transport_param(struct sock *sk, struct quic_transport_
 	if (len < sizeof(param) || quic_is_established(sk))
 		return -EINVAL;
 
+	/* Manually setting remote transport parameters is required only to enable 0-RTT data
+	 * transmission during handshake initiation.
+	 */
 	if (p->remote && !quic_is_establishing(sk))
 		return -EINVAL;
 
@@ -1616,8 +1780,12 @@ static int quic_sock_set_alpn(struct sock *sk, u8 *data, u32 len)
 static int quic_sock_set_token(struct sock *sk, void *data, u32 len)
 {
 	if (quic_is_serv(sk)) {
+		/* For servers, send a regular token to client via NEW_TOKEN frames after
+		 * handshake.
+		 */
 		if (!quic_is_established(sk))
 			return -EINVAL;
+		/* Defer sending; a NEW_TOKEN frame is already in flight. */
 		if (quic_outq(sk)->token_pending)
 			return -EAGAIN;
 		if (quic_outq_transmit_frame(sk, QUIC_FRAME_NEW_TOKEN, NULL, 0, false))
@@ -1625,6 +1793,7 @@ static int quic_sock_set_token(struct sock *sk, void *data, u32 len)
 		return 0;
 	}
 
+	/* For clients, use the regular token next time before handshake. */
 	if (!len || len > QUIC_TOKEN_MAX_LEN)
 		return -EINVAL;
 
@@ -1675,22 +1844,32 @@ static int quic_sock_set_crypto_secret(struct sock *sk, struct quic_crypto_secre
 	if (!quic_is_establishing(sk) || len != sizeof(*secret))
 		return -EINVAL;
 
+	/* Accept only supported levels: Handshake, 0-RTT (Early), or 1-RTT (App).  The initial
+	 * secret was already derived in-kernel using the original destination connection ID.
+	 */
 	if (secret->level != QUIC_CRYPTO_APP &&
 	    secret->level != QUIC_CRYPTO_EARLY &&
 	    secret->level != QUIC_CRYPTO_HANDSHAKE)
 		return -EINVAL;
 
+	/* Install keys into the crypto context. */
 	crypto = quic_crypto(sk, secret->level);
 	err = quic_crypto_set_secret(crypto, secret, packet->version, 0);
 	if (err)
 		return err;
 
 	if (secret->level != QUIC_CRYPTO_APP) {
-		if (secret->send) { /* 0rtt or handshake send key is ready */
-			if (secret->level == QUIC_CRYPTO_EARLY) /* 0rtt send key is ready */
+		if (secret->send) { /* 0-RTT or Handshake send key is ready. */
+			/* If 0-RTT send key is ready, set data_level to EARLY.  This allows
+			 * quic_outq_transmit_stream() to emit stream frames in 0-RTT packets.
+			 */
+			if (secret->level == QUIC_CRYPTO_EARLY)
 				outq->data_level = QUIC_CRYPTO_EARLY;
 			return 0;
 		}
+		/* 0-RTT or Handshake receive key is ready; decrypt and process all buffered
+		 * 0-RTT or Handshake packets.
+		 */
 		__skb_queue_head_init(&tmpq);
 		skb_queue_splice_init(&inq->backlog_list, &tmpq);
 		skb = __skb_dequeue(&tmpq);
@@ -1701,20 +1880,30 @@ static int quic_sock_set_crypto_secret(struct sock *sk, struct quic_crypto_secre
 		return 0;
 	}
 
-	if (secret->send) { /* app send key is ready */
+	if (secret->send) {
+		/* App send key is ready, set data_level to APP. This allows
+		 * quic_outq_transmit_stream() to emit stream frames in 1-RTT packets.
+		 */
 		outq->data_level = QUIC_CRYPTO_APP;
 		if (!crypto->recv_ready)
 			return 0;
-		goto out;
+		goto out; /* Both send and receive keys are ready; handshake complete. */
 	}
 
-	/* app recv key is ready */
-	quic_data_free(quic_ticket(sk)); /* clean it to receive new session ticket msg */
-	quic_data_free(quic_token(sk)); /* clean it to receive new token */
+	/* Free previously stored TLS session ticket and QUIC token data, allowing reception of
+	 * fresh NewSessionTicket message and regular token in NEW_TOKEN frames from the peer
+	 * during handshake completion.
+	 */
+	quic_data_free(quic_ticket(sk));
+	quic_data_free(quic_token(sk));
 	if (!list_empty(&inq->early_list)) {
+		/* If any 0-RTT data was buffered (early_list), move it to the main receive
+		 * list (recv_list) so it becomes available to the application.
+		 */
 		list_splice_init(&inq->early_list, &inq->recv_list);
 		sk->sk_data_ready(sk);
 	}
+	/* App receive key is ready; decrypt and process all buffered App/1-RTT packets. */
 	__skb_queue_head_init(&tmpq);
 	skb_queue_splice_init(&inq->backlog_list, &tmpq);
 	skb = __skb_dequeue(&tmpq);
@@ -1723,28 +1912,34 @@ static int quic_sock_set_crypto_secret(struct sock *sk, struct quic_crypto_secre
 		skb = __skb_dequeue(&tmpq);
 	}
 
-	/* enter established only when both send and recv keys are ready */
 	if (!crypto->send_ready)
 		return 0;
+
+	/* Both send and receive keys are ready; handshake complete. */
 	if (!quic_is_serv(sk))
 		goto out;
 
+	/* Clean up transmitted handshake packets. */
 	quic_outq_transmitted_sack(sk, QUIC_CRYPTO_HANDSHAKE, QUIC_PN_MAP_MAX_PN, 0, -1, 0);
 	if (paths->pref_addr) {
+		/* If a preferred address is set, bind to it to allow client use at any time. */
 		err = quic_path_bind(sk, paths, 1);
 		if (err)
 			return err;
 	}
 
+	/* Send NEW_TOKEN and HANDSHAKE_DONE frames (server only). */
 	if (quic_outq_transmit_frame(sk, QUIC_FRAME_NEW_TOKEN, NULL, 0, true))
 		return -ENOMEM;
 	if (quic_outq_transmit_frame(sk, QUIC_FRAME_HANDSHAKE_DONE, NULL, 0, true))
 		return -ENOMEM;
 out:
+	/* Send NEW_CONNECTION_ID frames to ensure maximum connection IDs are added. */
 	if (quic_outq_transmit_new_conn_id(sk, 0, 0, false))
 		return -ENOMEM;
-	quic_timer_start(sk, QUIC_TIMER_PMTU, c->plpmtud_probe_interval);
+	/* Enter established state, and start PLPMTUD timer and Path Challege timer. */
 	quic_set_state(sk, QUIC_SS_ESTABLISHED);
+	quic_timer_start(sk, QUIC_TIMER_PMTU, c->plpmtud_probe_interval);
 	quic_timer_reset_path(sk);
 	return 0;
 }
@@ -1854,11 +2049,11 @@ static int quic_sock_get_event(struct sock *sk, u32 len, sockptr_t optval, sockp
 
 	if (!event.type || event.type > QUIC_EVENT_MAX)
 		return -EINVAL;
+	/* Set on if the corresponding event bit is set. */
 	event.on = !!(inq->events & BIT(event.type));
 
 	if (copy_to_sockptr(optlen, &len, sizeof(len)) || copy_to_sockptr(optval, &event, len))
 		return -EFAULT;
-
 	return 0;
 }
 
@@ -1874,17 +2069,18 @@ static int quic_sock_stream_open(struct sock *sk, u32 len, sockptr_t optval, soc
 	if (copy_from_sockptr(&sinfo, optval, len))
 		return -EFAULT;
 
-	if (sinfo.stream_flags & ~QUIC_MSG_STREAM_FLAGS)
+	if (sinfo.stream_flags & ~QUIC_MSG_STREAM_FLAGS) /* Reject unsupported flags. */
 		return -EINVAL;
 
+	/* If stream_id is -1, assign the next available ID (bidi or uni). */
 	if (sinfo.stream_id == -1) {
 		sinfo.stream_id = streams->send.next_bidi_stream_id;
 		if (sinfo.stream_flags & MSG_STREAM_UNI)
 			sinfo.stream_id = streams->send.next_uni_stream_id;
 	}
-	sinfo.stream_flags |= MSG_STREAM_NEW;
+	sinfo.stream_flags |= MSG_STREAM_NEW; /* Mark stream as to be created. */
 
-	stream = quic_sock_send_stream(sk, &sinfo);
+	stream = quic_sock_send_stream(sk, &sinfo); /* Actually create or find the stream. */
 	if (IS_ERR(stream))
 		return PTR_ERR(stream);
 
@@ -1908,6 +2104,10 @@ static int quic_sock_get_connection_id(struct sock *sk, u32 len, sockptr_t optva
 	id_set = info.dest ? quic_dest(sk) : quic_source(sk);
 	active = quic_conn_id_active(id_set);
 	info.active = quic_conn_id_number(active);
+	/* Use prior_to to indicate the smallest issued connection ID number.  Combined with
+	 * the active_connection_id_limit (from the peer’s transport parameters), this allows
+	 * userspace to infer the full set of valid connection IDs.
+	 */
 	info.prior_to = quic_conn_id_first_number(id_set);
 
 	if (copy_to_sockptr(optlen, &len, sizeof(len)) || copy_to_sockptr(optval, &info, len))
@@ -1926,7 +2126,7 @@ static int quic_sock_get_connection_close(struct sock *sk, u32 len, sockptr_t op
 	phrase = outq->close_phrase;
 	if (phrase)
 		phrase_len = strlen(phrase) + 1;
-	if (len < sizeof(*close) + phrase_len)
+	if (len < sizeof(*close) + phrase_len) /* Check if output buffer is large enough. */
 		return -EINVAL;
 
 	len = sizeof(*close) + phrase_len;
@@ -2018,6 +2218,7 @@ static int quic_sock_get_session_ticket(struct sock *sk, u32 len,
 	union quic_addr a;
 
 	if (!quic_is_serv(sk)) {
+		/* For clients, retrieve the received TLS NewSessionTicket message. */
 		if (quic_is_established(sk) && !crypto->ticket_ready)
 			tlen = 0;
 		goto out;
@@ -2026,9 +2227,13 @@ static int quic_sock_get_session_ticket(struct sock *sk, u32 len,
 	if (quic_is_closed(sk))
 		return -EINVAL;
 
+	/* For servers, return the master key used for session resumption.  If already set,
+	 * reuse it.
+	 */
 	if (tlen)
 		goto out;
 
+	/* If not already set, derive the key using the peer address. */
 	crypto = quic_crypto(sk, QUIC_CRYPTO_INITIAL);
 	memcpy(&a, quic_path_daddr(quic_paths(sk), 0), sizeof(a));
 	a.v4.sin_port = 0;
@@ -2172,7 +2377,7 @@ EXPORT_SYMBOL_GPL(quic_kernel_getsockopt);
 
 static void quic_release_cb(struct sock *sk)
 {
-	/* similar to tcp_release_cb */
+	/* Similar to tcp_release_cb(). */
 	unsigned long nflags, flags = smp_load_acquire(&sk->sk_tsq_flags);
 
 	do {

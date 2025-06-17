@@ -23,7 +23,7 @@ void quic_timer_sack_handler(struct sock *sk)
 	if (quic_is_closed(sk))
 		return;
 
-	if (inq->sack_flag == QUIC_SACK_FLAG_NONE) {
+	if (inq->sack_flag == QUIC_SACK_FLAG_NONE) { /* Idle timer expired, close the connection. */
 		quic_inq_event_recv(sk, QUIC_EVENT_CONNECTION_CLOSE, &close);
 		quic_set_state(sk, QUIC_SS_CLOSED);
 
@@ -32,12 +32,12 @@ void quic_timer_sack_handler(struct sock *sk)
 	}
 
 	if (inq->sack_flag == QUIC_SACK_FLAG_APP) {
-		space->need_sack = 1;
-		space->sack_path = 0;
+		space->need_sack = 1; /* Request an APP-level ACK frame to be generated. */
+		space->sack_path = 0; /* Send delayed ACK only on the active path. */
 	}
 
-	quic_outq_transmit(sk);
-	inq->sack_flag = QUIC_SACK_FLAG_NONE;
+	quic_outq_transmit(sk); /* Transmit necessary frames, including ACKs or others queued. */
+	inq->sack_flag = QUIC_SACK_FLAG_NONE; /* Start as idle timer. */
 	quic_timer_start(sk, QUIC_TIMER_IDLE, inq->timeout);
 }
 
@@ -95,14 +95,19 @@ void quic_timer_path_handler(struct sock *sk)
 	if (quic_is_closed(sk))
 		return;
 
+	/* PATH_CHALLENGE frames are reused to keep the new path alive for NAT rebind.
+	 * Skip probe attempt counting unless the path is explicitly in PROBING state.
+	 */
 	if (!quic_path_alt_state(paths, QUIC_PATH_ALT_PROBING))
 		goto out;
 
+	/* Increment probe attempts; give up if exceeded max allowed. */
 	if (paths->alt_probes++ < QUIC_MAX_ALT_PROBES) {
 		path = 1;
 		goto out;
 	}
 
+	/* Probing failed; drop the alternate path. */
 	quic_path_free(sk, paths, 1);
 
 out:
@@ -133,6 +138,7 @@ void quic_timer_reset_path(struct sock *sk)
 	struct quic_cong *cong = quic_cong(sk);
 	u64 timeout = cong->pto * 2;
 
+	/* Calculate timeout based on cong.pto, but enforce a lower bound. */
 	if (timeout < QUIC_MIN_PATH_TIMEOUT)
 		timeout = QUIC_MIN_PATH_TIMEOUT;
 	quic_timer_reset(sk, QUIC_TIMER_PATH, timeout);
@@ -242,6 +248,7 @@ void quic_timer_init(struct sock *sk)
 	timer_setup(quic_timer(sk, QUIC_TIMER_PMTU), quic_timer_pmtu_timeout, 0);
 
 	hr = quic_timer(sk, QUIC_TIMER_PACE);
+	/* Use hrtimer for pace timer, ensuring precise control over send timing. */
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 13, 0)
 	hrtimer_setup(hr, quic_timer_pace_timeout, CLOCK_MONOTONIC, HRTIMER_MODE_ABS_PINNED_SOFT);
 #else

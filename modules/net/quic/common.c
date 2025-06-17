@@ -113,6 +113,7 @@ union quic_var {
 	__be64	be64;
 };
 
+/* Returns the number of bytes required to encode a QUIC variable-length integer. */
 u8 quic_var_len(u64 n)
 {
 	if (n <= QUIC_VARINT_1BYTE_MAX)
@@ -124,6 +125,7 @@ u8 quic_var_len(u64 n)
 	return 8;
 }
 
+/* Decodes a QUIC variable-length integer from a buffer. */
 u8 quic_get_var(u8 **pp, u32 *plen, u64 *val)
 {
 	union quic_var n = {};
@@ -166,6 +168,7 @@ u8 quic_get_var(u8 **pp, u32 *plen, u64 *val)
 	return len;
 }
 
+/* Reads a fixed-length integer from the buffer. */
 u32 quic_get_int(u8 **pp, u32 *plen, u64 *val, u32 len)
 {
 	union quic_var n;
@@ -217,6 +220,7 @@ u32 quic_get_data(u8 **pp, u32 *plen, u8 *data, u32 len)
 	return len;
 }
 
+/* Encodes a value into the QUIC variable-length integer format. */
 u8 *quic_put_var(u8 *p, u64 num)
 {
 	union quic_var n;
@@ -243,6 +247,7 @@ u8 *quic_put_var(u8 *p, u64 num)
 	return p + 8;
 }
 
+/* Writes a fixed-length integer to the buffer in network byte order. */
 u8 *quic_put_int(u8 *p, u64 num, u8 len)
 {
 	union quic_var n;
@@ -264,6 +269,7 @@ u8 *quic_put_int(u8 *p, u64 num, u8 len)
 	}
 }
 
+/* Encodes a value as a variable-length integer with explicit length. */
 u8 *quic_put_varint(u8 *p, u64 num, u8 len)
 {
 	union quic_var n;
@@ -296,6 +302,7 @@ u8 *quic_put_data(u8 *p, u8 *data, u32 len)
 	return p + len;
 }
 
+/* Writes a transport parameter as two varints: ID and value length, followed by value. */
 u8 *quic_put_param(u8 *p, u16 id, u64 value)
 {
 	p = quic_put_var(p, id);
@@ -303,6 +310,7 @@ u8 *quic_put_param(u8 *p, u16 id, u64 value)
 	return quic_put_var(p, value);
 }
 
+/* Reads a QUIC transport parameter value. */
 u8 quic_get_param(u64 *pdest, u8 **pp, u32 *plen)
 {
 	u64 valuelen;
@@ -319,6 +327,10 @@ u8 quic_get_param(u64 *pdest, u8 **pp, u32 *plen)
 	return (u8)valuelen;
 }
 
+/* rfc9000#section-a.3: DecodePacketNumber()
+ *
+ * Reconstructs the full packet number from a truncated one.
+ */
 s64 quic_get_num(s64 max_pkt_num, s64 pkt_num, u32 n)
 {
 	s64 expected = max_pkt_num + 1;
@@ -369,6 +381,13 @@ int quic_data_append(struct quic_data *to, u8 *data, u32 len)
 	return 0;
 }
 
+/* Check whether 'd2' is equal to any element inside the list 'd1'.
+ *
+ * 'd1' is assumed to be a sequence of length-prefixed elements. Each element
+ * is compared to 'd2' using 'quic_data_cmp()'.
+ *
+ * Returns 1 if a match is found, 0 otherwise.
+ */
 int quic_data_has(struct quic_data *d1, struct quic_data *d2)
 {
 	struct quic_data d;
@@ -385,6 +404,13 @@ int quic_data_has(struct quic_data *d1, struct quic_data *d2)
 	return 0;
 }
 
+/* Check if any element of 'd1' is present in the list 'd2'.
+ *
+ * Iterates through each element in 'd1', and uses 'quic_data_has()' to check
+ * for its presence in 'd2'.
+ *
+ * Returns 1 if any match is found, 0 otherwise.
+ */
 int quic_data_match(struct quic_data *d1, struct quic_data *d2)
 {
 	struct quic_data d;
@@ -401,6 +427,12 @@ int quic_data_match(struct quic_data *d1, struct quic_data *d2)
 	return 0;
 }
 
+/* Serialize a list of 'quic_data' elements into a comma-separated string.
+ *
+ * Each element in 'from' is length-prefixed. This function copies their raw
+ * content into the output buffer 'to', inserting commas in between. The
+ * resulting string length is written to '*plen'.
+ */
 void quic_data_to_string(u8 *to, u32 *plen, struct quic_data *from)
 {
 	struct quic_data d;
@@ -418,6 +450,12 @@ void quic_data_to_string(u8 *to, u32 *plen, struct quic_data *from)
 	*plen = data - to;
 }
 
+/* Parse a comma-separated string into a 'quic_data' list format.
+ *
+ * Each comma-separated token is turned into a length-prefixed element. The
+ * first byte of each element stores the length (minus one). Elements are
+ * stored in 'to->data', and 'to->len' is updated.
+ */
 void quic_data_from_string(struct quic_data *to, u8 *from, u32 len)
 {
 	struct quic_data d;

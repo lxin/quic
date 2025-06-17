@@ -19,33 +19,49 @@
 #include "family.h"
 
 struct quic_addr_family_ops {
-	u32	iph_len;
-	int	(*is_any_addr)(union quic_addr *addr);
+	u32	iph_len;				/* Network layer header length */
+	int	(*is_any_addr)(union quic_addr *addr);	/* Check if the addr is a wildcard (ANY) */
 
+	/* Initialize UDP tunnel socket configuration */
 	void	(*udp_conf_init)(struct sock *sk, struct udp_port_cfg *conf, union quic_addr *addr);
+	/* Perform IP route lookup */
 	int	(*flow_route)(struct sock *sk, union quic_addr *da, union quic_addr *sa,
 			      struct flowi *fl);
+	/* Transmit packet through UDP tunnel socket */
 	void	(*lower_xmit)(struct sock *sk, struct sk_buff *skb, struct flowi *fl);
 
+	/* Extract source and destination IP addresses from the packet */
 	void	(*get_msg_addrs)(union quic_addr *da, union quic_addr *sa, struct sk_buff *skb);
+	/* Dump the address into a seq_file (e.g., for /proc/net/quic/sks) */
 	void	(*seq_dump_addr)(struct seq_file *seq, union quic_addr *addr);
+	 /* Extract MTU information from an ICMP packet */
 	int	(*get_mtu_info)(struct sk_buff *skb, u32 *info);
+	/* Extract ECN bits from the packet */
 	u8	(*get_msg_ecn)(struct sk_buff *skb);
 };
 
 struct quic_proto_family_ops {
+	/* Validate and convert user address from bind/connect/setsockopt */
 	int	(*get_user_addr)(struct sock *sk, union quic_addr *a, struct sockaddr *addr,
 				 int addr_len);
+	/* Get the 'preferred_address' from transport parameters (rfc9000#section-18.2) */
 	void	(*get_pref_addr)(struct sock *sk, union quic_addr *addr, u8 **pp, u32 *plen);
+	/* Set the 'preferred_address' into transport parameters (rfc9000#section-18.2) */
 	void	(*set_pref_addr)(struct sock *sk, u8 *p, union quic_addr *addr);
 
+	/* Compare two addresses considering socket family and wildcard (ANY) match */
 	bool	(*cmp_sk_addr)(struct sock *sk, union quic_addr *a, union quic_addr *addr);
+	/* Get socket's local or peer address (getsockname/getpeername) */
 	int	(*get_sk_addr)(struct socket *sock, struct sockaddr *addr, int peer);
+	/* Set socket's source or destination address */
 	void	(*set_sk_addr)(struct sock *sk, union quic_addr *addr, bool src);
+	/* Set ECN bits for the socket */
 	void	(*set_sk_ecn)(struct sock *sk, u8 ecn);
 
+	/* Handle getsockopt() for non-SOL_QUIC levels */
 	int	(*getsockopt)(struct sock *sk, int level, int optname, char __user *optval,
 			      int __user *optlen);
+	/* Handle setsockopt() for non-SOL_QUIC levels */
 	int	(*setsockopt)(struct sock *sk, int level, int optname, sockptr_t optval,
 			      unsigned int optlen);
 };
@@ -248,7 +264,7 @@ static int quic_v4_get_mtu_info(struct sk_buff *skb, u32 *info)
 		return 0;
 	}
 
-	/* can't be handled without outer iphdr known, leave it to udp_err */
+	/* Defer other types' processing to UDP error handler. */
 	return 1;
 }
 
@@ -262,7 +278,7 @@ static int quic_v6_get_mtu_info(struct sk_buff *skb, u32 *info)
 		return 0;
 	}
 
-	/* can't be handled without outer ip6hdr known, leave it to udpv6_err */
+	/* Defer other types' processing to UDP error handler. */
 	return 1;
 }
 
@@ -349,7 +365,8 @@ static void quic_v4_get_pref_addr(struct sock *sk, union quic_addr *addr, u8 **p
 	p += QUIC_ADDR4_LEN;
 	memcpy(&addr->v4.sin_port, p, QUIC_PORT_LEN);
 	p += QUIC_PORT_LEN;
-	p += QUIC_ADDR6_LEN; /* skip ipv6 address */
+	/* Skip over IPv6 address and port,  not used for AF_INET sockets. */
+	p += QUIC_ADDR6_LEN;
 	p += QUIC_PORT_LEN;
 
 	addr->v4.sin_family = AF_INET;
@@ -361,8 +378,10 @@ static void quic_v6_get_pref_addr(struct sock *sk, union quic_addr *addr, u8 **p
 {
 	u8 *p = *pp;
 
-	p += QUIC_ADDR4_LEN; /* try ipv6 address first */
+	/* Skip over IPv4 address and port. */
+	p += QUIC_ADDR4_LEN;
 	p += QUIC_PORT_LEN;
+	/* Try to use IPv6 address and port first. */
 	memcpy(&addr->v6.sin6_addr, p, QUIC_ADDR6_LEN);
 	p += QUIC_ADDR6_LEN;
 	memcpy(&addr->v6.sin6_port, p, QUIC_PORT_LEN);
@@ -376,6 +395,7 @@ static void quic_v6_get_pref_addr(struct sock *sk, union quic_addr *addr, u8 **p
 		return;
 	}
 
+	/* Fallback to IPv4 if IPv6 address is not usable. */
 	quic_v4_get_pref_addr(sk, addr, pp, plen);
 }
 

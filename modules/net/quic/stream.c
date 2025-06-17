@@ -15,6 +15,7 @@
 #include "common.h"
 #include "stream.h"
 
+/* Check if a stream ID is valid for sending. */
 static bool quic_stream_id_send(s64 stream_id, bool is_serv)
 {
 	u8 type = (stream_id & QUIC_STREAM_TYPE_MASK);
@@ -28,6 +29,7 @@ static bool quic_stream_id_send(s64 stream_id, bool is_serv)
 	return true;
 }
 
+/* Check if a stream ID is valid for receiving. */
 static bool quic_stream_id_recv(s64 stream_id, bool is_serv)
 {
 	u8 type = (stream_id & QUIC_STREAM_TYPE_MASK);
@@ -41,11 +43,13 @@ static bool quic_stream_id_recv(s64 stream_id, bool is_serv)
 	return true;
 }
 
+/* Check if a stream ID was initiated locally. */
 static bool quic_stream_id_local(s64 stream_id, u8 is_serv)
 {
 	return is_serv ^ !(stream_id & QUIC_STREAM_TYPE_SERVER_MASK);
 }
 
+/* Check if a stream ID represents a unidirectional stream. */
 static bool quic_stream_id_uni(s64 stream_id)
 {
 	return stream_id & QUIC_STREAM_TYPE_UNI_MASK;
@@ -77,6 +81,7 @@ static void quic_stream_delete(struct quic_stream *stream)
 	kfree(stream);
 }
 
+/* Create and register new streams for sending. */
 static struct quic_stream *quic_stream_send_create(struct quic_stream_table *streams,
 						   s64 max_stream_id, u8 is_serv)
 {
@@ -87,6 +92,9 @@ static struct quic_stream *quic_stream_send_create(struct quic_stream_table *str
 	if (quic_stream_id_uni(max_stream_id))
 		stream_id = streams->send.next_uni_stream_id;
 
+	/* rfc9000#section-2.1: A stream ID that is used out of order results in all streams
+	 * of that type with lower-numbered stream IDs also being opened.
+	 */
 	while (stream_id <= max_stream_id) {
 		stream = kzalloc(sizeof(*stream), GFP_ATOMIC);
 		if (!stream)
@@ -124,6 +132,7 @@ static struct quic_stream *quic_stream_send_create(struct quic_stream_table *str
 	return stream;
 }
 
+/* Create and register new streams for receiving. */
 static struct quic_stream *quic_stream_recv_create(struct quic_stream_table *streams,
 						   s64 max_stream_id, u8 is_serv)
 {
@@ -134,6 +143,9 @@ static struct quic_stream *quic_stream_recv_create(struct quic_stream_table *str
 	if (quic_stream_id_uni(max_stream_id))
 		stream_id = streams->recv.next_uni_stream_id;
 
+	/* rfc9000#section-2.1: A stream ID that is used out of order results in all streams
+	 * of that type with lower-numbered stream IDs also being opened.
+	 */
 	while (stream_id <= max_stream_id) {
 		stream = kzalloc(sizeof(*stream), GFP_ATOMIC);
 		if (!stream)
@@ -172,6 +184,7 @@ static struct quic_stream *quic_stream_recv_create(struct quic_stream_table *str
 	return stream;
 }
 
+/* Check if a send stream ID is already closed. */
 static bool quic_stream_id_send_closed(struct quic_stream_table *streams, s64 stream_id)
 {
 	if (quic_stream_id_uni(stream_id)) {
@@ -184,6 +197,7 @@ static bool quic_stream_id_send_closed(struct quic_stream_table *streams, s64 st
 	return false;
 }
 
+/* Check if a receive stream ID is already closed. */
 static bool quic_stream_id_recv_closed(struct quic_stream_table *streams, s64 stream_id)
 {
 	if (quic_stream_id_uni(stream_id)) {
@@ -196,6 +210,7 @@ static bool quic_stream_id_recv_closed(struct quic_stream_table *streams, s64 st
 	return false;
 }
 
+/* Check if a receive stream ID exceeds would exceed local's limits. */
 static bool quic_stream_id_recv_exceeds(struct quic_stream_table *streams, s64 stream_id)
 {
 	if (quic_stream_id_uni(stream_id)) {
@@ -208,6 +223,7 @@ static bool quic_stream_id_recv_exceeds(struct quic_stream_table *streams, s64 s
 	return false;
 }
 
+/* Check if a send stream ID would exceed peer's limits. */
 bool quic_stream_id_send_exceeds(struct quic_stream_table *streams, s64 stream_id)
 {
 	u64 nstreams;
@@ -234,6 +250,7 @@ bool quic_stream_id_send_exceeds(struct quic_stream_table *streams, s64 stream_i
 	return false;
 }
 
+/* Get or create a send stream by ID. */
 struct quic_stream *quic_stream_send_get(struct quic_stream_table *streams, s64 stream_id,
 					 u32 flags, bool is_serv)
 {
@@ -266,6 +283,7 @@ struct quic_stream *quic_stream_send_get(struct quic_stream_table *streams, s64 
 	return stream;
 }
 
+/* Get or create a receive stream by ID. */
 struct quic_stream *quic_stream_recv_get(struct quic_stream_table *streams, s64 stream_id,
 					 bool is_serv)
 {
@@ -298,41 +316,53 @@ struct quic_stream *quic_stream_recv_get(struct quic_stream_table *streams, s64 
 	return stream;
 }
 
+/* Release or clean up a send stream. This function updates stream counters and state when
+ * a send stream has either successfully sent all data or has been reset.
+ */
 void quic_stream_send_put(struct quic_stream_table *streams, struct quic_stream *stream,
 			  bool is_serv)
 {
 	if (quic_stream_id_uni(stream->id)) {
+		/* For unidirectional streams, decrement uni count and delete immediately. */
 		streams->send.streams_uni--;
 		quic_stream_delete(stream);
 		return;
 	}
 
+	/* For bidi streams, only proceed if receive side is in a final state. */
 	if (stream->recv.state != QUIC_STREAM_RECV_STATE_RECVD &&
 	    stream->recv.state != QUIC_STREAM_RECV_STATE_READ &&
 	    stream->recv.state != QUIC_STREAM_RECV_STATE_RESET_RECVD)
 		return;
 
 	if (quic_stream_id_local(stream->id, is_serv)) {
+		/* Local-initiated stream: mark send done and decrement send.bidi count. */
 		if (!stream->send.done) {
 			stream->send.done = 1;
 			streams->send.streams_bidi--;
 		}
 		goto out;
 	}
+	/* Remote-initiated stream: mark recv done and decrement recv bidi count. */
 	if (!stream->recv.done) {
 		stream->recv.done = 1;
 		streams->recv.streams_bidi--;
 		streams->recv.bidi_pending = 1;
 	}
 out:
+	/* Delete stream if fully read or no data received. */
 	if (stream->recv.state == QUIC_STREAM_RECV_STATE_READ || !stream->recv.offset)
 		quic_stream_delete(stream);
 }
 
+/* Release or clean up a receive stream. This function updates stream counters and state when
+ * the receive side has either consumed all data or has been reset.
+ */
 void quic_stream_recv_put(struct quic_stream_table *streams, struct quic_stream *stream,
 			  bool is_serv)
 {
 	if (quic_stream_id_uni(stream->id)) {
+		/* For uni streams, decrement uni count and mark done. */
 		if (!stream->recv.done) {
 			stream->recv.done = 1;
 			streams->recv.streams_uni--;
@@ -341,27 +371,38 @@ void quic_stream_recv_put(struct quic_stream_table *streams, struct quic_stream 
 		goto out;
 	}
 
+	/* For bidi streams, only proceed if send side is in a final state. */
 	if (stream->send.state != QUIC_STREAM_SEND_STATE_RECVD &&
 	    stream->send.state != QUIC_STREAM_SEND_STATE_RESET_RECVD)
 		return;
 
 	if (quic_stream_id_local(stream->id, is_serv)) {
+		/* Local-initiated stream: mark send done and decrement send.bidi count. */
 		if (!stream->send.done) {
 			stream->send.done = 1;
 			streams->send.streams_bidi--;
 		}
 		goto out;
 	}
+	/* Remote-initiated stream: mark recv done and decrement recv bidi count. */
 	if (!stream->recv.done) {
 		stream->recv.done = 1;
 		streams->recv.streams_bidi--;
 		streams->recv.bidi_pending = 1;
 	}
 out:
+	/* Delete stream if fully read or no data received. */
 	if (stream->recv.state == QUIC_STREAM_RECV_STATE_READ || !stream->recv.offset)
 		quic_stream_delete(stream);
 }
 
+/* Updates the maximum allowed incoming stream IDs if any streams were recently closed.
+ * Recalculates the max_uni and max_bidi stream ID limits based on the number of open
+ * streams and whether any were marked for deletion.
+ *
+ * Returns true if either max_uni or max_bidi was updated, indicating that a
+ * MAX_STREAMS_UNI or MAX_STREAMS_BIDI frame should be sent to the peer.
+ */
 bool quic_stream_max_streams_update(struct quic_stream_table *streams, s64 *max_uni, s64 *max_bidi)
 {
 	if (streams->recv.uni_pending) {
@@ -420,6 +461,7 @@ void quic_stream_free(struct quic_stream_table *streams)
 	kfree(ht->hash);
 }
 
+/* Populate transport parameters from stream hash table. */
 void quic_stream_get_param(struct quic_stream_table *streams, struct quic_transport_param *p,
 			   bool is_serv)
 {
@@ -439,6 +481,7 @@ void quic_stream_get_param(struct quic_stream_table *streams, struct quic_transp
 	p->max_streams_uni = streams->recv.max_streams_uni;
 }
 
+/* Configure stream hashtable from transport parameters. */
 void quic_stream_set_param(struct quic_stream_table *streams, struct quic_transport_param *p,
 			   bool is_serv)
 {

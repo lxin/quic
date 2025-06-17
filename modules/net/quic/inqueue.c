@@ -12,6 +12,7 @@
 
 #include "socket.h"
 
+/* Frees socket receive memory resources after read. */
 static void quic_inq_rfree(int len, struct sock *sk)
 {
 	if (!len)
@@ -21,6 +22,7 @@ static void quic_inq_rfree(int len, struct sock *sk)
 	sk_mem_uncharge(sk, len);
 }
 
+/* Charges socket receive memory for new frame. */
 static void quic_inq_set_owner_r(int len, struct sock *sk)
 {
 	if (!len)
@@ -32,6 +34,7 @@ static void quic_inq_set_owner_r(int len, struct sock *sk)
 
 #define QUIC_INQ_RWND_SHIFT	4
 
+/* Update receive flow control windows and send MAX_DATA or MAX_STREAM_DATA frames if needed. */
 void quic_inq_flow_control(struct sock *sk, struct quic_stream *stream, u32 bytes)
 {
 	struct quic_pnspace *space = quic_pnspace(sk, QUIC_CRYPTO_APP);
@@ -44,20 +47,24 @@ void quic_inq_flow_control(struct sock *sk, struct quic_stream *stream, u32 byte
 		return;
 
 	mss = quic_packet_mss(packet);
+	/* Account for bytes read at both stream and connection levels. */
 	stream->recv.bytes += bytes;
 	inq->bytes += bytes;
 
-	/* recv flow control */
+	 /* Check and update connection-level flow control. */
 	window = inq->max_data;
 	if (inq->bytes + window - inq->max_bytes >=
 	    max(mss, (window >> QUIC_INQ_RWND_SHIFT))) {
+		/* Reduce window increment if memory pressure detected. */
 		if (quic_under_memory_pressure(sk))
 			window >>= 1;
+		/* Increase advertised max data to received data + window. */
 		inq->max_bytes = inq->bytes + window;
 		if (!quic_outq_transmit_frame(sk, QUIC_FRAME_MAX_DATA, inq, 0, true))
 			frame = 1;
 	}
 
+	/* Check and update stream-level flow control. */
 	window = stream->recv.window;
 	if (stream->recv.state < QUIC_STREAM_RECV_STATE_RECVD &&
 	    stream->recv.bytes + window - stream->recv.max_bytes >=
@@ -70,11 +77,12 @@ void quic_inq_flow_control(struct sock *sk, struct quic_stream *stream, u32 byte
 	}
 
 	if (frame) {
-		space->need_sack = 1;
+		space->need_sack = 1;  /* Request an ACK frame to be bundled with it. */
 		quic_outq_transmit(sk);
 	}
 }
 
+/* Handle in-order stream frame delivery. */
 static void quic_inq_stream_tail(struct sock *sk, struct quic_stream *stream,
 				 struct quic_frame *frame)
 {
@@ -82,36 +90,52 @@ static void quic_inq_stream_tail(struct sock *sk, struct quic_stream *stream,
 	struct quic_stream_update update = {};
 	u64 overlap;
 
+	/* Calculate overlap between stream's current recv offset and frame offset. */
 	overlap = stream->recv.offset - frame->offset;
-	if (overlap) {
+	if (overlap) { /* Discard overlapping prefix and adjust memory accounting. */
 		quic_inq_rfree((int)frame->len, sk);
 		frame->data += overlap;
 		frame->len -= overlap;
 		quic_inq_set_owner_r((int)frame->len, sk);
 		frame->offset += overlap;
 	}
-	stream->recv.offset += frame->len;
+	stream->recv.offset += frame->len; /* Advance the stream's receive offset. */
 
 	if (frame->stream_fin) {
+		/* Notify that the stream has been fully received. */
 		update.id = stream->id;
 		update.state = QUIC_STREAM_RECV_STATE_RECVD;
 		update.finalsz = frame->offset + frame->len;
 		quic_inq_event_recv(sk, QUIC_EVENT_STREAM_UPDATE, &update);
 
+		/* rfc9000#section-3.2:
+		 *
+		 * Once all data for the stream has been received, the receiving part
+		 * enters the "Data Recvd" state.
+		 */
 		stream->recv.state = update.state;
+		/* Release stream and update limits to allow opening new streams. */
 		quic_stream_recv_put(quic_streams(sk), stream, quic_is_serv(sk));
 	}
 
-	frame->offset = 0;
+	frame->offset = 0; /* Reset offset as it will be reused as read offset in recvmsg(). */
 	if (frame->level) {
+		/* Stream frame was received at encryption level 0-RTT (early data).  Queue it
+		 * into early_list. After the handshake completes and 1-RTT keys are installed,
+		 * these frames will be moved to recv_list for delivery to the application.
+		 */
 		frame->level = 0;
 		list_add_tail(&frame->list, &inq->early_list);
 		return;
 	}
+	/* Frame is ready for application delivery: queue in recv_list. */
 	list_add_tail(&frame->list, &inq->recv_list);
-	sk->sk_data_ready(sk);
+	sk->sk_data_ready(sk); /* Notify socket that data is available. */
 }
 
+/* Check and optionally charge receive memory for a QUIC socket.
+ * Equivalent to sk_rmem_schedule().
+ */
 static bool quic_sk_rmem_schedule(struct sock *sk, int size)
 {
 	int delta;
@@ -122,6 +146,13 @@ static bool quic_sk_rmem_schedule(struct sock *sk, int size)
 	return delta <= 0 || __sk_mem_schedule(sk, delta, SK_MEM_RECV);
 }
 
+/* Process an incoming QUIC stream frame.
+ *
+ * Validates memory limits, flow control limits, and deduplicates before queuing.  Inserts frame
+ * either in-order or out-of-order depending on stream state.
+ *
+ * Returns 0 on success, -ENOBUFS if memory/flow limits are hit, or -EINVAL on protocol violation.
+ */
 int quic_inq_stream_recv(struct sock *sk, struct quic_frame *frame)
 {
 	u64 offset = frame->offset, off, highest = 0;
@@ -133,13 +164,18 @@ int quic_inq_stream_recv(struct sock *sk, struct quic_frame *frame)
 	struct list_head *head;
 	struct quic_frame *pos;
 
+	/* Discard duplicate frames that are fully covered by the current receive offset.
+	 * However, do not discard if this frame carries a FIN and the stream has not yet
+	 * received any FIN, to ensure proper handling of stream termination.
+	 */
 	if (stream->recv.offset >= offset + frame->len &&
 	    (stream->recv.state == QUIC_STREAM_RECV_STATE_SIZE_KNOWN ||
-	     !frame->stream_fin)) { /* dup */
+	     !frame->stream_fin)) {
 		quic_frame_put(frame);
 		return 0;
 	}
 
+	/* Check receive buffer size and system limits. */
 	quic_inq_set_owner_r((int)frame->len, sk);
 	if (sk_rmem_alloc_get(sk) > sk->sk_rcvbuf || !quic_sk_rmem_schedule(sk, frame->len)) {
 		QUIC_INC_STATS(net, QUIC_MIB_FRM_RCVBUFDROP);
@@ -148,14 +184,21 @@ int quic_inq_stream_recv(struct sock *sk, struct quic_frame *frame)
 	}
 
 	off = offset + frame->len;
-	if (off > stream->recv.highest) {
-		highest = off - stream->recv.highest;
+	if (off > stream->recv.highest) { /* New data beyond current highest seen. */
+		/* rfc9000#section-4.1:
+		 *
+		 * A receiver MUST close the connection with an error of type
+		 * FLOW_CONTROL_ERROR if the sender violates the advertised connection or
+		 * stream data limits.
+		 */
+		highest = off - stream->recv.highest; /* New data beyond previous highest offset. */
 		if (inq->highest + highest > inq->max_bytes ||
 		    stream->recv.highest + highest > stream->recv.max_bytes) {
 			frame->errcode = QUIC_TRANSPORT_ERROR_FLOW_CONTROL;
 			quic_inq_rfree((int)frame->len, sk);
 			return -ENOBUFS;
 		}
+		/* Check for violation of known final size (protocol error). */
 		if (stream->recv.finalsz && off > stream->recv.finalsz) {
 			frame->errcode = QUIC_TRANSPORT_ERROR_FINAL_SIZE;
 			quic_inq_rfree((int)frame->len, sk);
@@ -163,12 +206,15 @@ int quic_inq_stream_recv(struct sock *sk, struct quic_frame *frame)
 		}
 	}
 	if (!stream->recv.highest && !frame->stream_fin) {
+		/* Notify if first data received on stream. Skip FIN frame, as it will trigger
+		 * a "Size Known" state later.
+		 */
 		update.id = stream->id;
 		update.state = QUIC_STREAM_RECV_STATE_RECV;
 		quic_inq_event_recv(sk, QUIC_EVENT_STREAM_UPDATE, &update);
 	}
 	head = &inq->stream_list;
-	if (stream->recv.offset < offset) {
+	if (stream->recv.offset < offset) { /* Out-of-order: insert in frame list in order. */
 		list_for_each_entry(pos, head, list) {
 			if (pos->stream->id < stream_id)
 				continue;
@@ -181,24 +227,41 @@ int quic_inq_stream_recv(struct sock *sk, struct quic_frame *frame)
 				break;
 			}
 			if (pos->offset + pos->len >= offset + frame->len &&
-			    (pos->stream_fin || !frame->stream_fin)) { /* dup */
+			    (pos->stream_fin || !frame->stream_fin)) {
+				/* Duplicate or overlapping frame.  Keep if it has FIN while
+				 * the other does not.
+				 */
 				quic_inq_rfree((int)frame->len, sk);
 				quic_frame_put(frame);
 				return 0;
 			}
 		}
 		if (frame->stream_fin) {
+			/* rfc9000#section-4.5:
+			 *
+			 * Once a final size for a stream is known, it cannot change. If a
+			 * RESET_STREAM or STREAM frame is received indicating a change in the
+			 * final size for the stream, an endpoint SHOULD respond with an error
+			 * of type FINAL_SIZE_ERROR.
+			 */
 			if (off < stream->recv.highest ||
 			    (stream->recv.finalsz && stream->recv.finalsz != off)) {
 				frame->errcode = QUIC_TRANSPORT_ERROR_FINAL_SIZE;
 				quic_inq_rfree((int)frame->len, sk);
 				return -EINVAL;
 			}
+			/* Notify that the stream has known the final size. */
 			update.id = stream->id;
 			update.state = QUIC_STREAM_RECV_STATE_SIZE_KNOWN;
 			update.finalsz = off;
 			quic_inq_event_recv(sk, QUIC_EVENT_STREAM_UPDATE, &update);
 
+			/* rfc9000#section-3.2:
+			 *
+			 * When a STREAM frame with a FIN bit is received, the final size of
+			 * the stream is known; The receiving part of the stream then enters
+			 * the "Size Known" state.
+			 */
 			stream->recv.state = update.state;
 			stream->recv.finalsz = update.finalsz;
 		}
@@ -209,13 +272,16 @@ int quic_inq_stream_recv(struct sock *sk, struct quic_frame *frame)
 		return 0;
 	}
 
-	/* fast path: stream->recv.offset == offset */
+	/* In-order: directly handled and queued. */
 	inq->highest += highest;
 	stream->recv.highest += highest;
 	quic_inq_stream_tail(sk, stream, frame);
 	if (!stream->recv.frags)
 		return 0;
 
+	/* Check the buffered frames list and merge any frames contiguous with the current
+	 * stream offset to maintain ordered data delivery.
+	 */
 	list_for_each_entry_safe(frame, pos, head, list) {
 		if (frame->stream->id < stream_id)
 			continue;
@@ -227,7 +293,8 @@ int quic_inq_stream_recv(struct sock *sk, struct quic_frame *frame)
 		stream->recv.frags--;
 		if (stream->recv.offset >= frame->offset + frame->len &&
 		    (stream->recv.state == QUIC_STREAM_RECV_STATE_RECVD ||
-		     !frame->stream_fin)) { /* dup */
+		     !frame->stream_fin)) {
+			/* Duplicate frame. Do not discard if it has FIN and no FIN seen yet. */
 			quic_inq_rfree((int)frame->len, sk);
 			quic_frame_put(frame);
 			continue;
@@ -237,6 +304,7 @@ int quic_inq_stream_recv(struct sock *sk, struct quic_frame *frame)
 	return 0;
 }
 
+/* Purge all pending reassembly frames for a given stream.  Called when resetting a stream. */
 void quic_inq_stream_list_purge(struct sock *sk, struct quic_stream *stream)
 {
 	struct list_head *head = &quic_inq(sk)->stream_list;
@@ -266,6 +334,12 @@ static void quic_inq_list_purge(struct sock *sk, struct list_head *head)
 	quic_inq_rfree(bytes, sk);
 }
 
+/* Handle in-order crypto (handshake) frame delivery.
+ *
+ * Similar to quic_inq_stream_tail(), but with special handling for New Session Ticket Message
+ * in crypto frame (level == 0). Tickets are saved in quic_ticket() and exposed to userspace
+ * via getsockopt().
+ */
 static void quic_inq_handshake_tail(struct sock *sk, struct quic_frame *frame)
 {
 	struct quic_crypto *crypto = quic_crypto(sk, frame->level);
@@ -288,7 +362,7 @@ static void quic_inq_handshake_tail(struct sock *sk, struct quic_frame *frame)
 	crypto->recv_offset += frame->len;
 
 	if (frame->level) {
-		/* always put handshake msg ahead of data and event */
+		/* For handshake messages, insert frame before any data/event frames. */
 		head = &inq->recv_list;
 		list_for_each_entry(pos, head, list) {
 			if (!pos->level) {
@@ -303,23 +377,37 @@ static void quic_inq_handshake_tail(struct sock *sk, struct quic_frame *frame)
 		return;
 	}
 
+	/* Special handling for New Session Ticket Message (level == 0). */
 	if (!crypto->ticket_ready && crypto->recv_offset <= QUIC_TICKET_MAX_LEN) {
+		/* Append received frame data to ticket buffer. */
 		quic_data_append(ticket, frame->data, frame->len);
+		/* Attempt to parse the TLS message if we have at least the 4-byte header. */
 		if (ticket->len >= 4) {
 			p = ticket->data;
 			len = ticket->len;
 			quic_get_int(&p, &len, &type, 1);
 			quic_get_int(&p, &len, &length, 3);
+			/* If the full TLS message is available, mark the ticket as ready. */
 			if (ticket->len >= length + 4) {
+				/* Notify userspace with the full ticket message. Applications
+				 * can receive it via the NEW_SESSION_TICKET event or getsockopt().
+				 */
 				crypto->ticket_ready  = 1;
 				quic_inq_event_recv(sk, QUIC_EVENT_NEW_SESSION_TICKET, ticket);
 			}
 		}
 	}
 	quic_inq_rfree((int)frame->len, sk);
-	quic_frame_put(frame);
+	quic_frame_put(frame); /* Data copied to ticket buffer; release the frame. */
 }
 
+/* Process an incoming QUIC crypto (handshake) frame.
+ *
+ * This function behaves similarly to quic_inq_stream_recv(), but operates on different crypto
+ * levels instead of streams. It handles:
+ *
+ * Returns: 0 on success, or -ENOBUFS if buffer limits are exceeded.
+ */
 int quic_inq_handshake_recv(struct sock *sk, struct quic_frame *frame)
 {
 	u64 offset = frame->offset, crypto_offset;
@@ -334,13 +422,20 @@ int quic_inq_handshake_recv(struct sock *sk, struct quic_frame *frame)
 	pr_debug("%s: recv_offset: %llu, offset: %llu, level: %u, len: %u\n",
 		 __func__, crypto_offset, offset, level, frame->len);
 
-	if (crypto_offset >= offset + frame->len) { /* dup */
+	if (crypto_offset >= offset + frame->len) {
 		quic_frame_put(frame);
 		return 0;
 	}
 
 	quic_inq_set_owner_r((int)frame->len, sk);
 	if (sk_rmem_alloc_get(sk) > sk->sk_rcvbuf || !quic_sk_rmem_schedule(sk, frame->len)) {
+		/* rfc9000#section-7.5:
+		 *
+		 * If an endpoint's buffer is exceeded during the handshake, it can expand its
+		 * buffer temporarily to complete the handshake. If an endpoint does not expand
+		 * its buffer, it MUST close the connection with a CRYPTO_BUFFER_EXCEEDED error
+		 * code.
+		 */
 		QUIC_INC_STATS(sock_net(sk), QUIC_MIB_FRM_RCVBUFDROP);
 		frame->errcode = QUIC_TRANSPORT_ERROR_CRYPTO_BUF_EXCEEDED;
 		quic_inq_rfree((int)frame->len, sk);
@@ -360,7 +455,7 @@ int quic_inq_handshake_recv(struct sock *sk, struct quic_frame *frame)
 				head = &pos->list;
 				break;
 			}
-			if (pos->offset + pos->len >= offset + frame->len) { /* dup */
+			if (pos->offset + pos->len >= offset + frame->len) {
 				quic_inq_rfree((int)frame->len, sk);
 				quic_frame_put(frame);
 				return 0;
@@ -380,7 +475,7 @@ int quic_inq_handshake_recv(struct sock *sk, struct quic_frame *frame)
 		if (frame->offset > crypto->recv_offset)
 			break;
 		list_del(&frame->list);
-		if (crypto->recv_offset >= frame->offset + frame->len) { /* dup */
+		if (crypto->recv_offset >= frame->offset + frame->len) {
 			quic_inq_rfree((int)frame->len, sk);
 			quic_frame_put(frame);
 			continue;
@@ -390,6 +485,7 @@ int quic_inq_handshake_recv(struct sock *sk, struct quic_frame *frame)
 	return 0;
 }
 
+/* Populate transport parameters from inqueue. */
 void quic_inq_get_param(struct sock *sk, struct quic_transport_param *p)
 {
 	struct quic_inqueue *inq = quic_inq(sk);
@@ -409,6 +505,7 @@ void quic_inq_get_param(struct sock *sk, struct quic_transport_param *p)
 	p->max_data = inq->max_data;
 }
 
+/* Configure inqueue from transport parameters. */
 void quic_inq_set_param(struct sock *sk, struct quic_transport_param *p)
 {
 	struct quic_packet *packet = quic_packet(sk);
@@ -440,6 +537,7 @@ void quic_inq_set_param(struct sock *sk, struct quic_transport_param *p)
 	sk->sk_rcvbuf = (int)p->max_data * 2;
 }
 
+/* Process an incoming QUIC event and handle it for delivery. */
 int quic_inq_event_recv(struct sock *sk, u8 event, void *args)
 {
 	struct list_head *head = &quic_inq(sk)->recv_list;
@@ -451,9 +549,9 @@ int quic_inq_event_recv(struct sock *sk, u8 event, void *args)
 		return -EINVAL;
 
 	if (!(quic_inq(sk)->events & BIT(event)))
-		return 0;
+		return 0;  /* Event type not subscribed by user. */
 
-	switch (event) {
+	switch (event) { /* Determine size of the argument payload based on event type. */
 	case QUIC_EVENT_STREAM_UPDATE:
 		args_len = sizeof(struct quic_stream_update);
 		break;
@@ -492,10 +590,10 @@ int quic_inq_event_recv(struct sock *sk, u8 event, void *args)
 	}
 	p = quic_put_data(frame->data, &event, 1);
 	quic_put_data(p, args, args_len);
-	frame->event = 1;
+	frame->event = 1; /* Mark this frame as an event. */
 	frame->offset = 0;
 
-	/* always put event ahead of data */
+	/* Insert event frame ahead of stream or dgram data. */
 	list_for_each_entry(pos, head, list) {
 		if (!pos->level && !pos->event) {
 			head = &pos->list;
@@ -508,6 +606,7 @@ int quic_inq_event_recv(struct sock *sk, u8 event, void *args)
 	return 0;
 }
 
+/* Process an incoming QUIC datagram frame. */
 int quic_inq_dgram_recv(struct sock *sk, struct quic_frame *frame)
 {
 	quic_inq_set_owner_r((int)frame->len, sk);
@@ -517,7 +616,7 @@ int quic_inq_dgram_recv(struct sock *sk, struct quic_frame *frame)
 		return -ENOBUFS;
 	}
 
-	frame->dgram = 1;
+	frame->dgram = 1; /* Mark the frame as a datagram and prepare for delivery. */
 	frame->offset = 0;
 	list_add_tail(&frame->list, &quic_inq(sk)->recv_list);
 	sk->sk_data_ready(sk);
@@ -529,6 +628,7 @@ void quic_inq_data_read(struct sock *sk, u32 bytes)
 	quic_inq_rfree((int)bytes, sk);
 }
 
+/* Workqueue handler to process decrypted QUIC packets. */
 static void quic_inq_decrypted_work(struct work_struct *work)
 {
 	struct quic_sock *qs = container_of(work, struct quic_sock, inq.work);
@@ -538,29 +638,38 @@ static void quic_inq_decrypted_work(struct work_struct *work)
 
 	lock_sock(sk);
 	head = &sk->sk_receive_queue;
-	if (sock_flag(sk, SOCK_DEAD)) {
+	if (sock_flag(sk, SOCK_DEAD)) { /* If the socket is already dead, drop all pending skbs. */
 		skb_queue_purge(head);
 		goto out;
 	}
 
 	skb = skb_dequeue(head);
 	while (skb) {
-		QUIC_SKB_CB(skb)->resume = 1;
+		QUIC_SKB_CB(skb)->resume = 1; /* Mark skb decrypted already before processing. */
 		quic_packet_process(sk, skb);
 		skb = skb_dequeue(head);
 	}
 out:
 	release_sock(sk);
-	sock_put(sk);
+	sock_put(sk); /* Drop the hold from quic_inq_decrypted_tail(). */
 }
 
+/* Queue an decrypted SKB and schedule processing.
+ *
+ * This function queues a fully decrypted skb for asynchronous processing and schedules
+ * the workqueue to process it.
+ */
 void quic_inq_decrypted_tail(struct sock *sk, struct sk_buff *skb)
 {
 	struct quic_inqueue *inq = quic_inq(sk);
 
 	sock_hold(sk);
+	/* Add skb to receive queue, and process it later in quic_inq_decrypted_work(). */
 	skb_queue_tail(&sk->sk_receive_queue, skb);
 
+	/* Schedule work to process queued decrypted packets.  If work was already pending,
+	 * drop the extra hold.
+	 */
 	if (!schedule_work(&inq->work))
 		sock_put(sk);
 }
