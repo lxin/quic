@@ -516,30 +516,6 @@ static __init int quic_init(void)
 	int max_share, err = -ENOMEM;
 	unsigned long limit;
 
-	if (quic_hash_tables_init())
-		goto err;
-
-	quic_frame_cachep = kmem_cache_create("quic_frame", sizeof(struct quic_frame),
-					      0, SLAB_HWCACHE_ALIGN, NULL);
-	if (!quic_frame_cachep)
-		goto err_cachep;
-
-	err = quic_path_init(quic_packet_rcv);
-	if (err)
-		goto err_path;
-
-	err = percpu_counter_init(&quic_sockets_allocated, 0, GFP_KERNEL);
-	if (err)
-		goto err_percpu_counter;
-
-	err = quic_protosw_init();
-	if (err)
-		goto err_protosw;
-
-	err = register_pernet_subsys(&quic_net_ops);
-	if (err)
-		goto err_def_ops;
-
 	/* Set QUIC memory limits based on available system memory, similar to sctp_init(). */
 	limit = nr_free_buffer_pages() / 8;
 	limit = max(limit, 128UL);
@@ -558,25 +534,49 @@ static __init int quic_init(void)
 	sysctl_quic_wmem[1] = 16 * 1024;
 	sysctl_quic_wmem[2] = max(64 * 1024, max_share);
 
+	quic_transport_param_init();
+	quic_crypto_init();
+
+	quic_frame_cachep = kmem_cache_create("quic_frame", sizeof(struct quic_frame),
+					      0, SLAB_HWCACHE_ALIGN, NULL);
+	if (!quic_frame_cachep)
+		goto err;
+
+	err = percpu_counter_init(&quic_sockets_allocated, 0, GFP_KERNEL);
+	if (err)
+		goto err_percpu_counter;
+
+	if (quic_hash_tables_init())
+		goto err_hash;
+
+	err = register_pernet_subsys(&quic_net_ops);
+	if (err)
+		goto err_def_ops;
+
+	err = quic_path_init(quic_packet_rcv);
+	if (err)
+		goto err_path;
+
+	err = quic_protosw_init();
+	if (err)
+		goto err_protosw;
+
 #ifdef CONFIG_SYSCTL
 	quic_sysctl_register();
 #endif
-
-	quic_transport_param_init();
-	quic_crypto_init();
 	pr_info("quic: init\n");
 	return 0;
 
-err_def_ops:
-	quic_protosw_exit();
 err_protosw:
-	percpu_counter_destroy(&quic_sockets_allocated);
-err_percpu_counter:
 	quic_path_destroy();
 err_path:
-	kmem_cache_destroy(quic_frame_cachep);
-err_cachep:
+	unregister_pernet_subsys(&quic_net_ops);
+err_def_ops:
 	quic_hash_tables_destroy();
+err_hash:
+	percpu_counter_destroy(&quic_sockets_allocated);
+err_percpu_counter:
+	kmem_cache_destroy(quic_frame_cachep);
 err:
 	return err;
 }
@@ -586,12 +586,12 @@ static __exit void quic_exit(void)
 #ifdef CONFIG_SYSCTL
 	quic_sysctl_unregister();
 #endif
-	unregister_pernet_subsys(&quic_net_ops);
 	quic_protosw_exit();
-	percpu_counter_destroy(&quic_sockets_allocated);
 	quic_path_destroy();
-	kmem_cache_destroy(quic_frame_cachep);
+	unregister_pernet_subsys(&quic_net_ops);
 	quic_hash_tables_destroy();
+	percpu_counter_destroy(&quic_sockets_allocated);
+	kmem_cache_destroy(quic_frame_cachep);
 	pr_info("quic: exit\n");
 }
 
