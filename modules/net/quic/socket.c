@@ -478,8 +478,10 @@ static int quic_hash(struct sock *sk)
 					 * same addr/port/ALPNs.
 					 */
 					err = reuseport_add_sock(sk, nsk, any);
-					if (!err)
+					if (!err) {
 						__sk_add_node(sk, &head->head);
+						INIT_LIST_HEAD(quic_reqs(sk));
+					}
 				}
 				goto out;
 			}
