@@ -135,6 +135,7 @@ struct quic_hash_table {
 enum  {
 	QUIC_HT_SOCK,		/* Hash table for QUIC sockets */
 	QUIC_HT_UDP_SOCK,	/* Hash table for UDP tunnel sockets */
+	QUIC_HT_LISTEN_SOCK,	/* Hash table for QUIC listening sockets */
 	QUIC_HT_CONNECTION_ID,	/* Hash table for source connection IDs */
 	QUIC_HT_BIND_PORT,	/* Hash table for bound ports */
 	QUIC_HT_MAX_TABLES,

@@ -141,7 +141,7 @@ struct sock *quic_sock_lookup(struct sk_buff *skb, union quic_addr *sa, union qu
 	head = quic_sock_head(net, sa, da);
 	spin_lock(&head->lock);
 	sk_for_each(sk, &head->head) {
-		if (net != sock_net(sk) || quic_is_listen(sk))
+		if (net != sock_net(sk))
 			continue;
 		paths = quic_paths(sk);
 		if (quic_cmp_sk_addr(sk, quic_path_saddr(paths, 0), sa) &&
@@ -186,8 +186,8 @@ struct sock *quic_listen_sock_lookup(struct sk_buff *skb, union quic_addr *sa, u
 			 * In this case, only match sockets that have no ALPN set.
 			 */
 			a = quic_path_saddr(quic_paths(tmp), 0);
-			if (net == sock_net(tmp) && quic_is_listen(tmp) &&
-			    quic_cmp_sk_addr(tmp, a, sa) && (!alpns.data || !quic_alpn(tmp)->len)) {
+			if (net == sock_net(tmp) && quic_cmp_sk_addr(tmp, a, sa) &&
+			    (!alpns.data || !quic_alpn(tmp)->len)) {
 				sk = tmp;
 				if (!quic_is_any_addr(a)) /* Prefer specific address match. */
 					break;
@@ -202,8 +202,8 @@ struct sock *quic_listen_sock_lookup(struct sk_buff *skb, union quic_addr *sa, u
 		quic_data(&alpn, p, length);
 		sk_for_each(tmp, &head->head) {
 			a = quic_path_saddr(quic_paths(tmp), 0);
-			if (net == sock_net(tmp) && quic_is_listen(tmp) &&
-			    quic_cmp_sk_addr(tmp, a, sa) && quic_data_has(quic_alpn(tmp), &alpn)) {
+			if (net == sock_net(tmp) && quic_cmp_sk_addr(tmp, a, sa) &&
+			    quic_data_has(quic_alpn(tmp), &alpn)) {
 				sk = tmp;
 				if (!quic_is_any_addr(a))
 					break;
@@ -467,8 +467,7 @@ static int quic_hash(struct sock *sk)
 
 	any = quic_is_any_addr(sa);
 	sk_for_each(nsk, &head->head) {
-		if (net == sock_net(nsk) && quic_is_listen(nsk) &&
-		    quic_cmp_sk_addr(nsk, quic_path_saddr(paths, 0), sa)) {
+		if (net == sock_net(nsk) && quic_cmp_sk_addr(nsk, quic_path_saddr(paths, 0), sa)) {
 			/* Take the ALPNs into account, which allows directing the request to
 			 * different listening sockets based on the ALPNs.
 			 */
