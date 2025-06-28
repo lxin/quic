@@ -10,6 +10,8 @@
  *    Xin Long <lucien.xin@gmail.com>
  */
 
+#include <net/tls.h>
+
 #include "socket.h"
 
 #define QUIC_HLEN		1
@@ -118,8 +120,6 @@ static int quic_packet_get_version_and_connid(struct quic_conn_id *dcid, struct 
 static int quic_packet_version_change(struct sock *sk, struct quic_conn_id *dcid, u32 version)
 {
 	struct quic_crypto *crypto = quic_crypto(sk, QUIC_CRYPTO_INITIAL);
-
-	quic_crypto_free(crypto);
 
 	if (quic_crypto_initial_keys_install(crypto, dcid, version, quic_is_serv(sk)))
 		return -1;
@@ -1683,6 +1683,9 @@ int quic_packet_parse_alpn(struct sk_buff *skb, struct quic_data *alpn)
 		kfree(crypto);
 		return -ENOMEM;
 	}
+	err = quic_crypto_set_cipher(crypto, TLS_CIPHER_AES_GCM_128, CRYPTO_ALG_ASYNC);
+	if (err)
+		goto out;
 	/* Install initial keys for packet decryption to crypto. */
 	err = quic_crypto_initial_keys_install(crypto, &dcid, version, 1);
 	if (err)

@@ -730,78 +730,52 @@ out:
 }
 EXPORT_SYMBOL_GPL(quic_crypto_decrypt);
 
-int quic_crypto_set_secret(struct quic_crypto *crypto, struct quic_crypto_secret *srt,
-			   u32 version, u8 flag)
+int quic_crypto_set_cipher(struct quic_crypto *crypto, u32 type, u8 flag)
 {
 	struct quic_cipher *cipher;
 	int err = -EINVAL;
-	u32 secretlen;
 	void *tfm;
 
-	/* If no cipher has been initialized yet, set it up. */
-	if (!crypto->cipher) {
-		crypto->version = version;
-		if (srt->type < QUIC_CIPHER_MIN || srt->type > QUIC_CIPHER_MAX)
-			return -EINVAL;
+	if (type < QUIC_CIPHER_MIN || type > QUIC_CIPHER_MAX)
+		return -EINVAL;
 
-		cipher = &ciphers[srt->type - QUIC_CIPHER_MIN];
-		tfm = crypto_alloc_shash(cipher->shash, 0, 0);
-		if (IS_ERR(tfm))
-			return PTR_ERR(tfm);
-		crypto->secret_tfm = tfm;
+	cipher = &ciphers[type - QUIC_CIPHER_MIN];
+	tfm = crypto_alloc_shash(cipher->shash, 0, 0);
+	if (IS_ERR(tfm))
+		return PTR_ERR(tfm);
+	crypto->secret_tfm = tfm;
 
-		/* Request only synchronous crypto by specifying CRYPTO_ALG_ASYNC.  This
-		 * ensures tag generation does not rely on async callbacks.
-		 */
-		tfm = crypto_alloc_aead(cipher->aead, 0, CRYPTO_ALG_ASYNC);
-		if (IS_ERR(tfm)) {
-			err = PTR_ERR(tfm);
-			goto err;
-		}
-		crypto->tag_tfm = tfm;
-		crypto->cipher = cipher;
-		crypto->cipher_type = srt->type;
-	}
-
-	/* Handle RX path setup. */
-	cipher = crypto->cipher;
-	secretlen = cipher->secretlen;
-	if (!srt->send) {
-		if (crypto->recv_ready)
-			goto err;
-
-		/* Allocate AEAD and HP transform for each RX key phase. */
-		memcpy(crypto->rx_secret, srt->secret, secretlen);
-		tfm = crypto_alloc_aead(cipher->aead, 0, flag);
-		if (IS_ERR(tfm)) {
-			err = PTR_ERR(tfm);
-			goto err;
-		}
-		crypto->rx_tfm[0] = tfm;
-		tfm = crypto_alloc_aead(cipher->aead, 0, flag);
-		if (IS_ERR(tfm)) {
-			err = PTR_ERR(tfm);
-			goto err;
-		}
-		crypto->rx_tfm[1] = tfm;
-		tfm = crypto_alloc_sync_skcipher(cipher->skc, 0, 0);
-		if (IS_ERR(tfm)) {
-			err = PTR_ERR(tfm);
-			goto err;
-		}
-		crypto->rx_hp_tfm = tfm;
-
-		err = quic_crypto_rx_keys_derive_and_install(crypto);
-		if (err)
-			goto err;
-		crypto->recv_ready = 1;
-		return 0;
-	}
-
-	/* Handle TX path setup. */
-	if (crypto->send_ready)
+	/* Request only synchronous crypto by specifying CRYPTO_ALG_ASYNC.  This
+	 * ensures tag generation does not rely on async callbacks.
+	 */
+	tfm = crypto_alloc_aead(cipher->aead, 0, CRYPTO_ALG_ASYNC);
+	if (IS_ERR(tfm)) {
+		err = PTR_ERR(tfm);
 		goto err;
-	memcpy(crypto->tx_secret, srt->secret, secretlen);
+	}
+	crypto->tag_tfm = tfm;
+
+	/* Allocate AEAD and HP transform for each RX key phase. */
+	tfm = crypto_alloc_aead(cipher->aead, 0, flag);
+	if (IS_ERR(tfm)) {
+		err = PTR_ERR(tfm);
+		goto err;
+	}
+	crypto->rx_tfm[0] = tfm;
+	tfm = crypto_alloc_aead(cipher->aead, 0, flag);
+	if (IS_ERR(tfm)) {
+		err = PTR_ERR(tfm);
+		goto err;
+	}
+	crypto->rx_tfm[1] = tfm;
+	tfm = crypto_alloc_sync_skcipher(cipher->skc, 0, 0);
+	if (IS_ERR(tfm)) {
+		err = PTR_ERR(tfm);
+		goto err;
+	}
+	crypto->rx_hp_tfm = tfm;
+
+	/* Allocate AEAD and HP transform for each TX key phase. */
 	tfm = crypto_alloc_aead(cipher->aead, 0, flag);
 	if (IS_ERR(tfm)) {
 		err = PTR_ERR(tfm);
@@ -820,14 +794,46 @@ int quic_crypto_set_secret(struct quic_crypto *crypto, struct quic_crypto_secret
 		goto err;
 	}
 	crypto->tx_hp_tfm = tfm;
-	err = quic_crypto_tx_keys_derive_and_install(crypto);
-	if (err)
-		goto err;
-	crypto->send_ready = 1;
+
+	crypto->cipher = cipher;
+	crypto->cipher_type = type;
 	return 0;
 err:
 	quic_crypto_free(crypto);
 	return err;
+}
+
+int quic_crypto_set_secret(struct quic_crypto *crypto, struct quic_crypto_secret *srt,
+			   u32 version, u8 flag)
+{
+	int err;
+
+	/* If no cipher has been initialized yet, set it up. */
+	if (!crypto->cipher) {
+		err = quic_crypto_set_cipher(crypto, srt->type, flag);
+		if (err)
+			return err;
+	}
+
+	/* Handle RX path setup. */
+	if (!srt->send) {
+		crypto->version = version;
+		memcpy(crypto->rx_secret, srt->secret, crypto->cipher->secretlen);
+		err = quic_crypto_rx_keys_derive_and_install(crypto);
+		if (err)
+			return err;
+		crypto->recv_ready = 1;
+		return 0;
+	}
+
+	/* Handle TX path setup. */
+	crypto->version = version;
+	memcpy(crypto->tx_secret, srt->secret, crypto->cipher->secretlen);
+	err = quic_crypto_tx_keys_derive_and_install(crypto);
+	if (err)
+		return err;
+	crypto->send_ready = 1;
+	return 0;
 }
 EXPORT_SYMBOL_GPL(quic_crypto_set_secret);
 
@@ -941,7 +947,6 @@ int quic_crypto_initial_keys_install(struct quic_crypto *crypto, struct quic_con
 	u8 secret[TLS_CIPHER_AES_GCM_128_SECRET_SIZE];
 	struct quic_data salt, s, k, l, dcid, z = {};
 	struct quic_crypto_secret srt = {};
-	struct crypto_shash *tfm;
 	char *tl, *rl, *sal;
 	int err;
 
@@ -966,9 +971,6 @@ int quic_crypto_initial_keys_install(struct quic_crypto *crypto, struct quic_con
 	 *                                             "server in", "",
 	 *                                             Hash.length)
 	 */
-	tfm = crypto_alloc_shash("hmac(sha256)", 0, 0);
-	if (IS_ERR(tfm))
-		return PTR_ERR(tfm);
 	if (is_serv) {
 		rl = "client in";
 		tl = "server in";
@@ -976,42 +978,38 @@ int quic_crypto_initial_keys_install(struct quic_crypto *crypto, struct quic_con
 		tl = "client in";
 		rl = "server in";
 	}
-	crypto->version = version;
 	sal = QUIC_INITIAL_SALT_V1;
 	if (version == QUIC_VERSION_V2)
 		sal = QUIC_INITIAL_SALT_V2;
 	quic_data(&salt, sal, QUIC_INITIAL_SALT_LEN);
 	quic_data(&dcid, conn_id->data, conn_id->len);
 	quic_data(&s, secret, TLS_CIPHER_AES_GCM_128_SECRET_SIZE);
-	err = quic_crypto_hkdf_extract(tfm, &salt, &dcid, &s);
+	err = quic_crypto_hkdf_extract(crypto->secret_tfm, &salt, &dcid, &s);
 	if (err)
-		goto out;
+		return err;
 
 	quic_data(&l, tl, strlen(tl));
 	quic_data(&k, srt.secret, TLS_CIPHER_AES_GCM_128_SECRET_SIZE);
 	srt.type = TLS_CIPHER_AES_GCM_128;
 	srt.send = 1;
-	err = quic_crypto_hkdf_expand(tfm, &s, &l, &z, &k);
+	err = quic_crypto_hkdf_expand(crypto->secret_tfm, &s, &l, &z, &k);
 	if (err)
-		goto out;
+		return err;
 	/* Enforce synchronous crypto for Initial level by requesting algorithms marked with
 	 * CRYPTO_ALG_ASYNC to avoid async processing.
 	 */
 	err = quic_crypto_set_secret(crypto, &srt, version, CRYPTO_ALG_ASYNC);
 	if (err)
-		goto out;
+		return err;
 
 	quic_data(&l, rl, strlen(rl));
 	quic_data(&k, srt.secret, TLS_CIPHER_AES_GCM_128_SECRET_SIZE);
 	srt.type = TLS_CIPHER_AES_GCM_128;
 	srt.send = 0;
-	err = quic_crypto_hkdf_expand(tfm, &s, &l, &z, &k);
+	err = quic_crypto_hkdf_expand(crypto->secret_tfm, &s, &l, &z, &k);
 	if (err)
-		goto out;
-	err = quic_crypto_set_secret(crypto, &srt, version, CRYPTO_ALG_ASYNC);
-out:
-	crypto_free_shash(tfm);
-	return err;
+		return err;
+	return quic_crypto_set_secret(crypto, &srt, version, CRYPTO_ALG_ASYNC);
 }
 EXPORT_SYMBOL_GPL(quic_crypto_initial_keys_install);
 

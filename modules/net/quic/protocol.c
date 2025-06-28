@@ -14,6 +14,7 @@
 #include <linux/version.h>
 #include <linux/proc_fs.h>
 #include <net/protocol.h>
+#include <net/tls.h>
 
 #include "socket.h"
 
@@ -88,6 +89,9 @@ static int quic_inet_listen(struct socket *sock, int backlog)
 	paths->serv = 1; /* Mark this as a server. */
 
 	/* Install initial keys to generate Retry/Stateless Reset tokens. */
+	err = quic_crypto_set_cipher(crypto, TLS_CIPHER_AES_GCM_128, CRYPTO_ALG_ASYNC);
+	if (err)
+		goto free;
 	err = quic_crypto_initial_keys_install(crypto, active, packet->version, 1);
 	if (err)
 		goto free;
