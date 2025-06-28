@@ -803,6 +803,8 @@ static struct quic_frame *quic_frame_connection_close_create(struct sock *sk, vo
 	frame = quic_frame_alloc(frame_len, NULL, GFP_ATOMIC);
 	if (!frame)
 		return NULL;
+	if (type == QUIC_FRAME_CONNECTION_CLOSE)
+		QUIC_INC_STATS(sock_net(sk), QUIC_MIB_FRM_OUTCLOSES);
 	frame->level = *level;
 	quic_put_data(frame->data, buf, frame_len);
 
@@ -1611,6 +1613,8 @@ static int quic_frame_connection_close_process(struct sock *sk, struct quic_fram
 			return -EINVAL;
 		memcpy(close->phrase, p, phrase_len);
 	}
+	if (type == QUIC_FRAME_CONNECTION_CLOSE)
+		QUIC_INC_STATS(sock_net(sk), QUIC_MIB_FRM_INCLOSES);
 	close->errcode = err_code;
 	close->frame = (u8)ftype;
 	quic_inq_event_recv(sk, QUIC_EVENT_CONNECTION_CLOSE, close);

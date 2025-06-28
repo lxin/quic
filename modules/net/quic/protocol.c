@@ -279,7 +279,8 @@ static const struct snmp_mib quic_snmp_list[] = {
 	SNMP_MIB_ITEM("QuicPktEncDrop", QUIC_MIB_PKT_ENCDROP),
 	SNMP_MIB_ITEM("QuicFrmRcvBufDrop", QUIC_MIB_FRM_RCVBUFDROP),
 	SNMP_MIB_ITEM("QuicFrmRetrans", QUIC_MIB_FRM_RETRANS),
-	SNMP_MIB_ITEM("QuicFrmCloses", QUIC_MIB_FRM_CLOSES),
+	SNMP_MIB_ITEM("QuicFrmOutCloses", QUIC_MIB_FRM_OUTCLOSES),
+	SNMP_MIB_ITEM("QuicFrmInCloses", QUIC_MIB_FRM_INCLOSES),
 	SNMP_MIB_SENTINEL
 };
 
