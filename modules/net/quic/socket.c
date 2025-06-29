@@ -1844,6 +1844,7 @@ static int quic_sock_set_crypto_secret(struct sock *sk, struct quic_crypto_secre
 	struct quic_crypto *crypto;
 	struct sk_buff_head tmpq;
 	struct sk_buff *skb;
+	union quic_addr *a;
 	int err;
 
 	if (!quic_is_establishing(sk) || len != sizeof(*secret))
@@ -1892,7 +1893,7 @@ static int quic_sock_set_crypto_secret(struct sock *sk, struct quic_crypto_secre
 		outq->data_level = QUIC_CRYPTO_APP;
 		if (!crypto->recv_ready)
 			return 0;
-		goto out; /* Both send and receive keys are ready; handshake complete. */
+		goto done; /* Both send and receive keys are ready; handshake complete. */
 	}
 
 	/* Free previously stored TLS session ticket and QUIC token data, allowing reception of
@@ -1919,10 +1920,33 @@ static int quic_sock_set_crypto_secret(struct sock *sk, struct quic_crypto_secre
 
 	if (!crypto->send_ready)
 		return 0;
-
+done:
 	/* Both send and receive keys are ready; handshake complete. */
-	if (!quic_is_serv(sk))
+	if (!quic_is_serv(sk)) {
+		if (!paths->pref_addr)
+			goto out;
+		/* The peer offered a preferred address (stored in path 1).  Reset the flag to
+		 * avoid reprocessing, and Perform routing on new path and set the local address
+		 * for new path.
+		 */
+		if (quic_packet_config(sk, 0, 1)) {
+			paths->pref_addr = 0; /* Ignore the preferred address. */
+			goto out;
+		}
+		/* If the local address for new path is different from the current one, bind to
+		 * the new address.
+		 */
+		a = quic_path_saddr(paths, 1);
+		a->v4.sin_port = quic_path_saddr(paths, 0)->v4.sin_port;
+		if (!quic_cmp_sk_addr(sk, quic_path_saddr(paths, 0), a)) {
+			a->v4.sin_port = 0;
+			if (quic_path_bind(sk, paths, 1)) {
+				paths->pref_addr = 0; /* Ignore the preferred address. */
+				goto out;
+			}
+		}
 		goto out;
+	}
 
 	/* Clean up transmitted handshake packets. */
 	quic_outq_transmitted_sack(sk, QUIC_CRYPTO_HANDSHAKE, QUIC_PN_MAP_MAX_PN, 0, -1, 0);

@@ -1255,7 +1255,6 @@ static int quic_frame_new_token_process(struct sock *sk, struct quic_frame *fram
 static int quic_frame_handshake_done_process(struct sock *sk, struct quic_frame *frame, u8 type)
 {
 	struct quic_path_group *paths = quic_paths(sk);
-	union quic_addr *a;
 
 	if (quic_is_serv(sk)) {
 		/* rfc9000#section-19.20:
@@ -1270,31 +1269,13 @@ static int quic_frame_handshake_done_process(struct sock *sk, struct quic_frame 
 	/* Handshake is complete and clean up transmitted handshake packets. */
 	quic_outq_transmitted_sack(sk, QUIC_CRYPTO_HANDSHAKE, QUIC_PN_MAP_MAX_PN, 0, -1, 0);
 
-	if (!paths->pref_addr)
-		return 0;
-
-	/* The peer offered a preferred address (stored in path 1).  Reset the flag to avoid
-	 * reprocessing, and Perform routing on new path and set the local address for new path.
-	 */
-	paths->pref_addr = 0;
-	if (quic_packet_config(sk, 0, 1))
-		return 0;
-
-	/* If the local address for new path is different from the current one, bind to the new
-	 * address.
-	 */
-	a = quic_path_saddr(paths, 1);
-	a->v4.sin_port = quic_path_saddr(paths, 0)->v4.sin_port;
-	if (!quic_cmp_sk_addr(sk, quic_path_saddr(paths, 0), a)) {
-		a->v4.sin_port = 0;
-		if (quic_path_bind(sk, paths, 1))
-			return 0;
+	if (paths->pref_addr) {
+		/* Initiate probing on the new path to validate it (e.g., send PATH_CHALLENGE).
+		 * This starts the connection migration procedure.
+		 */
+		quic_outq_probe_path_alt(sk, true);
+		paths->pref_addr = 0;
 	}
-
-	/* Initiate probing on the new path to validate it (e.g., send PATH_CHALLENGE).  This
-	 * starts the connection migration procedure.
-	 */
-	quic_outq_probe_path_alt(sk, true);
 	return 0;
 }
 
