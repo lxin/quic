@@ -43,24 +43,29 @@ static int quic_udp_err(struct sock *sk, struct sk_buff *skb)
 	return quic_path_rcv(skb, 1);
 }
 
-static void quic_udp_sock_destroy(struct work_struct *work)
+static void quic_udp_sock_put_work(struct work_struct *work)
 {
 	struct quic_udp_sock *us = container_of(work, struct quic_udp_sock, work);
+	struct quic_hash_head *head;
 
+	head = quic_udp_sock_head(sock_net(us->sk), ntohs(us->addr.v4.sin_port));
+	mutex_lock(&head->m_lock);
+	__hlist_del(&us->node);
 	udp_tunnel_sock_release(us->sk->sk_socket);
+	mutex_unlock(&head->m_lock);
 	kfree(us);
 }
 
 static struct quic_udp_sock *quic_udp_sock_create(struct sock *sk, union quic_addr *a)
 {
 	struct udp_tunnel_sock_cfg tuncfg = {};
-	struct udp_port_cfg udp_conf = {0};
+	struct udp_port_cfg udp_conf = {};
 	struct net *net = sock_net(sk);
 	struct quic_hash_head *head;
 	struct quic_udp_sock *us;
 	struct socket *sock;
 
-	us = kzalloc(sizeof(*us), GFP_ATOMIC);
+	us = kzalloc(sizeof(*us), GFP_KERNEL);
 	if (!us)
 		return NULL;
 
@@ -81,115 +86,73 @@ static struct quic_udp_sock *quic_udp_sock_create(struct sock *sk, union quic_ad
 	memcpy(&us->addr, a, sizeof(*a));
 
 	head = quic_udp_sock_head(net, ntohs(a->v4.sin_port));
-	spin_lock(&head->lock);
 	hlist_add_head(&us->node, &head->head);
-	spin_unlock(&head->lock);
-	INIT_WORK(&us->work, quic_udp_sock_destroy);
+	INIT_WORK(&us->work, quic_udp_sock_put_work);
 
 	return us;
 }
 
-static struct quic_udp_sock *quic_udp_sock_get(struct quic_udp_sock *us)
+static bool quic_udp_sock_get(struct quic_udp_sock *us)
 {
-	if (us)
-		refcount_inc(&us->refcnt);
-	return us;
+	return (us && refcount_inc_not_zero(&us->refcnt));
 }
 
 static void quic_udp_sock_put(struct quic_udp_sock *us)
 {
-	struct quic_hash_head *head;
-
-	if (us && refcount_dec_and_test(&us->refcnt)) {
-		head = quic_udp_sock_head(sock_net(us->sk), ntohs(us->addr.v4.sin_port));
-
-		spin_lock(&head->lock);
-		__hlist_del(&us->node);
-		spin_unlock(&head->lock);
-
+	if (us && refcount_dec_and_test(&us->refcnt))
 		queue_work(quic_wq, &us->work);
-	}
 }
 
 /* Lookup a quic_udp_sock in the global hash table. If not found, creates and returns a new one
  * associated with the given kernel socket.
  */
-static struct quic_udp_sock *quic_udp_sock_lookup(struct sock *sk, union quic_addr *a)
+static struct quic_udp_sock *quic_udp_sock_lookup(struct sock *sk, union quic_addr *a, u16 port)
 {
-	struct quic_udp_sock *tmp, *us = NULL;
 	struct net *net = sock_net(sk);
 	struct quic_hash_head *head;
+	struct quic_udp_sock *us;
 
-	head = quic_udp_sock_head(net, ntohs(a->v4.sin_port));
-	spin_lock(&head->lock);
-	hlist_for_each_entry(tmp, &head->head, node) {
-		if (net != sock_net(tmp->sk))
+	head = quic_udp_sock_head(net, port);
+	hlist_for_each_entry(us, &head->head, node) {
+		if (net != sock_net(us->sk))
 			continue;
-
-		if (quic_cmp_sk_addr(tmp->sk, &tmp->addr, a)) {
-			us = quic_udp_sock_get(tmp);
-			break;
+		if (a) {
+			if (quic_cmp_sk_addr(us->sk, &us->addr, a))
+				return us;
+			continue;
 		}
+		if (ntohs(us->addr.v4.sin_port) == port)
+			return us;
 	}
-	spin_unlock(&head->lock);
-	if (!us)
-		us = quic_udp_sock_create(sk, a);
-	return us;
+	return NULL;
 }
 
-/* Sets the UDP socket for the given path index in the connection's path group.  Replaces the
- * old reference (if any) and installs a new one.
- */
-static int quic_path_set_udp_sock(struct sock *sk, struct quic_path_group *paths, u8 path)
+/* Binds a QUIC path to a local port and sets up a UDP socket. */
+int quic_path_bind(struct sock *sk, struct quic_path_group *paths, u8 path)
 {
-	struct quic_udp_sock *usk;
-
-	usk = quic_udp_sock_lookup(sk, quic_path_saddr(paths, path));
-	if (!usk)
-		return -EINVAL;
-
-	quic_udp_sock_put(paths->path[path].udp_sk);
-	paths->path[path].udp_sk = usk;
-	return 0;
-}
-
-static void quic_path_put_bind_port(struct sock *sk, struct quic_bind_port *pp)
-{
-	struct net *net = sock_net(sk);
-	struct quic_hash_head *head;
-
-	if (hlist_unhashed(&pp->node))
-		return;
-
-	head = quic_bind_port_head(net, pp->port);
-	spin_lock(&head->lock);
-	hlist_del_init(&pp->node);
-	spin_unlock(&head->lock);
-}
-
-/* Attempts to bind a QUIC path to a local port.  If the address already has a port, it tries
- * to register that port.  Otherwise, it dynamically selects a port in the ephemeral range.
- */
-static int quic_path_set_bind_port(struct sock *sk, struct quic_path_group *paths, u8 path)
-{
-	struct quic_bind_port *port = quic_path_bind_port(paths, path);
-	union quic_addr *addr = quic_path_saddr(paths, path);
+	union quic_addr *a = quic_path_saddr(paths, path);
 	int rover, low, high, remaining;
 	struct net *net = sock_net(sk);
 	struct quic_hash_head *head;
-	struct quic_bind_port *pp;
-	u16 snum;
+	struct quic_udp_sock *us;
+	u16 port;
 
-	quic_path_put_bind_port(sk, port);
+	port = ntohs(a->v4.sin_port);
+	if (port) {
+		head = quic_udp_sock_head(net, port);
+		mutex_lock(&head->m_lock);
+		us = quic_udp_sock_lookup(sk, a, port);
+		if (!quic_udp_sock_get(us)) {
+			us = quic_udp_sock_create(sk, a);
+			if (!us) {
+				mutex_unlock(&head->m_lock);
+				return -EINVAL;
+			}
+		}
+		mutex_unlock(&head->m_lock);
 
-	rover = ntohs(addr->v4.sin_port);
-	if (rover) {
-		head = quic_bind_port_head(net, (u16)rover);
-		spin_lock_bh(&head->lock);
-		port->net = net;
-		port->port = (u16)rover;
-		hlist_add_head(&port->node, &head->head);
-		spin_unlock_bh(&head->lock);
+		quic_udp_sock_put(paths->path[path].udp_sk);
+		paths->path[path].udp_sk = us;
 		return 0;
 	}
 
@@ -200,41 +163,33 @@ static int quic_path_set_bind_port(struct sock *sk, struct quic_path_group *path
 		rover++;
 		if (rover < low || rover > high)
 			rover = low;
-		snum = (u16)rover;
-		if (inet_is_local_reserved_port(net, snum))
+		port = (u16)rover;
+		if (inet_is_local_reserved_port(net, port))
 			continue;
-		head = quic_bind_port_head(net, snum);
-		spin_lock_bh(&head->lock);
-		hlist_for_each_entry(pp, &head->head, node)
-			if (pp->port == snum && net_eq(net, pp->net))
-				goto next;
-		addr->v4.sin_port = htons(snum);
-		port->net = net;
-		port->port = snum;
+
+		head = quic_udp_sock_head(net, port);
+		mutex_lock(&head->m_lock);
+		if (quic_udp_sock_lookup(sk, NULL, port)) {
+			mutex_unlock(&head->m_lock);
+			cond_resched();
+			continue;
+		}
+		a->v4.sin_port = htons(port);
+		us = quic_udp_sock_create(sk, a);
+		if (!us) {
+			a->v4.sin_port = 0;
+			mutex_unlock(&head->m_lock);
+			return -EINVAL;
+		}
+		mutex_unlock(&head->m_lock);
+
+		quic_udp_sock_put(paths->path[path].udp_sk);
+		paths->path[path].udp_sk = us;
 		__sk_dst_reset(sk);
-		hlist_add_head(&port->node, &head->head);
-		spin_unlock_bh(&head->lock);
 		return 0;
-next:
-		spin_unlock_bh(&head->lock);
-		cond_resched();
 	} while (--remaining > 0);
 
 	return -EADDRINUSE;
-}
-
-/* Binds a QUIC path to a local port and sets up a UDP socket. */
-int quic_path_bind(struct sock *sk, struct quic_path_group *paths, u8 path)
-{
-	int err;
-
-	err = quic_path_set_bind_port(sk, paths, path);
-	if (err)
-		return err;
-	err = quic_path_set_udp_sock(sk, paths, path);
-	if (err)
-		quic_path_free(sk, paths, path);
-	return err;
 }
 
 /* Swaps the active and alternate QUIC paths.
@@ -272,11 +227,9 @@ void quic_path_free(struct sock *sk, struct quic_path_group *paths, u8 path)
 	paths->alt_probes = 0;
 	paths->alt_state = QUIC_PATH_ALT_NONE;
 
-	memset(quic_path_daddr(paths, path), 0, sizeof(union quic_addr));
-
 	quic_udp_sock_put(paths->path[path].udp_sk);
 	paths->path[path].udp_sk = NULL;
-	quic_path_put_bind_port(sk, quic_path_bind_port(paths, path));
+	memset(quic_path_daddr(paths, path), 0, sizeof(union quic_addr));
 	memset(quic_path_saddr(paths, path), 0, sizeof(union quic_addr));
 }
 

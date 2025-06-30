@@ -43,12 +43,6 @@ enum {
 	QUIC_PATH_ALT_SWAPPED,	/* Alternate path is now active; roles swapped */
 };
 
-struct quic_bind_port {
-	struct hlist_node node;		/* Entry in port-based bind hash table */
-	unsigned short port;
-	struct net *net;
-};
-
 struct quic_udp_sock {
 	struct work_struct work;	/* Workqueue to destroy UDP tunnel socket */
 	struct hlist_node node;		/* Entry in address-based UDP socket hash table */
@@ -60,7 +54,6 @@ struct quic_udp_sock {
 struct quic_path {
 	union quic_addr daddr;		/* Destination address */
 	union quic_addr saddr;		/* Source address */
-	struct quic_bind_port port;	/* Local port binding info */
 	struct quic_udp_sock *udp_sk;	/* Wrapped UDP socket used to receive QUIC packets */
 };
 
@@ -129,11 +122,6 @@ static inline void quic_path_set_daddr(struct quic_path_group *paths, u8 path,
 static inline union quic_addr *quic_path_uaddr(struct quic_path_group *paths, u8 path)
 {
 	return &paths->path[path].udp_sk->addr;
-}
-
-static inline struct quic_bind_port *quic_path_bind_port(struct quic_path_group *paths, u8 path)
-{
-	return &paths->path[path].port;
 }
 
 static inline bool quic_path_alt_state(struct quic_path_group *paths, u8 state)

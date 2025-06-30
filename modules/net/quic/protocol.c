@@ -214,7 +214,7 @@ static int quic_seq_show(struct seq_file *seq, void *v)
 		return -ENOMEM;
 
 	head = quic_sock_hash(hash);
-	spin_lock(&head->lock);
+	spin_lock_bh(&head->s_lock);
 	sk_for_each(sk, &head->head) {
 		if (net != sock_net(sk))
 			continue;
@@ -230,7 +230,7 @@ static int quic_seq_show(struct seq_file *seq, void *v)
 			   outq->inflight, READ_ONCE(sk->sk_wmem_queued),
 			   sk_rmem_alloc_get(sk), sk->sk_sndbuf, sk->sk_rcvbuf);
 	}
-	spin_unlock(&head->lock);
+	spin_unlock_bh(&head->s_lock);
 	return 0;
 }
 

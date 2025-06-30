@@ -139,7 +139,7 @@ struct sock *quic_sock_lookup(struct sk_buff *skb, union quic_addr *sa, union qu
 	struct sock *sk;
 
 	head = quic_sock_head(net, sa, da);
-	spin_lock(&head->lock);
+	spin_lock(&head->s_lock);
 	sk_for_each(sk, &head->head) {
 		if (net != sock_net(sk))
 			continue;
@@ -149,7 +149,7 @@ struct sock *quic_sock_lookup(struct sk_buff *skb, union quic_addr *sa, union qu
 		    (!dcid || !quic_conn_id_cmp(quic_path_orig_dcid(paths), dcid)))
 			break;
 	}
-	spin_unlock(&head->lock);
+	spin_unlock(&head->s_lock);
 
 	return sk;
 }
@@ -176,7 +176,7 @@ struct sock *quic_listen_sock_lookup(struct sk_buff *skb, union quic_addr *sa, u
 	u8 *p;
 
 	head = quic_listen_sock_head(net, ntohs(sa->v4.sin_port));
-	spin_lock(&head->lock);
+	spin_lock(&head->s_lock);
 
 	if (!alpns->len) { /* No ALPN entries present or failed to parse the ALPNs. */
 		sk_for_each(tmp, &head->head) {
@@ -211,7 +211,7 @@ struct sock *quic_listen_sock_lookup(struct sk_buff *skb, union quic_addr *sa, u
 			break;
 	}
 unlock:
-	spin_unlock(&head->lock);
+	spin_unlock(&head->s_lock);
 
 	if (sk && sk->sk_reuseport)
 		sk = reuseport_select_sock(sk, quic_shash(net, da), skb, 1);
@@ -456,15 +456,15 @@ static int quic_hash(struct sock *sk)
 	da = quic_path_daddr(paths, 0);
 	if (!sk->sk_max_ack_backlog) { /* Hash a regular socket with source and dest addrs/ports. */
 		head = quic_sock_head(net, sa, da);
-		spin_lock(&head->lock);
+		spin_lock_bh(&head->s_lock);
 		__sk_add_node(sk, &head->head);
-		spin_unlock(&head->lock);
+		spin_unlock_bh(&head->s_lock);
 		return 0;
 	}
 
 	/* Hash a listen socket with source port only. */
 	head = quic_listen_sock_head(net, ntohs(sa->v4.sin_port));
-	spin_lock(&head->lock);
+	spin_lock_bh(&head->s_lock);
 
 	any = quic_is_any_addr(sa);
 	sk_for_each(nsk, &head->head) {
@@ -502,7 +502,7 @@ static int quic_hash(struct sock *sk)
 	__sk_add_node(sk, &head->head);
 	INIT_LIST_HEAD(quic_reqs(sk));
 out:
-	spin_unlock(&head->lock);
+	spin_unlock_bh(&head->s_lock);
 	return err;
 }
 
@@ -531,11 +531,11 @@ static void quic_unhash(struct sock *sk)
 	head = quic_sock_head(net, sa, da);
 
 out:
-	spin_lock(&head->lock);
+	spin_lock_bh(&head->s_lock);
 	if (rcu_access_pointer(sk->sk_reuseport_cb))
 		reuseport_detach_sock(sk); /* If socket was part of a reuseport group, detach it. */
 	__sk_del_node_init(sk);
-	spin_unlock(&head->lock);
+	spin_unlock_bh(&head->s_lock);
 }
 
 #define QUIC_MSG_STREAM_FLAGS \

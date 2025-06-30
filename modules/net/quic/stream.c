@@ -434,10 +434,8 @@ int quic_stream_init(struct quic_stream_table *streams)
 	head = kmalloc_array(size, sizeof(*head), GFP_KERNEL);
 	if (!head)
 		return -ENOMEM;
-	for (i = 0; i < size; i++) {
-		spin_lock_init(&head[i].lock);
+	for (i = 0; i < size; i++)
 		INIT_HLIST_HEAD(&head[i].head);
-	}
 	ht->size = size;
 	ht->hash = head;
 	return 0;

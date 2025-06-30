@@ -44,13 +44,6 @@ struct quic_hash_head *quic_listen_sock_head(struct net *net, u16 port)
 	return &ht->hash[port & (ht->size - 1)];
 }
 
-struct quic_hash_head *quic_bind_port_head(struct net *net, u16 port)
-{
-	struct quic_hash_table *ht = &quic_hash_tables[QUIC_HT_BIND_PORT];
-
-	return &ht->hash[port & (ht->size - 1)];
-}
-
 struct quic_hash_head *quic_source_conn_id_head(struct net *net, u8 *scid)
 {
 	struct quic_hash_table *ht = &quic_hash_tables[QUIC_HT_CONNECTION_ID];
@@ -97,8 +90,12 @@ int quic_hash_tables_init(void)
 			return -ENOMEM;
 		}
 		for (i = 0; i < ht->size; i++) {
-			spin_lock_init(&head[i].lock);
 			INIT_HLIST_HEAD(&head[i].head);
+			if (table == QUIC_HT_UDP_SOCK) {
+				mutex_init(&head[i].m_lock);
+				continue;
+			}
+			spin_lock_init(&head[i].s_lock);
 		}
 		ht->hash = head;
 	}
