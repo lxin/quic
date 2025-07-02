@@ -10,8 +10,6 @@
  *    Xin Long <lucien.xin@gmail.com>
  */
 
-#include <net/tls.h>
-
 #include "socket.h"
 
 #define QUIC_HLEN		1
@@ -268,6 +266,199 @@ out:
 	return ret;
 }
 
+#define TLS_MT_CLIENT_HELLO	1
+#define TLS_EXT_alpn		16
+
+/*  TLS Client Hello Msg:
+ *
+ *    uint16 ProtocolVersion;
+ *    opaque Random[32];
+ *    uint8 CipherSuite[2];
+ *
+ *    struct {
+ *        ExtensionType extension_type;
+ *        opaque extension_data<0..2^16-1>;
+ *    } Extension;
+ *
+ *    struct {
+ *        ProtocolVersion legacy_version = 0x0303;
+ *        Random rand;
+ *        opaque legacy_session_id<0..32>;
+ *        CipherSuite cipher_suites<2..2^16-2>;
+ *        opaque legacy_compression_methods<1..2^8-1>;
+ *        Extension extensions<8..2^16-1>;
+ *    } ClientHello;
+ */
+
+#define TLS_CH_RANDOM_LEN	32
+#define TLS_CH_VERSION_LEN	2
+
+/* Extract ALPN data from a TLS ClientHello message.
+ *
+ * Parses the TLS ClientHello handshake message to find the ALPN (Application Layer Protocol
+ * Negotiation) TLS extension. It validates the TLS ClientHello structure, including version,
+ * random, session ID, cipher suites, compression methods, and extensions. Once the ALPN
+ * extension is found, the ALPN protocols list is extracted and stored in @alpn.
+ *
+ * Return: 0 on success or no ALPN found, a negative error code on failed parsing.
+ */
+static int quic_packet_get_alpn(struct quic_data *alpn, u8 *p, u32 len)
+{
+	int err = -EINVAL, found = 0;
+	u64 length, type;
+
+	/* Verify handshake message type (ClientHello) and its length. */
+	if (!quic_get_int(&p, &len, &type, 1) || type != TLS_MT_CLIENT_HELLO)
+		return err;
+	if (!quic_get_int(&p, &len, &length, 3) ||
+	    length < TLS_CH_RANDOM_LEN + TLS_CH_VERSION_LEN)
+		return err;
+	if (len > (u32)length) /* Limit len to handshake message length if larger. */
+		len = length;
+	/* Skip legacy_version (2 bytes) + random (32 bytes). */
+	p += TLS_CH_RANDOM_LEN + TLS_CH_VERSION_LEN;
+	len -= TLS_CH_RANDOM_LEN + TLS_CH_VERSION_LEN;
+	/* legacy_session_id_len must be zero (QUIC requirement). */
+	if (!quic_get_int(&p, &len, &length, 1) || length)
+		return err;
+
+	/* Skip cipher_suites (2 bytes length + variable data). */
+	if (!quic_get_int(&p, &len, &length, 2) || length > (u64)len)
+		return err;
+	len -= length;
+	p += length;
+
+	/* Skip legacy_compression_methods (1 byte length + variable data). */
+	if (!quic_get_int(&p, &len, &length, 1) || length > (u64)len)
+		return err;
+	len -= length;
+	p += length;
+
+	if (!quic_get_int(&p, &len, &length, 2)) /* Read TLS extensions length (2 bytes). */
+		return err;
+	if (len > (u32)length) /* Limit len to extensions length if larger. */
+		len = length;
+	while (len > 4) { /* Iterate over extensions to find ALPN (type TLS_EXT_alpn). */
+		if (!quic_get_int(&p, &len, &type, 2))
+			break;
+		if (!quic_get_int(&p, &len, &length, 2))
+			break;
+		if (len < (u32)length) /* Incomplete TLS extensions. */
+			return 0;
+		if (type == TLS_EXT_alpn) { /* Found ALPN extension. */
+			len = length;
+			found = 1;
+			break;
+		}
+		/* Skip non-ALPN extensions. */
+		p += length;
+		len -= length;
+	}
+	if (!found) { /* no ALPN extension found: set alpn->len = 0 and alpn->data = p. */
+		quic_data(alpn, p, 0);
+		return 0;
+	}
+
+	/* Parse ALPN protocols list length (2 bytes). */
+	if (!quic_get_int(&p, &len, &length, 2) || length > (u64)len)
+		return err;
+	quic_data(alpn, p, length); /* Store ALPN protocols list in alpn->data. */
+	len = length;
+	while (len) { /* Validate ALPN protocols list format. */
+		if (!quic_get_int(&p, &len, &length, 1) || length > (u64)len) {
+			/* Malformed ALPN entry: set alpn->len = 0 and alpn->data = NULL. */
+			quic_data(alpn, NULL, 0);
+			return err;
+		}
+		len -= length;
+		p += length;
+	}
+	pr_debug("%s: alpn_len: %d\n", __func__, alpn->len);
+	return 0;
+}
+
+/* Parse ALPN from a QUIC Initial packet.
+ *
+ * This function processes a QUIC Initial packet to extract the ALPN from the TLS ClientHello
+ * message inside the QUIC CRYPTO frame. It verifies packet type, version compatibility,
+ * decrypts the packet payload, and locates the CRYPTO frame to parse the TLS ClientHello.
+ * Finally, it calls quic_packet_get_alpn() to extract the ALPN extension data.
+ *
+ * Return: 0 on success or no ALPN found, a negative error code on failed parsing.
+ */
+static int quic_packet_parse_alpn(struct sk_buff *skb, struct quic_data *alpn)
+{
+	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
+	struct net *net = dev_net(skb->dev);
+	struct quic_net *qn = quic_net(net);
+	u8 *p = skb->data, *data, type;
+	struct quic_conn_id dcid, scid;
+	u32 len = skb->len, version;
+	struct quic_crypto *crypto;
+	struct quic_data token;
+	u64 offset, length;
+	int err = -EINVAL;
+
+	if (quic_packet_get_version_and_connid(&dcid, &scid, &version, &p, &len))
+		return -EINVAL;
+	if (!quic_packet_compatible_versions(version))
+		return 0;
+	/* Only parse Initial packets. */
+	type = quic_packet_version_get_type(version, quic_hshdr(skb)->type);
+	if (type != QUIC_PACKET_INITIAL)
+		return 0;
+	if (quic_packet_get_token(&token, &p, &len))
+		return -EINVAL;
+	if (!quic_get_var(&p, &len, &length) || length > (u64)len)
+		return err;
+	cb->length = (u16)length;
+	/* Copy skb data for restoring in case of decrypt failure. */
+	data = kmemdup(skb->data, skb->len, GFP_ATOMIC);
+	if (!data)
+		return -ENOMEM;
+
+	spin_lock(&qn->lock);
+	/* Install initial keys for packet decryption to crypto. */
+	crypto = &quic_net(net)->crypto;
+	err = quic_crypto_initial_keys_install(crypto, &dcid, version, 1);
+	if (err) {
+		spin_unlock(&qn->lock);
+		goto out;
+	}
+	cb->number_offset = (u16)(p - skb->data);
+	err = quic_crypto_decrypt(crypto, skb);
+	if (err) {
+		spin_unlock(&qn->lock);
+		QUIC_INC_STATS(net, QUIC_MIB_PKT_DECDROP);
+		/* Restore original data on decrypt failure. */
+		memcpy(skb->data, data, skb->len);
+		goto out;
+	}
+	spin_unlock(&qn->lock);
+
+	QUIC_INC_STATS(net, QUIC_MIB_PKT_DECFASTPATHS);
+	cb->resume = 1; /* Mark this packet as already decrypted. */
+
+	/* Find the QUIC CRYPTO frame. */
+	p += cb->number_len;
+	len = cb->length - cb->number_len - QUIC_TAG_LEN;
+	for (; len && !(*p); p++, len--) /* Skip the padding frame. */
+		;
+	if (!len-- || *p++ != QUIC_FRAME_CRYPTO)
+		goto out;
+	if (!quic_get_var(&p, &len, &offset) || offset)
+		goto out;
+	if (!quic_get_var(&p, &len, &length) || length > (u64)len)
+		goto out;
+
+	/* Parse the TLS CLIENT_HELLO message. */
+	err = quic_packet_get_alpn(alpn, p, length);
+
+out:
+	kfree(data);
+	return err;
+}
+
 /* Extract the Destination Connection ID (DCID) from a QUIC Long header packet. */
 int quic_packet_get_dcid(struct quic_conn_id *dcid, struct sk_buff *skb)
 {
@@ -294,6 +485,7 @@ static struct sock *quic_packet_get_sock(struct sk_buff *skb)
 	struct net *net = dev_net(skb->dev);
 	struct quic_conn_id dcid, *conn_id;
 	union quic_addr daddr, saddr;
+	struct quic_data alpns = {};
 	struct sock *sk = NULL;
 
 	if (skb->len < QUIC_HLEN)
@@ -316,7 +508,7 @@ static struct sock *quic_packet_get_sock(struct sk_buff *skb)
 		 * (May be used to send a stateless reset from a listen socket).
 		 */
 		quic_get_msg_addrs(&daddr, &saddr, skb);
-		sk = quic_listen_sock_lookup(skb, &daddr, &saddr);
+		sk = quic_listen_sock_lookup(skb, &daddr, &saddr, &alpns);
 		if (sk)
 			return sk;
 		/* Final fallback: address-based connection lookup
@@ -345,7 +537,9 @@ static struct sock *quic_packet_get_sock(struct sk_buff *skb)
 	/* Final fallback: listener socket lookup
 	 * (Used for receiving the first Client Initial packet).
 	 */
-	return quic_listen_sock_lookup(skb, &daddr, &saddr);
+	if (quic_packet_parse_alpn(skb, &alpns))
+		return NULL;
+	return quic_listen_sock_lookup(skb, &daddr, &saddr, &alpns);
 }
 
 /* Entry point for processing received QUIC packets. */
@@ -1524,203 +1718,6 @@ int quic_packet_process(struct sock *sk, struct sk_buff *skb)
 		return quic_packet_handshake_process(sk, skb);
 
 	return quic_packet_app_process(sk, skb);
-}
-
-#define TLS_MT_CLIENT_HELLO	1
-#define TLS_EXT_alpn		16
-
-/*  TLS Client Hello Msg:
- *
- *    uint16 ProtocolVersion;
- *    opaque Random[32];
- *    uint8 CipherSuite[2];
- *
- *    struct {
- *        ExtensionType extension_type;
- *        opaque extension_data<0..2^16-1>;
- *    } Extension;
- *
- *    struct {
- *        ProtocolVersion legacy_version = 0x0303;
- *        Random rand;
- *        opaque legacy_session_id<0..32>;
- *        CipherSuite cipher_suites<2..2^16-2>;
- *        opaque legacy_compression_methods<1..2^8-1>;
- *        Extension extensions<8..2^16-1>;
- *    } ClientHello;
- */
-
-#define TLS_CH_RANDOM_LEN	32
-#define TLS_CH_VERSION_LEN	2
-
-/* Extract ALPN data from a TLS ClientHello message.
- *
- * Parses the TLS ClientHello handshake message to find the ALPN (Application Layer Protocol
- * Negotiation) TLS extension. It validates the TLS ClientHello structure, including version,
- * random, session ID, cipher suites, compression methods, and extensions. Once the ALPN
- * extension is found, the ALPN protocols list is extracted and stored in @alpn.
- *
- * Return: 0 on success or no ALPN found, a negative error code on failed parsing.
- */
-static int quic_packet_get_alpn(struct quic_data *alpn, u8 *p, u32 len)
-{
-	int err = -EINVAL, found = 0;
-	u64 length, type;
-
-	/* Verify handshake message type (ClientHello) and its length. */
-	if (!quic_get_int(&p, &len, &type, 1) || type != TLS_MT_CLIENT_HELLO)
-		return err;
-	if (!quic_get_int(&p, &len, &length, 3) ||
-	    length < TLS_CH_RANDOM_LEN + TLS_CH_VERSION_LEN)
-		return err;
-	if (len > (u32)length) /* Limit len to handshake message length if larger. */
-		len = length;
-	/* Skip legacy_version (2 bytes) + random (32 bytes). */
-	p += TLS_CH_RANDOM_LEN + TLS_CH_VERSION_LEN;
-	len -= TLS_CH_RANDOM_LEN + TLS_CH_VERSION_LEN;
-	/* legacy_session_id_len must be zero (QUIC requirement). */
-	if (!quic_get_int(&p, &len, &length, 1) || length)
-		return err;
-
-	/* Skip cipher_suites (2 bytes length + variable data). */
-	if (!quic_get_int(&p, &len, &length, 2) || length > (u64)len)
-		return err;
-	len -= length;
-	p += length;
-
-	/* Skip legacy_compression_methods (1 byte length + variable data). */
-	if (!quic_get_int(&p, &len, &length, 1) || length > (u64)len)
-		return err;
-	len -= length;
-	p += length;
-
-	if (!quic_get_int(&p, &len, &length, 2)) /* Read TLS extensions length (2 bytes). */
-		return err;
-	if (len > (u32)length) /* Limit len to extensions length if larger. */
-		len = length;
-	while (len > 4) { /* Iterate over extensions to find ALPN (type TLS_EXT_alpn). */
-		if (!quic_get_int(&p, &len, &type, 2))
-			break;
-		if (!quic_get_int(&p, &len, &length, 2))
-			break;
-		if (len < (u32)length) /* Incomplete TLS extensions. */
-			return 0;
-		if (type == TLS_EXT_alpn) { /* Found ALPN extension. */
-			len = length;
-			found = 1;
-			break;
-		}
-		/* Skip non-ALPN extensions. */
-		p += length;
-		len -= length;
-	}
-	if (!found) { /* no ALPN extension found: set alpn->len = 0 and alpn->data = p. */
-		quic_data(alpn, p, 0);
-		return 0;
-	}
-
-	/* Parse ALPN protocols list length (2 bytes). */
-	if (!quic_get_int(&p, &len, &length, 2) || length > (u64)len)
-		return err;
-	quic_data(alpn, p, length); /* Store ALPN protocols list in alpn->data. */
-	len = length;
-	while (len) { /* Validate ALPN protocols list format. */
-		if (!quic_get_int(&p, &len, &length, 1) || length > (u64)len) {
-			/* Malformed ALPN entry: set alpn->len = 0 and alpn->data = NULL. */
-			quic_data(alpn, NULL, 0);
-			return err;
-		}
-		len -= length;
-		p += length;
-	}
-	pr_debug("%s: alpn_len: %d\n", __func__, alpn->len);
-	return 0;
-}
-
-/* Parse ALPN from a QUIC Initial packet.
- *
- * This function processes a QUIC Initial packet to extract the ALPN from the TLS ClientHello
- * message inside the QUIC CRYPTO frame. It verifies packet type, version compatibility,
- * decrypts the packet payload, and locates the CRYPTO frame to parse the TLS ClientHello.
- * Finally, it calls quic_packet_get_alpn() to extract the ALPN extension data.
- *
- * Return: 0 on success or no ALPN found, a negative error code on failed parsing.
- */
-int quic_packet_parse_alpn(struct sk_buff *skb, struct quic_data *alpn)
-{
-	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
-	struct net *net = dev_net(skb->dev);
-	u8 *p = skb->data, *data, type;
-	struct quic_conn_id dcid, scid;
-	u32 len = skb->len, version;
-	struct quic_crypto *crypto;
-	struct quic_data token;
-	u64 offset, length;
-	int err = -EINVAL;
-
-	/* Only parse Initial packets (Long header). */
-	if (!quic_hshdr(skb)->form)
-		return 0;
-	if (quic_packet_get_version_and_connid(&dcid, &scid, &version, &p, &len))
-		return -EINVAL;
-	if (!quic_packet_compatible_versions(version))
-		return 0;
-	type = quic_packet_version_get_type(version, quic_hshdr(skb)->type);
-	if (type != QUIC_PACKET_INITIAL)
-		return 0;
-	if (quic_packet_get_token(&token, &p, &len))
-		return -EINVAL;
-	if (!quic_get_var(&p, &len, &length) || length > (u64)len)
-		return err;
-	cb->length = (u16)length;
-	/* Allocate crypto context for decrypting the packet. */
-	crypto = kzalloc(sizeof(*crypto), GFP_ATOMIC);
-	if (!crypto)
-		return -ENOMEM;
-	/* Copy skb data for restoring in case of decrypt failure. */
-	data = kmemdup(skb->data, skb->len, GFP_ATOMIC);
-	if (!data) {
-		kfree(crypto);
-		return -ENOMEM;
-	}
-	err = quic_crypto_set_cipher(crypto, TLS_CIPHER_AES_GCM_128, CRYPTO_ALG_ASYNC);
-	if (err)
-		goto out;
-	/* Install initial keys for packet decryption to crypto. */
-	err = quic_crypto_initial_keys_install(crypto, &dcid, version, 1);
-	if (err)
-		goto out;
-	cb->number_offset = (u16)(p - skb->data);
-	err = quic_crypto_decrypt(crypto, skb);
-	if (err) {
-		QUIC_INC_STATS(net, QUIC_MIB_PKT_DECDROP);
-		/* Restore original data on decrypt failure. */
-		memcpy(skb->data, data, skb->len);
-		goto out;
-	}
-	QUIC_INC_STATS(net, QUIC_MIB_PKT_DECFASTPATHS);
-	cb->resume = 1; /* Mark this packet as already decrypted. */
-
-	/* Find the QUIC CRYPTO frame. */
-	p += cb->number_len;
-	len = cb->length - cb->number_len - QUIC_TAG_LEN;
-	for (; len && !(*p); p++, len--) /* Skip the padding frame. */
-		;
-	if (!len-- || *p++ != QUIC_FRAME_CRYPTO)
-		goto out;
-	if (!quic_get_var(&p, &len, &offset) || offset)
-		goto out;
-	if (!quic_get_var(&p, &len, &length) || length > (u64)len)
-		goto out;
-
-	/* Parse the TLS CLIENT_HELLO message. */
-	err = quic_packet_get_alpn(alpn, p, length);
-
-out:
-	quic_crypto_free(crypto);
-	kfree(crypto);
-	kfree(data);
-	return err;
 }
 
 /* Make these fixed for easy coding. */

@@ -123,7 +123,6 @@ void quic_packet_init(struct sock *sk);
 
 int quic_packet_get_dcid(struct quic_conn_id *dcid, struct sk_buff *skb);
 int quic_packet_select_version(struct sock *sk, u32 *versions, u8 count);
-int quic_packet_parse_alpn(struct sk_buff *skb, struct quic_data *alpn);
 u32 *quic_packet_compatible_versions(u32 version);
 
 void quic_packet_rcv_err_pmtu(struct sock *sk);

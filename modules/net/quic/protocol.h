@@ -48,6 +48,8 @@ struct quic_net {
 #ifdef CONFIG_PROC_FS
 	struct proc_dir_entry *proc_net;
 #endif
+	struct quic_crypto crypto;
+	spinlock_t lock;
 };
 
 struct quic_net *quic_net(struct net *net);

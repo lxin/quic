@@ -163,12 +163,13 @@ struct sock *quic_sock_lookup(struct sk_buff *skb, union quic_addr *sa, union qu
  *
  * Return: A pointer to the matching listening socket, or NULL if no match is found.
  */
-struct sock *quic_listen_sock_lookup(struct sk_buff *skb, union quic_addr *sa, union quic_addr *da)
+struct sock *quic_listen_sock_lookup(struct sk_buff *skb, union quic_addr *sa, union quic_addr *da,
+				     struct quic_data *alpns)
 {
 	struct net *net = dev_net(skb->dev);
-	struct quic_data alpns = {}, alpn;
 	struct sock *sk = NULL, *tmp;
 	struct quic_hash_head *head;
+	struct quic_data alpn;
 	union quic_addr *a;
 	u64 length;
 	u32 len;
@@ -177,17 +178,14 @@ struct sock *quic_listen_sock_lookup(struct sk_buff *skb, union quic_addr *sa, u
 	head = quic_listen_sock_head(net, ntohs(sa->v4.sin_port));
 	spin_lock(&head->lock);
 
-	if (hlist_empty(&head->head) || quic_packet_parse_alpn(skb, &alpns))
-		goto unlock;
-
-	if (!alpns.len) { /* No ALPN entries present or failed to parse the ALPNs. */
+	if (!alpns->len) { /* No ALPN entries present or failed to parse the ALPNs. */
 		sk_for_each(tmp, &head->head) {
-			/* If alpns.data != NULL, TLS parsing succeeded but no ALPN was found.
+			/* If alpns->data != NULL, TLS parsing succeeded but no ALPN was found.
 			 * In this case, only match sockets that have no ALPN set.
 			 */
 			a = quic_path_saddr(quic_paths(tmp), 0);
 			if (net == sock_net(tmp) && quic_cmp_sk_addr(tmp, a, sa) &&
-			    (!alpns.data || !quic_alpn(tmp)->len)) {
+			    (!alpns->data || !quic_alpn(tmp)->len)) {
 				sk = tmp;
 				if (!quic_is_any_addr(a)) /* Prefer specific address match. */
 					break;
@@ -197,7 +195,7 @@ struct sock *quic_listen_sock_lookup(struct sk_buff *skb, union quic_addr *sa, u
 	}
 
 	/* ALPN present: loop through each ALPN entry. */
-	for (p = alpns.data, len = alpns.len; len; len -= length, p += length) {
+	for (p = alpns->data, len = alpns->len; len; len -= length, p += length) {
 		quic_get_int(&p, &len, &length, 1);
 		quic_data(&alpn, p, length);
 		sk_for_each(tmp, &head->head) {
