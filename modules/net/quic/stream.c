@@ -96,7 +96,7 @@ static struct quic_stream *quic_stream_send_create(struct quic_stream_table *str
 	 * of that type with lower-numbered stream IDs also being opened.
 	 */
 	while (stream_id <= max_stream_id) {
-		stream = kzalloc(sizeof(*stream), GFP_ATOMIC);
+		stream = kzalloc(sizeof(*stream), GFP_KERNEL);
 		if (!stream)
 			return NULL;
 
