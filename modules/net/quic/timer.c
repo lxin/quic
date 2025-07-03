@@ -43,7 +43,7 @@ void quic_timer_sack_handler(struct sock *sk)
 
 static void quic_timer_sack_timeout(struct timer_list *t)
 {
-	struct quic_sock *qs = from_timer(qs, t, timers[QUIC_TIMER_SACK].t);
+	struct quic_sock *qs = container_of(t, struct quic_sock, timers[QUIC_TIMER_SACK].t);
 	struct sock *sk = &qs->inet.sk;
 
 	bh_lock_sock(sk);
@@ -69,7 +69,7 @@ void quic_timer_loss_handler(struct sock *sk)
 
 static void quic_timer_loss_timeout(struct timer_list *t)
 {
-	struct quic_sock *qs = from_timer(qs, t, timers[QUIC_TIMER_LOSS].t);
+	struct quic_sock *qs = container_of(t, struct quic_sock, timers[QUIC_TIMER_LOSS].t);
 	struct sock *sk = &qs->inet.sk;
 
 	bh_lock_sock(sk);
@@ -117,7 +117,7 @@ out:
 
 static void quic_timer_path_timeout(struct timer_list *t)
 {
-	struct quic_sock *qs = from_timer(qs, t, timers[QUIC_TIMER_PATH].t);
+	struct quic_sock *qs = container_of(t, struct quic_sock, timers[QUIC_TIMER_PATH].t);
 	struct sock *sk = &qs->inet.sk;
 
 	bh_lock_sock(sk);
@@ -154,7 +154,7 @@ void quic_timer_pmtu_handler(struct sock *sk)
 
 static void quic_timer_pmtu_timeout(struct timer_list *t)
 {
-	struct quic_sock *qs = from_timer(qs, t, timers[QUIC_TIMER_PMTU].t);
+	struct quic_sock *qs = container_of(t, struct quic_sock, timers[QUIC_TIMER_PMTU].t);
 	struct sock *sk = &qs->inet.sk;
 
 	bh_lock_sock(sk);
