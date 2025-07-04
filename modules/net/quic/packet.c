@@ -237,7 +237,7 @@ static int quic_packet_rcv_err(struct sk_buff *skb)
 	u32 info;
 
 	/* All we can do is lookup the matching QUIC socket by addresses. */
-	quic_get_msg_addrs(&daddr, &saddr, skb);
+	quic_get_msg_addrs(&saddr, &daddr, skb);
 	sk = quic_sock_lookup(skb, &daddr, &saddr, NULL);
 	if (!sk)
 		return -ENOENT;
