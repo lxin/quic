@@ -904,10 +904,8 @@ static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 		len = iov_iter_count(&msg->msg_iter);
 		if (sk_stream_wspace(sk) < len || !sk_wmem_schedule(sk, len)) {
 			err = quic_wait_for_send(sk, flags, len);
-			if (err) {
-				quic_frame_put(frame);
+			if (err)
 				goto err;
-			}
 		}
 		/* Only sending Datagram frames with a length field is supported for now. */
 		frame = quic_frame_create(sk, QUIC_FRAME_DATAGRAM_LEN, &msg->msg_iter);
