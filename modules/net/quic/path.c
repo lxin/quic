@@ -236,7 +236,7 @@ void quic_path_free(struct sock *sk, struct quic_path_group *paths, u8 path)
 /* Detects and records a potential alternate path.
  *
  * If the new source or destination address differs from the active path, and alternate path
- * detection is not disabled, the function pdates the alternate path slot (path[1]) with the
+ * detection is not disabled, the function updates the alternate path slot (path[1]) with the
  * new addresses.
  *
  * This is typically called on packet receive to detect new possible network paths (e.g., NAT

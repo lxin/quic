@@ -1964,7 +1964,7 @@ out:
 	/* Send NEW_CONNECTION_ID frames to ensure maximum connection IDs are added. */
 	if (quic_outq_transmit_new_conn_id(sk, 0, 0, false))
 		return -ENOMEM;
-	/* Enter established state, and start PLPMTUD timer and Path Challege timer. */
+	/* Enter established state, and start PLPMTUD timer and Path Challenge timer. */
 	quic_set_state(sk, QUIC_SS_ESTABLISHED);
 	quic_timer_start(sk, QUIC_TIMER_PMTU, c->plpmtud_probe_interval);
 	quic_timer_reset_path(sk);

@@ -863,7 +863,7 @@ static int quic_packet_listen_process(struct sock *sk, struct sk_buff *skb)
 		goto out;
 	}
 
-	/* Read VERSION, Destination Connection ID and Scource Connection ID. */
+	/* Read VERSION, Destination Connection ID and Source Connection ID. */
 	if (quic_packet_get_version_and_connid(&packet->dcid, &packet->scid, &version, &p, &len)) {
 		QUIC_INC_STATS(net, QUIC_MIB_PKT_INVHDRDROP);
 		err = -EINVAL;
@@ -928,7 +928,7 @@ static int quic_packet_listen_process(struct sock *sk, struct sk_buff *skb)
 			 *
 			 * If a server receives a client Initial that contains an invalid Retry
 			 * token but is otherwise valid, it knows the client will not accept
-			 * another Retry token.  The server SHOULD immediately clos  the
+			 * another Retry token.  The server SHOULD immediately close the
 			 * connection with an INVALID_TOKEN error.
 			 */
 			errcode = QUIC_TRANSPORT_ERROR_INVALID_TOKEN;
@@ -1140,7 +1140,7 @@ static int quic_packet_handshake_header_process(struct sock *sk, struct sk_buff 
 	u64 length;
 
 	quic_packet_reset(packet); /* Reset packet state to prepare for new packet parsing. */
-	/* Read VERSION, Destination Connection ID and Scource Connection ID. */
+	/* Read VERSION, Destination Connection ID and Source Connection ID. */
 	if (quic_packet_get_version_and_connid(&packet->dcid, &packet->scid, &version, &p, &len))
 		return -EINVAL;
 	if (!version) { /* version == 0 indicates this is a version negotiation packet. */
@@ -1376,7 +1376,7 @@ next:
 				 * Destination Connection ID field in subsequent packets it sends to
 				 * the value of the Source Connection ID field that it received.
 				 *
-				 * (Sever sets it when creating the accept socket in accpet()).
+				 * (Sever sets it when creating the accept socket in accept()).
 				 */
 				conn_id = quic_conn_id_active(quic_dest(sk));
 				quic_conn_id_update(conn_id, packet->scid.data, packet->scid.len);
@@ -1951,7 +1951,7 @@ static struct sk_buff *quic_packet_handshake_create(struct sock *sk)
 	}
 	if (packet->frames) {
 		/* If there are ack-eliciting frames (not including PING), create packet_sent
-		 * for acknownledge and loss detection.
+		 * for acknowledge and loss detection.
 		 */
 		sent = quic_packet_sent_alloc(packet->frames);
 		if (!sent) { /* Move pending frames back to the outqueue. */
@@ -2073,7 +2073,7 @@ static struct sk_buff *quic_packet_app_create(struct sock *sk)
 
 	if (packet->frames) {
 		/* If there are ack-eliciting frames (not including PING), create packet_sent
-		 * for acknownledge and loss detection.
+		 * for acknowledge and loss detection.
 		 */
 		sent = quic_packet_sent_alloc(packet->frames);
 		if (!sent) { /* Move pending frames back to the outqueue. */

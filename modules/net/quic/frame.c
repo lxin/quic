@@ -1077,7 +1077,7 @@ static int quic_frame_ack_process(struct sock *sk, struct quic_frame *frame, u8 
 		/* rfc9000#section-19.3.1:
 		 *
 		 * smallest = largest - ack_range;
-		 * argest = previous_smallest - gap - 2.
+		 * largest = previous_smallest - gap - 2.
 		 */
 		largest = smallest - gap - 2;
 		smallest = largest - range;

@@ -12,7 +12,7 @@
 
 #include "socket.h"
 
-/* Checks whether a frame can be transmmited based on congestion control and Anti-Amplification. */
+/* Checks whether a frame can be transmitted based on congestion control and Anti-Amplification. */
 static int quic_outq_limit_check(struct sock *sk, struct quic_frame *frame)
 {
 	struct quic_path_group *paths = quic_paths(sk);
@@ -43,7 +43,7 @@ static int quic_outq_limit_check(struct sock *sk, struct quic_frame *frame)
 	return 0;
 }
 
-/* Flush any appeneded frames or coalesced/bundled packets. */
+/* Flush any appended frames or coalesced/bundled packets. */
 static int quic_outq_transmit_flush(struct sock *sk)
 {
 	struct quic_packet *packet = quic_packet(sk);
@@ -86,7 +86,7 @@ static void quic_outq_transmit_ctrl(struct sock *sk, u8 level)
 		if (quic_outq_limit_check(sk, frame))
 			break;
 		if (quic_packet_tail(sk, frame))
-			continue; /* Frame appeneded. */
+			continue; /* Frame appended. */
 		/* Flush already appended frames before processing this one. */
 		outq->count += quic_packet_create(sk);
 		next = frame; /* Re-append this frame. */
@@ -514,7 +514,7 @@ void quic_outq_packet_sent_tail(struct sock *sk, struct quic_packet_sent *sent)
 
 	/* Insert sent packet in priority order:
 	 *
-	 *   Handshake levels (level > 0) > Appliation level (level == 0).
+	 *   Handshake levels (level > 0) > Application level (level == 0).
 	 */
 	if (sent->level) {
 		list_for_each_entry(pos, head, list) {
@@ -608,7 +608,7 @@ void quic_outq_transmit_app_close(struct sock *sk)
 	quic_outq_transmit_frame(sk, type, &level, 0, false);
 }
 
-/* Processes frames in a sent packet that have been acknowledged (SACKed). */
+/* Processes frames in a sent packet that have been acknowledged (ACKed). */
 static void quic_outq_psent_sack_frames(struct sock *sk, struct quic_packet_sent *sent)
 {
 	struct quic_frame *frame;
