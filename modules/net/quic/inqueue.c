@@ -545,7 +545,7 @@ int quic_inq_event_recv(struct sock *sk, u8 event, void *args)
 	u32 args_len = 0;
 	u8 *p;
 
-	if (!event || event > QUIC_EVENT_MAX)
+	if (!event || event >= QUIC_EVENT_MAX)
 		return -EINVAL;
 
 	if (!(quic_inq(sk)->events & BIT(event)))

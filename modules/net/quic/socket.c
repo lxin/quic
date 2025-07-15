@@ -1431,7 +1431,7 @@ static int quic_sock_set_event(struct sock *sk, struct quic_event_option *event,
 
 	if (len != sizeof(*event))
 		return -EINVAL;
-	if (!event->type || event->type > QUIC_EVENT_MAX)
+	if (!event->type || event->type >= QUIC_EVENT_MAX)
 		return -EINVAL;
 
 	if (event->on) { /* Enable the specified event by setting the corresponding bit. */
@@ -2074,7 +2074,7 @@ static int quic_sock_get_event(struct sock *sk, u32 len, sockptr_t optval, sockp
 	if (copy_from_sockptr(&event, optval, len))
 		return -EFAULT;
 
-	if (!event.type || event.type > QUIC_EVENT_MAX)
+	if (!event.type || event.type >= QUIC_EVENT_MAX)
 		return -EINVAL;
 	/* Set on if the corresponding event bit is set. */
 	event.on = !!(inq->events & BIT(event.type));
