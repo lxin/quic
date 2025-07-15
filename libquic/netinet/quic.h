@@ -20,6 +20,7 @@
 #include <gnutls/abstract.h>
 #include <sys/socket.h>
 #include <linux/quic.h>
+#include <stdint.h>
 
 /* Socket option layer for QUIC */
 #ifndef SOL_QUIC

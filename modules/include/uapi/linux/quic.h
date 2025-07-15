@@ -8,15 +8,14 @@
  *    Xin Long <lucien.xin@gmail.com>
  */
 
-#ifndef __uapi_quic_h__
-#define __uapi_quic_h__
+#ifndef _UAPI_LINUX_QUIC_H
+#define _UAPI_LINUX_QUIC_H
 
+#include <linux/types.h>
 #ifdef __KERNEL__
 #include <linux/socket.h>
-#include <linux/types.h>
 #else
 #include <sys/socket.h>
-#include <stdint.h>
 #endif
 
 enum {
@@ -62,12 +61,12 @@ enum quic_crypto_level {
 };
 
 struct quic_handshake_info {
-	uint8_t	crypto_level;
+	__u8	crypto_level;
 };
 
 struct quic_stream_info {
-	int64_t  stream_id;
-	uint32_t stream_flags;
+	__s64	stream_id;
+	__u32	stream_flags;
 };
 
 /* Socket Options APIs */
@@ -91,46 +90,46 @@ struct quic_stream_info {
 #define QUIC_VERSION_V2			0x6b3343cf
 
 struct quic_transport_param {
-	uint8_t		remote;
-	uint8_t		disable_active_migration;
-	uint8_t		grease_quic_bit;
-	uint8_t		stateless_reset;
-	uint8_t		disable_1rtt_encryption;
-	uint8_t		disable_compatible_version;
-	uint8_t		active_connection_id_limit;
-	uint8_t		ack_delay_exponent;
-	uint16_t	max_datagram_frame_size;
-	uint16_t	max_udp_payload_size;
-	uint32_t	max_idle_timeout;
-	uint32_t	max_ack_delay;
-	uint16_t	max_streams_bidi;
-	uint16_t	max_streams_uni;
-	uint64_t	max_data;
-	uint64_t	max_stream_data_bidi_local;
-	uint64_t	max_stream_data_bidi_remote;
-	uint64_t	max_stream_data_uni;
-	uint64_t	reserved;
+	__u8	remote;
+	__u8	disable_active_migration;
+	__u8	grease_quic_bit;
+	__u8	stateless_reset;
+	__u8	disable_1rtt_encryption;
+	__u8	disable_compatible_version;
+	__u8	active_connection_id_limit;
+	__u8	ack_delay_exponent;
+	__u16	max_datagram_frame_size;
+	__u16	max_udp_payload_size;
+	__u32	max_idle_timeout;
+	__u32	max_ack_delay;
+	__u16	max_streams_bidi;
+	__u16	max_streams_uni;
+	__u64	max_data;
+	__u64	max_stream_data_bidi_local;
+	__u64	max_stream_data_bidi_remote;
+	__u64	max_stream_data_uni;
+	__u64	reserved;
 };
 
 struct quic_config {
-	uint32_t	version;
-	uint32_t	plpmtud_probe_interval;
-	uint32_t	initial_smoothed_rtt;
-	uint32_t	payload_cipher_type;
-	uint8_t		congestion_control_algo;
-	uint8_t		validate_peer_address;
-	uint8_t		stream_data_nodelay;
-	uint8_t		receive_session_ticket;
-	uint8_t		certificate_request;
-	uint8_t		reserved[3];
+	__u32	version;
+	__u32	plpmtud_probe_interval;
+	__u32	initial_smoothed_rtt;
+	__u32	payload_cipher_type;
+	__u8	congestion_control_algo;
+	__u8	validate_peer_address;
+	__u8	stream_data_nodelay;
+	__u8	receive_session_ticket;
+	__u8	certificate_request;
+	__u8	reserved[3];
 };
 
 struct quic_crypto_secret {
-	uint8_t send;  /* send or recv */
-	uint8_t level; /* crypto level */
-	uint32_t type; /* TLS_CIPHER_* */
+	__u8	send;  /* send or recv */
+	__u8	level; /* crypto level */
+	__u32	type; /* TLS_CIPHER_* */
 #define QUIC_CRYPTO_SECRET_BUFFER_SIZE 48
-	uint8_t secret[QUIC_CRYPTO_SECRET_BUFFER_SIZE];
+	__u8	secret[QUIC_CRYPTO_SECRET_BUFFER_SIZE];
 };
 
 enum quic_cong_algo {
@@ -140,19 +139,19 @@ enum quic_cong_algo {
 };
 
 struct quic_errinfo {
-	int64_t  stream_id;
-	uint32_t errcode;
+	__s64	stream_id;
+	__u32	errcode;
 };
 
 struct quic_connection_id_info {
-	uint8_t  dest;
-	uint32_t active;
-	uint32_t prior_to;
+	__u8	dest;
+	__u32	active;
+	__u32	prior_to;
 };
 
 struct quic_event_option {
-	uint8_t type;
-	uint8_t on;
+	__u8	type;
+	__u8	on;
 };
 
 /* Event APIs */
@@ -188,58 +187,58 @@ enum {
 };
 
 struct quic_stream_update {
-	int64_t  id;
-	uint8_t  state;
-	uint32_t errcode;
-	uint64_t finalsz;
+	__s64	id;
+	__u8	state;
+	__u32	errcode;
+	__u64	finalsz;
 };
 
 struct quic_stream_max_data {
-	int64_t  id;
-	uint64_t max_data;
+	__s64	id;
+	__u64	max_data;
 };
 
 struct quic_connection_close {
-	uint32_t errcode;
-	uint8_t frame;
-	uint8_t phrase[];
+	__u32	errcode;
+	__u8	frame;
+	__u8	phrase[];
 };
 
 union quic_event {
-	struct quic_stream_update update;
-	struct quic_stream_max_data max_data;
-	struct quic_connection_close close;
-	struct quic_connection_id_info info;
-	uint64_t max_stream;
-	uint8_t local_migration;
-	uint8_t key_update_phase;
+	struct quic_stream_update	update;
+	struct quic_stream_max_data	max_data;
+	struct quic_connection_close	close;
+	struct quic_connection_id_info	info;
+	__u64	max_stream;
+	__u8	local_migration;
+	__u8	key_update_phase;
 };
 
 enum {
-	QUIC_TRANSPORT_ERROR_NONE,
-	QUIC_TRANSPORT_ERROR_INTERNAL,
-	QUIC_TRANSPORT_ERROR_CONNECTION_REFUSED,
-	QUIC_TRANSPORT_ERROR_FLOW_CONTROL,
-	QUIC_TRANSPORT_ERROR_STREAM_LIMIT,
-	QUIC_TRANSPORT_ERROR_STREAM_STATE,
-	QUIC_TRANSPORT_ERROR_FINAL_SIZE,
-	QUIC_TRANSPORT_ERROR_FRAME_ENCODING,
-	QUIC_TRANSPORT_ERROR_TRANSPORT_PARAM,
-	QUIC_TRANSPORT_ERROR_CONNECTION_ID_LIMIT,
-	QUIC_TRANSPORT_ERROR_PROTOCOL_VIOLATION,
-	QUIC_TRANSPORT_ERROR_INVALID_TOKEN,
-	QUIC_TRANSPORT_ERROR_APPLICATION,
-	QUIC_TRANSPORT_ERROR_CRYPTO_BUF_EXCEEDED,
-	QUIC_TRANSPORT_ERROR_KEY_UPDATE,
-	QUIC_TRANSPORT_ERROR_AEAD_LIMIT_REACHED,
-	QUIC_TRANSPORT_ERROR_NO_VIABLE_PATH,
+	QUIC_TRANSPORT_ERROR_NONE			= 0x00,
+	QUIC_TRANSPORT_ERROR_INTERNAL			= 0x01,
+	QUIC_TRANSPORT_ERROR_CONNECTION_REFUSED		= 0x02,
+	QUIC_TRANSPORT_ERROR_FLOW_CONTROL		= 0x03,
+	QUIC_TRANSPORT_ERROR_STREAM_LIMIT		= 0x04,
+	QUIC_TRANSPORT_ERROR_STREAM_STATE		= 0x05,
+	QUIC_TRANSPORT_ERROR_FINAL_SIZE			= 0x06,
+	QUIC_TRANSPORT_ERROR_FRAME_ENCODING		= 0x07,
+	QUIC_TRANSPORT_ERROR_TRANSPORT_PARAM		= 0x08,
+	QUIC_TRANSPORT_ERROR_CONNECTION_ID_LIMIT	= 0x09,
+	QUIC_TRANSPORT_ERROR_PROTOCOL_VIOLATION		= 0x0a,
+	QUIC_TRANSPORT_ERROR_INVALID_TOKEN		= 0x0b,
+	QUIC_TRANSPORT_ERROR_APPLICATION		= 0x0c,
+	QUIC_TRANSPORT_ERROR_CRYPTO_BUF_EXCEEDED	= 0x0d,
+	QUIC_TRANSPORT_ERROR_KEY_UPDATE			= 0x0e,
+	QUIC_TRANSPORT_ERROR_AEAD_LIMIT_REACHED		= 0x0f,
+	QUIC_TRANSPORT_ERROR_NO_VIABLE_PATH		= 0x10,
 
 	/* The cryptographic handshake failed. A range of 256 values is reserved
 	 * for carrying error codes specific to the cryptographic handshake that
 	 * is used. Codes for errors occurring when TLS is used for the
 	 * cryptographic handshake are described in Section 4.8 of [QUIC-TLS].
 	 */
-	QUIC_TRANSPORT_ERROR_CRYPTO = 0x0100,
+	QUIC_TRANSPORT_ERROR_CRYPTO			= 0x0100,
 };
 
-#endif /* __uapi_quic_h__ */
+#endif /* _UAPI_LINUX_QUIC_H */

@@ -8,8 +8,8 @@
  *    Xin Long <lucien.xin@gmail.com>
  */
 
-#ifndef __linux_quic_h__
-#define __linux_quic_h__
+#ifndef _LINUX_QUIC_H
+#define _LINUX_QUIC_H
 
 #include <uapi/linux/quic.h>
 

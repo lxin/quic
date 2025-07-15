@@ -8,9 +8,6 @@
  *    Xin Long <lucien.xin@gmail.com>
  */
 
-#ifndef __net_quic_h__
-#define __net_quic_h__
-
 #include <net/udp_tunnel.h>
 #include <linux/quic.h>
 
@@ -258,5 +255,3 @@ bool quic_accept_sock_exists(struct sock *sk, struct sk_buff *skb);
 
 int quic_request_sock_enqueue(struct sock *sk, struct quic_conn_id *odcid, u8 retry);
 bool quic_request_sock_exists(struct sock *sk);
-
-#endif /* __net_quic_h__ */
