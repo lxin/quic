@@ -2053,7 +2053,7 @@ static int quic_setsockopt(struct sock *sk, int level, int optname,
  *
  * Sets a QUIC socket option on a kernel socket without involving user space.
  *
- * Return values:
+ * Return:
  * - On success, 0 is returned.
  * - On error, a negative error value is returned.
  */
@@ -2392,7 +2392,7 @@ static int quic_getsockopt(struct sock *sk, int level, int optname,
  *
  * Gets a QUIC socket option from a kernel socket, bypassing user space.
  *
- * Return values:
+ * Return:
  * - On success, 0 is returned.
  * - On error, a negative error value is returned.
  */
