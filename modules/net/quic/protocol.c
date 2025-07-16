@@ -10,6 +10,7 @@
  *    Xin Long <lucien.xin@gmail.com>
  */
 
+#include <net/sock.h>
 #include <net/inet_common.h>
 #include <linux/version.h>
 #include <linux/proc_fs.h>

@@ -10,6 +10,7 @@
  *    Xin Long <lucien.xin@gmail.com>
  */
 
+#include <net/sock.h>
 #include <net/inet_common.h>
 #include <linux/version.h>
 #include <asm/ioctls.h>
@@ -253,6 +254,8 @@ static void quic_sock_fetch_transport_param(struct sock *sk, struct quic_transpo
 	quic_stream_get_param(quic_streams(sk), p, quic_is_serv(sk));
 }
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 5, 0) || \
+	(defined(RHEL_RELEASE_CODE) && RHEL_RELEASE_CODE >= 2308) /* RHEL-9.4 */
 static int quic_ioctl(struct sock *sk, int cmd, int *karg)
 {
 	int err = 0;
@@ -282,6 +285,37 @@ out:
 	release_sock(sk);
 	return err;
 }
+#else
+static int quic_ioctl(struct sock *sk, int cmd, unsigned long arg)
+{
+	int err = 0;
+
+	lock_sock(sk);
+
+	if (quic_is_listen(sk)) {
+		err = -EINVAL;
+		goto out;
+	}
+
+	switch (cmd) {
+	case SIOCINQ:
+		err = put_user(sk_rmem_alloc_get(sk), (int __user *)arg);
+		break;
+	case SIOCOUTQ:
+		err = put_user(sk_wmem_alloc_get(sk), (int __user *)arg);
+		break;
+	case SIOCOUTQNSD:
+		err = put_user(quic_outq(sk)->unsent_bytes, (int __user *)arg);
+		break;
+	default:
+		err = -ENOIOCTLCMD;
+		break;
+	}
+out:
+	release_sock(sk);
+	return err;
+}
+#endif
 
 static int quic_init_sock(struct sock *sk)
 {
