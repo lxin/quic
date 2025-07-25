@@ -2309,8 +2309,10 @@ int quic_frame_stream_append(struct sock *sk, struct quic_frame *frame,
 	/* Update stream data header and frame fields. */
 	p = quic_put_var(frame->data, type);
 	p = quic_put_var(p, stream->id);
-	if (offset)
+	if (offset) {
 		p = quic_put_var(p, offset);
+		frame->offset = offset;
+	}
 	p = quic_put_var(p, frame->bytes + msg_len);
 
 	frame->type = type;
