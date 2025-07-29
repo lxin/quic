@@ -237,7 +237,7 @@ static int quic_packet_rcv_err(struct sk_buff *skb)
 	u32 info;
 
 	/* All we can do is lookup the matching QUIC socket by addresses. */
-	quic_get_msg_addrs(&saddr, &daddr, skb);
+	quic_get_msg_addrs(skb, &saddr, &daddr);
 	sk = quic_sock_lookup(skb, &daddr, &saddr, NULL);
 	if (!sk)
 		return -ENOENT;
@@ -507,7 +507,7 @@ static struct sock *quic_packet_get_sock(struct sk_buff *skb)
 		/* Fallback: listener socket lookup
 		 * (May be used to send a stateless reset from a listen socket).
 		 */
-		quic_get_msg_addrs(&daddr, &saddr, skb);
+		quic_get_msg_addrs(skb, &daddr, &saddr);
 		sk = quic_listen_sock_lookup(skb, &daddr, &saddr, &alpns);
 		if (sk)
 			return sk;
@@ -530,7 +530,7 @@ static struct sock *quic_packet_get_sock(struct sk_buff *skb)
 	/* Fallback: address + DCID lookup
 	 * (May be used for 0-RTT or a follow-up Client Initial packet).
 	 */
-	quic_get_msg_addrs(&daddr, &saddr, skb);
+	quic_get_msg_addrs(skb, &daddr, &saddr);
 	sk = quic_sock_lookup(skb, &daddr, &saddr, &dcid);
 	if (sk)
 		return sk;
@@ -871,7 +871,7 @@ static int quic_packet_listen_process(struct sock *sk, struct sk_buff *skb)
 	}
 
 	/* Read Destination address (packet->saddr) and Source address (packet->daddr). */
-	quic_get_msg_addrs(&packet->saddr, &packet->daddr, skb);
+	quic_get_msg_addrs(skb, &packet->saddr, &packet->daddr);
 	req = quic_request_sock_lookup(sk);
 	if (req)
 		goto out; /* If the request sock already exists, queue the packet directly. */
@@ -1652,7 +1652,7 @@ static int quic_packet_app_process(struct sock *sk, struct sk_buff *skb)
 	}
 
 	/* Read Destination address (packet->saddr) and Source address (packet->daddr). */
-	quic_get_msg_addrs(&packet->saddr, &packet->daddr, skb);
+	quic_get_msg_addrs(skb, &packet->saddr, &packet->daddr);
 	/* Detect alternate path if migration occurred. */
 	cb->path = quic_path_detect_alt(quic_paths(sk), &packet->saddr, &packet->daddr, sk);
 	if (cb->path && !quic_conn_id_select_alt(dest, cb->seqno == source->active->number)) {

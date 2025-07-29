@@ -22,6 +22,8 @@
 struct quic_addr_family_ops {
 	u32	iph_len;				/* Network layer header length */
 	int	(*is_any_addr)(union quic_addr *addr);	/* Check if the addr is a wildcard (ANY) */
+	/* Dump the address into a seq_file (e.g., for /proc/net/quic/sks) */
+	void	(*seq_dump_addr)(struct seq_file *seq, union quic_addr *addr);
 
 	/* Initialize UDP tunnel socket configuration */
 	void	(*udp_conf_init)(struct sock *sk, struct udp_port_cfg *conf, union quic_addr *addr);
@@ -32,9 +34,7 @@ struct quic_addr_family_ops {
 	void	(*lower_xmit)(struct sock *sk, struct sk_buff *skb, struct flowi *fl);
 
 	/* Extract source and destination IP addresses from the packet */
-	void	(*get_msg_addrs)(union quic_addr *da, union quic_addr *sa, struct sk_buff *skb);
-	/* Dump the address into a seq_file (e.g., for /proc/net/quic/sks) */
-	void	(*seq_dump_addr)(struct seq_file *seq, union quic_addr *addr);
+	void	(*get_msg_addrs)(struct sk_buff *skb, union quic_addr *da, union quic_addr *sa);
 	 /* Extract MTU information from an ICMP packet */
 	int	(*get_mtu_info)(struct sk_buff *skb, u32 *info);
 	/* Extract ECN bits from the packet */
@@ -75,6 +75,16 @@ static int quic_v4_is_any_addr(union quic_addr *addr)
 static int quic_v6_is_any_addr(union quic_addr *addr)
 {
 	return ipv6_addr_any(&addr->v6.sin6_addr);
+}
+
+static void quic_v4_seq_dump_addr(struct seq_file *seq, union quic_addr *addr)
+{
+	seq_printf(seq, "%pI4:%d\t", &addr->v4.sin_addr.s_addr, ntohs(addr->v4.sin_port));
+}
+
+static void quic_v6_seq_dump_addr(struct seq_file *seq, union quic_addr *addr)
+{
+	seq_printf(seq, "%pI6c:%d\t", &addr->v6.sin6_addr, ntohs(addr->v4.sin_port));
 }
 
 static void quic_v4_udp_conf_init(struct sock *sk, struct udp_port_cfg *conf, union quic_addr *a)
@@ -219,17 +229,7 @@ static void quic_v6_lower_xmit(struct sock *sk, struct sk_buff *skb, struct flow
 			     ttl, label, fl6->fl6_sport, fl6->fl6_dport, false);
 }
 
-static void quic_v4_seq_dump_addr(struct seq_file *seq, union quic_addr *addr)
-{
-	seq_printf(seq, "%pI4:%d\t", &addr->v4.sin_addr.s_addr, ntohs(addr->v4.sin_port));
-}
-
-static void quic_v6_seq_dump_addr(struct seq_file *seq, union quic_addr *addr)
-{
-	seq_printf(seq, "%pI6c:%d\t", &addr->v6.sin6_addr, ntohs(addr->v4.sin_port));
-}
-
-static void quic_v4_get_msg_addrs(union quic_addr *da, union quic_addr *sa, struct sk_buff *skb)
+static void quic_v4_get_msg_addrs(struct sk_buff *skb, union quic_addr *da, union quic_addr *sa)
 {
 	struct udphdr *uh = quic_udphdr(skb);
 
@@ -242,7 +242,7 @@ static void quic_v4_get_msg_addrs(union quic_addr *da, union quic_addr *sa, stru
 	da->v4.sin_addr.s_addr = ip_hdr(skb)->daddr;
 }
 
-static void quic_v6_get_msg_addrs(union quic_addr *da, union quic_addr *sa, struct sk_buff *skb)
+static void quic_v6_get_msg_addrs(struct sk_buff *skb, union quic_addr *da, union quic_addr *sa)
 {
 	struct udphdr *uh = quic_udphdr(skb);
 
@@ -296,10 +296,10 @@ static u8 quic_v6_get_msg_ecn(struct sk_buff *skb)
 static struct quic_addr_family_ops quic_af_inet = {
 	.iph_len		= sizeof(struct iphdr),
 	.is_any_addr		= quic_v4_is_any_addr,
+	.seq_dump_addr		= quic_v4_seq_dump_addr,
 	.udp_conf_init		= quic_v4_udp_conf_init,
 	.flow_route		= quic_v4_flow_route,
 	.lower_xmit		= quic_v4_lower_xmit,
-	.seq_dump_addr		= quic_v4_seq_dump_addr,
 	.get_msg_addrs		= quic_v4_get_msg_addrs,
 	.get_mtu_info		= quic_v4_get_mtu_info,
 	.get_msg_ecn		= quic_v4_get_msg_ecn,
@@ -308,10 +308,10 @@ static struct quic_addr_family_ops quic_af_inet = {
 static struct quic_addr_family_ops quic_af_inet6 = {
 	.iph_len		= sizeof(struct ipv6hdr),
 	.is_any_addr		= quic_v6_is_any_addr,
+	.seq_dump_addr		= quic_v6_seq_dump_addr,
 	.udp_conf_init		= quic_v6_udp_conf_init,
 	.flow_route		= quic_v6_flow_route,
 	.lower_xmit		= quic_v6_lower_xmit,
-	.seq_dump_addr		= quic_v6_seq_dump_addr,
 	.get_msg_addrs		= quic_v6_get_msg_addrs,
 	.get_mtu_info		= quic_v6_get_mtu_info,
 	.get_msg_ecn		= quic_v6_get_msg_ecn,
@@ -575,18 +575,6 @@ static struct quic_proto_family_ops *quic_pfs[] = {
 
 #define quic_pf(sk)		quic_pfs[(sk)->sk_family == AF_INET6]
 
-int quic_common_setsockopt(struct sock *sk, int level, int optname, sockptr_t optval,
-			   unsigned int optlen)
-{
-	return quic_pf(sk)->setsockopt(sk, level, optname, optval, optlen);
-}
-
-int quic_common_getsockopt(struct sock *sk, int level, int optname, char __user *optval,
-			   int __user *optlen)
-{
-	return quic_pf(sk)->getsockopt(sk, level, optname, optval, optlen);
-}
-
 u32 quic_encap_len(union quic_addr *a)
 {
 	return sizeof(struct udphdr) + quic_af(a)->iph_len;
@@ -595,6 +583,11 @@ u32 quic_encap_len(union quic_addr *a)
 int quic_is_any_addr(union quic_addr *a)
 {
 	return quic_af(a)->is_any_addr(a);
+}
+
+void quic_seq_dump_addr(struct seq_file *seq, union quic_addr *addr)
+{
+	quic_af(addr)->seq_dump_addr(seq, addr);
 }
 
 void quic_udp_conf_init(struct sock *sk, struct udp_port_cfg *conf, union quic_addr *a)
@@ -612,16 +605,11 @@ void quic_lower_xmit(struct sock *sk, struct sk_buff *skb, union quic_addr *da, 
 	quic_af(da)->lower_xmit(sk, skb, fl);
 }
 
-void quic_seq_dump_addr(struct seq_file *seq, union quic_addr *addr)
-{
-	quic_af(addr)->seq_dump_addr(seq, addr);
-}
-
-void quic_get_msg_addrs(union quic_addr *da, union quic_addr *sa, struct sk_buff *skb)
+void quic_get_msg_addrs(struct sk_buff *skb, union quic_addr *da, union quic_addr *sa)
 {
 	memset(sa, 0, sizeof(*sa));
 	memset(da, 0, sizeof(*da));
-	quic_af_skb(skb)->get_msg_addrs(da, sa, skb);
+	quic_af_skb(skb)->get_msg_addrs(skb, da, sa);
 }
 
 int quic_get_mtu_info(struct sk_buff *skb, u32 *info)
@@ -669,4 +657,16 @@ void quic_set_sk_addr(struct sock *sk, union quic_addr *a, bool src)
 void quic_set_sk_ecn(struct sock *sk, u8 ecn)
 {
 	quic_pf(sk)->set_sk_ecn(sk, ecn);
+}
+
+int quic_common_setsockopt(struct sock *sk, int level, int optname, sockptr_t optval,
+			   unsigned int optlen)
+{
+	return quic_pf(sk)->setsockopt(sk, level, optname, optval, optlen);
+}
+
+int quic_common_getsockopt(struct sock *sk, int level, int optname, char __user *optval,
+			   int __user *optlen)
+{
+	return quic_pf(sk)->getsockopt(sk, level, optname, optval, optlen);
 }
