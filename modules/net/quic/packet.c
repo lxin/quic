@@ -837,6 +837,7 @@ static int quic_packet_listen_process(struct sock *sk, struct sk_buff *skb)
 	u32 version, errcode, len = skb->len;
 	u8 *p = skb->data, type, retry = 0;
 	struct net *net = sock_net(sk);
+	struct quic_request_sock *req;
 	struct quic_crypto *crypto;
 	struct quic_conn_id odcid;
 	struct quic_data token;
@@ -850,9 +851,8 @@ static int quic_packet_listen_process(struct sock *sk, struct sk_buff *skb)
 		 */
 		if (len < QUIC_HLEN + QUIC_CONN_ID_DEF_LEN) {
 			QUIC_INC_STATS(net, QUIC_MIB_PKT_INVHDRDROP);
-			err = -EINVAL;
 			kfree_skb(skb);
-			goto out;
+			return -EINVAL;
 		}
 		/* We currently only issue Connection ID with size QUIC_CONN_ID_DEF_LEN. */
 		quic_conn_id_update(&packet->dcid, (u8 *)quic_hdr(skb) + QUIC_HLEN,
@@ -860,24 +860,24 @@ static int quic_packet_listen_process(struct sock *sk, struct sk_buff *skb)
 		/* Send a Stateless Reset for this 1-RTT packet. */
 		err = quic_packet_stateless_reset_create(sk);
 		consume_skb(skb);
-		goto out;
+		return err;
 	}
 
 	/* Read VERSION, Destination Connection ID and Source Connection ID. */
 	if (quic_packet_get_version_and_connid(&packet->dcid, &packet->scid, &version, &p, &len)) {
 		QUIC_INC_STATS(net, QUIC_MIB_PKT_INVHDRDROP);
-		err = -EINVAL;
 		kfree_skb(skb);
-		goto out;
+		return -EINVAL;
 	}
 
 	/* Read Destination address (packet->saddr) and Source address (packet->daddr). */
 	quic_get_msg_addrs(&packet->saddr, &packet->daddr, skb);
-	if (quic_request_sock_exists(sk))
-		goto enqueue; /* If the request sock already exists, queue the packet directly. */
+	req = quic_request_sock_lookup(sk);
+	if (req)
+		goto out; /* If the request sock already exists, queue the packet directly. */
 
 	if (quic_accept_sock_exists(sk, skb))
-		goto out; /* Skip if the packet has been handled by the matching accept socket. */
+		return 0; /* Skip if the packet has been handled by the matching accept socket. */
 
 	if (!quic_packet_compatible_versions(version)) {
 		/* rfc9000#section-6.1:
@@ -888,21 +888,20 @@ static int quic_packet_listen_process(struct sock *sk, struct sk_buff *skb)
 		 */
 		err = quic_packet_version_create(sk);
 		consume_skb(skb);
-		goto out;
+		return err;
 	}
 
 	type = quic_packet_version_get_type(version, quic_hshdr(skb)->type); /* Read Packet Type. */
 	if (type != QUIC_PACKET_INITIAL) { /* Send a Stateless Reset for this Handshake packet. */
 		err = quic_packet_stateless_reset_create(sk);
 		consume_skb(skb);
-		goto out;
+		return err;
 	}
 
 	if (quic_packet_get_token(&token, &p, &len)) { /* Read Token from this Initial packet. */
 		QUIC_INC_STATS(net, QUIC_MIB_PKT_INVHDRDROP);
-		err = -EINVAL;
 		kfree_skb(skb);
-		goto out;
+		return -EINVAL;
 	}
 	packet->version = version;
 	/* Save original DCID for future token validation or Retry logic. */
@@ -917,7 +916,7 @@ static int quic_packet_listen_process(struct sock *sk, struct sk_buff *skb)
 			 */
 			err = quic_packet_retry_create(sk);
 			consume_skb(skb);
-			goto out;
+			return err;
 		}
 		/* Verify Token. */
 		crypto = quic_crypto(sk, QUIC_CRYPTO_INITIAL);
@@ -934,15 +933,15 @@ static int quic_packet_listen_process(struct sock *sk, struct sk_buff *skb)
 			errcode = QUIC_TRANSPORT_ERROR_INVALID_TOKEN;
 			err = quic_packet_refuse_close_create(sk, errcode);
 			consume_skb(skb);
-			goto out;
+			return err;
 		}
 		/* Distinguish token source: Retry packet or NEW_TOKEN frame. */
 		retry = *(u8 *)token.data == QUIC_TOKEN_FLAG_RETRY;
 	}
 
 	/* Add request sock for this new QUIC connection. */
-	err = quic_request_sock_enqueue(sk, &odcid, retry);
-	if (err) {
+	req = quic_request_sock_enqueue(sk, &odcid, retry);
+	if (!req) {
 		/* rfc9000#section-5.2.2:
 		 *
 		 * If a server refuses to accept a new connection, it SHOULD send an Initial
@@ -951,22 +950,11 @@ static int quic_packet_listen_process(struct sock *sk, struct sk_buff *skb)
 		errcode = QUIC_TRANSPORT_ERROR_CONNECTION_REFUSED;
 		err = quic_packet_refuse_close_create(sk, errcode);
 		consume_skb(skb);
-		goto out;
+		return err;
 	}
-enqueue:
-	/* Check if listen socket’s receive buffer has space to hold the packet. */
-	if (atomic_read(&sk->sk_rmem_alloc) + skb->len > (u32)sk->sk_rcvbuf) {
-		err = -ENOBUFS;
-		kfree_skb(skb);
-		goto out;
-	}
-
-	/* Append to inqueue backlog list of listen socket and notify any blocked accept() calls. */
-	skb_set_owner_r(skb, sk);
-	quic_inq_backlog_tail(sk, skb);
-	sk->sk_data_ready(sk);
 out:
-	return err;
+	/* Append to backlog list of request sock and notify any blocked accept() calls. */
+	return quic_request_sock_backlog_tail(sk, req, skb);
 }
 
 static int quic_packet_stateless_reset_process(struct sock *sk, struct sk_buff *skb)

@@ -29,7 +29,7 @@ static void quic_enter_memory_pressure(struct sock *sk)
 /* Check if a matching request sock already exists.  Match is based on source/destination
  * addresses and DCID.
  */
-bool quic_request_sock_exists(struct sock *sk)
+struct quic_request_sock *quic_request_sock_lookup(struct sock *sk)
 {
 	struct quic_packet *packet = quic_packet(sk);
 	struct quic_request_sock *req;
@@ -38,23 +38,24 @@ bool quic_request_sock_exists(struct sock *sk)
 		if (!memcmp(&req->saddr, &packet->saddr, sizeof(req->saddr)) &&
 		    !memcmp(&req->daddr, &packet->daddr, sizeof(req->daddr)) &&
 		    !quic_conn_id_cmp(&req->dcid, &packet->dcid))
-			return true;
+			return req;
 	}
-	return false;
+	return NULL;
 }
 
 /* Create and enqueue a QUIC request sock for a new incoming connection. */
-int quic_request_sock_enqueue(struct sock *sk, struct quic_conn_id *odcid, u8 retry)
+struct quic_request_sock *quic_request_sock_enqueue(struct sock *sk, struct quic_conn_id *odcid,
+						     u8 retry)
 {
 	struct quic_packet *packet = quic_packet(sk);
 	struct quic_request_sock *req;
 
 	if (sk_acceptq_is_full(sk)) /* Refuse new request if the accept queue is full. */
-		return -ENOMEM;
+		return NULL;
 
 	req = kzalloc(sizeof(*req), GFP_ATOMIC);
 	if (!req)
-		return -ENOMEM;
+		return NULL;
 
 	req->version = packet->version;
 	req->daddr = packet->daddr;
@@ -64,10 +65,12 @@ int quic_request_sock_enqueue(struct sock *sk, struct quic_conn_id *odcid, u8 re
 	req->orig_dcid = *odcid;
 	req->retry = retry;
 
+	skb_queue_head_init(&req->backlog_list);
+
 	/* Enqueue request into the listen socket’s pending list for accept(). */
 	list_add_tail(&req->list, quic_reqs(sk));
 	sk_acceptq_added(sk);
-	return 0;
+	return req;
 }
 
 static struct quic_request_sock *quic_request_sock_dequeue(struct sock *sk)
@@ -79,6 +82,25 @@ static struct quic_request_sock *quic_request_sock_dequeue(struct sock *sk)
 	list_del_init(&req->list);
 	sk_acceptq_removed(sk);
 	return req;
+}
+
+int quic_request_sock_backlog_tail(struct sock *sk, struct quic_request_sock *req,
+				   struct sk_buff *skb)
+{
+	/* Use listen sock sk_rcvbuf to limit the request sock's backlog len. */
+	if (req->blen + skb->len > sk->sk_rcvbuf)
+		return -ENOMEM;
+
+	__skb_queue_tail(&req->backlog_list, skb);
+	req->blen += skb->len;
+	sk->sk_data_ready(sk);
+	return 0;
+}
+
+static void quic_request_sock_free(struct quic_request_sock *req)
+{
+	__skb_queue_purge(&req->backlog_list);
+	kfree(req);
 }
 
 /* Check if a matching accept socket exists.  This is needed because an accept socket
@@ -557,7 +579,7 @@ static void quic_unhash(struct sock *sk)
 		/* Unhash a listen socket: clean up all pending connection requests. */
 		list_for_each_entry_safe(req, tmp, quic_reqs(sk), list) {
 			list_del(&req->list);
-			kfree(req);
+			quic_request_sock_free(req);
 		}
 		head = quic_listen_sock_head(net, ntohs(sa->v4.sin_port));
 		goto out;
@@ -1265,10 +1287,7 @@ static int quic_sock_apply_config(struct sock *sk, struct quic_config *c)
 static int quic_copy_sock(struct sock *nsk, struct sock *sk, struct quic_request_sock *req)
 {
 	struct quic_pnspace *space = quic_pnspace(sk, QUIC_CRYPTO_INITIAL);
-	struct quic_packet *packet = quic_packet(sk);
-	struct quic_inqueue *inq = quic_inq(sk);
 	struct quic_transport_param param = {};
-	struct sk_buff *skb, *tmp;
 
 	/* Duplicate ALPN from listen to accept socket for handshake. */
 	if (quic_data_dup(quic_alpn(nsk), quic_alpn(sk)->data, quic_alpn(sk)->len))
@@ -1287,17 +1306,8 @@ static int quic_copy_sock(struct sock *nsk, struct sock *sk, struct quic_request
 
 	inet_sk(nsk)->pmtudisc = inet_sk(sk)->pmtudisc;
 
-	/* Move matching packets from listen socket's backlog to accept socket. */
-	skb_queue_walk_safe(&inq->backlog_list, skb, tmp) {
-		quic_get_msg_addrs(&packet->saddr, &packet->daddr, skb);
-		quic_packet_get_dcid(&packet->dcid, skb);
-		if (!memcmp(&req->saddr, &packet->saddr, sizeof(req->saddr)) &&
-		    !memcmp(&req->daddr, &packet->daddr, sizeof(req->daddr)) &&
-		    !quic_conn_id_cmp(&req->dcid, &packet->dcid)) {
-			__skb_unlink(skb, &inq->backlog_list);
-			quic_inq_backlog_tail(nsk, skb);
-		}
-	}
+	/* Move matching packets from request socket's backlog to accept socket. */
+	skb_queue_splice_init(&req->backlog_list, &quic_inq(nsk)->backlog_list);
 
 	/* Record the creation time of this accept socket in microseconds.  Used by
 	 * quic_accept_sock_exists() to determine if a packet from sk_backlog of
@@ -1308,7 +1318,7 @@ static int quic_copy_sock(struct sock *nsk, struct sock *sk, struct quic_request
 	if (sk->sk_family == AF_INET6) /* Set IPv6 specific state if applicable. */
 		inet_sk(nsk)->pinet6 = &((struct quic6_sock *)nsk)->inet6;
 
-	quic_inq(nsk)->events = inq->events;
+	quic_inq(nsk)->events = quic_inq(sk)->events;
 	quic_paths(nsk)->serv = 1; /* Mark this as a server. */
 
 	/* Copy the QUIC settings and transport parameters to accept socket. */
@@ -1400,7 +1410,7 @@ static struct sock *quic_accept(struct sock *sk, struct proto_accept_arg *arg)
 static struct sock *quic_accept(struct sock *sk, int flags, int *errp, bool kern)
 {
 #endif
-	struct quic_request_sock *req = NULL;
+	struct quic_request_sock *req;
 	struct sock *nsk = NULL;
 	int err = -EINVAL;
 
@@ -1412,14 +1422,14 @@ static struct sock *quic_accept(struct sock *sk, int flags, int *errp, bool kern
 	err = quic_wait_for_accept(sk, flags);
 	if (err)
 		goto out;
-	req = quic_request_sock_dequeue(sk);
-
 	nsk = sk_alloc(sock_net(sk), sk->sk_family, GFP_KERNEL, sk->sk_prot, kern);
 	if (!nsk) {
 		err = -ENOMEM;
 		goto out;
 	}
 	sock_init_data(NULL, nsk);
+
+	req = quic_request_sock_dequeue(sk);
 
 	err = nsk->sk_prot->init(nsk);
 	if (err)
@@ -1436,12 +1446,13 @@ static struct sock *quic_accept(struct sock *sk, int flags, int *errp, bool kern
 	if (err)
 		goto free;
 
+	quic_request_sock_free(req);
 out:
 	release_sock(sk);
 	*errp = err;
-	kfree(req);
 	return nsk;
 free:
+	quic_request_sock_free(req);
 	nsk->sk_prot->close(nsk, 0);
 	nsk = NULL;
 	goto out;

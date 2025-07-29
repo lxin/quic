@@ -74,6 +74,9 @@ struct quic_request_sock {
 	struct quic_conn_id	orig_dcid;
 	u32			version;
 	u8			retry;
+
+	struct sk_buff_head	backlog_list;
+	u32			blen;
 };
 
 struct quic_sock {
@@ -253,5 +256,8 @@ struct sock *quic_sock_lookup(struct sk_buff *skb, union quic_addr *sa, union qu
 			      struct quic_conn_id *dcid);
 bool quic_accept_sock_exists(struct sock *sk, struct sk_buff *skb);
 
-int quic_request_sock_enqueue(struct sock *sk, struct quic_conn_id *odcid, u8 retry);
-bool quic_request_sock_exists(struct sock *sk);
+struct quic_request_sock *quic_request_sock_enqueue(struct sock *sk, struct quic_conn_id *odcid,
+						    u8 retry);
+int quic_request_sock_backlog_tail(struct sock *sk, struct quic_request_sock *req,
+				   struct sk_buff *skb);
+struct quic_request_sock *quic_request_sock_lookup(struct sock *sk);
