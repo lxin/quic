@@ -47,6 +47,7 @@ struct quic_udp_sock {
 	struct work_struct work;	/* Workqueue to destroy UDP tunnel socket */
 	struct hlist_node node;		/* Entry in address-based UDP socket hash table */
 	union quic_addr addr;
+	int bind_ifindex;
 	refcount_t refcnt;
 	struct sock *sk;		/* Underlying UDP tunnel socket */
 };

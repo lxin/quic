@@ -84,6 +84,7 @@ static struct quic_udp_sock *quic_udp_sock_create(struct sock *sk, union quic_ad
 	refcount_set(&us->refcnt, 1);
 	us->sk = sock->sk;
 	memcpy(&us->addr, a, sizeof(*a));
+	us->bind_ifindex = sk->sk_bound_dev_if;
 
 	head = quic_udp_sock_head(net, ntohs(a->v4.sin_port));
 	hlist_add_head(&us->node, &head->head);
@@ -117,7 +118,9 @@ static struct quic_udp_sock *quic_udp_sock_lookup(struct sock *sk, union quic_ad
 		if (net != sock_net(us->sk))
 			continue;
 		if (a) {
-			if (quic_cmp_sk_addr(us->sk, &us->addr, a))
+			if (quic_cmp_sk_addr(us->sk, &us->addr, a) &&
+			    (!us->bind_ifindex || !sk->sk_bound_dev_if ||
+			     us->bind_ifindex == sk->sk_bound_dev_if))
 				return us;
 			continue;
 		}
