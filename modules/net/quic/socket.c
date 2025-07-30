@@ -1303,6 +1303,7 @@ static int quic_copy_sock(struct sock *nsk, struct sock *sk, struct quic_request
 	nsk->sk_rcvbuf = sk->sk_rcvbuf;
 	nsk->sk_rcvtimeo = sk->sk_rcvtimeo;
 	nsk->sk_sndtimeo = sk->sk_sndtimeo;
+	nsk->sk_bound_dev_if = sk->sk_bound_dev_if;
 
 	inet_sk(nsk)->pmtudisc = inet_sk(sk)->pmtudisc;
 

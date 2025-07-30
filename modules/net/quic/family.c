@@ -122,6 +122,15 @@ static int quic_v4_flow_route(struct sock *sk, union quic_addr *da, union quic_a
 	fl4->fl4_sport = sa->v4.sin_port;
 	fl4->daddr = da->v4.sin_addr.s_addr;
 	fl4->fl4_dport = da->v4.sin_port;
+	fl4->flowi4_proto = IPPROTO_UDP;
+	fl4->flowi4_oif = sk->sk_bound_dev_if;
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 19, 0)
+	fl4->flowi4_scope = ip_sock_rt_scope(sk);
+	fl4->flowi4_tos = ip_sock_rt_tos(sk);
+#else
+	fl4->flowi4_tos = RT_CONN_FLAGS_TOS(sk, READ_ONCE(inet_sk(sk)->tos));
+#endif
 
 	rt = ip_route_output_key(sock_net(sk), fl4);
 	if (IS_ERR(rt))
@@ -154,6 +163,8 @@ static int quic_v6_flow_route(struct sock *sk, union quic_addr *da, union quic_a
 	fl6->fl6_sport = sa->v6.sin6_port;
 	fl6->daddr = da->v6.sin6_addr;
 	fl6->fl6_dport = da->v6.sin6_port;
+	fl6->flowi6_proto = IPPROTO_UDP;
+	fl6->flowi6_oif = sk->sk_bound_dev_if;
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 7, 0)
 	if (inet6_test_bit(SNDFLOW, sk)) {
