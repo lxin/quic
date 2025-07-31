@@ -125,6 +125,11 @@ static inline union quic_addr *quic_path_uaddr(struct quic_path_group *paths, u8
 	return &paths->path[path].udp_sk->addr;
 }
 
+static inline struct sock *quic_path_usock(struct quic_path_group *paths, u8 path)
+{
+	return paths->path[path].udp_sk->sk;
+}
+
 static inline bool quic_path_alt_state(struct quic_path_group *paths, u8 state)
 {
 	return paths->alt_state == state;

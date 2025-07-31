@@ -22,7 +22,8 @@ static struct workqueue_struct *quic_wq __read_mostly;
 
 static int quic_udp_rcv(struct sock *sk, struct sk_buff *skb)
 {
-	if (skb_linearize(skb))
+	/* Save the UDP socket to skb->sk for later QUIC socket lookup. */
+	if (skb_linearize(skb) || !skb_set_owner_sk_safe(skb, sk))
 		return 0;
 
 	memset(skb->cb, 0, sizeof(skb->cb));
@@ -36,7 +37,8 @@ static int quic_udp_rcv(struct sock *sk, struct sk_buff *skb)
 
 static int quic_udp_err(struct sock *sk, struct sk_buff *skb)
 {
-	if (skb_linearize(skb))
+	/* Save the UDP socket to skb->sk for later QUIC socket lookup. */
+	if (skb_linearize(skb) || !skb_set_owner_sk_safe(skb, sk))
 		return 0;
 
 	QUIC_SKB_CB(skb)->udph_offset = skb->transport_header;
