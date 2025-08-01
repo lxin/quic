@@ -1754,9 +1754,9 @@ static u8 *quic_packet_pack_frames(struct sock *sk, struct sk_buff *skb,
 			quic_frame_put(frame);
 			continue;
 		}
-		if (frame->offset < 0) {
-			/* First time sending: record offset and adjust unsent byte count. */
-			frame->offset = number;
+		if (frame->number < 0) {
+			/* First time sending: record packet number and adjust unsent byte count. */
+			frame->number = number;
 			outq->unsent_bytes -= frame->bytes;
 		}
 		quic_outq_transmitted_tail(sk, frame); /* Move frame to transmitted queue. */

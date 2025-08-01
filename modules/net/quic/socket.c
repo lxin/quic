@@ -45,7 +45,7 @@ struct quic_request_sock *quic_request_sock_lookup(struct sock *sk)
 
 /* Create and enqueue a QUIC request sock for a new incoming connection. */
 struct quic_request_sock *quic_request_sock_enqueue(struct sock *sk, struct quic_conn_id *odcid,
-						     u8 retry)
+						    u8 retry)
 {
 	struct quic_packet *packet = quic_packet(sk);
 	struct quic_request_sock *req;

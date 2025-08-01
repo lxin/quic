@@ -343,10 +343,10 @@ int quic_outq_stream_append(struct sock *sk, struct quic_msginfo *info, u8 pack)
 	if (list_empty(head))
 		return -1;
 	/* Append only if it's the same stream, the frame is the last of a sendmsg (i.e.,
-	 * !nodelay) and it hasn't been transmitted yet (offset < 0).
+	 * !nodelay) and it hasn't been transmitted yet (number < 0).
 	 */
 	frame = list_last_entry(head, struct quic_frame, list);
-	if (frame->stream != stream || frame->nodelay || frame->offset >= 0)
+	if (frame->stream != stream || frame->nodelay || frame->number >= 0)
 		return -1;
 
 	len = frame->len;
@@ -469,7 +469,7 @@ void quic_outq_ctrl_tail(struct sock *sk, struct quic_frame *frame, bool cork)
 		quic_outq_transmit(sk);
 }
 
-/* Inserts a frame into transmitted_list in order by level and offset (first packet number used). */
+/* Inserts a frame into transmitted_list in order by level and number (first packet number used). */
 void quic_outq_transmitted_tail(struct sock *sk, struct quic_frame *frame)
 {
 	struct list_head *head = &quic_outq(sk)->transmitted_list;
@@ -484,7 +484,7 @@ void quic_outq_transmitted_tail(struct sock *sk, struct quic_frame *frame)
 		if (!frame->level) {
 			if (pos->level)
 				continue;
-			goto offset;
+			goto number;
 		}
 		if (!pos->level) {
 			head = &pos->list;
@@ -496,8 +496,8 @@ void quic_outq_transmitted_tail(struct sock *sk, struct quic_frame *frame)
 			head = &pos->list;
 			break;
 		}
-offset:
-		if (frame->offset < pos->offset) {
+number:
+		if (frame->number < pos->number) {
 			head = &pos->list;
 			break;
 		}
@@ -898,7 +898,7 @@ static void quic_outq_retransmit_frame(struct sock *sk, struct quic_frame *frame
 		if (!frame->level) {
 			if (pos->level)
 				continue;
-			goto offset;
+			goto number;
 		}
 		if (!pos->level) {
 			head = &pos->list;
@@ -910,8 +910,8 @@ static void quic_outq_retransmit_frame(struct sock *sk, struct quic_frame *frame
 			head = &pos->list;
 			break;
 		}
-offset:
-		if (pos->offset < 0 || frame->offset < pos->offset) {
+number:
+		if (pos->number < 0 || frame->number < pos->number) {
 			head = &pos->list;
 			break;
 		}

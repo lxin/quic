@@ -108,7 +108,10 @@ struct quic_frame {
 	};
 	struct quic_stream *stream;		/* Stream related to this frame, NULL if none */
 	struct list_head list;			/* Linked list node for queuing frames */
-	s64 offset;		/* Stream offset, crypto data offset, or first pkt number */
+	union {
+		s64 offset;	/* For RX: stream/crypto data offset or read data offset */
+		s64 number;	/* For TX: first packet number used */
+	};
 	u8  *data;		/* Pointer to the actual frame data buffer */
 
 	refcount_t refcnt;
