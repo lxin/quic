@@ -425,8 +425,10 @@ static int quic_bind(struct sock *sk, struct sockaddr *addr, int addr_len)
 
 	quic_path_set_saddr(paths, 0, &a);
 	err = quic_path_bind(sk, paths, 0);
-	if (err)
+	if (err) {
+		memset(quic_path_saddr(paths, 0), 0, sizeof(a));
 		goto out;
+	}
 	quic_set_sk_addr(sk, &a, true);
 
 out:
