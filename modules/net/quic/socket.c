@@ -418,7 +418,7 @@ static int quic_bind(struct sock *sk, struct sockaddr *addr, int addr_len)
 	union quic_addr a;
 	int err = -EINVAL;
 
-	lock_sock(sk);
+	lock_sock_nested(sk, SINGLE_DEPTH_NESTING);
 
 	if (quic_path_saddr(paths, 0)->v4.sin_port || quic_get_user_addr(sk, &a, addr, addr_len))
 		goto out;
@@ -1348,7 +1348,7 @@ static int quic_accept_sock_setup(struct sock *sk, struct quic_request_sock *req
 	struct sk_buff *skb;
 	int err;
 
-	lock_sock(sk);
+	lock_sock_nested(sk, SINGLE_DEPTH_NESTING);
 	/* Set destination address and resolve route (may also auto-set source address). */
 	quic_path_set_daddr(paths, 0, &req->daddr);
 	err = quic_packet_route(sk);
@@ -1467,7 +1467,7 @@ free:
 
 static void quic_close(struct sock *sk, long timeout)
 {
-	lock_sock(sk);
+	lock_sock_nested(sk, SINGLE_DEPTH_NESTING);
 
 	quic_outq_transmit_app_close(sk);
 	quic_set_state(sk, QUIC_SS_CLOSED);
