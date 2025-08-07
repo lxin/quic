@@ -1159,6 +1159,8 @@ int quic_crypto_verify_token(struct quic_crypto *crypto, void *addr, u32 addrlen
 	int err;
 	u64 t;
 
+	if (len < sizeof(flag) + addrlen + sizeof(ts) + QUIC_TAG_LEN)
+		return -EINVAL;
 	quic_data(&srt, quic_random_data, QUIC_RANDOM_DATA_LEN);
 	quic_data(&k, key, TLS_CIPHER_AES_GCM_128_KEY_SIZE);
 	quic_data(&i, iv, QUIC_IV_LEN);
