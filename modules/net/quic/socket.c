@@ -135,6 +135,7 @@ bool quic_accept_sock_exists(struct sock *sk, struct sk_buff *skb)
 		sk->sk_backlog_rcv(sk, skb); /* quic_packet_process(). */
 	}
 	bh_unlock_sock(sk);
+	sock_put(sk);
 	exist = true;
 out:
 	local_bh_enable();
@@ -170,8 +171,10 @@ struct sock *quic_sock_lookup(struct sk_buff *skb, union quic_addr *sa, union qu
 		if (quic_cmp_sk_addr(sk, quic_path_saddr(paths, 0), sa) &&
 		    quic_cmp_sk_addr(sk, quic_path_daddr(paths, 0), da) &&
 		    quic_path_usock(paths, 0) == skb->sk &&
-		    (!dcid || !quic_conn_id_cmp(quic_path_orig_dcid(paths), dcid)))
+		    (!dcid || !quic_conn_id_cmp(quic_path_orig_dcid(paths), dcid))) {
+			sock_hold(sk);
 			break;
+		}
 	}
 	spin_unlock(&head->s_lock);
 
@@ -216,6 +219,8 @@ struct sock *quic_listen_sock_lookup(struct sk_buff *skb, union quic_addr *sa, u
 					break;
 			}
 		}
+		if (sk)
+			sock_hold(sk);
 		goto unlock;
 	}
 
@@ -233,8 +238,10 @@ struct sock *quic_listen_sock_lookup(struct sk_buff *skb, union quic_addr *sa, u
 					break;
 			}
 		}
-		if (sk)
+		if (sk) {
+			sock_hold(sk);
 			break;
+		}
 	}
 unlock:
 	spin_unlock(&head->s_lock);

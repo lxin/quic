@@ -263,6 +263,7 @@ static int quic_packet_rcv_err(struct sk_buff *skb)
 	quic_packet_rcv_err_pmtu(sk);
 out:
 	bh_unlock_sock(sk);
+	sock_put(sk);
 	return ret;
 }
 
@@ -564,6 +565,7 @@ int quic_packet_rcv(struct sk_buff *skb, u8 err)
 		if (sk_add_backlog(sk, skb, READ_ONCE(sk->sk_rcvbuf))) {
 			QUIC_INC_STATS(net, QUIC_MIB_PKT_RCVDROP);
 			bh_unlock_sock(sk);
+			sock_put(sk);
 			goto err;
 		}
 		QUIC_INC_STATS(net, QUIC_MIB_PKT_RCVBACKLOGS);
@@ -573,6 +575,7 @@ int quic_packet_rcv(struct sk_buff *skb, u8 err)
 		sk->sk_backlog_rcv(sk, skb); /* quic_packet_process(). */
 	}
 	bh_unlock_sock(sk);
+	sock_put(sk);
 	return 0;
 
 err:

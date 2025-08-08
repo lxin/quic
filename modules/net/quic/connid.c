@@ -21,16 +21,20 @@ struct quic_conn_id *quic_conn_id_lookup(struct net *net, u8 *scid, u32 len)
 {
 	struct quic_hash_head *head = quic_source_conn_id_head(net, scid);
 	struct quic_source_conn_id *s_conn_id;
+	struct quic_conn_id *conn_id = NULL;
 
 	spin_lock(&head->s_lock);
 	hlist_for_each_entry(s_conn_id, &head->head, node) {
 		if (net == sock_net(s_conn_id->sk) && s_conn_id->common.id.len == len &&
-		    !memcmp(scid, &s_conn_id->common.id.data, s_conn_id->common.id.len))
+		    !memcmp(scid, &s_conn_id->common.id.data, s_conn_id->common.id.len)) {
+			sock_hold(s_conn_id->sk);
+			conn_id = &s_conn_id->common.id;
 			break;
+		}
 	}
 
 	spin_unlock(&head->s_lock);
-	return &s_conn_id->common.id;
+	return conn_id;
 }
 
 /* Check if a given stateless reset token exists in any connection ID in the connection ID set. */
