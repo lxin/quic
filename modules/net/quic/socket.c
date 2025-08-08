@@ -448,7 +448,7 @@ static int quic_connect(struct sock *sk, struct sockaddr *addr, int addr_len)
 	int err = -EINVAL;
 
 	lock_sock(sk);
-	if (!quic_is_closed(sk) || quic_get_user_addr(sk, &a, addr, addr_len))
+	if (!sk_unhashed(sk) || quic_get_user_addr(sk, &a, addr, addr_len))
 		goto out;
 
 	/* Set destination address and resolve route (may also auto-set source address). */
