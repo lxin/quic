@@ -1182,8 +1182,8 @@ int quic_outq_transmit_new_conn_id(struct sock *sk, u64 prior, u8 path, u8 cork)
 	u32 max, seqno;
 
 	/* Compute the maximum sequence number to send. */
-	max = id_set->max_count + prior - 1;
-	for (seqno = quic_conn_id_last_number(id_set) + 1; seqno <= max; seqno++) {
+	max = id_set->max_count + prior;
+	for (seqno = quic_conn_id_last_number(id_set) + 1; seqno < max; seqno++) {
 		if (quic_outq_transmit_frame(sk, QUIC_FRAME_NEW_CONNECTION_ID, &prior,
 					     path, true))
 			return -ENOMEM;
