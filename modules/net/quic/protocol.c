@@ -46,8 +46,8 @@ static int quic_inet_connect(struct socket *sock, struct sockaddr *addr, int add
 static int quic_inet_listen(struct socket *sock, int backlog)
 {
 	struct quic_conn_id_set *source, *dest;
-	struct quic_conn_id conn_id, *active;
 	struct quic_path_group *paths;
+	struct quic_conn_id conn_id;
 	struct quic_crypto *crypto;
 	struct quic_packet *packet;
 	struct sock *sk = sock->sk;
@@ -86,14 +86,8 @@ static int quic_inet_listen(struct socket *sock, int backlog)
 	err = quic_conn_id_add(source, &conn_id, 0, sk);
 	if (err)
 		goto free;
-	active = quic_conn_id_active(dest);
-	paths->serv = 1; /* Mark this as a server. */
-
 	/* Install initial keys to generate Retry/Stateless Reset tokens. */
 	err = quic_crypto_set_cipher(crypto, TLS_CIPHER_AES_GCM_128, CRYPTO_ALG_ASYNC);
-	if (err)
-		goto free;
-	err = quic_crypto_initial_keys_install(crypto, active, packet->version, 1);
 	if (err)
 		goto free;
 
@@ -103,6 +97,7 @@ static int quic_inet_listen(struct socket *sock, int backlog)
 	err = sk->sk_prot->hash(sk);
 	if (err)
 		goto free;
+	paths->serv = 1; /* Mark this as a server. */
 out:
 	release_sock(sk);
 	return err;
