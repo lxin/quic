@@ -2293,10 +2293,10 @@ int quic_frame_stream_append(struct sock *sk, struct quic_frame *frame,
 	if (msg_len) { /* Attach data to frame as fragment. */
 		frag = quic_frame_frag_alloc(msg_len);
 		if (!frag)
-			return 0;
+			return -1;
 		if (!quic_frame_copy_from_iter_full(frag->data, msg_len, info->msg)) {
 			kfree(frag);
-			return 0;
+			return -1;
 		}
 		if (frame->flist) {
 			pos = frame->flist;

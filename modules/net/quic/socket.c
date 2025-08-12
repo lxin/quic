@@ -1019,9 +1019,12 @@ static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 		if (len >= 0) {
 			if (!sk_wmem_schedule(sk, len))
 				continue; /* Memory pressure: Retry with new len. */
-			bytes += quic_outq_stream_append(sk, &msginfo, 1); /* Appended. */
-			len = 1; /* Reset minimal length guess for next frame check. */
-			continue;
+			len = quic_outq_stream_append(sk, &msginfo, 1); /* Appended. */
+			if (len >= 0) {
+				bytes += len;
+				len = 1; /* Reset minimal length guess for next frame check. */
+				continue;
+			}
 		}
 
 		frame = quic_frame_create(sk, QUIC_FRAME_STREAM, &msginfo);
