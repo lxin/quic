@@ -1224,7 +1224,7 @@ static void quic_outq_encrypted_work(struct work_struct *work)
 
 	lock_sock(sk);
 	head = &sk->sk_write_queue;
-	if (sock_flag(sk, SOCK_DEAD)) { /* If the socket is already dead, drop all pending skbs. */
+	if (quic_is_closed(sk)) { /* If the socket is already closed, drop all pending skbs. */
 		skb_queue_purge(head);
 		goto out;
 	}
