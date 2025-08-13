@@ -60,6 +60,7 @@ static int quic_inet_listen(struct socket *sock, int backlog)
 	packet = quic_packet(sk);
 	source = quic_source(sk);
 	dest = quic_dest(sk);
+	paths = quic_paths(sk);
 
 	if (!backlog) /* Exit listen state if backlog is zero. */
 		goto free;
@@ -67,7 +68,6 @@ static int quic_inet_listen(struct socket *sock, int backlog)
 	if (!sk_unhashed(sk)) /* Already hashed/listening. */
 		goto out;
 
-	paths = quic_paths(sk);
 	a = quic_path_saddr(paths, 0);
 	if (!a->v4.sin_port) { /* Auto-bind if not already bound. */
 		err = quic_path_bind(sk, paths, 0);
@@ -104,6 +104,7 @@ out:
 free:
 	quic_set_state(sk, QUIC_SS_CLOSED);
 	sk->sk_max_ack_backlog = 0;
+	paths->serv = 0;
 
 	quic_conn_id_set_free(source);
 	quic_conn_id_set_free(dest);
