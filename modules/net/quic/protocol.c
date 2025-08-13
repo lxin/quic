@@ -87,7 +87,7 @@ static int quic_inet_listen(struct socket *sock, int backlog)
 	if (err)
 		goto free;
 	/* Install initial keys to generate Retry/Stateless Reset tokens. */
-	err = quic_crypto_set_cipher(crypto, TLS_CIPHER_AES_GCM_128, CRYPTO_ALG_ASYNC);
+	err = quic_crypto_set_cipher(crypto, TLS_CIPHER_AES_GCM_128, 0);
 	if (err)
 		goto free;
 

@@ -487,7 +487,7 @@ static int quic_connect(struct sock *sk, struct sockaddr *addr, int addr_len)
 	active = quic_conn_id_active(dest);
 
 	/* Install initial encryption keys for handshake. */
-	err = quic_crypto_set_cipher(crypto, TLS_CIPHER_AES_GCM_128, CRYPTO_ALG_ASYNC);
+	err = quic_crypto_set_cipher(crypto, TLS_CIPHER_AES_GCM_128, 0);
 	if (err)
 		goto free;
 	err = quic_crypto_initial_keys_install(crypto, active, packet->version, 0);
@@ -1376,7 +1376,7 @@ static int quic_accept_sock_setup(struct sock *sk, struct quic_request_sock *req
 		goto out;
 
 	/* Install initial encryption keys for handshake. */
-	err = quic_crypto_set_cipher(crypto, TLS_CIPHER_AES_GCM_128, CRYPTO_ALG_ASYNC);
+	err = quic_crypto_set_cipher(crypto, TLS_CIPHER_AES_GCM_128, 0);
 	if (err)
 		goto out;
 	err = quic_crypto_initial_keys_install(crypto, &req->dcid, req->version, 1);

@@ -995,10 +995,7 @@ int quic_crypto_initial_keys_install(struct quic_crypto *crypto, struct quic_con
 	err = quic_crypto_hkdf_expand(crypto->secret_tfm, &s, &l, &z, &k);
 	if (err)
 		return err;
-	/* Enforce synchronous crypto for Initial level by requesting algorithms marked with
-	 * CRYPTO_ALG_ASYNC to avoid async processing.
-	 */
-	err = quic_crypto_set_secret(crypto, &srt, version, CRYPTO_ALG_ASYNC);
+	err = quic_crypto_set_secret(crypto, &srt, version, 0);
 	if (err)
 		return err;
 
@@ -1009,7 +1006,7 @@ int quic_crypto_initial_keys_install(struct quic_crypto *crypto, struct quic_con
 	err = quic_crypto_hkdf_expand(crypto->secret_tfm, &s, &l, &z, &k);
 	if (err)
 		return err;
-	return quic_crypto_set_secret(crypto, &srt, version, CRYPTO_ALG_ASYNC);
+	return quic_crypto_set_secret(crypto, &srt, version, 0);
 }
 EXPORT_SYMBOL_GPL(quic_crypto_initial_keys_install);
 
