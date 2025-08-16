@@ -219,8 +219,6 @@ struct sock *quic_listen_sock_lookup(struct sk_buff *skb, union quic_addr *sa, u
 					break;
 			}
 		}
-		if (sk)
-			sock_hold(sk);
 		goto unlock;
 	}
 
@@ -238,16 +236,16 @@ struct sock *quic_listen_sock_lookup(struct sk_buff *skb, union quic_addr *sa, u
 					break;
 			}
 		}
-		if (sk) {
-			sock_hold(sk);
+		if (sk)
 			break;
-		}
 	}
 unlock:
-	spin_unlock(&head->s_lock);
-
 	if (sk && sk->sk_reuseport)
 		sk = reuseport_select_sock(sk, quic_shash(net, da), skb, 1);
+	if (sk)
+		sock_hold(sk);
+
+	spin_unlock(&head->s_lock);
 	return sk;
 }
 
