@@ -52,7 +52,7 @@ static int quic_inet_listen(struct socket *sock, int backlog)
 	struct quic_packet *packet;
 	struct sock *sk = sock->sk;
 	union quic_addr *a;
-	int err = 0;
+	int err = -EINVAL;
 
 	lock_sock(sk);
 
@@ -62,8 +62,13 @@ static int quic_inet_listen(struct socket *sock, int backlog)
 	dest = quic_dest(sk);
 	paths = quic_paths(sk);
 
-	if (!backlog) /* Exit listen state if backlog is zero. */
-		goto free;
+	if (!backlog) {
+		if (quic_is_listen(sk)) { /* Exit listen state if backlog is zero. */
+			err = 0;
+			goto free;
+		}
+		goto out;
+	}
 
 	if (!sk_unhashed(sk)) /* Already hashed/listening. */
 		goto out;
@@ -94,10 +99,10 @@ static int quic_inet_listen(struct socket *sock, int backlog)
 	/* Set socket state to LISTENING and add to sock hash table. */
 	quic_set_state(sk, QUIC_SS_LISTENING);
 	sk->sk_max_ack_backlog = backlog;
+	paths->serv = 1; /* Mark this as a server. */
 	err = sk->sk_prot->hash(sk);
 	if (err)
 		goto free;
-	paths->serv = 1; /* Mark this as a server. */
 out:
 	release_sock(sk);
 	return err;
