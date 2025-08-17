@@ -266,9 +266,10 @@ static struct quic_frame *quic_frame_stream_create(struct sock *sk, void *data, 
 	}
 	/* To make things simple, always include length field, so set LEN bit. */
 	type |= QUIC_STREAM_BIT_LEN;
-	max_frame_len = quic_packet_max_payload(quic_packet(sk)); /* MSS. */
-	hlen += quic_var_len(max_frame_len); /* varint Length. */
+	/* Reserve max varint length in case more data is appended later. */
+	hlen += quic_var_len(QUIC_MAX_UDP_PAYLOAD);
 
+	max_frame_len = quic_packet_max_payload(quic_packet(sk)); /* MSS. */
 	msg_len = iov_iter_count(info->msg); /* Total message length from user space. */
 	wspace = quic_outq_wspace(sk, stream); /* Flow control limit. */
 
