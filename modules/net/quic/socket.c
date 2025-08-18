@@ -779,8 +779,11 @@ static struct quic_stream *quic_sock_send_stream(struct sock *sk, struct quic_st
 	}
 
 	/* Stream should now be available, retry getting the stream. */
-	return quic_stream_send_get(streams, sinfo->stream_id,
-				    sinfo->stream_flags, quic_is_serv(sk));
+	stream = quic_stream_send_get(streams, sinfo->stream_id,
+				      sinfo->stream_flags, quic_is_serv(sk));
+	if (!IS_ERR(stream) && stream->send.state >= QUIC_STREAM_SEND_STATE_SENT)
+		return ERR_PTR(-EINVAL); /* Can't send on a closed or finished stream. */
+	return stream;
 }
 
 /* Wait until send buffer has enough space for sending. */
