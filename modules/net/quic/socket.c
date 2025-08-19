@@ -1482,6 +1482,7 @@ static void quic_close(struct sock *sk, long timeout)
 
 	quic_outq_transmit_app_close(sk);
 	quic_set_state(sk, QUIC_SS_CLOSED);
+	sk->sk_prot->unhash(sk);
 
 	release_sock(sk);
 
