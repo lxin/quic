@@ -1761,6 +1761,9 @@ err:
 
 int quic_packet_process(struct sock *sk, struct sk_buff *skb)
 {
+	struct sk_buff *next, *segs;
+	int offset;
+
 	if (quic_is_closed(sk)) {
 		kfree_skb(skb);
 		return 0;
@@ -1772,7 +1775,21 @@ int quic_packet_process(struct sock *sk, struct sk_buff *skb)
 	if (quic_hdr(skb)->form)
 		return quic_packet_handshake_process(sk, skb);
 
-	return quic_packet_app_process(sk, skb);
+	if (!skb_is_gso(skb))
+		return quic_packet_app_process(sk, skb);
+
+	offset = skb_network_offset(skb);
+	segs = quic_gso_segment_list(skb, -offset);
+	if (IS_ERR(segs)) {
+		kfree_skb(skb);
+		return PTR_ERR(segs);
+	}
+	consume_skb(skb);
+	skb_list_walk_safe(segs, skb, next) {
+		skb_set_network_header(skb, offset);
+		quic_packet_app_process(sk, skb);
+	}
+	return 0;
 }
 
 /* Work function to process packets in the backlog queue. */
@@ -2303,6 +2320,21 @@ static void quic_packet_encrypt_done(struct sk_buff *skb, int err)
 	quic_outq_encrypted_tail(skb->sk, skb);
 }
 
+/* Bundle it and update metadata for the aggregate skb. */
+static void quic_packet_append_frag(struct sk_buff *p, struct sk_buff *skb)
+{
+	struct quic_skb_cb *head_cb = QUIC_SKB_CB(p);
+
+	if (head_cb->last == p)
+		skb_shinfo(p)->frag_list = skb;
+	else
+		head_cb->last->next = skb;
+	p->data_len += skb->len;
+	p->truesize += skb->truesize;
+	p->len += skb->len;
+	head_cb->last = skb;
+}
+
 /* Coalescing Packets. */
 static int quic_packet_bundle(struct sock *sk, struct sk_buff *skb)
 {
@@ -2313,37 +2345,52 @@ static int quic_packet_bundle(struct sock *sk, struct sk_buff *skb)
 	if (!packet->head) { /* First packet to bundle: initialize the head. */
 		packet->head = skb;
 		cb->last = skb;
-		goto out;
+		return 0;
 	}
 
-	/* If bundling would exceed MSS, flush the current bundle. */
-	if (packet->head->len + skb->len >= packet->mss[0]) {
+	p = packet->head;
+	head_cb = QUIC_SKB_CB(p);
+	if (head_cb->level) {
+		/* If bundling would exceed MSS, flush the current bundle. */
+		if (packet->head->len + skb->len >= packet->mss[0]) {
+			quic_packet_flush(sk);
+			packet->head = skb;
+			cb->last = skb;
+			return !cb->level;
+		}
+		head_cb->ecn |= cb->ecn;  /* Merge ECN flags. */
+		quic_packet_append_frag(p, skb);
+
+		/* rfc9000#section-12.2:
+		 *   Packets with a short header (Section 17.3) do not contain a Length field
+		 *   and so cannot be followed by other packets in the same UDP datagram.
+		 *
+		 * So return 1 to flush if it is a Short header packet.
+		 */
+		return !cb->level;
+	}
+
+	/* If bundling would exceed max GSO size, flush the current bundle. */
+	if (p->len + skb->len > sk->sk_gso_max_size ||
+	    skb_shinfo(p)->gso_segs >= sk->sk_gso_max_segs) {
 		quic_packet_flush(sk);
 		packet->head = skb;
 		cb->last = skb;
-		goto out;
+		return 0;
 	}
-	/* Bundle it and update metadata for the aggregate skb. */
-	p = packet->head;
-	head_cb = QUIC_SKB_CB(p);
-	if (head_cb->last == p)
-		skb_shinfo(p)->frag_list = skb;
-	else
-		head_cb->last->next = skb;
-	p->data_len += skb->len;
-	p->truesize += skb->truesize;
-	p->len += skb->len;
-	head_cb->last = skb;
-	head_cb->ecn |= cb->ecn;  /* Merge ECN flags. */
+	if (!skb_is_gso(p)) {
+		p->encapsulation = 1;
+		p->ip_summed = CHECKSUM_UNNECESSARY;
+		skb_reset_inner_mac_header(p);
+		skb_reset_inner_transport_header(p);
+		skb_set_inner_ipproto(p, IPPROTO_QUIC_GSO);
 
-out:
-	/* rfc9000#section-12.2:
-	 *   Packets with a short header (Section 17.3) do not contain a Length field and so
-	 *   cannot be followed by other packets in the same UDP datagram.
-	 *
-	 * so Return 1 to flush if it is a Short header packet.
-	 */
-	return !cb->level;
+		skb_shinfo(p)->gso_size = p->len;
+		skb_shinfo(p)->gso_type = SKB_GSO_UDP_TUNNEL_CSUM;
+	}
+	quic_packet_append_frag(p, skb);
+	skb_shinfo(p)->gso_segs++;
+	return 0;
 }
 
 /* Transmit a QUIC packet, possibly encrypting and bundling it. */

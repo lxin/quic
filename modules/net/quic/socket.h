@@ -28,6 +28,8 @@
 #include "inqueue.h"
 #include "timer.h"
 
+#include "offload.h"
+
 extern struct proto quic_prot;
 extern struct proto quicv6_prot;
 

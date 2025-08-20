@@ -9,7 +9,7 @@ obj-$(CONFIG_IP_QUIC) += quic.o
 
 quic-y := common.o family.o protocol.o socket.o stream.o connid.o path.o \
 	  cong.o pnspace.o crypto.o timer.o frame.o packet.o outqueue.o \
-	  inqueue.o
+	  inqueue.o offload.o
 
 ifdef CONFIG_KUNIT
 	obj-$(CONFIG_IP_QUIC_TEST) += quic_unit_test.o

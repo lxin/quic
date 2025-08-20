@@ -665,12 +665,18 @@ static __init int quic_init(void)
 	if (err)
 		goto err_protosw;
 
+	err = quic_offload_init();
+	if (err < 0)
+		goto err_offload;
+
 #ifdef CONFIG_SYSCTL
 	quic_sysctl_register();
 #endif
 	pr_info("quic: init\n");
 	return 0;
 
+err_offload:
+	quic_protosw_exit();
 err_protosw:
 	unregister_pernet_subsys(&quic_net_ops);
 err_def_ops:
@@ -688,6 +694,7 @@ static __exit void quic_exit(void)
 #ifdef CONFIG_SYSCTL
 	quic_sysctl_unregister();
 #endif
+	quic_offload_exit();
 	quic_protosw_exit();
 	unregister_pernet_subsys(&quic_net_ops);
 	quic_hash_tables_destroy();

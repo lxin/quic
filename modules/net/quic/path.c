@@ -22,8 +22,11 @@ static int (*quic_path_rcv)(struct sk_buff *skb, u8 err);
 
 static int quic_udp_rcv(struct sock *sk, struct sk_buff *skb)
 {
+	if (!skb_is_gso(skb) && skb_linearize(skb))
+		return 0;
+
 	/* Save the UDP socket to skb->sk for later QUIC socket lookup. */
-	if (skb_linearize(skb) || !skb_set_owner_sk_safe(skb, sk))
+	if (!skb_set_owner_sk_safe(skb, sk))
 		return 0;
 
 	memset(skb->cb, 0, sizeof(skb->cb));
