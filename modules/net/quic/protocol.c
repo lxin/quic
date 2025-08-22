@@ -554,6 +554,7 @@ static __init int quic_init(void)
 	sysctl_quic_wmem[1] = 16 * 1024;
 	sysctl_quic_wmem[2] = max(64 * 1024, max_share);
 
+	quic_path_init(quic_packet_rcv);
 	quic_transport_param_init();
 	quic_crypto_init();
 
@@ -573,10 +574,6 @@ static __init int quic_init(void)
 	if (err)
 		goto err_def_ops;
 
-	err = quic_path_init(quic_packet_rcv);
-	if (err)
-		goto err_path;
-
 	err = quic_protosw_init();
 	if (err)
 		goto err_protosw;
@@ -588,8 +585,6 @@ static __init int quic_init(void)
 	return 0;
 
 err_protosw:
-	quic_path_destroy();
-err_path:
 	unregister_pernet_subsys(&quic_net_ops);
 err_def_ops:
 	quic_hash_tables_destroy();
@@ -607,7 +602,6 @@ static __exit void quic_exit(void)
 	quic_sysctl_unregister();
 #endif
 	quic_protosw_exit();
-	quic_path_destroy();
 	unregister_pernet_subsys(&quic_net_ops);
 	quic_hash_tables_destroy();
 	percpu_counter_destroy(&quic_sockets_allocated);

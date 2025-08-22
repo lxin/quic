@@ -18,7 +18,6 @@
 #include "path.h"
 
 static int (*quic_path_rcv)(struct sk_buff *skb, u8 err);
-static struct workqueue_struct *quic_wq __read_mostly;
 
 static int quic_udp_rcv(struct sock *sk, struct sk_buff *skb)
 {
@@ -103,7 +102,7 @@ static bool quic_udp_sock_get(struct quic_udp_sock *us)
 static void quic_udp_sock_put(struct quic_udp_sock *us)
 {
 	if (us && refcount_dec_and_test(&us->refcnt))
-		queue_work(quic_wq, &us->work);
+		schedule_work(&us->work);
 }
 
 /* Lookup a quic_udp_sock in the global hash table. If not found, creates and returns a new one
@@ -496,17 +495,7 @@ bool quic_path_pl_confirm(struct quic_path_group *paths, s64 largest, s64 smalle
 	return paths->pl.number && paths->pl.number >= smallest && paths->pl.number <= largest;
 }
 
-int quic_path_init(int (*rcv)(struct sk_buff *skb, u8 err))
+void quic_path_init(int (*rcv)(struct sk_buff *skb, u8 err))
 {
-	quic_wq = create_workqueue("quic_workqueue");
-	if (!quic_wq)
-		return -ENOMEM;
-
 	quic_path_rcv = rcv;
-	return 0;
-}
-
-void quic_path_destroy(void)
-{
-	destroy_workqueue(quic_wq);
 }
