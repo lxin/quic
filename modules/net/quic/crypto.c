@@ -668,12 +668,13 @@ int quic_crypto_decrypt(struct quic_crypto *crypto, struct sk_buff *skb)
 		quic_crypto_get_header(skb);
 		goto out;
 	}
-
-	cha = quic_crypto_is_cipher_chacha(crypto);
-	err = quic_crypto_header_decrypt(crypto->rx_hp_tfm, skb, cha);
-	if (err) {
-		pr_debug("%s: hd decrypt err %d\n", __func__, err);
-		return err;
+	if (!cb->number_len) { /* Packet header not yet decrypted. */
+		cha = quic_crypto_is_cipher_chacha(crypto);
+		err = quic_crypto_header_decrypt(crypto->rx_hp_tfm, skb, cha);
+		if (err) {
+			pr_debug("%s: hd decrypt err %d\n", __func__, err);
+			return err;
+		}
 	}
 
 	/* rfc9001#section-6:
@@ -686,6 +687,8 @@ int quic_crypto_decrypt(struct quic_crypto *crypto, struct sk_buff *skb)
 	if (cb->key_phase != crypto->key_phase && !crypto->key_pending) {
 		if (!crypto->send_ready) /* Not ready for key update. */
 			return -EINVAL;
+		if (!cb->backlog) /* Key update must be done in process context. */
+			return -EKEYREVOKED;
 		err = quic_crypto_key_update(crypto); /* Perform a key update. */
 		if (err) {
 			cb->errcode = QUIC_TRANSPORT_ERROR_KEY_UPDATE;

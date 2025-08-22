@@ -125,5 +125,6 @@ int quic_packet_get_dcid(struct quic_conn_id *dcid, struct sk_buff *skb);
 int quic_packet_select_version(struct sock *sk, u32 *versions, u8 count);
 u32 *quic_packet_compatible_versions(u32 version);
 
+void quic_packet_backlog_work(struct work_struct *work);
 void quic_packet_rcv_err_pmtu(struct sock *sk);
 int quic_packet_rcv(struct sk_buff *skb, u8 err);

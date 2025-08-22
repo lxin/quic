@@ -55,6 +55,7 @@ struct quic_skb_cb {
 
 	u8 key_update:1;	/* Key update triggered by this packet */
 	u8 key_phase:1;		/* Key phase used (0 or 1) */
+	u8 backlog:1;		/* Enqueued into backlog list */
 	u8 resume:1;		/* Crypto already processed (encrypted or decrypted) */
 	u8 path:1;		/* Packet arrived from a new or migrating path */
 	u8 ecn:2;		/* ECN marking used on TX */

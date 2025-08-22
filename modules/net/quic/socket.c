@@ -110,6 +110,7 @@ bool quic_accept_sock_exists(struct sock *sk, struct sk_buff *skb)
 {
 	struct quic_pnspace *space = quic_pnspace(sk, QUIC_CRYPTO_INITIAL);
 	struct quic_packet *packet = quic_packet(sk);
+	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
 	bool exist = false;
 
 	/* Skip if packet is newer than the last accept socket creation time.  No matching
@@ -130,8 +131,11 @@ bool quic_accept_sock_exists(struct sock *sk, struct sk_buff *skb)
 		/* Socket is busy (owned by user context): queue to backlog. */
 		if (sk_add_backlog(sk, skb, READ_ONCE(sk->sk_rcvbuf)))
 			kfree_skb(skb);
+		else
+			cb->backlog = 1;
 	} else {
 		/* Socket not busy: process immediately. */
+		cb->backlog = 0;
 		sk->sk_backlog_rcv(sk, skb); /* quic_packet_process(). */
 	}
 	bh_unlock_sock(sk);
@@ -157,7 +161,7 @@ out:
 struct sock *quic_sock_lookup(struct sk_buff *skb, union quic_addr *sa, union quic_addr *da,
 			      struct quic_conn_id *dcid)
 {
-	struct net *net = dev_net(skb->dev);
+	struct net *net = sock_net(skb->sk);
 	struct quic_path_group *paths;
 	struct quic_hash_head *head;
 	struct sock *sk;
@@ -193,7 +197,7 @@ struct sock *quic_sock_lookup(struct sk_buff *skb, union quic_addr *sa, union qu
 struct sock *quic_listen_sock_lookup(struct sk_buff *skb, union quic_addr *sa, union quic_addr *da,
 				     struct quic_data *alpns)
 {
-	struct net *net = dev_net(skb->dev);
+	struct net *net = sock_net(skb->sk);
 	struct sock *sk = NULL, *tmp;
 	struct quic_hash_head *head;
 	struct quic_data alpn;

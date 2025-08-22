@@ -485,7 +485,9 @@ static int __net_init quic_net_init(struct net *net)
 		qn->stat = NULL;
 		return err;
 	}
-	spin_lock_init(&qn->lock);
+
+	INIT_WORK(&qn->work, quic_packet_backlog_work);
+	skb_queue_head_init(&qn->backlog_list);
 
 #ifdef CONFIG_PROC_FS
 	err = quic_net_proc_init(net);
@@ -505,6 +507,8 @@ static void __net_exit quic_net_exit(struct net *net)
 #ifdef CONFIG_PROC_FS
 	quic_net_proc_exit(net);
 #endif
+	skb_queue_purge(&qn->backlog_list);
+	cancel_work_sync(&qn->work);
 	quic_crypto_free(&qn->crypto);
 	free_percpu(qn->stat);
 	qn->stat = NULL;

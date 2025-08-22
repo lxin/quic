@@ -267,6 +267,29 @@ out:
 	return ret;
 }
 
+#define QUIC_PACKET_BACKLOG_MAX		4096
+
+/* Queue a packet for later processing when sleeping is allowed. */
+static int quic_packet_backlog_schedule(struct net *net, struct sk_buff *skb)
+{
+	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
+	struct quic_net *qn = quic_net(net);
+
+	if (cb->backlog)
+		return 0;
+
+	if (skb_queue_len_lockless(&qn->backlog_list) >= QUIC_PACKET_BACKLOG_MAX) {
+		QUIC_INC_STATS(net, QUIC_MIB_PKT_RCVDROP);
+		kfree_skb(skb);
+		return -1;
+	}
+
+	cb->backlog = 1;
+	skb_queue_tail(&qn->backlog_list, skb);
+	schedule_work(&qn->work);
+	return 1;
+}
+
 #define TLS_MT_CLIENT_HELLO	1
 #define TLS_EXT_alpn		16
 
@@ -390,8 +413,7 @@ static int quic_packet_get_alpn(struct quic_data *alpn, u8 *p, u32 len)
 static int quic_packet_parse_alpn(struct sk_buff *skb, struct quic_data *alpn)
 {
 	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
-	struct net *net = dev_net(skb->dev);
-	struct quic_net *qn = quic_net(net);
+	struct net *net = sock_net(skb->sk);
 	u8 *p = skb->data, *data, type;
 	struct quic_conn_id dcid, scid;
 	u32 len = skb->len, version;
@@ -401,7 +423,7 @@ static int quic_packet_parse_alpn(struct sk_buff *skb, struct quic_data *alpn)
 	int err = -EINVAL;
 
 	if (quic_packet_get_version_and_connid(&dcid, &scid, &version, &p, &len))
-		return -EINVAL;
+		return err;
 	if (!quic_packet_compatible_versions(version))
 		return 0;
 	/* Only parse Initial packets. */
@@ -409,33 +431,32 @@ static int quic_packet_parse_alpn(struct sk_buff *skb, struct quic_data *alpn)
 	if (type != QUIC_PACKET_INITIAL)
 		return 0;
 	if (quic_packet_get_token(&token, &p, &len))
-		return -EINVAL;
+		return err;
 	if (!quic_get_var(&p, &len, &length) || length > (u64)len)
 		return err;
+	if (!cb->backlog) {
+		quic_packet_backlog_schedule(net, skb_get(skb));
+		return err;
+	}
 	cb->length = (u16)length;
 	/* Copy skb data for restoring in case of decrypt failure. */
 	data = kmemdup(skb->data, skb->len, GFP_ATOMIC);
 	if (!data)
 		return -ENOMEM;
 
-	spin_lock(&qn->lock);
 	/* Install initial keys for packet decryption to crypto. */
 	crypto = &quic_net(net)->crypto;
 	err = quic_crypto_initial_keys_install(crypto, &dcid, version, 1);
-	if (err) {
-		spin_unlock(&qn->lock);
+	if (err)
 		goto out;
-	}
 	cb->number_offset = (u16)(p - skb->data);
 	err = quic_crypto_decrypt(crypto, skb);
 	if (err) {
-		spin_unlock(&qn->lock);
 		QUIC_INC_STATS(net, QUIC_MIB_PKT_DECDROP);
 		/* Restore original data on decrypt failure. */
 		memcpy(skb->data, data, skb->len);
 		goto out;
 	}
-	spin_unlock(&qn->lock);
 
 	QUIC_INC_STATS(net, QUIC_MIB_PKT_DECFASTPATHS);
 	cb->resume = 1; /* Mark this packet as already decrypted. */
@@ -479,11 +500,30 @@ int quic_packet_get_dcid(struct quic_conn_id *dcid, struct sk_buff *skb)
 	return 0;
 }
 
+/* Lookup listening socket for Client Initial packet (in process context). */
+static struct sock *quic_packet_get_listen_sock(struct sk_buff *skb)
+{
+	union quic_addr daddr, saddr;
+	struct quic_data alpns = {};
+	struct sock *sk;
+
+	quic_get_msg_addrs(skb, &daddr, &saddr);
+
+	if (quic_packet_parse_alpn(skb, &alpns))
+		return NULL;
+
+	local_bh_disable();
+	sk = quic_listen_sock_lookup(skb, &daddr, &saddr, &alpns);
+	local_bh_enable();
+
+	return sk;
+}
+
 /* Determine the QUIC socket associated with an incoming packet. */
 static struct sock *quic_packet_get_sock(struct sk_buff *skb)
 {
 	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
-	struct net *net = dev_net(skb->dev);
+	struct net *net = sock_net(skb->sk);
 	struct quic_conn_id dcid, *conn_id;
 	union quic_addr daddr, saddr;
 	struct quic_data alpns = {};
@@ -546,7 +586,7 @@ static struct sock *quic_packet_get_sock(struct sk_buff *skb)
 /* Entry point for processing received QUIC packets. */
 int quic_packet_rcv(struct sk_buff *skb, u8 err)
 {
-	struct net *net = dev_net(skb->dev);
+	struct net *net = sock_net(skb->sk);
 	struct sock *sk;
 
 	if (unlikely(err))
@@ -568,6 +608,7 @@ int quic_packet_rcv(struct sk_buff *skb, u8 err)
 			sock_put(sk);
 			goto err;
 		}
+		QUIC_SKB_CB(skb)->backlog = 1;
 		QUIC_INC_STATS(net, QUIC_MIB_PKT_RCVBACKLOGS);
 	} else {
 		/* Socket not busy: process immediately. */
@@ -906,11 +947,16 @@ static int quic_packet_listen_process(struct sock *sk, struct sk_buff *skb)
 		kfree_skb(skb);
 		return -EINVAL;
 	}
+
+	/* Associate skb with sk to ensure sk is valid if skb is delayed to process in workqueue. */
+	WARN_ON(!skb_set_owner_sk_safe(skb, sk));
 	packet->version = version;
 	/* Save original DCID for future token validation or Retry logic. */
 	quic_conn_id_update(&odcid, packet->dcid.data, packet->dcid.len);
 	/* If configured to validate client addresses, handle token logic. */
 	if (quic_config(sk)->validate_peer_address) {
+		if (quic_packet_backlog_schedule(net, skb))
+			return 0;
 		if (!token.len) {
 			/* rfc9000#section-8.1.2:
 			 *
@@ -945,6 +991,8 @@ static int quic_packet_listen_process(struct sock *sk, struct sk_buff *skb)
 	/* Add request sock for this new QUIC connection. */
 	req = quic_request_sock_enqueue(sk, &odcid, retry);
 	if (!req) {
+		if (quic_packet_backlog_schedule(net, skb))
+			return 0;
 		/* rfc9000#section-5.2.2:
 		 *
 		 * If a server refuses to accept a new connection, it SHOULD send an Initial
@@ -1126,6 +1174,7 @@ static int quic_packet_handshake_header_process(struct sock *sk, struct sk_buff 
 	u8 *p = (u8 *)quic_hshdr(skb), type = quic_hshdr(skb)->type;
 	struct quic_packet *packet = quic_packet(sk);
 	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
+	struct net *net = sock_net(sk);
 	u32 len = skb->len, version;
 	struct quic_data token;
 	u64 length;
@@ -1135,7 +1184,8 @@ static int quic_packet_handshake_header_process(struct sock *sk, struct sk_buff 
 	if (quic_packet_get_version_and_connid(&packet->dcid, &packet->scid, &version, &p, &len))
 		return -EINVAL;
 	if (!version) { /* version == 0 indicates this is a version negotiation packet. */
-		quic_packet_version_process(sk, skb);
+		if (!quic_packet_backlog_schedule(net, skb))
+			quic_packet_version_process(sk, skb);
 		packet->level = 0;
 		return 0;
 	}
@@ -1146,6 +1196,10 @@ static int quic_packet_handshake_header_process(struct sock *sk, struct sk_buff 
 		 */
 		if (type != QUIC_PACKET_INITIAL || !quic_packet_compatible_versions(version))
 			return -EINVAL;
+		if (quic_packet_backlog_schedule(net, skb)) {
+			packet->level = 0;
+			return 0;
+		}
 		/* Update crypto keys for the new negotiated version. */
 		if (quic_packet_version_change(sk, &quic_paths(sk)->orig_dcid, version))
 			return -EINVAL;
@@ -1184,7 +1238,8 @@ static int quic_packet_handshake_header_process(struct sock *sk, struct sk_buff 
 		packet->level = QUIC_CRYPTO_EARLY;
 		break;
 	case QUIC_PACKET_RETRY:
-		quic_packet_retry_process(sk, skb); /* Handle Retry packet. */
+		if (!quic_packet_backlog_schedule(net, skb))
+			quic_packet_retry_process(sk, skb); /* Handle Retry packet. */
 		packet->level = 0;
 		return 0;
 	default:
@@ -1353,6 +1408,7 @@ next:
 		skb_pull(skb, cb->number_offset + cb->length);
 
 		cb->resume = 0; /* Clear resume flag for next packet decryption. */
+		cb->number_len = 0; /* Reset to mark header decryption incomplete. */
 		skb_reset_transport_header(skb);
 		if (!packet->ack_requested) /* If no ACK-eliciting frame, skip ACK generation. */
 			continue;
@@ -1548,8 +1604,6 @@ static int quic_packet_app_process(struct sock *sk, struct sk_buff *skb)
 	u8 taglen, key_phase;
 	int err = -EINVAL;
 
-	/* Associate skb with sk to ensure sk is valid during async decryption completion. */
-	WARN_ON(!skb_set_owner_sk_safe(skb, sk));
 	sock_rps_save_rxhash(sk, skb);
 
 	quic_packet_reset(packet);  /* Reset packet state to prepare for new packet parsing. */
@@ -1599,10 +1653,16 @@ static int quic_packet_app_process(struct sock *sk, struct sk_buff *skb)
 	taglen = quic_packet_taglen(packet);
 	if (!taglen) /* Indicates disable_1rtt_encryption was negotiated. */
 		cb->resume = 1;
+	/* Associate skb with sk to ensure sk is valid during async decryption completion. */
+	WARN_ON(!skb_set_owner_sk_safe(skb, sk));
 	err = quic_crypto_decrypt(crypto, skb); /* Do packet decryption. */
 	if (err) {
 		if (err == -EINPROGRESS) {
 			QUIC_INC_STATS(net, QUIC_MIB_PKT_DECBACKLOGS);
+			return err;
+		}
+		if (err == -EKEYREVOKED) {
+			quic_packet_backlog_schedule(net, skb);
 			return err;
 		}
 		QUIC_INC_STATS(net, QUIC_MIB_PKT_DECDROP);
@@ -1709,6 +1769,33 @@ int quic_packet_process(struct sock *sk, struct sk_buff *skb)
 		return quic_packet_handshake_process(sk, skb);
 
 	return quic_packet_app_process(sk, skb);
+}
+
+/* Work function to process packets in the backlog queue. */
+void quic_packet_backlog_work(struct work_struct *work)
+{
+	struct quic_net *qn = container_of(work, struct quic_net, work);
+	struct sk_buff *skb;
+	struct sock *sk;
+
+	skb = skb_dequeue(&qn->backlog_list);
+	while (skb) {
+		sk = skb->sk;
+		if (sk->sk_protocol == IPPROTO_QUIC) {
+			sock_hold(sk);
+		} else {
+			sk = quic_packet_get_listen_sock(skb);
+			if (!sk)
+				continue;
+		}
+
+		lock_sock(sk);
+		quic_packet_process(sk, skb);
+		release_sock(sk);
+		sock_put(sk);
+
+		skb = skb_dequeue(&qn->backlog_list);
+	}
 }
 
 /* Make these fixed for easy coding. */
@@ -2263,14 +2350,13 @@ int quic_packet_xmit(struct sock *sk, struct sk_buff *skb)
 	struct net *net = sock_net(sk);
 	int err;
 
-	/* Associate skb with sk to ensure sk is valid during async encryption completion. */
-	WARN_ON(!skb_set_owner_sk_safe(skb, sk));
-
 	/* Skip encryption if taglen == 0 (e.g., disable_1rtt_encryption). */
 	if (!packet->taglen[quic_hdr(skb)->form])
 		goto xmit;
 
 	cb->crypto_done = quic_packet_encrypt_done;
+	/* Associate skb with sk to ensure sk is valid during async encryption completion. */
+	WARN_ON(!skb_set_owner_sk_safe(skb, sk));
 	err = quic_crypto_encrypt(quic_crypto(sk, packet->level), skb);
 	if (err) {
 		if (err != -EINPROGRESS) {
