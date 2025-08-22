@@ -29,6 +29,7 @@ struct percpu_counter quic_sockets_allocated;
 long sysctl_quic_mem[3];
 int sysctl_quic_rmem[3];
 int sysctl_quic_wmem[3];
+int sysctl_quic_alpn_demux;
 
 static int quic_inet_connect(struct socket *sock, struct sockaddr *addr, int addr_len, int flags)
 {
@@ -190,6 +191,15 @@ static struct ctl_table quic_table[] = {
 		.maxlen		= sizeof(sysctl_quic_wmem),
 		.mode		= 0644,
 		.proc_handler	= proc_dointvec,
+	},
+	{
+		.procname	= "alpn_demux",
+		.data		= &sysctl_quic_alpn_demux,
+		.maxlen		= sizeof(sysctl_quic_alpn_demux),
+		.mode		= 0644,
+		.proc_handler   = proc_dointvec_minmax,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= SYSCTL_ONE,
 	},
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)

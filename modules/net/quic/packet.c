@@ -422,6 +422,8 @@ static int quic_packet_parse_alpn(struct sk_buff *skb, struct quic_data *alpn)
 	u64 offset, length;
 	int err = -EINVAL;
 
+	if (!sysctl_quic_alpn_demux)
+		return 0;
 	if (quic_packet_get_version_and_connid(&dcid, &scid, &version, &p, &len))
 		return err;
 	if (!quic_packet_compatible_versions(version))

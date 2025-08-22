@@ -15,6 +15,7 @@ extern struct percpu_counter quic_sockets_allocated;
 extern long sysctl_quic_mem[3];
 extern int sysctl_quic_rmem[3];
 extern int sysctl_quic_wmem[3];
+extern int sysctl_quic_alpn_demux;
 
 enum {
 	QUIC_MIB_NUM = 0,
