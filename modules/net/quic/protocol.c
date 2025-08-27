@@ -10,16 +10,18 @@
  *    Xin Long <lucien.xin@gmail.com>
  */
 
-#include <net/sock.h>
 #include <net/inet_common.h>
 #include <linux/version.h>
 #include <linux/proc_fs.h>
 #include <net/protocol.h>
 #include <net/tls.h>
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 9, 0)
+#include <net/rps.h>
+#endif
+
 #include "socket.h"
 
-static DEFINE_PER_CPU(int, quic_memory_per_cpu_fw_alloc);
 static unsigned int quic_net_id __read_mostly;
 
 struct quic_transport_param quic_default_param __read_mostly;
@@ -131,8 +133,7 @@ static __poll_t quic_inet_poll(struct file *file, struct socket *sock, poll_tabl
 
 	poll_wait(file, sk_sleep(sk), wait);
 
-	/* Comment it out for compiling on the old kernel version for now. */
-	/* sock_rps_record_flow(sk); */
+	sock_rps_record_flow(sk); /* Record the flow's CPU association for RFS. */
 
 	/* A listening socket becomes readable when the accept queue is not empty. */
 	if (quic_is_listen(sk))
@@ -201,8 +202,7 @@ static struct ctl_table quic_table[] = {
 		.extra1		= SYSCTL_ZERO,
 		.extra2		= SYSCTL_ONE,
 	},
-
-#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
+#ifndef register_sysctl
 	{ /* sentinel */ }
 #endif
 };
@@ -433,29 +433,13 @@ static struct inet_protosw quicv6_dgram_protosw = {
 
 static int quic_protosw_init(void)
 {
-	struct proto *proto;
-	void *offset;
 	int err;
 
-	proto = &quic_prot;
-	offset = (void *)(&proto->memory_allocated) + sizeof(proto->memory_allocated);
-	if (offset != (void *)&proto->sockets_allocated) /* per_cpu_fw_alloc */
-		*(int  __percpu **)offset = &quic_memory_per_cpu_fw_alloc;
-
-	err = proto_register(proto, 1);
+	err = proto_register(&quic_prot, 1);
 	if (err)
 		return err;
 
-	proto = &quicv6_prot;
-	offset = (void *)(&proto->memory_allocated) + sizeof(proto->memory_allocated);
-	if (offset != (void *)&proto->sockets_allocated) /* per_cpu_fw_alloc */
-		*(int  __percpu **)offset = &quic_memory_per_cpu_fw_alloc;
-
-	offset = (void *)(&proto->obj_size) + sizeof(proto->obj_size);
-	if (offset != &proto->slab_flags) /* ipv6_pinfo_offset */
-		*(unsigned int *)offset = offsetof(struct quic6_sock, inet6);
-
-	err = proto_register(proto, 1);
+	err = proto_register(&quicv6_prot, 1);
 	if (err) {
 		proto_unregister(&quic_prot);
 		return err;

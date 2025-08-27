@@ -234,7 +234,11 @@ void quic_timer_stop(struct sock *sk, u8 type)
 			sock_put(sk);
 		return;
 	}
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 2, 0)
 	if (timer_delete(quic_timer(sk, type)))
+#else
+	if (del_timer(quic_timer(sk, type)))
+#endif
 		sock_put(sk);
 }
 

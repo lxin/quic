@@ -10,7 +10,6 @@
  *    Xin Long <lucien.xin@gmail.com>
  */
 
-#include <net/sock.h>
 #include <net/inet_common.h>
 #include <linux/version.h>
 #include <asm/ioctls.h>
@@ -18,6 +17,7 @@
 
 #include "socket.h"
 
+static DEFINE_PER_CPU(int, quic_memory_per_cpu_fw_alloc);
 static unsigned long quic_memory_pressure;
 static atomic_long_t quic_memory_allocated;
 
@@ -288,8 +288,7 @@ static void quic_sock_fetch_transport_param(struct sock *sk, struct quic_transpo
 	quic_stream_get_param(quic_streams(sk), p, quic_is_serv(sk));
 }
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 5, 0) || \
-	(defined(RHEL_RELEASE_CODE) && RHEL_RELEASE_CODE >= 2308) /* RHEL-9.4 */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 5, 0)
 static int quic_ioctl(struct sock *sk, int cmd, int *karg)
 {
 	int err = 0;
@@ -1058,10 +1057,10 @@ err:
 }
 
 /* Wait for an incoming QUIC packet. */
-static int quic_wait_for_packet(struct sock *sk, int nonblock)
+static int quic_wait_for_packet(struct sock *sk, u32 flags)
 {
+	long timeo = sock_rcvtimeo(sk, flags & MSG_DONTWAIT);
 	struct list_head *head = &quic_inq(sk)->recv_list;
-	long timeo = sock_rcvtimeo(sk, nonblock);
 	DEFINE_WAIT(wait);
 	int err = 0;
 
@@ -1096,16 +1095,9 @@ static int quic_wait_for_packet(struct sock *sk, int nonblock)
 	return err;
 }
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 19, 0)
 static int quic_recvmsg(struct sock *sk, struct msghdr *msg, size_t len, int flags,
 			int *addr_len)
 {
-	int nonblock = flags & MSG_DONTWAIT;
-#else
-static int quic_recvmsg(struct sock *sk, struct msghdr *msg, size_t len, int nonblock,
-			int flags, int *addr_len)
-{
-#endif
 	u32 copy, copied = 0, freed = 0, bytes = 0;
 	struct quic_handshake_info hinfo = {};
 	struct quic_stream_info sinfo = {};
@@ -1116,7 +1108,7 @@ static int quic_recvmsg(struct sock *sk, struct msghdr *msg, size_t len, int non
 
 	lock_sock(sk);
 
-	err = quic_wait_for_packet(sk, nonblock);
+	err = quic_wait_for_packet(sk, flags);
 	if (err)
 		goto out;
 
@@ -1418,8 +1410,7 @@ out:
 	return err;
 }
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 10, 0) || \
-	(defined(RHEL_RELEASE_CODE) && RHEL_RELEASE_CODE >= 2310) /* RHEL-9.6 */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 10, 0)
 static struct sock *quic_accept(struct sock *sk, struct proto_accept_arg *arg)
 {
 	int flags = arg->flags, *errp = &arg->err;
@@ -2547,6 +2538,7 @@ struct proto quic_prot = {
 	.memory_pressure	=  &quic_memory_pressure,
 	.enter_memory_pressure	=  quic_enter_memory_pressure,
 	.memory_allocated	=  &quic_memory_allocated,
+	.per_cpu_fw_alloc	=  &quic_memory_per_cpu_fw_alloc,
 	.sockets_allocated	=  &quic_sockets_allocated,
 };
 
@@ -2572,11 +2564,15 @@ struct proto quicv6_prot = {
 	.release_cb	=  quic_release_cb,
 	.no_autobind	=  true,
 	.obj_size	= sizeof(struct quic6_sock),
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0)
+	.ipv6_pinfo_offset	=  offsetof(struct quic6_sock, inet6),
+#endif
 	.sysctl_mem		=  sysctl_quic_mem,
 	.sysctl_rmem		=  sysctl_quic_rmem,
 	.sysctl_wmem		=  sysctl_quic_wmem,
 	.memory_pressure	=  &quic_memory_pressure,
 	.enter_memory_pressure	=  quic_enter_memory_pressure,
 	.memory_allocated	=  &quic_memory_allocated,
+	.per_cpu_fw_alloc	=  &quic_memory_per_cpu_fw_alloc,
 	.sockets_allocated	=  &quic_sockets_allocated,
 };

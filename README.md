@@ -110,7 +110,7 @@ in [ktls-utils](https://github.com/oracle/ktls-utils) will handle the handshake 
 
 Both QUIC Kernel Module and Libquic will be built and installed simply by the commands below:
 
-    Packages Required: (kernel_version >= 5.14)
+    Packages Required: (kernel_version >= 6.1)
     - make autoconf automake libtool pkg-config
     - gnutls-devel kernel-devel (yum)
       gnutls-dev linux-headers-$(uname -r) (apt-get)

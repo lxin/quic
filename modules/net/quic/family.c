@@ -10,10 +10,8 @@
  *    Xin Long <lucien.xin@gmail.com>
  */
 
-#include <net/sock.h>
 #include <net/inet_common.h>
 #include <net/udp_tunnel.h>
-#include <linux/version.h>
 #include <linux/icmp.h>
 
 #include "common.h"
@@ -125,12 +123,8 @@ static int quic_v4_flow_route(struct sock *sk, union quic_addr *da, union quic_a
 	fl4->flowi4_proto = IPPROTO_UDP;
 	fl4->flowi4_oif = sk->sk_bound_dev_if;
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 19, 0)
 	fl4->flowi4_scope = ip_sock_rt_scope(sk);
 	fl4->flowi4_tos = ip_sock_rt_tos(sk);
-#else
-	fl4->flowi4_tos = RT_CONN_FLAGS_TOS(sk, READ_ONCE(inet_sk(sk)->tos));
-#endif
 
 	rt = ip_route_output_key(sock_net(sk), fl4);
 	if (IS_ERR(rt))
@@ -166,7 +160,7 @@ static int quic_v6_flow_route(struct sock *sk, union quic_addr *da, union quic_a
 	fl6->flowi6_proto = IPPROTO_UDP;
 	fl6->flowi6_oif = sk->sk_bound_dev_if;
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 7, 0)
+#ifdef inet6_test_bit
 	if (inet6_test_bit(SNDFLOW, sk)) {
 #else
 	if (np->sndflow) {

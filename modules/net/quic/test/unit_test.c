@@ -10,7 +10,6 @@
  *    Xin Long <lucien.xin@gmail.com>
  */
 
-#include <linux/version.h>
 #include <linux/skbuff.h>
 #include <linux/delay.h>
 #include <linux/quic.h>

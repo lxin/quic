@@ -15,6 +15,7 @@ menuconfig IP_QUIC
 	select CRYPTO_CCM
 	select CRYPTO_CHACHA20POLY1305
 	select NET_UDP_TUNNEL
+	default n
 	help
 	  QUIC: A UDP-Based Multiplexed and Secure Transport
 
