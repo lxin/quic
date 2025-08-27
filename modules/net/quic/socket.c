@@ -382,10 +382,8 @@ static int quic_init_sock(struct sock *sk)
 	WRITE_ONCE(sk->sk_sndbuf, READ_ONCE(sysctl_quic_wmem[1]));
 	WRITE_ONCE(sk->sk_rcvbuf, READ_ONCE(sysctl_quic_rmem[1]));
 
-	local_bh_disable();
 	sk_sockets_allocated_inc(sk);
 	sock_prot_inuse_add(sock_net(sk), sk->sk_prot, 1);
-	local_bh_enable();
 
 	return 0;
 }
@@ -415,10 +413,8 @@ static void quic_destroy_sock(struct sock *sk)
 	quic_data_free(quic_token(sk));
 	quic_data_free(quic_alpn(sk));
 
-	local_bh_disable();
 	sk_sockets_allocated_dec(sk);
 	sock_prot_inuse_add(sock_net(sk), sk->sk_prot, -1);
-	local_bh_enable();
 }
 
 static int quic_bind(struct sock *sk, struct sockaddr *addr, int addr_len)

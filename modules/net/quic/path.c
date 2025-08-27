@@ -105,8 +105,9 @@ static void quic_udp_sock_put(struct quic_udp_sock *us)
 		schedule_work(&us->work);
 }
 
-/* Lookup a quic_udp_sock in the global hash table. If not found, creates and returns a new one
- * associated with the given kernel socket.
+/* Lookup a quic_udp_sock in the global hash table by port or address.  If 'a' is provided, it
+ * searches for a socket whose local address matches 'a' and, if applicable, matches the device
+ * binding. If 'a' is NULL, it searches only by port.
  */
 static struct quic_udp_sock *quic_udp_sock_lookup(struct sock *sk, union quic_addr *a, u16 port)
 {
