@@ -43,7 +43,6 @@ struct quic_stream {
 		u8 state;		/* Send stream state, per rfc9000#section-3.1 */
 
 		u8 data_blocked:1;	/* True if flow control blocks sending more data */
-		u8 stop_sent:1;		/* True if STOP_SENDING has been sent, not acknowledged */
 		u8 done:1;		/* True if application indicated end of stream (FIN sent) */
 	} send;
 	struct {
@@ -58,6 +57,8 @@ struct quic_stream {
 
 		u32 frags;		/* Number of received STREAM frames pending reassembly */
 		u8 state;		/* Receive stream state, per rfc9000#section-3.2 */
+
+		u8 stop_sent:1;		/* True if STOP_SENDING has been sent */
 		u8 done:1;		/* True if FIN received and final size validated */
 	} recv;
 };

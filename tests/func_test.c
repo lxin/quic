@@ -105,12 +105,29 @@ static int do_client_notification_test(int sockfd)
 		return -1;
 	}
 	ev = (union quic_event *)&msg[1];
-	if (ev->update.state != QUIC_STREAM_RECV_STATE_RECVD ||
-	    ev->update.finalsz != strlen("quic event test2")) {
+	if (ev->update.state != QUIC_STREAM_RECV_STATE_RECV) {
 		printf("test3: FAIL state %u\n", ev->update.state);
 		return -1;
 	}
-	printf("test3: PASS (QUIC_EVENT_STREAM_UPDATE/QUIC_STREAM_RECV_STATE_RECVD event)\n");
+	printf("test3: PASS (QUIC_EVENT_STREAM_UPDATE/QUIC_STREAM_RECV_STATE_RECV event)\n");
+
+	memset(msg, 0, sizeof(msg));
+	ret = quic_recvmsg(sockfd, msg, sizeof(msg), &sid, &flags);
+	if (ret == -1) {
+		printf("recv error %d\n", errno);
+		return -1;
+	}
+	if (!(flags & MSG_NOTIFICATION) || msg[0] != QUIC_EVENT_STREAM_UPDATE) {
+		printf("test4: FAIL flags %u, event %d\n", flags, msg[0]);
+		return -1;
+	}
+	ev = (union quic_event *)&msg[1];
+	if (ev->update.state != QUIC_STREAM_RECV_STATE_RECVD ||
+	    ev->update.finalsz != strlen("quic event test2")) {
+		printf("test4: FAIL state %u\n", ev->update.state);
+		return -1;
+	}
+	printf("test4: PASS (QUIC_EVENT_STREAM_UPDATE/QUIC_STREAM_RECV_STATE_RECVD event)\n");
 
 	memset(msg, 0, sizeof(msg));
 	ret = quic_recvmsg(sockfd, msg, sizeof(msg), &sid, &flags);
@@ -119,10 +136,10 @@ static int do_client_notification_test(int sockfd)
 		return -1;
 	}
 	if (strcmp(msg, "quic event test2") || sid != 100) {
-		printf("test4: FAIL msg %s, sid %d\n", msg, (int)sid);
+		printf("test5: FAIL msg %s, sid %d\n", msg, (int)sid);
 		return -1;
 	}
-	printf("test4: PASS (receive msg after events)\n");
+	printf("test5: PASS (receive msg after events)\n");
 
 	flags = MSG_STREAM_NEW;
 	sid  = 102;
@@ -147,15 +164,15 @@ static int do_client_notification_test(int sockfd)
 		return -1;
 	}
 	if (!(flags & MSG_NOTIFICATION) || msg[0] != QUIC_EVENT_STREAM_UPDATE) {
-		printf("test5: FAIL flags %u, event %d\n", flags, msg[0]);
+		printf("test6: FAIL flags %u, event %d\n", flags, msg[0]);
 		return -1;
 	}
 	ev = (union quic_event *)&msg[1];
 	if (ev->update.state != QUIC_STREAM_SEND_STATE_RESET_RECVD || ev->update.errcode != 1) {
-		printf("test5: FAIL state %u\n", ev->update.state);
+		printf("test6: FAIL state %u\n", ev->update.state);
 		return -1;
 	}
-	printf("test5: PASS (QUIC_EVENT_STREAM_UPDATE/QUIC_STREAM_SEND_STATE_RESET_RECVD event)\n");
+	printf("test6: PASS (QUIC_EVENT_STREAM_UPDATE/QUIC_STREAM_SEND_STATE_RESET_RECVD event)\n");
 
 	flags = MSG_STREAM_NEW;
 	sid  = 104;
@@ -173,15 +190,15 @@ static int do_client_notification_test(int sockfd)
 		return -1;
 	}
 	if (!(flags & MSG_NOTIFICATION) || msg[0] != QUIC_EVENT_STREAM_UPDATE) {
-		printf("test6: FAIL flags %u event %d\n", flags, msg[0]);
+		printf("test7: FAIL flags %u event %d\n", flags, msg[0]);
 		return -1;
 	}
 	ev = (union quic_event *)&msg[1];
 	if (ev->update.state != QUIC_STREAM_SEND_STATE_RESET_SENT || ev->update.errcode != 1) {
-		printf("test6: FAIL state %u\n", ev->update.state);
+		printf("test7: FAIL state %u\n", ev->update.state);
 		return -1;
 	}
-	printf("test6: PASS (QUIC_EVENT_STREAM_UPDATE/QUIC_STREAM_SEND_STATE_RESET_SENT event)\n");
+	printf("test7: PASS (QUIC_EVENT_STREAM_UPDATE/QUIC_STREAM_SEND_STATE_RESET_SENT event)\n");
 
 	memset(msg, 0, sizeof(msg));
 	ret = quic_recvmsg(sockfd, msg, sizeof(msg), &sid, &flags);
@@ -190,15 +207,15 @@ static int do_client_notification_test(int sockfd)
 		return -1;
 	}
 	if (!(flags & MSG_NOTIFICATION) || msg[0] != QUIC_EVENT_STREAM_UPDATE) {
-		printf("test7: FAIL flags %u, event %d\n", flags, msg[0]);
+		printf("test8: FAIL flags %u, event %d\n", flags, msg[0]);
 		return -1;
 	}
 	ev = (union quic_event *)&msg[1];
 	if (ev->update.state != QUIC_STREAM_SEND_STATE_RESET_RECVD || ev->update.errcode != 1) {
-		printf("test7: FAIL state %u\n", ev->update.state);
+		printf("test8: FAIL state %u\n", ev->update.state);
 		return -1;
 	}
-	printf("test7: PASS (QUIC_EVENT_STREAM_UPDATE/QUIC_STREAM_SEND_STATE_RESET_RECVD "
+	printf("test8: PASS (QUIC_EVENT_STREAM_UPDATE/QUIC_STREAM_SEND_STATE_RESET_RECVD "
 	       "event by stop_sending)\n");
 
 	flags = MSG_STREAM_NEW | MSG_STREAM_FIN;
@@ -223,15 +240,15 @@ static int do_client_notification_test(int sockfd)
 		return -1;
 	}
 	if (!(flags & MSG_NOTIFICATION) || msg[0] != QUIC_EVENT_STREAM_UPDATE) {
-		printf("test8: FAIL flags %u, event %d\n", flags, msg[0]);
+		printf("test9: FAIL flags %u, event %d\n", flags, msg[0]);
 		return -1;
 	}
 	ev = (union quic_event *)&msg[1];
 	if (ev->update.state != QUIC_STREAM_RECV_STATE_RECV || ev->update.id != 107) {
-		printf("test8: FAIL state %u\n", ev->update.state);
+		printf("test9: FAIL state %u\n", ev->update.state);
 		return -1;
 	}
-	printf("test8: PASS (QUIC_EVENT_STREAM_UPDATE/QUIC_STREAM_RECV_STATE_RECV event)\n");
+	printf("test9: PASS (QUIC_EVENT_STREAM_UPDATE/QUIC_STREAM_RECV_STATE_RECV event)\n");
 
 	sleep(1);
 	memset(msg, 0, sizeof(msg));
@@ -241,27 +258,15 @@ static int do_client_notification_test(int sockfd)
 		return -1;
 	}
 	if (!(flags & MSG_NOTIFICATION) || msg[0] != QUIC_EVENT_STREAM_UPDATE) {
-		printf("test9: FAIL flags %u, event %d\n", flags, msg[0]);
+		printf("test10: FAIL flags %u, event %d\n", flags, msg[0]);
 		return -1;
 	}
 	ev = (union quic_event *)&msg[1];
 	if (ev->update.state != QUIC_STREAM_RECV_STATE_RESET_RECVD || ev->update.id != 107) {
-		printf("test9: FAIL state %u\n", ev->update.state);
+		printf("test10: FAIL state %u\n", ev->update.state);
 		return -1;
 	}
-	printf("test9: PASS (QUIC_EVENT_STREAM_UPDATE/QUIC_STREAM_RECV_STATE_RESET_RECVD event)\n");
-
-	memset(msg, 0, sizeof(msg));
-	ret = quic_recvmsg(sockfd, msg, sizeof(msg), &sid, &flags);
-	if (ret == -1) {
-		printf("recv error %d\n", errno);
-		return -1;
-	}
-	if (strcmp(msg, "client reset") || sid != 107) {
-		printf("test10: FAIL msg %s, sid %d\n", msg, (int)sid);
-		return -1;
-	}
-	printf("test10: PASS (receive the old msg after stream reset events)\n");
+	printf("test10: PASS (QUIC_EVENT_STREAM_UPDATE/QUIC_STREAM_RECV_STATE_RESET_RECVD event)\n");
 
 	event.type = QUIC_EVENT_STREAM_UPDATE;
 	event.on = 0;

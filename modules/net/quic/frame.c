@@ -649,7 +649,7 @@ static struct quic_frame *quic_frame_stop_sending_create(struct sock *sk, void *
 	if (!frame)
 		return NULL;
 	quic_put_data(frame->data, buf, frame_len);
-	stream->send.stop_sent = 1; /* Mark stop sent until it gets ACKed. */
+	stream->recv.stop_sent = 1; /* Mark stop sending request sent. */
 	frame->stream = stream;
 
 	return frame;
@@ -1012,8 +1012,9 @@ static int quic_frame_stream_process(struct sock *sk, struct quic_frame *frame, 
 		goto out; /* If stream is already released, skip processing. */
 	}
 
-	if (stream->recv.state >= QUIC_STREAM_RECV_STATE_RECVD)
-		goto out; /* Skip if stream has already received all data or a reset. */
+	/* Skip if stream already finished receiving, was reset, or stop-sending requested. */
+	if (stream->recv.state >= QUIC_STREAM_RECV_STATE_RECVD || stream->recv.stop_sent)
+		goto out;
 
 	/* Follows the same processing logic as quic_frame_crypto_process(). */
 	nframe = quic_frame_alloc(payload_len, p, GFP_ATOMIC);
@@ -1320,6 +1321,7 @@ static int quic_frame_path_challenge_process(struct sock *sk, struct quic_frame 
 static int quic_frame_reset_stream_process(struct sock *sk, struct quic_frame *frame, u8 type)
 {
 	struct quic_stream_table *streams = quic_streams(sk);
+	struct quic_inqueue *inq = quic_inq(sk);
 	struct quic_stream_update update = {};
 	u64 stream_id, errcode, finalsz;
 	struct quic_stream *stream;
@@ -1381,7 +1383,8 @@ static int quic_frame_reset_stream_process(struct sock *sk, struct quic_frame *f
 	 *
 	 * A receiver of RESET_STREAM can discard any data that it already received on that stream.
 	 */
-	quic_inq_list_purge(sk, &quic_inq(sk)->stream_list, stream);
+	quic_inq_list_purge(sk, &inq->stream_list, stream);
+	quic_inq_list_purge(sk, &inq->recv_list, stream);
 	quic_stream_recv_put(streams, stream, quic_is_serv(sk)); /* Release the receive stream. */
 out:
 	return (int)(frame->len - len);

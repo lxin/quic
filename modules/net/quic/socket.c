@@ -1535,6 +1535,7 @@ static int quic_sock_stream_reset(struct sock *sk, struct quic_errinfo *info, u3
 static int quic_sock_stream_stop_sending(struct sock *sk, struct quic_errinfo *info, u32 len)
 {
 	struct quic_stream_table *streams = quic_streams(sk);
+	struct quic_inqueue *inq = quic_inq(sk);
 	struct quic_stream *stream;
 
 	if (len != sizeof(*info) || !quic_is_established(sk))
@@ -1554,8 +1555,11 @@ static int quic_sock_stream_stop_sending(struct sock *sk, struct quic_errinfo *i
 	if (stream->recv.state >= QUIC_STREAM_RECV_STATE_RECVD)
 		return -EINVAL;
 
-	if (stream->send.stop_sent) /* Defer sending; a STOP_SENDING frame is already in flight. */
+	if (stream->recv.stop_sent) /* Defer sending; a STOP_SENDING frame is already in flight. */
 		return -EAGAIN;
+
+	quic_inq_list_purge(sk, &inq->stream_list, stream);
+	quic_inq_list_purge(sk, &inq->recv_list, stream);
 
 	return quic_outq_transmit_frame(sk, QUIC_FRAME_STOP_SENDING, info, 0, false);
 }

@@ -205,10 +205,7 @@ int quic_inq_stream_recv(struct sock *sk, struct quic_frame *frame)
 			return -EINVAL;
 		}
 	}
-	if (!stream->recv.highest && !frame->stream_fin) {
-		/* Notify if first data received on stream. Skip FIN frame, as it will trigger
-		 * a "Size Known" state later.
-		 */
+	if (!stream->recv.highest) { /* Notify if first data received on stream. */
 		update.id = stream->id;
 		update.state = QUIC_STREAM_RECV_STATE_RECV;
 		quic_inq_event_recv(sk, QUIC_EVENT_STREAM_UPDATE, &update);

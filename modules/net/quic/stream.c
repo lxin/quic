@@ -350,8 +350,8 @@ void quic_stream_send_put(struct quic_stream_table *streams, struct quic_stream 
 		streams->recv.bidi_pending = 1;
 	}
 out:
-	/* Delete stream if fully read or no data received. */
-	if (stream->recv.state == QUIC_STREAM_RECV_STATE_READ || !stream->recv.offset)
+	/* Delete stream if fully read or reset. */
+	if (stream->recv.state != QUIC_STREAM_RECV_STATE_RECVD)
 		quic_stream_delete(stream);
 }
 
@@ -391,8 +391,8 @@ void quic_stream_recv_put(struct quic_stream_table *streams, struct quic_stream 
 		streams->recv.bidi_pending = 1;
 	}
 out:
-	/* Delete stream if fully read or no data received. */
-	if (stream->recv.state == QUIC_STREAM_RECV_STATE_READ || !stream->recv.offset)
+	/* Delete stream if fully read or reset. */
+	if (stream->recv.state != QUIC_STREAM_RECV_STATE_RECVD)
 		quic_stream_delete(stream);
 }
 
@@ -451,10 +451,8 @@ void quic_stream_free(struct quic_stream_table *streams)
 
 	for (i = 0; i < ht->size; i++) {
 		head = &ht->hash[i];
-		hlist_for_each_entry_safe(stream, tmp, &head->head, node) {
-			hlist_del_init(&stream->node);
-			kfree(stream);
-		}
+		hlist_for_each_entry_safe(stream, tmp, &head->head, node)
+			quic_stream_delete(stream);
 	}
 	kfree(ht->hash);
 }
