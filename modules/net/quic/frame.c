@@ -1381,7 +1381,7 @@ static int quic_frame_reset_stream_process(struct sock *sk, struct quic_frame *f
 	 *
 	 * A receiver of RESET_STREAM can discard any data that it already received on that stream.
 	 */
-	quic_inq_stream_list_purge(sk, stream);
+	quic_inq_list_purge(sk, &quic_inq(sk)->stream_list, stream);
 	quic_stream_recv_put(streams, stream, quic_is_serv(sk)); /* Release the receive stream. */
 out:
 	return (int)(frame->len - len);
@@ -1390,6 +1390,7 @@ out:
 static int quic_frame_stop_sending_process(struct sock *sk, struct quic_frame *frame, u8 type)
 {
 	struct quic_stream_table *streams = quic_streams(sk);
+	struct quic_outqueue *outq = quic_outq(sk);
 	struct quic_stream_update update = {};
 	struct quic_stream *stream;
 	struct quic_errinfo info;
@@ -1437,7 +1438,8 @@ static int quic_frame_stop_sending_process(struct sock *sk, struct quic_frame *f
 	quic_inq_event_recv(sk, QUIC_EVENT_STREAM_UPDATE, &update);
 
 	stream->send.state = update.state;
-	quic_outq_stream_list_purge(sk, stream);
+	quic_outq_list_purge(sk, &outq->transmitted_list, stream);
+	quic_outq_list_purge(sk, &outq->stream_list, stream);
 	return (int)(frame->len - len);
 }
 

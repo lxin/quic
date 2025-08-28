@@ -1098,6 +1098,7 @@ static int quic_recvmsg(struct sock *sk, struct msghdr *msg, size_t msg_len, int
 			int *addr_len)
 {
 	u32 copy, copied = 0, freed = 0, bytes = 0;
+	struct quic_inqueue *inq = quic_inq(sk);
 	struct quic_handshake_info hinfo = {};
 	struct quic_stream_info sinfo = {};
 	struct quic_stream *stream = NULL;
@@ -1107,7 +1108,7 @@ static int quic_recvmsg(struct sock *sk, struct msghdr *msg, size_t msg_len, int
 
 	lock_sock(sk);
 
-	head = &quic_inq(sk)->recv_list;
+	head = &inq->recv_list;
 
 	err = quic_wait_for_packet(sk, head, flags);
 	if (err)
@@ -1194,7 +1195,7 @@ static int quic_recvmsg(struct sock *sk, struct msghdr *msg, size_t msg_len, int
 
 		/* If stream read completed, purge and release resources. */
 		if (stream->recv.state == QUIC_STREAM_RECV_STATE_READ) {
-			quic_inq_stream_list_purge(sk, stream);
+			quic_inq_list_purge(sk, &inq->stream_list, stream);
 			quic_stream_recv_put(quic_streams(sk), stream, quic_is_serv(sk));
 		}
 	}
@@ -1500,6 +1501,7 @@ static int quic_sock_set_event(struct sock *sk, struct quic_event_option *event,
 static int quic_sock_stream_reset(struct sock *sk, struct quic_errinfo *info, u32 len)
 {
 	struct quic_stream_table *streams = quic_streams(sk);
+	struct quic_outqueue *outq = quic_outq(sk);
 	struct quic_stream *stream;
 	struct quic_frame *frame;
 
@@ -1524,7 +1526,8 @@ static int quic_sock_stream_reset(struct sock *sk, struct quic_errinfo *info, u3
 		return -ENOMEM;
 
 	stream->send.state = QUIC_STREAM_SEND_STATE_RESET_SENT;
-	quic_outq_stream_list_purge(sk, stream);
+	quic_outq_list_purge(sk, &outq->transmitted_list, stream);
+	quic_outq_list_purge(sk, &outq->stream_list, stream);
 	quic_outq_ctrl_tail(sk, frame, false);
 	return 0;
 }

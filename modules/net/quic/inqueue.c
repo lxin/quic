@@ -304,29 +304,15 @@ int quic_inq_stream_recv(struct sock *sk, struct quic_frame *frame)
 	return 0;
 }
 
-/* Purge all pending reassembly frames for a given stream.  Called when resetting a stream. */
-void quic_inq_stream_list_purge(struct sock *sk, struct quic_stream *stream)
+/* Purge frames from an inq list: only those for a given stream, or all if stream is NULL. */
+void quic_inq_list_purge(struct sock *sk, struct list_head *head, struct quic_stream *stream)
 {
-	struct list_head *head = &quic_inq(sk)->stream_list;
 	struct quic_frame *frame, *next;
 	int bytes = 0;
 
 	list_for_each_entry_safe(frame, next, head, list) {
-		if (frame->stream != stream)
+		if (stream && frame->stream != stream)
 			continue;
-		list_del(&frame->list);
-		bytes += frame->len;
-		quic_frame_put(frame);
-	}
-	quic_inq_rfree(bytes, sk);
-}
-
-static void quic_inq_list_purge(struct sock *sk, struct list_head *head)
-{
-	struct quic_frame *frame, *next;
-	int bytes = 0;
-
-	list_for_each_entry_safe(frame, next, head, list) {
 		list_del(&frame->list);
 		bytes += frame->len;
 		quic_frame_put(frame);
@@ -697,8 +683,8 @@ void quic_inq_free(struct sock *sk)
 
 	__skb_queue_purge(&sk->sk_receive_queue);
 	__skb_queue_purge(&inq->backlog_list);
-	quic_inq_list_purge(sk, &inq->handshake_list);
-	quic_inq_list_purge(sk, &inq->stream_list);
-	quic_inq_list_purge(sk, &inq->early_list);
-	quic_inq_list_purge(sk, &inq->recv_list);
+	quic_inq_list_purge(sk, &inq->handshake_list, NULL);
+	quic_inq_list_purge(sk, &inq->stream_list, NULL);
+	quic_inq_list_purge(sk, &inq->early_list, NULL);
+	quic_inq_list_purge(sk, &inq->recv_list, NULL);
 }

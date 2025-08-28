@@ -1123,36 +1123,6 @@ void quic_outq_update_path(struct sock *sk, u8 path)
 		pos->path = path;
 }
 
-/* Removes all frames associated with the given stream from both transmitted and stream lists.
- * Called when resetting a stream.
- */
-void quic_outq_stream_list_purge(struct sock *sk, struct quic_stream *stream)
-{
-	struct quic_outqueue *outq = quic_outq(sk);
-	struct quic_frame *frame, *next;
-	int bytes = 0;
-
-	list_for_each_entry_safe(frame, next, &outq->transmitted_list, list) {
-		if (frame->stream != stream)
-			continue;
-
-		bytes += frame->bytes;
-		list_del_init(&frame->list);
-		quic_frame_put(frame);
-	}
-
-	list_for_each_entry_safe(frame, next, &outq->stream_list, list) {
-		if (frame->stream != stream)
-			continue;
-
-		outq->stream_list_len -= frame->len;
-		bytes += frame->bytes;
-		list_del_init(&frame->list);
-		quic_frame_put(frame);
-	}
-	quic_outq_wfree(bytes, sk);
-}
-
 /* Create and queue a QUIC control frame for transmission.
  *
  * This function creates a new quic_frame with the given type and data, sets the path for
@@ -1342,12 +1312,20 @@ static void quic_outq_psent_list_purge(struct sock *sk, struct list_head *head)
 	}
 }
 
-static void quic_outq_list_purge(struct sock *sk, struct list_head *head)
+/* Purge frames from an outq list: only those for a given stream, or all if stream is NULL. */
+void quic_outq_list_purge(struct sock *sk, struct list_head *head, struct quic_stream *stream)
 {
+	struct quic_outqueue *outq = quic_outq(sk);
 	struct quic_frame *frame, *next;
 	int bytes = 0;
 
 	list_for_each_entry_safe(frame, next, head, list) {
+		if (stream && frame->stream != stream)
+			continue;
+
+		if (head == &outq->stream_list)
+			outq->stream_list_len -= frame->len;
+
 		bytes += frame->bytes;
 		list_del_init(&frame->list);
 		quic_frame_put(frame);
@@ -1360,10 +1338,10 @@ void quic_outq_free(struct sock *sk)
 	struct quic_outqueue *outq = quic_outq(sk);
 
 	quic_outq_psent_list_purge(sk, &outq->packet_sent_list);
-	quic_outq_list_purge(sk, &outq->transmitted_list);
-	quic_outq_list_purge(sk, &outq->datagram_list);
-	quic_outq_list_purge(sk, &outq->control_list);
-	quic_outq_list_purge(sk, &outq->stream_list);
+	quic_outq_list_purge(sk, &outq->transmitted_list, NULL);
+	quic_outq_list_purge(sk, &outq->datagram_list, NULL);
+	quic_outq_list_purge(sk, &outq->control_list, NULL);
+	quic_outq_list_purge(sk, &outq->stream_list, NULL);
 	__skb_queue_purge(&sk->sk_write_queue);
 	kfree(outq->close_phrase);
 }

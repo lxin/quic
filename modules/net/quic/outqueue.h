@@ -79,8 +79,8 @@ void quic_outq_retransmit_list(struct sock *sk, struct list_head *head);
 void quic_outq_retransmit_mark(struct sock *sk, u8 level, u8 immediate);
 void quic_outq_update_loss_timer(struct sock *sk);
 
+void quic_outq_list_purge(struct sock *sk, struct list_head *head, struct quic_stream *stream);
 void quic_outq_transmit_close(struct sock *sk, u8 frame, u32 errcode, u8 level);
-void quic_outq_stream_list_purge(struct sock *sk, struct quic_stream *stream);
 void quic_outq_encrypted_tail(struct sock *sk, struct sk_buff *skb);
 void quic_outq_transmit_app_close(struct sock *sk);
 void quic_outq_transmit_probe(struct sock *sk);
