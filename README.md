@@ -495,3 +495,15 @@ In kernel space, the use is pretty much like TCP sockets, except a extra handsha
                                            sock_release(sock)
 
 You can run the kernel test code as it shows in tlshd_tests() of [tests/runtest.sh](https://github.com/lxin/quic/blob/main/tests/runtest.sh)
+
+## Contributing
+
+We welcome contributions from the community.
+
+- **Mailing List**: The Linux QUIC developer mailing list is available at [lists.linux.dev](https://subspace.kernel.org/lists.linux.dev.html).
+You can subscribe to <quic@lists.linux.dev> or browse archived threads.
+
+- **Reporting Features or Issues**: Bugs, feature requests, or socket API RFC discussions can be
+submitted via the mailing list or GitHub issues.
+
+- **Submitting Patches**: Patches can be sent through the mailing list or via GitHub pull requests.
