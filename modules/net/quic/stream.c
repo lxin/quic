@@ -15,34 +15,6 @@
 #include "common.h"
 #include "stream.h"
 
-/* Check if a stream ID is valid for sending. */
-static bool quic_stream_id_send(s64 stream_id, bool is_serv)
-{
-	u8 type = (stream_id & QUIC_STREAM_TYPE_MASK);
-
-	if (is_serv) {
-		if (type == QUIC_STREAM_TYPE_CLIENT_UNI)
-			return false;
-	} else if (type == QUIC_STREAM_TYPE_SERVER_UNI) {
-		return false;
-	}
-	return true;
-}
-
-/* Check if a stream ID is valid for receiving. */
-static bool quic_stream_id_recv(s64 stream_id, bool is_serv)
-{
-	u8 type = (stream_id & QUIC_STREAM_TYPE_MASK);
-
-	if (is_serv) {
-		if (type == QUIC_STREAM_TYPE_SERVER_UNI)
-			return false;
-	} else if (type == QUIC_STREAM_TYPE_CLIENT_UNI) {
-		return false;
-	}
-	return true;
-}
-
 /* Check if a stream ID was initiated locally. */
 static bool quic_stream_id_local(s64 stream_id, u8 is_serv)
 {
@@ -78,7 +50,8 @@ static void quic_stream_add(struct quic_stream_table *streams, struct quic_strea
 static void quic_stream_delete(struct quic_stream *stream)
 {
 	hlist_del_init(&stream->node);
-	kfree(stream);
+	if (!stream->peeled) /* Free only if not peeled (peeled streams freed via their socket). */
+		kfree(stream);
 }
 
 /* Create and register new streams for sending. */
@@ -101,6 +74,7 @@ static struct quic_stream *quic_stream_send_create(struct quic_stream_table *str
 			return NULL;
 
 		stream->id = stream_id;
+		INIT_LIST_HEAD(&stream->recv.frame_list);
 		if (quic_stream_id_uni(stream_id)) {
 			stream->send.max_bytes = streams->send.max_stream_data_uni;
 
@@ -152,6 +126,7 @@ static struct quic_stream *quic_stream_recv_create(struct quic_stream_table *str
 			return NULL;
 
 		stream->id = stream_id;
+		INIT_LIST_HEAD(&stream->recv.frame_list);
 		if (quic_stream_id_uni(stream_id)) {
 			stream->recv.window = streams->recv.max_stream_data_uni;
 			stream->recv.max_bytes = stream->recv.window;

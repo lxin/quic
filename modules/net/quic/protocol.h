@@ -57,6 +57,7 @@ struct quic_net {
 	struct work_struct work;	/* Work scheduled to drain and process backlog_list */
 };
 
+struct socket *quic_inet_stream_sock_alloc(struct sock *sk, struct quic_stream *stream);
 struct quic_net *quic_net(struct net *net);
 
 #define QUIC_INC_STATS(net, field)	SNMP_INC_STATS(quic_net(net)->stat, field)
