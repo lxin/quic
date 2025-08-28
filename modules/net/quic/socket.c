@@ -1057,10 +1057,9 @@ err:
 }
 
 /* Wait for an incoming QUIC packet. */
-static int quic_wait_for_packet(struct sock *sk, u32 flags)
+static int quic_wait_for_packet(struct sock *sk, struct list_head *head, u32 flags)
 {
 	long timeo = sock_rcvtimeo(sk, flags & MSG_DONTWAIT);
-	struct list_head *head = &quic_inq(sk)->recv_list;
 	DEFINE_WAIT(wait);
 	int err = 0;
 
@@ -1095,7 +1094,7 @@ static int quic_wait_for_packet(struct sock *sk, u32 flags)
 	return err;
 }
 
-static int quic_recvmsg(struct sock *sk, struct msghdr *msg, size_t len, int flags,
+static int quic_recvmsg(struct sock *sk, struct msghdr *msg, size_t msg_len, int flags,
 			int *addr_len)
 {
 	u32 copy, copied = 0, freed = 0, bytes = 0;
@@ -1108,17 +1107,18 @@ static int quic_recvmsg(struct sock *sk, struct msghdr *msg, size_t len, int fla
 
 	lock_sock(sk);
 
-	err = quic_wait_for_packet(sk, flags);
+	head = &quic_inq(sk)->recv_list;
+
+	err = quic_wait_for_packet(sk, head, flags);
 	if (err)
 		goto out;
 
-	head = &quic_inq(sk)->recv_list;
 	/* Iterate over each received frame in the list. */
 	list_for_each_entry_safe(frame, next, head, list) {
 		/* Determine how much data to copy: the minimum of the remaining data in the frame
 		 * and the remaining user buffer space.
 		 */
-		copy = min((u32)(frame->len - frame->offset), (u32)(len - copied));
+		copy = min((u32)(frame->len - frame->offset), (u32)(msg_len - copied));
 		if (copy) { /* Copy data from frame to user message iterator. */
 			copy = copy_to_iter(frame->data + frame->offset, copy, &msg->msg_iter);
 			if (!copy) {
@@ -1176,7 +1176,7 @@ static int quic_recvmsg(struct sock *sk, struct msghdr *msg, size_t len, int fla
 		}
 
 		/* Stop if next frame is not part of this stream or no more data to copy. */
-		if (list_entry_is_head(next, head, list) || copied >= len)
+		if (list_entry_is_head(next, head, list) || copied >= msg_len)
 			break;
 		if (next->event || next->dgram || !next->stream || next->stream != stream)
 			break;
