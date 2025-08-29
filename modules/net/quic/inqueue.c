@@ -88,6 +88,7 @@ static void quic_inq_stream_tail(struct sock *sk, struct quic_stream *stream,
 {
 	struct quic_inqueue *inq = quic_inq(sk);
 	struct quic_stream_update update = {};
+	struct list_head *head;
 	u64 overlap;
 
 	/* Calculate overlap between stream's current recv offset and frame offset. */
@@ -128,8 +129,9 @@ static void quic_inq_stream_tail(struct sock *sk, struct quic_stream *stream,
 		list_add_tail(&frame->list, &inq->early_list);
 		return;
 	}
-	/* Frame is ready for application delivery: queue in recv_list. */
-	list_add_tail(&frame->list, &inq->recv_list);
+	/* Queue frame for app delivery: recv_list or stream's frame_list if peeled. */
+	head = stream->peeled ? &stream->recv.frame_list : &inq->recv_list;
+	list_add_tail(&frame->list, head);
 	sk->sk_data_ready(sk); /* Notify socket that data is available. */
 }
 

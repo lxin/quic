@@ -1,6 +1,6 @@
 EXTRA_DIST		= keys runtest.sh
 
-noinst_PROGRAMS		= func_test perf_test sample_test ticket_test alpn_test
+noinst_PROGRAMS		= func_test perf_test sample_test ticket_test alpn_test peeloff_test
 
 AM_CPPFLAGS		= -I$(top_builddir)/libquic/ -I$(top_builddir)/modules/include/uapi/
 AM_CFLAGS		= -Werror -Wall -Wformat-signedness $(LIBGNUTLS_CFLAGS)
@@ -11,6 +11,7 @@ perf_test_SOURCE	= perf_test.c
 alpn_test_SOURCE	= alpn_test.c
 ticket_test_SOURCE	= ticket_test.c
 sample_test_SOURCE	= sample_test.c
+peeloff_test_SOURCE	= peeloff_test.c
 
 http3_test: http3_test.c
 	$(LIBTOOL) --mode=link $(CC) $^  -o $@ -lnghttp3 \

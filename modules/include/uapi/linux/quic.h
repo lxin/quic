@@ -86,6 +86,8 @@ struct quic_stream_info {
 #define QUIC_SOCKOPT_CRYPTO_SECRET			13
 #define QUIC_SOCKOPT_TRANSPORT_PARAM_EXT		14
 
+#define QUIC_SOCKOPT_STREAM_PEELOFF			15
+
 #define QUIC_VERSION_V1			0x1
 #define QUIC_VERSION_V2			0x6b3343cf
 
@@ -152,6 +154,12 @@ struct quic_connection_id_info {
 struct quic_event_option {
 	__u8	type;
 	__u8	on;
+};
+
+struct quic_stream_peeloff {
+	__s64	stream_id;
+	__u32	flags;
+	int	sd;
 };
 
 /* Event APIs */

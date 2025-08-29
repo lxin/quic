@@ -46,6 +46,7 @@ struct quic_stream {
 		u8 done:1;		/* True if application indicated end of stream (FIN sent) */
 	} send;
 	struct {
+		struct list_head frame_list;	/* Recv list (peeled stream) */
 		/* Receiving-side stream level flow control */
 		u64 max_bytes;		/* Maximum offset peer is allowed to send to */
 		u64 window;		/* Remaining receive window before advertise a new limit */
@@ -61,6 +62,7 @@ struct quic_stream {
 		u8 stop_sent:1;		/* True if STOP_SENDING has been sent */
 		u8 done:1;		/* True if FIN received and final size validated */
 	} recv;
+	u8 peeled:1;			/* True if stream is peeled */
 };
 
 struct quic_stream_table {
@@ -113,6 +115,34 @@ static inline u64 quic_stream_id_to_streams(s64 stream_id)
 static inline s64 quic_stream_streams_to_id(u64 streams, u8 type)
 {
 	return (s64)((streams - 1) << QUIC_STREAM_TYPE_BITS) | type;
+}
+
+/* Check if a stream ID is valid for sending. */
+static inline bool quic_stream_id_send(s64 stream_id, bool is_serv)
+{
+	u8 type = (stream_id & QUIC_STREAM_TYPE_MASK);
+
+	if (is_serv) {
+		if (type == QUIC_STREAM_TYPE_CLIENT_UNI)
+			return false;
+	} else if (type == QUIC_STREAM_TYPE_SERVER_UNI) {
+		return false;
+	}
+	return true;
+}
+
+/* Check if a stream ID is valid for receiving. */
+static inline bool quic_stream_id_recv(s64 stream_id, bool is_serv)
+{
+	u8 type = (stream_id & QUIC_STREAM_TYPE_MASK);
+
+	if (is_serv) {
+		if (type == QUIC_STREAM_TYPE_SERVER_UNI)
+			return false;
+	} else if (type == QUIC_STREAM_TYPE_CLIENT_UNI) {
+		return false;
+	}
+	return true;
 }
 
 struct quic_stream *quic_stream_send_get(struct quic_stream_table *streams, s64 stream_id,

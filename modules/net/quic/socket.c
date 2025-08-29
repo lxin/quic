@@ -882,7 +882,8 @@ static int quic_wait_for_stream_send(struct sock *sk, struct quic_stream *stream
 	return err;
 }
 
-static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
+int quic_sock_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len, int flags,
+		      s64 stream_id)
 {
 	struct quic_outqueue *outq = quic_outq(sk);
 	struct quic_handshake_info hinfo = {};
@@ -892,14 +893,17 @@ static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 	struct quic_msginfo msginfo;
 	struct quic_crypto *crypto;
 	struct quic_stream *stream;
-	u32 flags = msg->msg_flags;
 	struct quic_frame *frame;
 
-	lock_sock(sk);
-	err = quic_msghdr_parse(sk, msg, &hinfo, &sinfo, &has_hinfo);
-	if (err)
-		goto err;
+	sinfo.stream_id = stream_id;
+	sinfo.stream_flags = flags;
+	if (stream_id < 0) {
+		err = quic_msghdr_parse(sk, msg, &hinfo, &sinfo, &has_hinfo);
+		if (err)
+			goto out;
+	}
 
+	flags = msg->msg_flags;
 	delay = !!(flags & MSG_MORE); /* Determine if this is a delayed send. */
 	if (has_hinfo) { /* Handshake Messages Send Path. */
 		/* Initial, Handshake and App (TLS NewSessionTicket) only. */
@@ -1052,6 +1056,15 @@ out:
 err:
 	if (err < 0 && !has_hinfo && !(flags & MSG_DATAGRAM))
 		err = sk_stream_error(sk, flags, err); /* Handle error and possibly send SIGPIPE. */
+	return err;
+}
+
+static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
+{
+	int err;
+
+	lock_sock(sk);
+	err = quic_sock_sendmsg(sk, msg, msg_len, 0, -1);
 	release_sock(sk);
 	return err;
 }
@@ -1094,9 +1107,10 @@ static int quic_wait_for_packet(struct sock *sk, struct list_head *head, u32 fla
 	return err;
 }
 
-static int quic_recvmsg(struct sock *sk, struct msghdr *msg, size_t msg_len, int flags,
-			int *addr_len)
+int quic_sock_recvmsg(struct sock *sk, struct msghdr *msg, size_t msg_len, int flags,
+		      s64 stream_id)
 {
+	struct quic_stream_table *streams = quic_streams(sk);
 	u32 copy, copied = 0, freed = 0, bytes = 0;
 	struct quic_inqueue *inq = quic_inq(sk);
 	struct quic_handshake_info hinfo = {};
@@ -1106,9 +1120,15 @@ static int quic_recvmsg(struct sock *sk, struct msghdr *msg, size_t msg_len, int
 	struct list_head *head;
 	int err, fin;
 
-	lock_sock(sk);
-
 	head = &inq->recv_list;
+	if (stream_id >= 0) {
+		stream = quic_stream_recv_get(streams, stream_id, quic_is_serv(sk));
+		if (IS_ERR(stream)) {
+			err = PTR_ERR(stream);
+			goto out;
+		}
+		head = &stream->recv.frame_list;
+	}
 
 	err = quic_wait_for_packet(sk, head, flags);
 	if (err)
@@ -1203,6 +1223,16 @@ static int quic_recvmsg(struct sock *sk, struct msghdr *msg, size_t msg_len, int
 	quic_inq_data_read(sk, bytes); /* Release receive memory accounting. */
 	err = (int)copied;
 out:
+	return err;
+}
+
+static int quic_recvmsg(struct sock *sk, struct msghdr *msg, size_t len, int flags,
+			int *addr_len)
+{
+	int err;
+
+	lock_sock(sk);
+	err = quic_sock_recvmsg(sk, msg, len, flags, -1);
 	release_sock(sk);
 	return err;
 }
@@ -1560,6 +1590,7 @@ static int quic_sock_stream_stop_sending(struct sock *sk, struct quic_errinfo *i
 
 	quic_inq_list_purge(sk, &inq->stream_list, stream);
 	quic_inq_list_purge(sk, &inq->recv_list, stream);
+	quic_inq_list_purge(sk, &stream->recv.frame_list, NULL);
 
 	return quic_outq_transmit_frame(sk, QUIC_FRAME_STOP_SENDING, info, 0, false);
 }
@@ -2385,6 +2416,68 @@ static int quic_sock_get_crypto_secret(struct sock *sk, u32 len,
 	return 0;
 }
 
+static int quic_sock_get_stream_peeloff(struct sock *sk, u32 len,
+					sockptr_t optval, sockptr_t optlen)
+{
+	struct quic_stream_table *streams = quic_streams(sk);
+	struct quic_stream_peeloff peeloff = {};
+	struct quic_frame *frame, *next;
+	struct quic_stream *stream;
+	struct socket *sock;
+	struct file *file;
+	int retval;
+
+	if (len < sizeof(peeloff) || !quic_is_established(sk))
+		return -EINVAL;
+	len = sizeof(peeloff);
+	if (copy_from_sockptr(&peeloff, optval, len))
+		return -EFAULT;
+
+	/* Do not peel off from one netns to another one. */
+	if (!net_eq(current->nsproxy->net_ns, sock_net(sk)))
+		return -EINVAL;
+
+	stream = quic_stream_find(streams, peeloff.stream_id);
+	if (!stream || stream->peeled)
+		return -EINVAL;
+
+	sock = quic_inet_stream_sock_alloc(sk, stream);
+	if (!sock)
+		return -ENOMEM;
+
+	retval = get_unused_fd_flags(peeloff.flags & SOCK_CLOEXEC);
+	if (retval < 0) {
+		sock_release(sock);
+		return retval;
+	}
+
+	file = sock_alloc_file(sock, 0, NULL);
+	if (IS_ERR(file)) {
+		put_unused_fd(retval);
+		return PTR_ERR(file);
+	}
+
+	peeloff.sd = retval;
+	if (peeloff.flags & SOCK_NONBLOCK)
+		file->f_flags |= O_NONBLOCK;
+
+	if (copy_to_sockptr(optlen, &len, sizeof(len)) || copy_to_sockptr(optval, &peeloff, len)) {
+		fput(file);
+		put_unused_fd(retval);
+		return -EFAULT;
+	}
+	/* Move the frames of this stream from inq recv list to its own list. */
+	list_for_each_entry_safe(frame, next, &quic_inq(sk)->recv_list, list) {
+		if (frame->stream != stream)
+			continue;
+		list_move_tail(&frame->list, &stream->recv.frame_list);
+	}
+	sock_hold(sk); /* Keep the parent sk alive while the peeled stream is in use. */
+	stream->peeled = 1;
+	fd_install(retval, file);
+	return retval;
+}
+
 static int quic_do_getsockopt(struct sock *sk, int optname, sockptr_t optval, sockptr_t optlen)
 {
 	int retval = 0;
@@ -2427,6 +2520,9 @@ static int quic_do_getsockopt(struct sock *sk, int optname, sockptr_t optval, so
 		break;
 	case QUIC_SOCKOPT_CRYPTO_SECRET:
 		retval = quic_sock_get_crypto_secret(sk, len, optval, optlen);
+		break;
+	case QUIC_SOCKOPT_STREAM_PEELOFF:
+		retval = quic_sock_get_stream_peeloff(sk, len, optval, optlen);
 		break;
 	default:
 		retval = -ENOPROTOOPT;
@@ -2516,6 +2612,12 @@ static void quic_shutdown(struct sock *sk, int how)
 out:
 	quic_set_state(sk, QUIC_SS_CLOSED);
 }
+
+struct proto quic_stream_prot = {
+	.name		=  "QUIC stream",
+	.owner		=  THIS_MODULE,
+	.obj_size	= sizeof(struct quic_stream_sock),
+};
 
 struct proto quic_prot = {
 	.name		=  "QUIC",

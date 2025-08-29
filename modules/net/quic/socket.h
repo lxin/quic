@@ -30,6 +30,7 @@
 
 extern struct proto quic_prot;
 extern struct proto quicv6_prot;
+extern struct proto quic_stream_prot;
 
 enum quic_state {
 	QUIC_SS_CLOSED		= TCP_CLOSE,
@@ -79,6 +80,12 @@ struct quic_request_sock {
 	u32			blen;
 };
 
+struct quic_stream_sock {
+	struct sock		common;
+	struct quic_stream	*stream;
+	struct sock		*sk;
+};
+
 struct quic_sock {
 	struct inet_sock		inet;
 	struct list_head		reqs;
@@ -115,6 +122,11 @@ static inline struct quic_sock *quic_sk(const struct sock *sk)
 static inline struct list_head *quic_reqs(const struct sock *sk)
 {
 	return &quic_sk(sk)->reqs;
+}
+
+static inline struct quic_stream_sock *quic_ssk(const struct sock *sk)
+{
+	return (struct quic_stream_sock *)sk;
 }
 
 static inline struct quic_config *quic_config(const struct sock *sk)
@@ -258,3 +270,8 @@ struct quic_request_sock *quic_request_sock_enqueue(struct sock *sk, struct quic
 int quic_request_sock_backlog_tail(struct sock *sk, struct quic_request_sock *req,
 				   struct sk_buff *skb);
 struct quic_request_sock *quic_request_sock_lookup(struct sock *sk);
+
+int quic_sock_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len, int flags,
+		      s64 stream_id);
+int quic_sock_recvmsg(struct sock *sk, struct msghdr *msg, size_t msg_len, int flags,
+		      s64 stream_id);

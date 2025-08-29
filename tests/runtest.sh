@@ -31,6 +31,7 @@ cleanup()
 	pkill alpn_test > /dev/null 2>&1
 	pkill ticket_test > /dev/null 2>&1
 	pkill sample_test > /dev/null 2>&1
+	pkill peeloff_test > /dev/null 2>&1
 	pkill http3_test > /dev/null 2>&1
 	rmmod quic_sample_test > /dev/null 2>&1
 	rmmod quic > /dev/null 2>&1
@@ -291,7 +292,15 @@ sample_tests()
 
 }
 
-TESTS="func perf netem http3 tlshd alpn ticket sample"
+peeloff_tests()
+{
+	print_start "Stream Peeloff Tests"
+	daemon_run ./peeloff_test server 0.0.0.0 1234 ./keys/server-key.pem ./keys/server-cert.pem
+	./peeloff_test  client 127.0.0.1 1234 || return 1
+	daemon_stop "sample_test"
+}
+
+TESTS="func perf netem http3 tlshd alpn ticket sample peeloff"
 trap cleanup EXIT
 
 [ "$1" = "" ] || TESTS=$1
