@@ -183,6 +183,6 @@ quic_crypto_secret {
 	secret		array[int8, 48]
 }
 
-ioctl$sock_SIOCOUTQ(fd sock, cmd const[SIOCOUTQ], arg ptr[out, int32])
-ioctl$sock_SIOCINQ(fd sock, cmd const[SIOCINQ], arg ptr[out, int32])
-ioctl$sock_SIOCOUTQNSD(fd sock, cmd const[SIOCOUTQNSD], arg ptr[out, int32])
+ioctl$sock_quic_SIOCOUTQ(fd sock, cmd const[SIOCOUTQ], arg ptr[out, int32])
+ioctl$sock_quic_SIOCINQ(fd sock, cmd const[SIOCINQ], arg ptr[out, int32])
+ioctl$sock_quic_SIOCOUTQNSD(fd sock, cmd const[SIOCOUTQNSD], arg ptr[out, int32])
