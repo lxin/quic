@@ -48,13 +48,13 @@ static int quic_udp_err(struct sock *sk, struct sk_buff *skb)
 static void quic_udp_sock_put_work(struct work_struct *work)
 {
 	struct quic_udp_sock *us = container_of(work, struct quic_udp_sock, work);
-	struct quic_hash_head *head;
+	struct quic_uhash_head *head;
 
 	head = quic_udp_sock_head(sock_net(us->sk), ntohs(us->addr.v4.sin_port));
-	mutex_lock(&head->m_lock);
+	mutex_lock(&head->lock);
 	__hlist_del(&us->node);
 	udp_tunnel_sock_release(us->sk->sk_socket);
-	mutex_unlock(&head->m_lock);
+	mutex_unlock(&head->lock);
 	kfree(us);
 }
 
@@ -63,7 +63,7 @@ static struct quic_udp_sock *quic_udp_sock_create(struct sock *sk, union quic_ad
 	struct udp_tunnel_sock_cfg tuncfg = {};
 	struct udp_port_cfg udp_conf = {};
 	struct net *net = sock_net(sk);
-	struct quic_hash_head *head;
+	struct quic_uhash_head *head;
 	struct quic_udp_sock *us;
 	struct socket *sock;
 
@@ -113,7 +113,7 @@ static void quic_udp_sock_put(struct quic_udp_sock *us)
 static struct quic_udp_sock *quic_udp_sock_lookup(struct sock *sk, union quic_addr *a, u16 port)
 {
 	struct net *net = sock_net(sk);
-	struct quic_hash_head *head;
+	struct quic_uhash_head *head;
 	struct quic_udp_sock *us;
 
 	head = quic_udp_sock_head(net, port);
@@ -139,23 +139,23 @@ int quic_path_bind(struct sock *sk, struct quic_path_group *paths, u8 path)
 	union quic_addr *a = quic_path_saddr(paths, path);
 	int rover, low, high, remaining;
 	struct net *net = sock_net(sk);
-	struct quic_hash_head *head;
+	struct quic_uhash_head *head;
 	struct quic_udp_sock *us;
 	u16 port;
 
 	port = ntohs(a->v4.sin_port);
 	if (port) {
 		head = quic_udp_sock_head(net, port);
-		mutex_lock(&head->m_lock);
+		mutex_lock(&head->lock);
 		us = quic_udp_sock_lookup(sk, a, port);
 		if (!quic_udp_sock_get(us)) {
 			us = quic_udp_sock_create(sk, a);
 			if (!us) {
-				mutex_unlock(&head->m_lock);
+				mutex_unlock(&head->lock);
 				return -EINVAL;
 			}
 		}
-		mutex_unlock(&head->m_lock);
+		mutex_unlock(&head->lock);
 
 		quic_udp_sock_put(paths->path[path].udp_sk);
 		paths->path[path].udp_sk = us;
@@ -178,9 +178,9 @@ int quic_path_bind(struct sock *sk, struct quic_path_group *paths, u8 path)
 			continue;
 
 		head = quic_udp_sock_head(net, port);
-		mutex_lock(&head->m_lock);
+		mutex_lock(&head->lock);
 		if (quic_udp_sock_lookup(sk, NULL, port)) {
-			mutex_unlock(&head->m_lock);
+			mutex_unlock(&head->lock);
 			cond_resched();
 			continue;
 		}
@@ -188,10 +188,10 @@ int quic_path_bind(struct sock *sk, struct quic_path_group *paths, u8 path)
 		us = quic_udp_sock_create(sk, a);
 		if (!us) {
 			a->v4.sin_port = 0;
-			mutex_unlock(&head->m_lock);
+			mutex_unlock(&head->lock);
 			return -EINVAL;
 		}
-		mutex_unlock(&head->m_lock);
+		mutex_unlock(&head->lock);
 
 		quic_udp_sock_put(paths->path[path].udp_sk);
 		paths->path[path].udp_sk = us;

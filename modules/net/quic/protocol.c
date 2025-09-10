@@ -218,15 +218,15 @@ static int quic_seq_show(struct seq_file *seq, void *v)
 	struct net *net = seq_file_net(seq);
 	u32 hash = (u32)(*(loff_t *)v);
 	struct quic_path_group *paths;
-	struct quic_hash_head *head;
+	struct quic_shash_head *head;
 	struct quic_outqueue *outq;
 	struct sock *sk;
 
-	if (hash >= QUIC_HT_SIZE)
+	if (hash >= quic_sock_hash_size())
 		return -ENOMEM;
 
 	head = quic_sock_hash(hash);
-	spin_lock_bh(&head->s_lock);
+	read_lock_bh(&head->lock);
 	sk_for_each(sk, &head->head) {
 		if (net != sock_net(sk))
 			continue;
@@ -242,13 +242,13 @@ static int quic_seq_show(struct seq_file *seq, void *v)
 			   outq->inflight, READ_ONCE(sk->sk_wmem_queued),
 			   sk_rmem_alloc_get(sk), sk->sk_sndbuf, sk->sk_rcvbuf);
 	}
-	spin_unlock_bh(&head->s_lock);
+	read_unlock_bh(&head->lock);
 	return 0;
 }
 
 static void *quic_seq_start(struct seq_file *seq, loff_t *pos)
 {
-	if (*pos >= QUIC_HT_SIZE)
+	if (*pos >= quic_sock_hash_size())
 		return NULL;
 
 	if (*pos < 0)
@@ -263,7 +263,7 @@ static void *quic_seq_start(struct seq_file *seq, loff_t *pos)
 
 static void *quic_seq_next(struct seq_file *seq, void *v, loff_t *pos)
 {
-	if (++*pos >= QUIC_HT_SIZE)
+	if (++*pos >= quic_sock_hash_size())
 		return NULL;
 
 	return pos;

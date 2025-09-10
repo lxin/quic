@@ -23,84 +23,158 @@
 #define QUIC_VARINT_LENGTH(p)		BIT((*(p)) >> 6)
 #define QUIC_VARINT_VALUE_MASK		0x3f
 
-static struct quic_hash_table quic_hash_tables[QUIC_HT_MAX_TABLES];
+struct quic_hashinfo {
+	struct quic_shash_table		shash; /* Source connection ID hashtable */
+	struct quic_shash_table		lhash; /* Listening sock hashtable */
+	struct quic_shash_table		chash; /* Connection sock hashtable */
+	struct quic_uhash_table		uhash; /* UDP sock hashtable */
+};
 
-struct quic_hash_head *quic_sock_hash(u32 hash)
+static struct quic_hashinfo quic_hashinfo;
+
+u32 quic_sock_hash_size(void)
 {
-	return &quic_hash_tables[QUIC_HT_SOCK].hash[hash];
+	return quic_hashinfo.chash.size;
 }
 
-struct quic_hash_head *quic_sock_head(struct net *net, union quic_addr *s, union quic_addr *d)
+struct quic_shash_head *quic_sock_hash(u32 hash)
 {
-	struct quic_hash_table *ht = &quic_hash_tables[QUIC_HT_SOCK];
+	return &quic_hashinfo.chash.hash[hash];
+}
+
+struct quic_shash_head *quic_sock_head(struct net *net, union quic_addr *s, union quic_addr *d)
+{
+	struct quic_shash_table *ht = &quic_hashinfo.chash;
 
 	return &ht->hash[quic_ahash(net, s, d) & (ht->size - 1)];
 }
 
-struct quic_hash_head *quic_listen_sock_head(struct net *net, u16 port)
+struct quic_shash_head *quic_listen_sock_head(struct net *net, u16 port)
 {
-	struct quic_hash_table *ht = &quic_hash_tables[QUIC_HT_LISTEN_SOCK];
+	struct quic_shash_table *ht = &quic_hashinfo.lhash;
 
 	return &ht->hash[port & (ht->size - 1)];
 }
 
-struct quic_hash_head *quic_source_conn_id_head(struct net *net, u8 *scid)
+struct quic_shash_head *quic_source_conn_id_head(struct net *net, u8 *scid)
 {
-	struct quic_hash_table *ht = &quic_hash_tables[QUIC_HT_CONNECTION_ID];
+	struct quic_shash_table *ht = &quic_hashinfo.shash;
 
 	return &ht->hash[jhash(scid, 4, 0) & (ht->size - 1)];
 }
 
-struct quic_hash_head *quic_udp_sock_head(struct net *net, u16 port)
+struct quic_uhash_head *quic_udp_sock_head(struct net *net, u16 port)
 {
-	struct quic_hash_table *ht = &quic_hash_tables[QUIC_HT_UDP_SOCK];
+	struct quic_uhash_table *ht = &quic_hashinfo.uhash;
 
 	return &ht->hash[port & (ht->size - 1)];
 }
 
-struct quic_hash_head *quic_stream_head(struct quic_hash_table *ht, s64 stream_id)
+struct quic_shash_head *quic_stream_head(struct quic_shash_table *ht, s64 stream_id)
 {
 	return &ht->hash[stream_id & (ht->size - 1)];
 }
 
+static void quic_shash_table_free(struct quic_shash_table *ht)
+{
+	free_pages((unsigned long)ht->hash, get_order(ht->size * sizeof(struct quic_shash_head)));
+	ht->hash = NULL;
+}
+
+static void quic_uhash_table_free(struct quic_uhash_table *ht)
+{
+	free_pages((unsigned long)ht->hash, get_order(ht->size * sizeof(struct quic_uhash_head)));
+	ht->hash = NULL;
+}
+
 void quic_hash_tables_destroy(void)
 {
-	struct quic_hash_table *ht;
-	int table;
+	quic_shash_table_free(&quic_hashinfo.shash);
+	quic_shash_table_free(&quic_hashinfo.lhash);
+	quic_shash_table_free(&quic_hashinfo.chash);
+	quic_uhash_table_free(&quic_hashinfo.uhash);
+}
 
-	for (table = 0; table < QUIC_HT_MAX_TABLES; table++) {
-		ht = &quic_hash_tables[table];
-		ht->size = QUIC_HT_SIZE;
-		kfree(ht->hash);
+static int quic_shash_table_init(struct quic_shash_table *ht, u32 max_size, int order)
+{
+	int i, max_order, size;
+
+	max_order = get_order(max_size * sizeof(struct quic_shash_head));
+	order = min(order, max_order);
+	/* Try to allocate hash buckets; if fails, retry with smaller order. */
+	do {
+		ht->hash = (struct quic_shash_head *)
+			__get_free_pages(GFP_KERNEL | __GFP_NOWARN, order);
+	} while (!ht->hash && --order > 0);
+
+	if (!ht->hash)
+		return -ENOMEM;
+
+	/* Calculate actual number of buckets from allocated memory. */
+	size = (1UL << order) * PAGE_SIZE / sizeof(struct quic_shash_head);
+	/* Round down to power of two (simplifies masking in hash functions). */
+	ht->size = rounddown_pow_of_two(size);
+	for (i = 0; i < ht->size; i++) {
+		rwlock_init(&ht->hash[i].lock);
+		INIT_HLIST_HEAD(&ht->hash[i].head);
 	}
+	return 0;
+}
+
+static int quic_uhash_table_init(struct quic_uhash_table *ht, u32 max_size, int order)
+{
+	int i, max_order, size;
+
+	/* Same sizing logic as in quic_shash_table_init(). */
+	max_order = get_order(max_size * sizeof(struct quic_uhash_head));
+	order = min(order, max_order);
+	do {
+		ht->hash = (struct quic_uhash_head *)
+			__get_free_pages(GFP_KERNEL | __GFP_NOWARN, order);
+	} while (!ht->hash && --order > 0);
+
+	if (!ht->hash)
+		return -ENOMEM;
+
+	size = (1UL << order) * PAGE_SIZE / sizeof(struct quic_uhash_head);
+	ht->size = rounddown_pow_of_two(size);
+	for (i = 0; i < ht->size; i++) {
+		mutex_init(&ht->hash[i].lock);
+		INIT_HLIST_HEAD(&ht->hash[i].head);
+	}
+	return 0;
 }
 
 int quic_hash_tables_init(void)
 {
-	struct quic_hash_head *head;
-	struct quic_hash_table *ht;
-	int table, i;
+	unsigned long nr_pages = totalram_pages();
+	unsigned long goal;
+	int err, order;
 
-	for (table = 0; table < QUIC_HT_MAX_TABLES; table++) {
-		ht = &quic_hash_tables[table];
-		ht->size = QUIC_HT_SIZE;
-		head = kmalloc_array(ht->size, sizeof(*head), GFP_KERNEL);
-		if (!head) {
-			quic_hash_tables_destroy();
-			return -ENOMEM;
-		}
-		for (i = 0; i < ht->size; i++) {
-			INIT_HLIST_HEAD(&head[i].head);
-			if (table == QUIC_HT_UDP_SOCK) {
-				mutex_init(&head[i].m_lock);
-				continue;
-			}
-			spin_lock_init(&head[i].s_lock);
-		}
-		ht->hash = head;
-	}
+	/* Calculate the hashtable size similar to SCTP in sctp_init(). */
+	if (nr_pages >= (128 * 1024))
+		goal = nr_pages >> (22 - PAGE_SHIFT);
+	else
+		goal = nr_pages >> (24 - PAGE_SHIFT);
+	order = get_order(goal);
 
+	/* Source connection ID table (fast lookup, larger size) */
+	err = quic_shash_table_init(&quic_hashinfo.shash, 64 * 1024, order);
+	if (err)
+		goto err;
+	err = quic_shash_table_init(&quic_hashinfo.lhash, 16 * 1024, order);
+	if (err)
+		goto err;
+	err = quic_shash_table_init(&quic_hashinfo.chash, 16 * 1024, order);
+	if (err)
+		goto err;
+	err = quic_uhash_table_init(&quic_hashinfo.uhash, 16 * 1024, order);
+	if (err)
+		goto err;
 	return 0;
+err:
+	quic_hash_tables_destroy();
+	return err;
 }
 
 union quic_var {

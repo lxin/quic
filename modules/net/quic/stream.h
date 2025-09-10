@@ -64,7 +64,7 @@ struct quic_stream {
 };
 
 struct quic_stream_table {
-	struct quic_hash_table ht;	/* Hash table storing all active streams */
+	struct quic_shash_table ht;	/* Hash table storing all active streams */
 
 	struct {
 		/* Parameters received from peer, defined in rfc9000#section-18.2 */

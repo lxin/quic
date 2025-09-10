@@ -163,11 +163,11 @@ struct sock *quic_sock_lookup(struct sk_buff *skb, union quic_addr *sa, union qu
 {
 	struct net *net = sock_net(skb->sk);
 	struct quic_path_group *paths;
-	struct quic_hash_head *head;
+	struct quic_shash_head *head;
 	struct sock *sk;
 
 	head = quic_sock_head(net, sa, da);
-	spin_lock(&head->s_lock);
+	read_lock(&head->lock);
 	sk_for_each(sk, &head->head) {
 		if (net != sock_net(sk))
 			continue;
@@ -180,7 +180,7 @@ struct sock *quic_sock_lookup(struct sk_buff *skb, union quic_addr *sa, union qu
 			break;
 		}
 	}
-	spin_unlock(&head->s_lock);
+	read_unlock(&head->lock);
 
 	return sk;
 }
@@ -199,7 +199,7 @@ struct sock *quic_listen_sock_lookup(struct sk_buff *skb, union quic_addr *sa, u
 {
 	struct net *net = sock_net(skb->sk);
 	struct sock *sk = NULL, *tmp;
-	struct quic_hash_head *head;
+	struct quic_shash_head *head;
 	struct quic_data alpn;
 	union quic_addr *a;
 	u64 length;
@@ -207,7 +207,7 @@ struct sock *quic_listen_sock_lookup(struct sk_buff *skb, union quic_addr *sa, u
 	u8 *p;
 
 	head = quic_listen_sock_head(net, ntohs(sa->v4.sin_port));
-	spin_lock(&head->s_lock);
+	read_lock(&head->lock);
 
 	if (!alpns->len) { /* No ALPN entries present or failed to parse the ALPNs. */
 		sk_for_each(tmp, &head->head) {
@@ -249,7 +249,7 @@ unlock:
 	if (sk)
 		sock_hold(sk);
 
-	spin_unlock(&head->s_lock);
+	read_unlock(&head->lock);
 	return sk;
 }
 
@@ -512,7 +512,7 @@ static int quic_hash(struct sock *sk)
 	struct quic_path_group *paths = quic_paths(sk);
 	struct quic_data *alpns = quic_alpn(sk);
 	struct net *net = sock_net(sk);
-	struct quic_hash_head *head;
+	struct quic_shash_head *head;
 	union quic_addr *sa, *da;
 	struct sock *nsk;
 	int err = 0, any;
@@ -521,15 +521,15 @@ static int quic_hash(struct sock *sk)
 	da = quic_path_daddr(paths, 0);
 	if (!sk->sk_max_ack_backlog) { /* Hash a regular socket with source and dest addrs/ports. */
 		head = quic_sock_head(net, sa, da);
-		spin_lock_bh(&head->s_lock);
+		write_lock_bh(&head->lock);
 		__sk_add_node(sk, &head->head);
-		spin_unlock_bh(&head->s_lock);
+		write_unlock_bh(&head->lock);
 		return 0;
 	}
 
 	/* Hash a listen socket with source port only. */
 	head = quic_listen_sock_head(net, ntohs(sa->v4.sin_port));
-	spin_lock_bh(&head->s_lock);
+	write_lock_bh(&head->lock);
 
 	any = quic_is_any_addr(sa);
 	sk_for_each(nsk, &head->head) {
@@ -568,7 +568,7 @@ static int quic_hash(struct sock *sk)
 	__sk_add_node(sk, &head->head);
 	INIT_LIST_HEAD(quic_reqs(sk));
 out:
-	spin_unlock_bh(&head->s_lock);
+	write_unlock_bh(&head->lock);
 	return err;
 }
 
@@ -577,7 +577,7 @@ static void quic_unhash(struct sock *sk)
 	struct quic_path_group *paths = quic_paths(sk);
 	struct quic_request_sock *req, *tmp;
 	struct net *net = sock_net(sk);
-	struct quic_hash_head *head;
+	struct quic_shash_head *head;
 	union quic_addr *sa, *da;
 
 	if (sk_unhashed(sk))
@@ -597,11 +597,11 @@ static void quic_unhash(struct sock *sk)
 	head = quic_sock_head(net, sa, da);
 
 out:
-	spin_lock_bh(&head->s_lock);
+	write_lock_bh(&head->lock);
 	if (rcu_access_pointer(sk->sk_reuseport_cb))
 		reuseport_detach_sock(sk); /* If socket was part of a reuseport group, detach it. */
 	__sk_del_node_init(sk);
-	spin_unlock_bh(&head->s_lock);
+	write_unlock_bh(&head->lock);
 }
 
 #define QUIC_MSG_STREAM_FLAGS \

@@ -11,8 +11,6 @@
 #include <net/netns/hash.h>
 #include <linux/jhash.h>
 
-#define QUIC_HT_SIZE		64
-
 #define QUIC_MAX_ACK_DELAY	(16384 * 1000)
 #define QUIC_DEF_ACK_DELAY	25000
 
@@ -123,25 +121,24 @@ static inline union quic_addr *quic_addr(const void *addr)
 	return (union quic_addr *)addr;
 }
 
-struct quic_hash_head {
+struct quic_shash_head {
 	struct hlist_head	head;
-	union {
-		spinlock_t	s_lock;	/* Protects 'head' in atomic context */
-		struct mutex	m_lock;	/* Protects 'head' in process context */
-	};
+	rwlock_t		lock;	/* Protects 'head' in atomic context */
 };
 
-struct quic_hash_table {
-	struct quic_hash_head *hash;
-	int size;
+struct quic_shash_table {
+	struct quic_shash_head *hash;
+	u32 size;
 };
 
-enum  {
-	QUIC_HT_SOCK,		/* Hash table for QUIC sockets */
-	QUIC_HT_UDP_SOCK,	/* Hash table for UDP tunnel sockets */
-	QUIC_HT_LISTEN_SOCK,	/* Hash table for QUIC listening sockets */
-	QUIC_HT_CONNECTION_ID,	/* Hash table for source connection IDs */
-	QUIC_HT_MAX_TABLES,
+struct quic_uhash_head {
+	struct hlist_head	head;
+	struct mutex		lock;	/* Protects 'head' in process context */
+};
+
+struct quic_uhash_table {
+	struct quic_uhash_head *hash;
+	u32 size;
 };
 
 static inline u32 quic_shash(const struct net *net, const union quic_addr *a)
@@ -188,15 +185,16 @@ static inline void quic_data_free(struct quic_data *d)
 	d->len = 0;
 }
 
-struct quic_hash_head *quic_sock_head(struct net *net, union quic_addr *s, union quic_addr *d);
-struct quic_hash_head *quic_listen_sock_head(struct net *net, u16 port);
-struct quic_hash_head *quic_stream_head(struct quic_hash_table *ht, s64 stream_id);
-struct quic_hash_head *quic_source_conn_id_head(struct net *net, u8 *scid);
-struct quic_hash_head *quic_udp_sock_head(struct net *net, u16 port);
+struct quic_shash_head *quic_sock_head(struct net *net, union quic_addr *s, union quic_addr *d);
+struct quic_shash_head *quic_listen_sock_head(struct net *net, u16 port);
+struct quic_shash_head *quic_stream_head(struct quic_shash_table *ht, s64 stream_id);
+struct quic_shash_head *quic_source_conn_id_head(struct net *net, u8 *scid);
+struct quic_uhash_head *quic_udp_sock_head(struct net *net, u16 port);
 
-struct quic_hash_head *quic_sock_hash(u32 hash);
+struct quic_shash_head *quic_sock_hash(u32 hash);
 void quic_hash_tables_destroy(void);
 int quic_hash_tables_init(void);
+u32 quic_sock_hash_size(void);
 
 u32 quic_get_data(u8 **pp, u32 *plen, u8 *data, u32 len);
 u32 quic_get_int(u8 **pp, u32 *plen, u64 *val, u32 len);

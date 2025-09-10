@@ -57,7 +57,7 @@ static bool quic_stream_id_uni(s64 stream_id)
 
 struct quic_stream *quic_stream_find(struct quic_stream_table *streams, s64 stream_id)
 {
-	struct quic_hash_head *head = quic_stream_head(&streams->ht, stream_id);
+	struct quic_shash_head *head = quic_stream_head(&streams->ht, stream_id);
 	struct quic_stream *stream;
 
 	hlist_for_each_entry(stream, &head->head, node) {
@@ -69,7 +69,7 @@ struct quic_stream *quic_stream_find(struct quic_stream_table *streams, s64 stre
 
 static void quic_stream_add(struct quic_stream_table *streams, struct quic_stream *stream)
 {
-	struct quic_hash_head *head;
+	struct quic_shash_head *head;
 
 	head = quic_stream_head(&streams->ht, stream->id);
 	hlist_add_head(&stream->node, &head->head);
@@ -425,11 +425,13 @@ bool quic_stream_max_streams_update(struct quic_stream_table *streams, s64 *max_
 	return *max_uni || *max_bidi;
 }
 
+#define QUIC_STREAM_HT_SIZE	64
+
 int quic_stream_init(struct quic_stream_table *streams)
 {
-	struct quic_hash_table *ht = &streams->ht;
-	struct quic_hash_head *head;
-	int i, size = QUIC_HT_SIZE;
+	struct quic_shash_table *ht = &streams->ht;
+	int i, size = QUIC_STREAM_HT_SIZE;
+	struct quic_shash_head *head;
 
 	head = kmalloc_array(size, sizeof(*head), GFP_KERNEL);
 	if (!head)
@@ -443,8 +445,8 @@ int quic_stream_init(struct quic_stream_table *streams)
 
 void quic_stream_free(struct quic_stream_table *streams)
 {
-	struct quic_hash_table *ht = &streams->ht;
-	struct quic_hash_head *head;
+	struct quic_shash_table *ht = &streams->ht;
+	struct quic_shash_head *head;
 	struct quic_stream *stream;
 	struct hlist_node *tmp;
 	int i;
