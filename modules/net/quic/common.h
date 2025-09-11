@@ -191,10 +191,13 @@ struct quic_shash_head *quic_stream_head(struct quic_shash_table *ht, s64 stream
 struct quic_shash_head *quic_source_conn_id_head(struct net *net, u8 *scid);
 struct quic_uhash_head *quic_udp_sock_head(struct net *net, u16 port);
 
+struct quic_shash_head *quic_listen_sock_hash(u32 hash);
 struct quic_shash_head *quic_sock_hash(u32 hash);
+u32 quic_listen_sock_hash_size(void);
+u32 quic_sock_hash_size(void);
+
 void quic_hash_tables_destroy(void);
 int quic_hash_tables_init(void);
-u32 quic_sock_hash_size(void);
 
 u32 quic_get_data(u8 **pp, u32 *plen, u8 *data, u32 len);
 u32 quic_get_int(u8 **pp, u32 *plen, u64 *val, u32 len);

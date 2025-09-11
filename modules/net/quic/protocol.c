@@ -213,7 +213,7 @@ struct quic_net *quic_net(struct net *net)
 }
 
 #ifdef CONFIG_PROC_FS
-static int quic_seq_show(struct seq_file *seq, void *v)
+static int quic_conns_seq_show(struct seq_file *seq, void *v)
 {
 	struct net *net = seq_file_net(seq);
 	u32 hash = (u32)(*(loff_t *)v);
@@ -221,6 +221,7 @@ static int quic_seq_show(struct seq_file *seq, void *v)
 	struct quic_shash_head *head;
 	struct quic_outqueue *outq;
 	struct sock *sk;
+	uid_t uid;
 
 	if (hash >= quic_sock_hash_size())
 		return -ENOMEM;
@@ -231,22 +232,27 @@ static int quic_seq_show(struct seq_file *seq, void *v)
 		if (net != sock_net(sk))
 			continue;
 
+		seq_printf(seq, "%pK\t%d\t", sk, sk->sk_state);
+
 		paths = quic_paths(sk);
 		quic_seq_dump_addr(seq, quic_path_saddr(paths, 0));
 		quic_seq_dump_addr(seq, quic_path_daddr(paths, 0));
 		quic_seq_dump_addr(seq, quic_path_uaddr(paths, 0));
 
 		outq = quic_outq(sk);
-		seq_printf(seq, "%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n", sk->sk_state,
-			   outq->window, quic_packet_mss(quic_packet(sk)),
-			   outq->inflight, READ_ONCE(sk->sk_wmem_queued),
-			   sk_rmem_alloc_get(sk), sk->sk_sndbuf, sk->sk_rcvbuf);
+		seq_printf(seq, "%d\t%d\t%d\t%d\t%d\t%d\t%d\t", outq->window,
+			   quic_packet_mss(quic_packet(sk)), outq->inflight,
+			   READ_ONCE(sk->sk_wmem_queued), sk_rmem_alloc_get(sk),
+			   sk->sk_sndbuf, sk->sk_rcvbuf);
+
+		uid = from_kuid_munged(seq_user_ns(seq), sock_net_uid(net, sk));
+		seq_printf(seq, "%u\t%lu\n", uid, sock_i_ino(sk));
 	}
 	read_unlock_bh(&head->lock);
 	return 0;
 }
 
-static void *quic_seq_start(struct seq_file *seq, loff_t *pos)
+static void *quic_conns_seq_start(struct seq_file *seq, loff_t *pos)
 {
 	if (*pos >= quic_sock_hash_size())
 		return NULL;
@@ -255,13 +261,14 @@ static void *quic_seq_start(struct seq_file *seq, loff_t *pos)
 		*pos = 0;
 
 	if (*pos == 0)
-		seq_printf(seq, "LOCAL_ADDRESS\tREMOTE_ADDRESS\tUDP_ADDRESS\tSTATE\t"
-				"WINDOW\tMSS\tIN_FLIGHT\tTX_QUEUE\tRX_QUEUE\tSNDBUF\tRCVBUF\n");
+		seq_printf(seq, "SOCK\tSTATE\tLOCAL_ADDRESS\tREMOTE_ADDRESS\tUDP_ADDRESS\t"
+				"WINDOW\tMSS\tIN_FLIGHT\tTX_QUEUE\tRX_QUEUE\tSNDBUF\tRCVBUF\t"
+				"UID\tINODE\n");
 
 	return (void *)pos;
 }
 
-static void *quic_seq_next(struct seq_file *seq, void *v, loff_t *pos)
+static void *quic_conns_seq_next(struct seq_file *seq, void *v, loff_t *pos)
 {
 	if (++*pos >= quic_sock_hash_size())
 		return NULL;
@@ -269,7 +276,64 @@ static void *quic_seq_next(struct seq_file *seq, void *v, loff_t *pos)
 	return pos;
 }
 
-static void quic_seq_stop(struct seq_file *seq, void *v)
+static void quic_conns_seq_stop(struct seq_file *seq, void *v)
+{
+}
+
+static int quic_eps_seq_show(struct seq_file *seq, void *v)
+{
+	struct net *net = seq_file_net(seq);
+	u32 hash = (u32)(*(loff_t *)v);
+	struct quic_path_group *paths;
+	struct quic_shash_head *head;
+	struct sock *sk;
+	uid_t uid;
+
+	if (hash >= quic_listen_sock_hash_size())
+		return -ENOMEM;
+
+	head = quic_listen_sock_hash(hash);
+	read_lock_bh(&head->lock);
+	sk_for_each(sk, &head->head) {
+		if (net != sock_net(sk))
+			continue;
+
+		seq_printf(seq, "%pK\t%d\t", sk, sk->sk_state);
+
+		paths = quic_paths(sk);
+		quic_seq_dump_addr(seq, quic_path_saddr(paths, 0));
+		quic_seq_dump_addr(seq, quic_path_uaddr(paths, 0));
+
+		uid = from_kuid_munged(seq_user_ns(seq), sock_net_uid(net, sk));
+		seq_printf(seq, "%u\t%lu\n", uid, sock_i_ino(sk));
+	}
+	read_unlock_bh(&head->lock);
+	return 0;
+}
+
+static void *quic_eps_seq_start(struct seq_file *seq, loff_t *pos)
+{
+	if (*pos >= quic_listen_sock_hash_size())
+		return NULL;
+
+	if (*pos < 0)
+		*pos = 0;
+
+	if (*pos == 0)
+		seq_printf(seq, "SOCK\tSTATE\tLOCAL_ADDRESS\tUDP_ADDRESS\tUID\tINODE\n");
+
+	return (void *)pos;
+}
+
+static void *quic_eps_seq_next(struct seq_file *seq, void *v, loff_t *pos)
+{
+	if (++*pos >= quic_listen_sock_hash_size())
+		return NULL;
+
+	return pos;
+}
+
+static void quic_eps_seq_stop(struct seq_file *seq, void *v)
 {
 }
 
@@ -311,11 +375,18 @@ static int quic_snmp_seq_show(struct seq_file *seq, void *v)
 	return 0;
 }
 
-static const struct seq_operations quic_seq_ops = {
-	.show		= quic_seq_show,
-	.start		= quic_seq_start,
-	.next		= quic_seq_next,
-	.stop		= quic_seq_stop,
+static const struct seq_operations quic_conns_seq_ops = {
+	.show		= quic_conns_seq_show,
+	.start		= quic_conns_seq_start,
+	.next		= quic_conns_seq_next,
+	.stop		= quic_conns_seq_stop,
+};
+
+static const struct seq_operations quic_eps_seq_ops = {
+	.show		= quic_eps_seq_show,
+	.start		= quic_eps_seq_start,
+	.next		= quic_eps_seq_next,
+	.stop		= quic_eps_seq_stop,
 };
 
 static int quic_net_proc_init(struct net *net)
@@ -327,8 +398,11 @@ static int quic_net_proc_init(struct net *net)
 	if (!proc_create_net_single("snmp", 0444, quic_net(net)->proc_net,
 				    quic_snmp_seq_show, NULL))
 		goto free;
-	if (!proc_create_net("sks", 0444, quic_net(net)->proc_net,
-			     &quic_seq_ops, sizeof(struct seq_net_private)))
+	if (!proc_create_net("conns", 0444, quic_net(net)->proc_net,
+			     &quic_conns_seq_ops, sizeof(struct seq_net_private)))
+		goto free;
+	if (!proc_create_net("eps", 0444, quic_net(net)->proc_net,
+			     &quic_eps_seq_ops, sizeof(struct seq_net_private)))
 		goto free;
 	return 0;
 free:

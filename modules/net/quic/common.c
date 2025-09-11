@@ -49,6 +49,16 @@ struct quic_shash_head *quic_sock_head(struct net *net, union quic_addr *s, unio
 	return &ht->hash[quic_ahash(net, s, d) & (ht->size - 1)];
 }
 
+u32 quic_listen_sock_hash_size(void)
+{
+	return quic_hashinfo.lhash.size;
+}
+
+struct quic_shash_head *quic_listen_sock_hash(u32 hash)
+{
+	return &quic_hashinfo.lhash.hash[hash];
+}
+
 struct quic_shash_head *quic_listen_sock_head(struct net *net, u16 port)
 {
 	struct quic_shash_table *ht = &quic_hashinfo.lhash;
