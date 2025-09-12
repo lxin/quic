@@ -2503,8 +2503,7 @@ static void quic_release_cb(struct sock *sk)
 
 static int quic_disconnect(struct sock *sk, int flags)
 {
-	quic_set_state(sk, QUIC_SS_CLOSED); /* for a listen socket only */
-	return 0;
+	return -EOPNOTSUPP;
 }
 
 static void quic_shutdown(struct sock *sk, int how)
