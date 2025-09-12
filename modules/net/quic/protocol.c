@@ -171,6 +171,179 @@ static __poll_t quic_inet_poll(struct file *file, struct socket *sock, poll_tabl
 	return mask;
 }
 
+static int quic_stream_shutdown(struct socket *sock, int how)
+{
+	struct quic_stream_sock *ssk = quic_ssk(sock->sk);
+	struct quic_stream *stream = ssk->stream;
+	struct quic_errinfo info = {};
+	struct sock *sk = ssk->sk;
+	struct msghdr msg = {};
+	bool is_serv;
+	int err = 0;
+
+	if ((how & ~SHUTDOWN_MASK) || !how)
+		return -EINVAL;
+
+	lock_sock(sk);
+	quic_inq_list_purge(sk, &stream->recv.frame_list, NULL);
+
+	if (quic_is_closed(sk)) {
+		err = -EPIPE;
+		goto out;
+	}
+
+	is_serv = quic_is_serv(sk);
+	if ((how & SEND_SHUTDOWN) && quic_stream_id_send(stream->id, is_serv))
+		quic_sock_sendmsg(sk, &msg, 0, MSG_STREAM_FIN, stream->id);
+
+	if ((how & RCV_SHUTDOWN) && quic_stream_id_recv(stream->id, is_serv)) {
+		info.stream_id = stream->id;
+		quic_kernel_setsockopt(sk, QUIC_SOCKOPT_STREAM_STOP_SENDING, &info, sizeof(info));
+	}
+out:
+	release_sock(sk);
+	return err;
+}
+
+static int quic_stream_release(struct socket *sock)
+{
+	struct quic_stream_sock *ssk = quic_ssk(sock->sk);
+	struct quic_stream *stream = ssk->stream;
+	struct quic_errinfo info = {};
+	struct sock *sk = ssk->sk;
+	struct msghdr msg = {};
+	bool is_serv;
+
+	if (!stream->peeled) /* Happens if peeling the stream failed. */
+		goto free;
+
+	lock_sock(sk);
+	stream->peeled = 0; /* Unmark stream as peeled in case parent sk handle the clenup. */
+	quic_inq_list_purge(sk, &stream->recv.frame_list, NULL);
+	if (hlist_unhashed(&stream->node)) { /* Free stream if already released by parent sk. */
+		kfree(stream);
+		goto out;
+	}
+
+	if (quic_is_closed(sk)) /* If connection closed, let parent handle cleanup. */
+		goto out;
+
+	is_serv = quic_is_serv(sk);
+	if (quic_stream_id_send(stream->id, is_serv))
+		quic_sock_sendmsg(sk, &msg, 0, MSG_STREAM_FIN, stream->id);
+
+	if (quic_stream_id_recv(stream->id, is_serv)) {
+		if (stream->recv.state == QUIC_STREAM_RECV_STATE_RECVD) {
+			/* All frames purged; mark stream as fully read and release it. */
+			stream->recv.state = QUIC_STREAM_RECV_STATE_READ;
+			quic_stream_recv_put(quic_streams(sk), stream, is_serv);
+			goto out;
+		}
+		info.stream_id = stream->id;
+		quic_kernel_setsockopt(sk, QUIC_SOCKOPT_STREAM_STOP_SENDING, &info, sizeof(info));
+	}
+out:
+	release_sock(sk);
+	sock_put(sk); /* Release reference to parent sk. */
+free:
+	sock_put(sock->sk);
+	sock->sk = NULL;
+	return 0;
+}
+
+static __poll_t quic_stream_poll(struct file *file, struct socket *sock, poll_table *wait)
+{
+	struct quic_stream_sock *ssk = quic_ssk(sock->sk);
+	struct quic_stream *stream = ssk->stream;
+	struct sock *sk = ssk->sk;
+	__poll_t mask = 0;
+
+	poll_wait(file, sk_sleep(sk), wait);
+
+	if (quic_is_closed(sk)) {
+		/* A broken connection should report almost everything in order to let
+		 * applications to detect it reliable.
+		 */
+		mask |= EPOLLHUP;
+		mask |= EPOLLERR;
+		mask |= EPOLLIN | EPOLLRDNORM | EPOLLRDHUP;
+		mask |= EPOLLOUT | EPOLLWRNORM;
+		return mask;
+	}
+
+	if (quic_stream_id_recv(stream->id, quic_is_serv(sk))) { /* Readable check. */
+		if (stream->recv.state >= QUIC_STREAM_RECV_STATE_READ ||
+		    !list_empty(&stream->recv.frame_list))
+			mask |= EPOLLIN | EPOLLRDNORM;
+	}
+
+	if (!quic_stream_id_send(stream->id, quic_is_serv(sk)))
+		return mask;
+
+	if (stream->send.state >= QUIC_STREAM_SEND_STATE_SENT ||
+	    (sk_stream_wspace(sk) > 0 && quic_outq_wspace(sk, stream)) > 0) { /* Writable check. */
+		mask |= EPOLLOUT | EPOLLWRNORM;
+	} else {
+		sk_set_bit(SOCKWQ_ASYNC_NOSPACE, sk);
+		/* Do writeable check again after the bit is set to avoid a lost I/O signal,
+		 * similar to sctp_poll().
+		 */
+		if (sk_stream_wspace(sk) > 0 && quic_outq_wspace(sk, stream) > 0)
+			mask |= EPOLLOUT | EPOLLWRNORM;
+	}
+	return mask;
+}
+
+static int quic_stream_sendmsg(struct socket *sock, struct msghdr *msg, size_t size)
+{
+	struct quic_stream_sock *ssk = quic_ssk(sock->sk);
+	struct quic_stream *stream = ssk->stream;
+	struct sock *sk = ssk->sk;
+	int err = 0;
+
+	lock_sock(sk);
+	if (quic_is_closed(sk)) {
+		err = -EPIPE;
+		goto out;
+	}
+	if (!quic_stream_id_send(stream->id, quic_is_serv(sk))) {
+		err = -EINVAL;
+		goto out;
+	}
+	if (stream->send.state >= QUIC_STREAM_SEND_STATE_SENT) { /* All data sent. */
+		err = -EINVAL;
+		goto out;
+	}
+	err = quic_sock_sendmsg(sk, msg, size, msg->msg_flags & MSG_STREAM_FIN, stream->id);
+out:
+	release_sock(sk);
+	return err;
+}
+
+static int quic_stream_recvmsg(struct socket *sock, struct msghdr *msg, size_t size, int flags)
+{
+	struct quic_stream_sock *ssk = quic_ssk(sock->sk);
+	struct quic_stream *stream = ssk->stream;
+	struct sock *sk = ssk->sk;
+	int err = 0;
+
+	lock_sock(sk);
+	if (quic_is_closed(sk)) {
+		err = -EPIPE;
+		goto out;
+	}
+	if (!quic_stream_id_recv(stream->id, quic_is_serv(sk))) {
+		err = -EINVAL;
+		goto out;
+	}
+	if (stream->recv.state >= QUIC_STREAM_RECV_STATE_READ) /* All data read. */
+		goto out;
+	err = quic_sock_recvmsg(sk, msg, size, flags, stream->id);
+out:
+	release_sock(sk);
+	return err;
+}
+
 static struct ctl_table quic_table[] = {
 	{
 		.procname	= "quic_mem",
@@ -433,6 +606,49 @@ static void quic_transport_param_init(void)
 	p->max_stream_data_uni = (u64)QUIC_PATH_MAX_PMTU * 16;
 	p->max_streams_bidi = QUIC_DEF_STREAMS;
 	p->max_streams_uni = QUIC_DEF_STREAMS;
+}
+
+static const struct proto_ops quic_stream_ops = {
+	.owner		   = THIS_MODULE,
+	.release	   = quic_stream_release,
+	.bind		   = sock_no_bind,
+	.connect	   = sock_no_connect,
+	.socketpair	   = sock_no_socketpair,
+	.accept		   = sock_no_accept,
+	.getname	   = sock_no_getname,
+	.poll		   = quic_stream_poll,
+	.ioctl		   = sock_no_ioctl,
+	.listen		   = sock_no_listen,
+	.shutdown	   = quic_stream_shutdown,
+	.sendmsg	   = quic_stream_sendmsg,
+	.recvmsg	   = quic_stream_recvmsg,
+	.mmap		   = sock_no_mmap,
+};
+
+struct socket *quic_inet_stream_sock_alloc(struct sock *sk, struct quic_stream *stream)
+{
+	struct quic_stream_sock *ssk;
+	struct socket *sock;
+	struct sock *nsk;
+
+	nsk = sk_alloc(sock_net(sk), sk->sk_family, GFP_KERNEL, &quic_stream_prot, 0);
+	if (!nsk)
+		return NULL;
+	ssk = quic_ssk(nsk);
+	ssk->sk = sk;
+	ssk->stream = stream;
+
+	sock = sock_alloc();
+	if (!sock) {
+		sk_free(nsk);
+		return NULL;
+	}
+	sock->type = SOCK_RAW;
+	sock->ops = &quic_stream_ops;
+	sock_init_data(sock, nsk);
+	__module_get(sock->ops->owner);
+
+	return sock;
 }
 
 static const struct proto_ops quic_proto_ops = {

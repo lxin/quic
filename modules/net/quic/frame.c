@@ -1385,6 +1385,7 @@ static int quic_frame_reset_stream_process(struct sock *sk, struct quic_frame *f
 	 */
 	quic_inq_list_purge(sk, &inq->stream_list, stream);
 	quic_inq_list_purge(sk, &inq->recv_list, stream);
+	quic_inq_list_purge(sk, &stream->recv.frame_list, NULL);
 	quic_stream_recv_put(streams, stream, quic_is_serv(sk)); /* Release the receive stream. */
 out:
 	return (int)(frame->len - len);
