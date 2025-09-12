@@ -165,12 +165,12 @@ tlshd_tests()
 	print_start "Kernel Tests (kernel -> lkquic, Certificate, Sample)"
 	if [ -f ../modules/net/quic/quic_sample_test.ko ]; then
 		daemon_run ./sample_test server 0.0.0.0 1234 ./keys/server-key.pem \
-							     ./keys/server-cert.pem sample
+							     ./keys/server-cert.pem default sample
 		insmod ../modules/net/quic/quic_sample_test.ko || return 1
 	else
 		modprobe -n quic_sample_test || return 0
 		daemon_run ./sample_test server 0.0.0.0 1234 ./keys/server-key.pem \
-							     ./keys/server-cert.pem sample
+							     ./keys/server-cert.pem default sample
 		modprobe quic_sample_test || return 1
 	fi
 	rmmod quic_sample_test
@@ -179,11 +179,11 @@ tlshd_tests()
 
 	print_start "Kernel Tests (lkquic -> kernel, Certificate, Sample)"
 	if [ -f ../modules/net/quic/quic_sample_test.ko ]; then
-		daemon_run ./sample_test client 127.0.0.1 1234 none none sample
+		daemon_run ./sample_test client 127.0.0.1 1234 none none default sample
 		insmod ../modules/net/quic/quic_sample_test.ko role=server || return 1
 	else
 		modprobe -n quic_sample_test || return 0
-		daemon_run ./sample_test client 127.0.0.1 1234 none none sample
+		daemon_run ./sample_test client 127.0.0.1 1234 none none default sample
 		modprobe quic_sample_test role=server || return 1
 	fi
 	rmmod quic_sample_test
@@ -193,11 +193,11 @@ tlshd_tests()
 	print_start "Kernel Tests (kernel -> lkquic, PSK, Sample)"
 	PSK=`keyctl show @u |grep test1 |awk '{print $1}'`
 	if [ -f ../modules/net/quic/quic_sample_test.ko ]; then
-		daemon_run ./sample_test server 0.0.0.0 1234 ./keys/server-psk.txt none sample
+		daemon_run ./sample_test server 0.0.0.0 1234 ./keys/server-psk.txt none default sample
 		insmod ../modules/net/quic/quic_sample_test.ko psk=$PSK || return 1
 	else
 		modprobe -n quic_sample_test || return 0
-		daemon_run ./sample_test server 0.0.0.0 1234 ./keys/server-psk.txt none sample
+		daemon_run ./sample_test server 0.0.0.0 1234 ./keys/server-psk.txt none default sample
 		modprobe quic_sample_test psk=$PSK || return 1
 	fi
 	rmmod quic_sample_test
@@ -206,11 +206,11 @@ tlshd_tests()
 
 	print_start "Kernel Tests (lkquic -> kernel, PSK, Sample)"
 	if [ -f ../modules/net/quic/quic_sample_test.ko ]; then
-		daemon_run ./sample_test client 127.0.0.1 1234 ./keys/client-psk.txt none sample
+		daemon_run ./sample_test client 127.0.0.1 1234 ./keys/client-psk.txt none default sample
 		insmod ../modules/net/quic/quic_sample_test.ko role=server psk=1 || return 1
 	else
 		modprobe -n quic_sample_test || return 0
-		daemon_run ./sample_test client 127.0.0.1 1234 ./keys/client-psk.txt none sample
+		daemon_run ./sample_test client 127.0.0.1 1234 ./keys/client-psk.txt none default sample
 		modprobe quic_sample_test role=server psk=1 || return 1
 	fi
 	rmmod quic_sample_test
@@ -282,16 +282,88 @@ ticket_tests()
 	daemon_stop "ticket_test"
 }
 
-sample_tests()
+sample_def_def_tests()
 {
-	print_start "Sample Tests"
-	daemon_run ./sample_test server 0.0.0.0 1234 ./keys/server-key.pem ./keys/server-cert.pem
-	./sample_test client 127.0.0.1 1234 none none || return 1
+	print_start "Sample cli=default srv=default Tests"
+	daemon_run ./sample_test server 0.0.0.0 1234 ./keys/server-key.pem ./keys/server-cert.pem default
+	./sample_test client 127.0.0.1 1234 none none default || return 1
 	daemon_stop "sample_test"
 
 }
 
-TESTS="func perf netem http3 tlshd alpn ticket sample"
+sample_def_v1_tests()
+{
+	print_start "Sample cli=default srv=v1 Tests"
+	daemon_run ./sample_test server 0.0.0.0 1234 ./keys/server-key.pem ./keys/server-cert.pem v1
+	./sample_test client 127.0.0.1 1234 none none default || return 1
+	daemon_stop "sample_test"
+
+}
+
+sample_def_v2_tests()
+{
+	print_start "Sample cli=default srv=v2 Tests"
+	daemon_run ./sample_test server 0.0.0.0 1234 ./keys/server-key.pem ./keys/server-cert.pem v2
+	./sample_test client 127.0.0.1 1234 none none default || return 1
+	daemon_stop "sample_test"
+
+}
+
+sample_v1_def_tests()
+{
+	print_start "Sample cli=v1 srv=default Tests"
+	daemon_run ./sample_test server 0.0.0.0 1234 ./keys/server-key.pem ./keys/server-cert.pem default
+	./sample_test client 127.0.0.1 1234 none none v1 || return 1
+	daemon_stop "sample_test"
+
+}
+
+sample_v1_v1_tests()
+{
+	print_start "Sample cli=v1 srv=v1 Tests"
+	daemon_run ./sample_test server 0.0.0.0 1234 ./keys/server-key.pem ./keys/server-cert.pem v1
+	./sample_test client 127.0.0.1 1234 none none v1 || return 1
+	daemon_stop "sample_test"
+
+}
+
+sample_v1_v2_tests()
+{
+	print_start "Sample cli=v1 srv=v2 Tests"
+	daemon_run ./sample_test server 0.0.0.0 1234 ./keys/server-key.pem ./keys/server-cert.pem v2
+	./sample_test client 127.0.0.1 1234 none none v1 || return 1
+	daemon_stop "sample_test"
+
+}
+
+sample_v2_def_tests()
+{
+	print_start "Sample cli=v2 srv=default Tests"
+	daemon_run ./sample_test server 0.0.0.0 1234 ./keys/server-key.pem ./keys/server-cert.pem default
+	./sample_test client 127.0.0.1 1234 none none v2 || return 1
+	daemon_stop "sample_test"
+
+}
+
+sample_v2_v1_tests()
+{
+	print_start "Sample cli=v2 srv=v1 Tests"
+	daemon_run ./sample_test server 0.0.0.0 1234 ./keys/server-key.pem ./keys/server-cert.pem v2
+	./sample_test client 127.0.0.1 1234 none none v2 || return 1
+	daemon_stop "sample_test"
+
+}
+
+sample_v2_v2_tests()
+{
+	print_start "Sample cli=v2 srv=v2 Tests"
+	daemon_run ./sample_test server 0.0.0.0 1234 ./keys/server-key.pem ./keys/server-cert.pem v2
+	./sample_test client 127.0.0.1 1234 none none v2 || return 1
+	daemon_stop "sample_test"
+
+}
+
+TESTS="func perf netem http3 tlshd alpn ticket sample_def_def sample_def_v1 sample_def_v2 sample_v1_def sample_v1_v1 sample_v2_def sample_v2_v1 sample_v2_v2"
 trap cleanup EXIT
 
 [ "$1" = "" ] || TESTS=$1
