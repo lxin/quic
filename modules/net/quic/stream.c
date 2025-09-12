@@ -15,32 +15,19 @@
 #include "common.h"
 #include "stream.h"
 
-/* Check if a stream ID is valid for sending. */
-static bool quic_stream_id_send(s64 stream_id, bool is_serv)
+/* Check if a stream ID is valid for sending or receiving. */
+static bool quic_stream_id_valid(s64 stream_id, bool is_serv, bool send)
 {
 	u8 type = (stream_id & QUIC_STREAM_TYPE_MASK);
 
-	if (is_serv) {
-		if (type == QUIC_STREAM_TYPE_CLIENT_UNI)
-			return false;
-	} else if (type == QUIC_STREAM_TYPE_SERVER_UNI) {
-		return false;
+	if (send) {
+		if (is_serv)
+			return type != QUIC_STREAM_TYPE_CLIENT_UNI;
+		return type != QUIC_STREAM_TYPE_SERVER_UNI;
 	}
-	return true;
-}
-
-/* Check if a stream ID is valid for receiving. */
-static bool quic_stream_id_recv(s64 stream_id, bool is_serv)
-{
-	u8 type = (stream_id & QUIC_STREAM_TYPE_MASK);
-
-	if (is_serv) {
-		if (type == QUIC_STREAM_TYPE_SERVER_UNI)
-			return false;
-	} else if (type == QUIC_STREAM_TYPE_CLIENT_UNI) {
-		return false;
-	}
-	return true;
+	if (is_serv)
+		return type != QUIC_STREAM_TYPE_SERVER_UNI;
+	return type != QUIC_STREAM_TYPE_CLIENT_UNI;
 }
 
 /* Check if a stream ID was initiated locally. */
@@ -184,70 +171,43 @@ static struct quic_stream *quic_stream_recv_create(struct quic_stream_table *str
 	return stream;
 }
 
-/* Check if a send stream ID is already closed. */
-static bool quic_stream_id_send_closed(struct quic_stream_table *streams, s64 stream_id)
+/* Check if a send or receive stream ID is already closed. */
+static bool quic_stream_id_closed(struct quic_stream_table *streams, s64 stream_id, bool send)
 {
 	if (quic_stream_id_uni(stream_id)) {
-		if (stream_id < streams->send.next_uni_stream_id)
-			return true;
-	} else {
-		if (stream_id < streams->send.next_bidi_stream_id)
-			return true;
+		if (send)
+			return stream_id < streams->send.next_uni_stream_id;
+		return stream_id < streams->recv.next_uni_stream_id;
 	}
-	return false;
+	if (send)
+		return stream_id < streams->send.next_bidi_stream_id;
+	return stream_id < streams->recv.next_bidi_stream_id;
 }
 
-/* Check if a receive stream ID is already closed. */
-static bool quic_stream_id_recv_closed(struct quic_stream_table *streams, s64 stream_id)
-{
-	if (quic_stream_id_uni(stream_id)) {
-		if (stream_id < streams->recv.next_uni_stream_id)
-			return true;
-	} else {
-		if (stream_id < streams->recv.next_bidi_stream_id)
-			return true;
-	}
-	return false;
-}
-
-/* Check if a receive stream ID exceeds would exceed local's limits. */
-static bool quic_stream_id_recv_exceeds(struct quic_stream_table *streams, s64 stream_id)
-{
-	if (quic_stream_id_uni(stream_id)) {
-		if (stream_id > streams->recv.max_uni_stream_id)
-			return true;
-	} else {
-		if (stream_id > streams->recv.max_bidi_stream_id)
-			return true;
-	}
-	return false;
-}
-
-/* Check if a send stream ID would exceed peer's limits. */
-bool quic_stream_id_send_exceeds(struct quic_stream_table *streams, s64 stream_id)
+/* Check if a stream ID would exceed local (recv) or peer (send) limits. */
+bool quic_stream_id_exceeds(struct quic_stream_table *streams, s64 stream_id, bool send)
 {
 	u64 nstreams;
+
+	if (!send) {
+		if (quic_stream_id_uni(stream_id))
+			return stream_id > streams->recv.max_uni_stream_id;
+		return stream_id > streams->recv.max_bidi_stream_id;
+	}
 
 	if (quic_stream_id_uni(stream_id)) {
 		if (stream_id > streams->send.max_uni_stream_id)
 			return true;
-	} else {
-		if (stream_id > streams->send.max_bidi_stream_id)
-			return true;
-	}
-
-	if (quic_stream_id_uni(stream_id)) {
 		stream_id -= streams->send.next_uni_stream_id;
 		nstreams = quic_stream_id_to_streams(stream_id);
-		if (nstreams + streams->send.streams_uni > streams->send.max_streams_uni)
-			return true;
-	} else {
-		stream_id -= streams->send.next_bidi_stream_id;
-		nstreams = quic_stream_id_to_streams(stream_id);
-		if (nstreams + streams->send.streams_bidi > streams->send.max_streams_bidi)
-			return true;
+		return nstreams + streams->send.streams_uni > streams->send.max_streams_uni;
 	}
-	return false;
+
+	if (stream_id > streams->send.max_bidi_stream_id)
+		return true;
+	stream_id -= streams->send.next_bidi_stream_id;
+	nstreams = quic_stream_id_to_streams(stream_id);
+	return nstreams + streams->send.streams_bidi > streams->send.max_streams_bidi;
 }
 
 /* Get or create a send stream by ID. */
@@ -256,7 +216,7 @@ struct quic_stream *quic_stream_send_get(struct quic_stream_table *streams, s64 
 {
 	struct quic_stream *stream;
 
-	if (!quic_stream_id_send(stream_id, is_serv))
+	if (!quic_stream_id_valid(stream_id, is_serv, true))
 		return ERR_PTR(-EINVAL);
 
 	stream = quic_stream_find(streams, stream_id);
@@ -267,13 +227,13 @@ struct quic_stream *quic_stream_send_get(struct quic_stream_table *streams, s64 
 		return stream;
 	}
 
-	if (quic_stream_id_send_closed(streams, stream_id))
+	if (quic_stream_id_closed(streams, stream_id, true))
 		return ERR_PTR(-ENOSTR);
 
 	if (!(flags & MSG_STREAM_NEW))
 		return ERR_PTR(-EINVAL);
 
-	if (quic_stream_id_send_exceeds(streams, stream_id))
+	if (quic_stream_id_exceeds(streams, stream_id, true))
 		return ERR_PTR(-EAGAIN);
 
 	stream = quic_stream_send_create(streams, stream_id, is_serv);
@@ -289,7 +249,7 @@ struct quic_stream *quic_stream_recv_get(struct quic_stream_table *streams, s64 
 {
 	struct quic_stream *stream;
 
-	if (!quic_stream_id_recv(stream_id, is_serv))
+	if (!quic_stream_id_valid(stream_id, is_serv, false))
 		return ERR_PTR(-EINVAL);
 
 	stream = quic_stream_find(streams, stream_id);
@@ -297,21 +257,21 @@ struct quic_stream *quic_stream_recv_get(struct quic_stream_table *streams, s64 
 		return stream;
 
 	if (quic_stream_id_local(stream_id, is_serv)) {
-		if (quic_stream_id_send_closed(streams, stream_id))
+		if (quic_stream_id_closed(streams, stream_id, true))
 			return ERR_PTR(-ENOSTR);
 		return ERR_PTR(-EINVAL);
 	}
 
-	if (quic_stream_id_recv_closed(streams, stream_id))
+	if (quic_stream_id_closed(streams, stream_id, false))
 		return ERR_PTR(-ENOSTR);
 
-	if (quic_stream_id_recv_exceeds(streams, stream_id))
+	if (quic_stream_id_exceeds(streams, stream_id, false))
 		return ERR_PTR(-EAGAIN);
 
 	stream = quic_stream_recv_create(streams, stream_id, is_serv);
 	if (!stream)
 		return ERR_PTR(-ENOSTR);
-	if (quic_stream_id_send(stream_id, is_serv))
+	if (quic_stream_id_valid(stream_id, is_serv, true))
 		streams->send.active_stream_id = stream_id;
 	return stream;
 }
