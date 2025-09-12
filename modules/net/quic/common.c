@@ -514,8 +514,9 @@ int quic_data_match(struct quic_data *d1, struct quic_data *d2)
  * content into the output buffer 'to', inserting commas in between. The
  * resulting string length is written to '*plen'.
  */
-void quic_data_to_string(u8 *to, u32 *plen, struct quic_data *from)
+int quic_data_to_string(u8 *to, u32 *plen, struct quic_data *from)
 {
+	u32 maxlen = *plen;
 	struct quic_data d;
 	u8 *data = to, *p;
 	u64 length;
@@ -524,43 +525,62 @@ void quic_data_to_string(u8 *to, u32 *plen, struct quic_data *from)
 	for (p = from->data, len = from->len; len; len -= length, p += length) {
 		quic_get_int(&p, &len, &length, 1);
 		quic_data(&d, p, length);
+		if ((data - to) + d.len > maxlen)
+			return -EOVERFLOW;
+
 		data = quic_put_data(data, d.data, d.len);
-		if (len - length)
+		if (len - length) {
+			if ((data - to) + 1 > maxlen)
+				return -EOVERFLOW;
 			data = quic_put_int(data, ',', 1);
+		}
 	}
 	*plen = data - to;
+	return 0;
 }
 
 /* Parse a comma-separated string into a 'quic_data' list format.
  *
  * Each comma-separated token is turned into a length-prefixed element. The
- * first byte of each element stores the length (minus one). Elements are
- * stored in 'to->data', and 'to->len' is updated.
+ * first byte of each element stores the length. Elements are stored in
+ * 'to->data', and 'to->len' is updated.
  */
-void quic_data_from_string(struct quic_data *to, u8 *from, u32 len)
+int quic_data_from_string(struct quic_data *to, u8 *from, u32 len)
 {
+	u32 remlen = to->len;
 	struct quic_data d;
 	u8 *p = to->data;
 
 	to->len = 0;
 	while (len) {
-		d.data = p++;
-		d.len  = 1;
 		while (len && *from == ' ') {
 			from++;
 			len--;
 		}
+		if (!len)
+			break;
+		if (!remlen)
+			return -EOVERFLOW;
+		d.data = p++;
+		d.len  = 0;
+		remlen--;
 		while (len) {
 			if (*from == ',') {
 				from++;
 				len--;
 				break;
 			}
+			if (!remlen)
+				return -EOVERFLOW;
 			*p++ = *from++;
 			len--;
 			d.len++;
+			remlen--;
 		}
-		*d.data = (u8)(d.len - 1);
-		to->len += d.len;
+		if (d.len > U8_MAX)
+			return -EINVAL;
+		*d.data = (u8)(d.len);
+		to->len += d.len + 1;
 	}
+	return 0;
 }

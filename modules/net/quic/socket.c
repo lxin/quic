@@ -1838,8 +1838,7 @@ static int quic_sock_set_alpn(struct sock *sk, u8 *data, u32 len)
 	alpns->data = p;
 	alpns->len  = len + 1;
 
-	quic_data_from_string(alpns, data, len);
-	return 0;
+	return quic_data_from_string(alpns, data, len);
 }
 
 static int quic_sock_set_token(struct sock *sk, void *data, u32 len)
@@ -2267,6 +2266,7 @@ static int quic_sock_get_alpn(struct sock *sk, u32 len, sockptr_t optval, sockpt
 {
 	struct quic_data *alpns = quic_alpn(sk);
 	u8 data[QUIC_ALPN_MAX_LEN];
+	int err;
 
 	if (!alpns->len) {
 		len = 0;
@@ -2275,7 +2275,10 @@ static int quic_sock_get_alpn(struct sock *sk, u32 len, sockptr_t optval, sockpt
 	if (len < alpns->len)
 		return -EINVAL;
 
-	quic_data_to_string(data, &len, alpns);
+	len = QUIC_ALPN_MAX_LEN;
+	err = quic_data_to_string(data, &len, alpns);
+	if (err)
+		return err;
 
 out:
 	if (copy_to_sockptr(optlen, &len, sizeof(len)) || copy_to_sockptr(optval, data, len))

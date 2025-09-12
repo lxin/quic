@@ -212,8 +212,8 @@ u8 *quic_put_varint(u8 *p, u64 num, u8 len);
 u8 *quic_put_int(u8 *p, u64 num, u8 len);
 u8 *quic_put_var(u8 *p, u64 num);
 
-void quic_data_from_string(struct quic_data *to, u8 *from, u32 len);
-void quic_data_to_string(u8 *to, u32 *plen, struct quic_data *from);
+int quic_data_from_string(struct quic_data *to, u8 *from, u32 len);
+int quic_data_to_string(u8 *to, u32 *plen, struct quic_data *from);
 
 int quic_data_match(struct quic_data *d1, struct quic_data *d2);
 int quic_data_append(struct quic_data *to, u8 *data, u32 len);
