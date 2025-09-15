@@ -17,6 +17,10 @@
 
 #include "socket.h"
 
+#ifdef QUIC_OFFLOAD
+#include <linux/quic_offload.h>
+#endif
+
 static DEFINE_PER_CPU(int, quic_memory_per_cpu_fw_alloc);
 static unsigned long quic_memory_pressure;
 static atomic_long_t quic_memory_allocated;
@@ -1468,6 +1472,93 @@ free:
 	goto out;
 }
 
+#ifdef QUIC_OFFLOAD
+static void quic_sock_dev_add(struct sock *sk)
+{
+	struct quic_crypto *crypto = quic_crypto(sk, QUIC_CRYPTO_APP);
+	struct dst_entry *dst = __sk_dst_get(sk);
+	struct quic_crypto_info info = {};
+	struct quic_conn_id *conn_id;
+	struct net_device *dev;
+	u32 keylen, phase;
+
+	if (!dst || !dst->dev->quicdev_ops)
+		return;
+
+	quic_get_sk_addr(sk->sk_socket, (struct sockaddr *)&info.daddr, true);
+	quic_get_sk_addr(sk->sk_socket, (struct sockaddr *)&info.saddr, false);
+
+	dev = dst->dev;
+	phase = crypto->key_phase;
+	keylen = crypto->cipher->keylen;
+	info.cipher = crypto->cipher_type;
+
+	memcpy(info.data_key, crypto->tx_key[phase], keylen);
+	memcpy(info.iv, crypto->tx_iv[phase], QUIC_IV_LEN);
+	memcpy(info.hdr_key, crypto->tx_hp_key, keylen);
+
+	conn_id = quic_conn_id_active(quic_dest(sk));
+	memcpy(info.conn_id, conn_id->data, conn_id->len);
+	info.conn_id_len = conn_id->len;
+
+	if (!dev->quicdev_ops->quic_dev_add(dev, QUIC_CRYPTO_DIR_TX, &info))
+		crypto->send_offload = 1;
+
+	memcpy(info.data_key, crypto->rx_key[phase], keylen);
+	memcpy(info.iv, crypto->rx_iv[phase], QUIC_IV_LEN);
+	memcpy(info.hdr_key, crypto->rx_hp_key, keylen);
+
+	conn_id = quic_conn_id_active(quic_source(sk));
+	memcpy(info.conn_id, conn_id->data, conn_id->len);
+	info.conn_id_len = conn_id->len;
+
+	if (!dev->quicdev_ops->quic_dev_add(dev, QUIC_CRYPTO_DIR_RX, &info))
+		crypto->recv_offload = 1;
+}
+
+static void quic_sock_dev_del(struct sock *sk)
+{
+	struct quic_crypto *crypto = quic_crypto(sk, QUIC_CRYPTO_APP);
+	struct dst_entry *dst = __sk_dst_get(sk);
+	struct quic_crypto_info info = {};
+	struct quic_conn_id *conn_id;
+	struct net_device *dev;
+
+	if (!dst || !dst->dev->quicdev_ops)
+		return;
+
+	quic_get_sk_addr(sk->sk_socket, (struct sockaddr *)&info.daddr, true);
+	quic_get_sk_addr(sk->sk_socket, (struct sockaddr *)&info.saddr, false);
+
+	dev = dst->dev;
+	if (crypto->send_offload) {
+		conn_id = quic_conn_id_active(quic_dest(sk));
+		memcpy(info.conn_id, conn_id->data, conn_id->len);
+		info.conn_id_len = conn_id->len;
+
+		dev->quicdev_ops->quic_dev_del(dev, QUIC_CRYPTO_DIR_TX, &info);
+		crypto->send_offload = 0;
+	}
+
+	if (crypto->recv_offload) {
+		conn_id = quic_conn_id_active(quic_source(sk));
+		memcpy(info.conn_id, conn_id->data, conn_id->len);
+		info.conn_id_len = conn_id->len;
+
+		dev->quicdev_ops->quic_dev_del(dev, QUIC_CRYPTO_DIR_RX, &info);
+		crypto->recv_offload = 0;
+	}
+}
+#else
+static void quic_sock_dev_add(struct sock *sk)
+{
+}
+
+static void quic_sock_dev_del(struct sock *sk)
+{
+}
+#endif
+
 static void quic_close(struct sock *sk, long timeout)
 {
 	lock_sock_nested(sk, SINGLE_DEPTH_NESTING);
@@ -1475,6 +1566,7 @@ static void quic_close(struct sock *sk, long timeout)
 	quic_outq_transmit_app_close(sk);
 	quic_set_state(sk, QUIC_SS_CLOSED);
 	sk->sk_prot->unhash(sk);
+	quic_sock_dev_del(sk);
 
 	release_sock(sk);
 
@@ -2029,6 +2121,7 @@ out:
 	quic_set_state(sk, QUIC_SS_ESTABLISHED);
 	quic_timer_start(sk, QUIC_TIMER_PMTU, c->plpmtud_probe_interval);
 	quic_timer_reset_path(sk);
+	quic_sock_dev_add(sk);
 	return 0;
 }
 

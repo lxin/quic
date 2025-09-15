@@ -51,6 +51,8 @@ struct quic_crypto {
 	u32 version;				/* QUIC version in use */
 
 	u8 ticket_ready:1;			/* True if  a session ticket is ready to read */
+	u8 send_offload:1;			/* True if HW offload for send is enabled */
+	u8 recv_offload:1;			/* True if HW offload for recv is enabled */
 	u8 key_pending:1;			/* A key update is in progress */
 	u8 send_ready:1;			/* TX encryption context is initialized */
 	u8 recv_ready:1;			/* RX decryption context is initialized */

@@ -622,6 +622,11 @@ int quic_crypto_encrypt(struct quic_crypto *crypto, struct sk_buff *skb)
 	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
 	int err;
 
+	if (crypto->send_offload) {
+		skb->decrypted = 1;
+		return 0;
+	}
+
 	cb->key_phase = phase;
 	iv = crypto->tx_iv[phase];
 	/* Packet payload is already encrypted (e.g., resumed from async), proceed to header
@@ -662,7 +667,7 @@ int quic_crypto_decrypt(struct quic_crypto *crypto, struct sk_buff *skb)
 	/* Payload was decrypted asynchronously.  Proceed with parsing packet number and key
 	 * phase.
 	 */
-	if (cb->resume) {
+	if (cb->resume || skb->decrypted) {
 		quic_crypto_get_header(skb);
 		goto out;
 	}
