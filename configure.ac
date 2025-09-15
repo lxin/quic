@@ -23,6 +23,11 @@ if test "x$with_modules" != "xno"; then
 		AC_SUBST([KERNEL_EXTRA], [$kernel/extra])
 		test -f "$kernel/build/Makefile" || AC_MSG_ERROR([no kernel-devel found])
 		AC_CONFIG_FILES([modules/Makefile])
+
+		if test -f "$KERNEL_BUILD/include/linux/quic_offload.h"; then
+			AC_MSG_NOTICE([quic offload is enabled])
+			AC_SUBST([QUIC_OFFLOAD_FLAGS], [-DQUIC_OFFLOAD])
+		fi
 	fi
 else
 	AC_MSG_NOTICE([--without-modules specified, skipping kernel module build])

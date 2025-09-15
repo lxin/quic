@@ -3,7 +3,8 @@ MODULES		= quic_unit_test quic_sample_test quic
 
 all:
 	$(MAKE) -C $(KERNEL_BUILD) M=$(CURDIR)/net/quic modules \
-		ROOTDIR=$(CURDIR) CONFIG_IP_QUIC=m CONFIG_IP_QUIC_TEST=m
+		ROOTDIR=$(CURDIR) CONFIG_IP_QUIC=m CONFIG_IP_QUIC_TEST=m \
+		KCFLAGS="$(QUIC_OFFLOAD_FLAGS)"
 
 install: uninstall_modules install_headers install_modules depmod
 
