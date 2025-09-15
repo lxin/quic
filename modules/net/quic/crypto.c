@@ -173,28 +173,27 @@ static int quic_crypto_keys_derive(struct crypto_shash *tfm, struct quic_data *s
 static int quic_crypto_tx_keys_derive_and_install(struct quic_crypto *crypto)
 {
 	struct quic_data srt = {}, k, iv, hp_k = {}, *hp = NULL;
-	u8 tx_key[QUIC_KEY_LEN], tx_hp_key[QUIC_KEY_LEN];
 	int err, phase = crypto->key_phase;
 	u32 keylen, ivlen = QUIC_IV_LEN;
 
 	keylen = crypto->cipher->keylen;
 	quic_data(&srt, crypto->tx_secret, crypto->cipher->secretlen);
-	quic_data(&k, tx_key, keylen);
+	quic_data(&k, crypto->tx_key[phase], keylen);
 	quic_data(&iv, crypto->tx_iv[phase], ivlen);
 	/* Only derive header protection key when not in key update. */
 	if (!crypto->key_pending)
-		hp = quic_data(&hp_k, tx_hp_key, keylen);
+		hp = quic_data(&hp_k, crypto->tx_hp_key, keylen);
 	err = quic_crypto_keys_derive(crypto->secret_tfm, &srt, &k, &iv, hp, crypto->version);
 	if (err)
 		return err;
 	err = crypto_aead_setauthsize(crypto->tx_tfm[phase], QUIC_TAG_LEN);
 	if (err)
 		return err;
-	err = crypto_aead_setkey(crypto->tx_tfm[phase], tx_key, keylen);
+	err = crypto_aead_setkey(crypto->tx_tfm[phase], crypto->tx_key[phase], keylen);
 	if (err)
 		return err;
 	if (hp) {
-		err = crypto_skcipher_setkey(crypto->tx_hp_tfm, tx_hp_key, keylen);
+		err = crypto_skcipher_setkey(crypto->tx_hp_tfm, crypto->tx_hp_key, keylen);
 		if (err)
 			return err;
 	}
@@ -208,28 +207,27 @@ static int quic_crypto_tx_keys_derive_and_install(struct quic_crypto *crypto)
 static int quic_crypto_rx_keys_derive_and_install(struct quic_crypto *crypto)
 {
 	struct quic_data srt = {}, k, iv, hp_k = {}, *hp = NULL;
-	u8 rx_key[QUIC_KEY_LEN], rx_hp_key[QUIC_KEY_LEN];
 	int err, phase = crypto->key_phase;
 	u32 keylen, ivlen = QUIC_IV_LEN;
 
 	keylen = crypto->cipher->keylen;
 	quic_data(&srt, crypto->rx_secret, crypto->cipher->secretlen);
-	quic_data(&k, rx_key, keylen);
+	quic_data(&k, crypto->rx_key[phase], keylen);
 	quic_data(&iv, crypto->rx_iv[phase], ivlen);
 	/* Only derive header protection key when not in key update. */
 	if (!crypto->key_pending)
-		hp = quic_data(&hp_k, rx_hp_key, keylen);
+		hp = quic_data(&hp_k, crypto->rx_hp_key, keylen);
 	err = quic_crypto_keys_derive(crypto->secret_tfm, &srt, &k, &iv, hp, crypto->version);
 	if (err)
 		return err;
 	err = crypto_aead_setauthsize(crypto->rx_tfm[phase], QUIC_TAG_LEN);
 	if (err)
 		return err;
-	err = crypto_aead_setkey(crypto->rx_tfm[phase], rx_key, keylen);
+	err = crypto_aead_setkey(crypto->rx_tfm[phase], crypto->rx_key[phase], keylen);
 	if (err)
 		return err;
 	if (hp) {
-		err = crypto_skcipher_setkey(crypto->rx_hp_tfm, rx_hp_key, keylen);
+		err = crypto_skcipher_setkey(crypto->rx_hp_tfm, crypto->rx_hp_key, keylen);
 		if (err)
 			return err;
 	}
