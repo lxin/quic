@@ -357,11 +357,14 @@ static const struct snmp_mib quic_snmp_list[] = {
 	SNMP_MIB_ITEM("QuicFrmRetrans", QUIC_MIB_FRM_RETRANS),
 	SNMP_MIB_ITEM("QuicFrmOutCloses", QUIC_MIB_FRM_OUTCLOSES),
 	SNMP_MIB_ITEM("QuicFrmInCloses", QUIC_MIB_FRM_INCLOSES),
+#ifndef snmp_get_cpu_field_batch_cnt
 	SNMP_MIB_SENTINEL
+#endif
 };
 
 static int quic_snmp_seq_show(struct seq_file *seq, void *v)
 {
+#ifndef snmp_get_cpu_field_batch_cnt
 	unsigned long buff[QUIC_MIB_MAX];
 	struct net *net = seq->private;
 	u32 idx;
@@ -370,6 +373,17 @@ static int quic_snmp_seq_show(struct seq_file *seq, void *v)
 
 	snmp_get_cpu_field_batch(buff, quic_snmp_list, quic_net(net)->stat);
 	for (idx = 0; quic_snmp_list[idx].name; idx++)
+#else
+	unsigned long buff[ARRAY_SIZE(quic_snmp_list)];
+	const int cnt = ARRAY_SIZE(quic_snmp_list);
+	struct net *net = seq->private;
+	u32 idx;
+
+	memset(buff, 0, sizeof(buff));
+
+	snmp_get_cpu_field_batch_cnt(buff, quic_snmp_list, cnt, quic_net(net)->stat);
+	for (idx = 0; idx < cnt; idx++)
+#endif
 		seq_printf(seq, "%-32s\t%ld\n", quic_snmp_list[idx].name, buff[idx]);
 
 	return 0;

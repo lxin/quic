@@ -76,7 +76,11 @@ static int quic_v4_flow_route(struct sock *sk, union quic_addr *da, union quic_a
 	fl4->flowi4_oif = sk->sk_bound_dev_if;
 
 	fl4->flowi4_scope = ip_sock_rt_scope(sk);
+#ifdef flowi4_dscp
+	fl4->flowi4_dscp = inet_sk_dscp(inet_sk(sk));
+#else
 	fl4->flowi4_tos = ip_sock_rt_tos(sk);
+#endif
 
 	rt = ip_route_output_key(sock_net(sk), fl4);
 	if (IS_ERR(rt))
@@ -160,8 +164,13 @@ static void quic_v4_lower_xmit(struct sock *sk, struct sk_buff *skb, struct flow
 		df = htons(IP_DF);
 
 	ttl = (u8)ip4_dst_hoplimit(dst);
+#ifdef IPSKB_MCROUTE
+	udp_tunnel_xmit_skb((struct rtable *)dst, sk, skb, fl4->saddr, fl4->daddr,
+			    tos, ttl, df, fl4->fl4_sport, fl4->fl4_dport, false, false, 0);
+#else
 	udp_tunnel_xmit_skb((struct rtable *)dst, sk, skb, fl4->saddr, fl4->daddr,
 			    tos, ttl, df, fl4->fl4_sport, fl4->fl4_dport, false, false);
+#endif
 }
 
 static void quic_v6_lower_xmit(struct sock *sk, struct sk_buff *skb, struct flowi *fl)
@@ -184,8 +193,13 @@ static void quic_v6_lower_xmit(struct sock *sk, struct sk_buff *skb, struct flow
 
 	ttl = (u8)ip6_dst_hoplimit(dst);
 	label = ip6_make_flowlabel(sock_net(sk), skb, fl6->flowlabel, true, fl6);
+#ifdef IPSKB_MCROUTE
+	udp_tunnel6_xmit_skb(dst, sk, skb, NULL, &fl6->saddr, &fl6->daddr, tc,
+			     ttl, label, fl6->fl6_sport, fl6->fl6_dport, false, 0);
+#else
 	udp_tunnel6_xmit_skb(dst, sk, skb, NULL, &fl6->saddr, &fl6->daddr, tc,
 			     ttl, label, fl6->fl6_sport, fl6->fl6_dport, false);
+#endif
 }
 
 static void quic_v4_get_msg_addrs(struct sk_buff *skb, union quic_addr *da, union quic_addr *sa)

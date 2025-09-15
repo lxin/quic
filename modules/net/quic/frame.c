@@ -10,7 +10,12 @@
  *    Xin Long <lucien.xin@gmail.com>
  */
 
+#include <linux/version.h>
 #include "socket.h"
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 10, 0)
+#include <net/proto_memory.h>
+#endif
 
 static bool quic_frame_copy_from_iter_full(void *addr, size_t bytes, struct iov_iter *i)
 {
@@ -1631,7 +1636,7 @@ static int quic_frame_data_blocked_process(struct sock *sk, struct quic_frame *f
 	 * Similar to quic_inq_flow_control(), but MAX_DATA is sent unconditionally.
 	 */
 	window = inq->max_data;
-	if (quic_under_memory_pressure(sk))
+	if (sk_under_memory_pressure(sk))
 		window >>= 1;
 
 	inq->max_bytes = inq->bytes + window;
@@ -1677,7 +1682,7 @@ static int quic_frame_stream_data_blocked_process(struct sock *sk, struct quic_f
 
 	/* Follows the same processing logic as quic_frame_data_blocked_process(). */
 	window = stream->recv.window;
-	if (quic_under_memory_pressure(sk))
+	if (sk_under_memory_pressure(sk))
 		window >>= 1;
 
 	recv_max_bytes = stream->recv.max_bytes;

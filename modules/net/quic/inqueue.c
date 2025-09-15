@@ -10,7 +10,12 @@
  *    Xin Long <lucien.xin@gmail.com>
  */
 
+#include <linux/version.h>
 #include "socket.h"
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 10, 0)
+#include <net/proto_memory.h>
+#endif
 
 /* Frees socket receive memory resources after read. */
 static void quic_inq_rfree(int len, struct sock *sk)
@@ -56,7 +61,7 @@ void quic_inq_flow_control(struct sock *sk, struct quic_stream *stream, u32 byte
 	if (inq->bytes + window - inq->max_bytes >=
 	    max(mss, (window >> QUIC_INQ_RWND_SHIFT))) {
 		/* Reduce window increment if memory pressure detected. */
-		if (quic_under_memory_pressure(sk))
+		if (sk_under_memory_pressure(sk))
 			window >>= 1;
 		/* Increase advertised max data to received data + window. */
 		inq->max_bytes = inq->bytes + window;
@@ -69,7 +74,7 @@ void quic_inq_flow_control(struct sock *sk, struct quic_stream *stream, u32 byte
 	if (stream->recv.state < QUIC_STREAM_RECV_STATE_RECVD &&
 	    stream->recv.bytes + window - stream->recv.max_bytes >=
 	    max(mss, (window >> QUIC_INQ_RWND_SHIFT))) {
-		if (quic_under_memory_pressure(sk))
+		if (sk_under_memory_pressure(sk))
 			window >>= 1;
 		stream->recv.max_bytes = stream->recv.bytes + window;
 		if (!quic_outq_transmit_frame(sk, QUIC_FRAME_MAX_STREAM_DATA, stream, 0, true))
