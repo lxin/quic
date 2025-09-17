@@ -623,7 +623,7 @@ static int quic_msghdr_parse(struct sock *sk, struct msghdr *msg, struct quic_ha
 	if (msg->msg_flags & ~QUIC_MSG_FLAGS) /* Reject unsupported flags. */
 		return -EINVAL;
 
-	if (quic_is_closed(sk))
+	if (quic_is_closed(sk) || quic_is_listen(sk))
 		return -EPIPE;
 
 	sinfo->stream_id = -1;
