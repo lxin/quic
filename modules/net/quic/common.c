@@ -516,23 +516,31 @@ int quic_data_match(struct quic_data *d1, struct quic_data *d2)
  */
 int quic_data_to_string(u8 *to, u32 *plen, struct quic_data *from)
 {
-	u32 maxlen = *plen;
+	u32 remlen = *plen;
 	struct quic_data d;
 	u8 *data = to, *p;
 	u64 length;
 	u32 len;
 
-	for (p = from->data, len = from->len; len; len -= length, p += length) {
-		quic_get_int(&p, &len, &length, 1);
+	p = from->data;
+	len = from->len;
+	while (len) {
+		if (!quic_get_int(&p, &len, &length, 1) || len < length)
+			return -EINVAL;
+
 		quic_data(&d, p, length);
-		if ((data - to) + d.len > maxlen)
+		if (d.len > remlen)
 			return -EOVERFLOW;
 
 		data = quic_put_data(data, d.data, d.len);
-		if (len - length) {
-			if ((data - to) + 1 > maxlen)
+		remlen -= d.len;
+		p += d.len;
+		len -= d.len;
+		if (len) {
+			if (!remlen)
 				return -EOVERFLOW;
 			data = quic_put_int(data, ',', 1);
+			remlen--;
 		}
 	}
 	*plen = data - to;
