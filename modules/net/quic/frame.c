@@ -17,16 +17,6 @@
 #include <net/proto_memory.h>
 #endif
 
-static bool quic_frame_copy_from_iter_full(void *addr, size_t bytes, struct iov_iter *i)
-{
-	size_t copied = _copy_from_iter(addr, bytes, i);
-
-	if (likely(copied == bytes))
-		return true;
-	iov_iter_revert(i, copied);
-	return false;
-}
-
 /* rfc9000#section-19.3:
  *
  * ACK or ACK_ECN Frame {
@@ -308,7 +298,7 @@ static struct quic_frame *quic_frame_stream_create(struct sock *sk, void *data, 
 			return NULL;
 		}
 		/* Copy user data into the frame fragment. */
-		if (!quic_frame_copy_from_iter_full(frag->data, msg_len, info->msg)) {
+		if (!copy_from_iter_full(frag->data, msg_len, info->msg)) {
 			quic_frame_put(frame);
 			kfree(frag);
 			return NULL;
@@ -402,7 +392,7 @@ static struct quic_frame *quic_frame_crypto_create(struct sock *sk, void *data, 
 	p = quic_put_var(frame->data, type);
 	p = quic_put_var(p, offset);
 	p = quic_put_var(p, msg_len);
-	if (!quic_frame_copy_from_iter_full(p, msg_len, info->msg)) {
+	if (!copy_from_iter_full(p, msg_len, info->msg)) {
 		quic_frame_put(frame);
 		return NULL;
 	}
@@ -1826,7 +1816,7 @@ static struct quic_frame *quic_frame_datagram_create(struct sock *sk, void *data
 	/* To make things simple, only create DATAGRAM_LEN frame with Length encoded. */
 	p = quic_put_var(p, msg_len);
 
-	if (!quic_frame_copy_from_iter_full(p, msg_len, msg)) {
+	if (!copy_from_iter_full(p, msg_len, msg)) {
 		quic_frame_put(frame);
 		return NULL;
 	}
@@ -2305,7 +2295,7 @@ int quic_frame_stream_append(struct sock *sk, struct quic_frame *frame,
 		frag = quic_frame_frag_alloc(msg_len);
 		if (!frag)
 			return -1;
-		if (!quic_frame_copy_from_iter_full(frag->data, msg_len, info->msg)) {
+		if (!copy_from_iter_full(frag->data, msg_len, info->msg)) {
 			kfree(frag);
 			return -1;
 		}
