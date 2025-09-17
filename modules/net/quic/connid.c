@@ -105,7 +105,7 @@ int quic_conn_id_add(struct quic_conn_id_set *id_set,
 	list = &id_set->head;
 	list_for_each_entry(common, list, list) {
 		if (number == common->number)
-			return 0; /* Ignore if it is already exists on the list. */
+			return 0; /* Ignore if it already exists on the list. */
 		if (number < common->number) {
 			list = &common->list;
 			break;

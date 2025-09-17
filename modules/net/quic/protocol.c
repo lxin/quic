@@ -198,7 +198,7 @@ static struct ctl_table quic_table[] = {
 		.data		= &sysctl_quic_alpn_demux,
 		.maxlen		= sizeof(sysctl_quic_alpn_demux),
 		.mode		= 0644,
-		.proc_handler   = proc_dointvec_minmax,
+		.proc_handler	= proc_dointvec_minmax,
 		.extra1		= SYSCTL_ZERO,
 		.extra2		= SYSCTL_ONE,
 	},
@@ -320,7 +320,8 @@ static void *quic_eps_seq_start(struct seq_file *seq, loff_t *pos)
 		*pos = 0;
 
 	if (*pos == 0)
-		seq_printf(seq, "SOCK\tSTATE\tLOCAL_ADDRESS\tUDP_ADDRESS\tUID\tINODE\n");
+		seq_printf(seq, "SOCK\tSTATE\tLOCAL_ADDRESS\tUDP_ADDRESS\t"
+				"UID\tINODE\n");
 
 	return (void *)pos;
 }
