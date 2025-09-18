@@ -15,8 +15,8 @@
 
 #define QUIC_TOKEN_FLAG_REGULAR		0
 #define QUIC_TOKEN_FLAG_RETRY		1
-#define QUIC_TOKEN_TIMEOUT_REGULAR	3000000
-#define QUIC_TOKEN_TIMEOUT_RETRY	600000000
+#define QUIC_TOKEN_TIMEOUT_RETRY	3000000
+#define QUIC_TOKEN_TIMEOUT_REGULAR	600000000
 
 struct quic_cipher {
 	u32 secretlen;			/* Length of the traffic secret */
