@@ -900,6 +900,8 @@ static int quic_packet_listen_process(struct sock *sk, struct sk_buff *skb)
 			kfree_skb(skb);
 			return -EINVAL;
 		}
+		/* Read Destination address (packet->saddr) and Source address (packet->daddr). */
+		quic_get_msg_addrs(skb, &packet->saddr, &packet->daddr);
 		/* We currently only issue Connection ID with size QUIC_CONN_ID_DEF_LEN. */
 		quic_conn_id_update(&packet->dcid, (u8 *)quic_hdr(skb) + QUIC_HLEN,
 				    QUIC_CONN_ID_DEF_LEN);
