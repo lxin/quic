@@ -1,7 +1,15 @@
-"socket", "socketpair", "setsockopt", "getsockopt", "getsockname", "getpeername",
-"bind", "listen", "connect", "accept", "accept4", "close", "shutdown",
-"sendmsg", "sendmmsg", "sendto", "recvmsg", "recvmmsg", "recvfrom",
-"socket$inet_quic", "socket$inet6_quic",
-"epoll_create", "epoll_create1", "epoll_ctl", "epoll_wait", "epoll_pwait", "epoll_pwait2",
-"mmap", "poll", "ppoll", "pread64", "preadv", "select", "pselect6", "sendfile",
-"ioctl$sock_quic_SIOCINQ", "ioctl$sock_quic_SIOCOUTQ", "ioctl$sock_quic_SIOCOUTQNSD"
+"enable_syscalls" : [
+  "socket$inet_quic",
+  "socket$inet6_quic",
+  "getsockopt$inet_quic6_*",
+  "getsockopt$inet_quic_*",
+  "setsockopt$inet_quic6_*",
+  "setsockopt$inet_quic_*",
+  "ioctl$sock_inet6_quic_*",
+  "ioctl$sock_inet_quic_*",
+  "getsockname", "getpeername",
+  "bind", "listen", "connect", "accept", "accept4", "close", "shutdown",
+  "sendmsg", "sendmmsg", "sendto", "recvmsg", "recvmmsg", "recvfrom",
+  "epoll_create", "epoll_create1", "epoll_ctl", "epoll_wait", "epoll_pwait", "epoll_pwait2",
+  "mmap", "poll", "ppoll", "pread64", "preadv", "select", "pselect6", "sendfile"
+],

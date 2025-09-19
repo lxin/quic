@@ -17,9 +17,11 @@ resource sock_quic6[sock_in6]
 
 socket$inet6_quic(domain const[AF_INET6], type flags[quic_socket_type], proto const[IPPROTO_QUIC]) sock_quic6
 
-# TODO: separate for ip & ipv6
 sendmsg$inet_quic(fd sock_quic, msg ptr[in, msghdr_quic], f flags[send_flags])
+sendmsg$inet_quic6(fd sock_quic6, msg ptr[in, msghdr_quic], f flags[send_flags])
+
 sendmmsg$inet_quic(fd sock_quic, mmsg ptr[in, array[msghdr_quic]], vlen len[mmsg], f flags[send_flags])
+sendmmsg$inet_quic6(fd sock_quic6, mmsg ptr[in, array[msghdr_quic]], vlen len[mmsg], f flags[send_flags])
 
 msghdr_quic {
 	addr		ptr[in, sockaddr_quic]
@@ -183,6 +185,11 @@ quic_crypto_secret {
 	secret		array[int8, 48]
 }
 
-ioctl$sock_quic_SIOCOUTQ(fd sock, cmd const[SIOCOUTQ], arg ptr[out, int32])
-ioctl$sock_quic_SIOCINQ(fd sock, cmd const[SIOCINQ], arg ptr[out, int32])
-ioctl$sock_quic_SIOCOUTQNSD(fd sock, cmd const[SIOCOUTQNSD], arg ptr[out, int32])
+ioctl$sock_inet_quic_SIOCINQ(fd sock_quic, cmd const[SIOCINQ], arg ptr[out, int32])
+ioctl$sock_inet6_quic_SIOCINQ(fd sock_quic6, cmd const[SIOCINQ], arg ptr[out, int32])
+
+ioctl$sock_inet_quic_SIOCOUTQ(fd sock_quic, cmd const[SIOCOUTQ], arg ptr[out, int32])
+ioctl$sock_inet6_quic_SIOCOUTQ(fd sock_quic6, cmd const[SIOCOUTQ], arg ptr[out, int32])
+
+ioctl$sock_inet_quic_SIOCOUTQNSD(fd sock_quic, cmd const[SIOCOUTQNSD], arg ptr[out, int32])
+ioctl$sock_inet6_quic_SIOCOUTQNSD(fd sock_quic6, cmd const[SIOCOUTQNSD], arg ptr[out, int32])
