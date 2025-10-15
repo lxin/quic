@@ -49,7 +49,9 @@ enum quic_msg_flags {
 
 	/* extented flags for msg_flags */
 	MSG_DATAGRAM		= MSG_RST,
+#ifndef MSG_NOTIFICATION
 	MSG_NOTIFICATION	= MSG_MORE,
+#endif
 };
 
 enum quic_crypto_level {
