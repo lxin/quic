@@ -79,7 +79,7 @@ static void quic_stream_delete(struct quic_stream *stream)
 static struct quic_stream *quic_stream_send_create(struct quic_stream_table *streams,
 						   s64 max_stream_id, u8 is_serv)
 {
-	struct quic_stream *stream;
+	struct quic_stream *stream = NULL;
 	s64 stream_id;
 
 	stream_id = streams->send.next_bidi_stream_id;
@@ -90,7 +90,7 @@ static struct quic_stream *quic_stream_send_create(struct quic_stream_table *str
 	 * of that type with lower-numbered stream IDs also being opened.
 	 */
 	while (stream_id <= max_stream_id) {
-		stream = kzalloc(sizeof(*stream), GFP_KERNEL);
+		stream = kzalloc(sizeof(*stream), GFP_KERNEL_ACCOUNT);
 		if (!stream)
 			return NULL;
 
@@ -130,7 +130,7 @@ static struct quic_stream *quic_stream_send_create(struct quic_stream_table *str
 static struct quic_stream *quic_stream_recv_create(struct quic_stream_table *streams,
 						   s64 max_stream_id, u8 is_serv)
 {
-	struct quic_stream *stream;
+	struct quic_stream *stream = NULL;
 	s64 stream_id;
 
 	stream_id = streams->recv.next_bidi_stream_id;
@@ -141,7 +141,7 @@ static struct quic_stream *quic_stream_recv_create(struct quic_stream_table *str
 	 * of that type with lower-numbered stream IDs also being opened.
 	 */
 	while (stream_id <= max_stream_id) {
-		stream = kzalloc(sizeof(*stream), GFP_ATOMIC);
+		stream = kzalloc(sizeof(*stream), GFP_ATOMIC | __GFP_ACCOUNT);
 		if (!stream)
 			return NULL;
 
