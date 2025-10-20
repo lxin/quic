@@ -10,6 +10,8 @@
  *    Xin Long <lucien.xin@gmail.com>
  */
 
+#include <linux/vmalloc.h>
+
 #include "common.h"
 
 #define QUIC_VARINT_1BYTE_MAX		0x3fULL
@@ -82,13 +84,13 @@ struct quic_uhash_head *quic_udp_sock_head(struct net *net, u16 port)
 
 static void quic_shash_table_free(struct quic_shash_table *ht)
 {
-	free_pages((unsigned long)ht->hash, get_order(ht->size * sizeof(struct quic_shash_head)));
+	vfree(ht->hash);
 	ht->hash = NULL;
 }
 
 static void quic_uhash_table_free(struct quic_uhash_table *ht)
 {
-	free_pages((unsigned long)ht->hash, get_order(ht->size * sizeof(struct quic_uhash_head)));
+	vfree(ht->hash);
 	ht->hash = NULL;
 }
 
@@ -100,25 +102,15 @@ void quic_hash_tables_destroy(void)
 	quic_uhash_table_free(&quic_hashinfo.uhash);
 }
 
-static int quic_shash_table_init(struct quic_shash_table *ht, u32 max_size, int order)
+static int quic_shash_table_init(struct quic_shash_table *ht, u32 size)
 {
-	int i, max_order, size;
+	int i;
 
-	max_order = get_order(max_size * sizeof(struct quic_shash_head));
-	order = min(order, max_order);
-	/* Try to allocate hash buckets; if fails, retry with smaller order. */
-	do {
-		ht->hash = (struct quic_shash_head *)
-			__get_free_pages(GFP_KERNEL | __GFP_NOWARN, order);
-	} while (!ht->hash && --order > 0);
-
+	ht->hash = vmalloc(size * sizeof(struct quic_shash_head));
 	if (!ht->hash)
 		return -ENOMEM;
 
-	/* Calculate actual number of buckets from allocated memory. */
-	size = (1UL << order) * PAGE_SIZE / sizeof(struct quic_shash_head);
-	/* Round down to power of two (simplifies masking in hash functions). */
-	ht->size = rounddown_pow_of_two(size);
+	ht->size = size;
 	for (i = 0; i < ht->size; i++) {
 		rwlock_init(&ht->hash[i].lock);
 		INIT_HLIST_HEAD(&ht->hash[i].head);
@@ -126,23 +118,15 @@ static int quic_shash_table_init(struct quic_shash_table *ht, u32 max_size, int 
 	return 0;
 }
 
-static int quic_uhash_table_init(struct quic_uhash_table *ht, u32 max_size, int order)
+static int quic_uhash_table_init(struct quic_uhash_table *ht, u32 size)
 {
-	int i, max_order, size;
+	int i;
 
-	/* Same sizing logic as in quic_shash_table_init(). */
-	max_order = get_order(max_size * sizeof(struct quic_uhash_head));
-	order = min(order, max_order);
-	do {
-		ht->hash = (struct quic_uhash_head *)
-			__get_free_pages(GFP_KERNEL | __GFP_NOWARN, order);
-	} while (!ht->hash && --order > 0);
-
+	ht->hash = vmalloc(size * sizeof(struct quic_uhash_head));
 	if (!ht->hash)
 		return -ENOMEM;
 
-	size = (1UL << order) * PAGE_SIZE / sizeof(struct quic_uhash_head);
-	ht->size = rounddown_pow_of_two(size);
+	ht->size = size;
 	for (i = 0; i < ht->size; i++) {
 		mutex_init(&ht->hash[i].lock);
 		INIT_HLIST_HEAD(&ht->hash[i].head);
@@ -153,27 +137,30 @@ static int quic_uhash_table_init(struct quic_uhash_table *ht, u32 max_size, int 
 int quic_hash_tables_init(void)
 {
 	unsigned long nr_pages = totalram_pages();
-	unsigned long goal;
-	int err, order;
+	u32 limit, size;
+	int err;
 
-	/* Calculate the hashtable size similar to SCTP in sctp_init(). */
+	/* Scale hash table size based on system memory, similar to SCTP. */
 	if (nr_pages >= (128 * 1024))
-		goal = nr_pages >> (22 - PAGE_SHIFT);
+		limit = nr_pages >> (22 - PAGE_SHIFT);
 	else
-		goal = nr_pages >> (24 - PAGE_SHIFT);
-	order = get_order(goal);
+		limit = nr_pages >> (24 - PAGE_SHIFT);
+
+	limit = roundup_pow_of_two(limit);
 
 	/* Source connection ID table (fast lookup, larger size) */
-	err = quic_shash_table_init(&quic_hashinfo.shash, 64 * 1024, order);
+	size = min(limit, 64 * 1024U);
+	err = quic_shash_table_init(&quic_hashinfo.shash, size);
 	if (err)
 		goto err;
-	err = quic_shash_table_init(&quic_hashinfo.lhash, 16 * 1024, order);
+	size = min(limit, 16 * 1024U);
+	err = quic_shash_table_init(&quic_hashinfo.lhash, size);
 	if (err)
 		goto err;
-	err = quic_shash_table_init(&quic_hashinfo.chash, 16 * 1024, order);
+	err = quic_shash_table_init(&quic_hashinfo.chash, size);
 	if (err)
 		goto err;
-	err = quic_uhash_table_init(&quic_hashinfo.uhash, 16 * 1024, order);
+	err = quic_uhash_table_init(&quic_hashinfo.uhash, size);
 	if (err)
 		goto err;
 	return 0;
