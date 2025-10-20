@@ -8,8 +8,7 @@
  *    Xin Long <lucien.xin@gmail.com>
  */
 
-#define QUIC_PN_MAX_GABS	32
-#define QUIC_PN_MAP_MAX_PN	(BIT_ULL(62) - 1)
+#define QUIC_PN_MAP_MAX_GABS	32
 
 #define QUIC_PN_MAP_INITIAL	64
 #define QUIC_PN_MAP_INCREMENT	QUIC_PN_MAP_INITIAL

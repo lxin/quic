@@ -2009,7 +2009,7 @@ done:
 	}
 
 	/* Clean up transmitted handshake packets. */
-	quic_outq_transmitted_sack(sk, QUIC_CRYPTO_HANDSHAKE, QUIC_PN_MAP_MAX_PN, 0, -1, 0);
+	quic_outq_transmitted_sack(sk, QUIC_CRYPTO_HANDSHAKE, QUIC_PN_MAX, 0, -1, 0);
 	if (paths->pref_addr) {
 		/* If a preferred address is set, bind to it to allow client use at any time. */
 		err = quic_path_bind(sk, paths, 1);

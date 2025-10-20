@@ -1403,7 +1403,7 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb)
 				 */
 				paths->validated = 1;
 				quic_outq_transmitted_sack(sk, QUIC_CRYPTO_INITIAL,
-							   QUIC_PN_MAP_MAX_PN, 0, -1, 0);
+							   QUIC_PN_MAX, 0, -1, 0);
 			}
 		}
 
@@ -1803,7 +1803,7 @@ void quic_packet_backlog_work(struct work_struct *work)
 }
 
 /* Make these fixed for easy coding. */
-#define QUIC_PACKET_NUMBER_LEN	4
+#define QUIC_PACKET_NUMBER_LEN	QUIC_PN_MAX_LEN
 #define QUIC_PACKET_LENGTH_LEN	4
 
 #define QUIC_MAX_ECN_PROBES	3
@@ -2104,7 +2104,7 @@ static int quic_packet_number_check(struct sock *sk)
 
 	/* Check if the next packet number is within the allowed range. */
 	space = quic_pnspace(sk, packet->level);
-	if (space->next_pn + 1 <= QUIC_PN_MAP_MAX_PN)
+	if (space->next_pn + 1 <= QUIC_PN_MAX)
 		return 0;
 
 	/* Move pending frames back to the outqueue. */

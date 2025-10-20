@@ -22,6 +22,10 @@
 #define QUIC_CONN_ID_MAX_LEN	20
 #define QUIC_CONN_ID_DEF_LEN	8
 
+#define QUIC_PN_MAX_LEN		4	/* For encoded packet number */
+#define QUIC_PN_BITS		62
+#define QUIC_PN_MAX		(BIT_ULL(QUIC_PN_BITS) - 1)
+
 struct quic_conn_id {
 	u8 data[QUIC_CONN_ID_MAX_LEN];
 	u8 len;

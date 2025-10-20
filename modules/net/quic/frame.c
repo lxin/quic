@@ -47,7 +47,7 @@
  */
 static struct quic_frame *quic_frame_ack_create(struct sock *sk, void *data, u8 type)
 {
-	struct quic_gap_ack_block gabs[QUIC_PN_MAX_GABS];
+	struct quic_gap_ack_block gabs[QUIC_PN_MAP_MAX_GABS];
 	u64 largest, smallest, range, delay, *ecn_count;
 	struct quic_outqueue *outq = quic_outq(sk);
 	u8 *p, level = *((u8 *)data);
@@ -1045,7 +1045,7 @@ static int quic_frame_ack_process(struct sock *sk, struct quic_frame *frame, u8 
 
 	if (!quic_get_var(&p, &len, &largest) ||
 	    !quic_get_var(&p, &len, &delay) ||
-	    !quic_get_var(&p, &len, &count) || count > QUIC_PN_MAX_GABS ||
+	    !quic_get_var(&p, &len, &count) || count > QUIC_PN_MAP_MAX_GABS ||
 	    !quic_get_var(&p, &len, &range))
 		return -EINVAL;
 
@@ -1264,7 +1264,7 @@ static int quic_frame_handshake_done_process(struct sock *sk, struct quic_frame 
 	}
 
 	/* Handshake is complete and clean up transmitted handshake packets. */
-	quic_outq_transmitted_sack(sk, QUIC_CRYPTO_HANDSHAKE, QUIC_PN_MAP_MAX_PN, 0, -1, 0);
+	quic_outq_transmitted_sack(sk, QUIC_CRYPTO_HANDSHAKE, QUIC_PN_MAX, 0, -1, 0);
 
 	if (paths->pref_addr) {
 		/* Initiate probing on the new path to validate it (e.g., send PATH_CHALLENGE).
@@ -1743,7 +1743,7 @@ static int quic_frame_path_response_process(struct sock *sk, struct quic_frame *
 		goto out;
 
 	/* Peer's application key is ready and clean up transmitted handshake packets. */
-	quic_outq_transmitted_sack(sk, QUIC_CRYPTO_HANDSHAKE, QUIC_PN_MAP_MAX_PN, 0, -1, 0);
+	quic_outq_transmitted_sack(sk, QUIC_CRYPTO_HANDSHAKE, QUIC_PN_MAX, 0, -1, 0);
 
 	if (!quic_path_alt_state(paths, QUIC_PATH_ALT_PROBING))
 		goto out;

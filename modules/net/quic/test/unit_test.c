@@ -26,7 +26,7 @@
 static void quic_pnspace_test1(struct kunit *test)
 {
 	struct quic_pnspace _space = {}, *space = &_space;
-	struct quic_gap_ack_block gabs[QUIC_PN_MAX_GABS];
+	struct quic_gap_ack_block gabs[QUIC_PN_MAP_MAX_GABS];
 	int i;
 
 	KUNIT_ASSERT_EQ(test, 0, quic_pnspace_init(space));
@@ -162,7 +162,7 @@ static void quic_pnspace_test1(struct kunit *test)
 static void quic_pnspace_test2(struct kunit *test)
 {
 	struct quic_pnspace _space = {}, *space = &_space;
-	struct quic_gap_ack_block gabs[QUIC_PN_MAX_GABS];
+	struct quic_gap_ack_block gabs[QUIC_PN_MAP_MAX_GABS];
 
 	KUNIT_ASSERT_EQ(test, 0, quic_pnspace_init(space));
 	space->time = jiffies_to_usecs(jiffies);

@@ -416,7 +416,7 @@ s64 quic_get_num(s64 max_pkt_num, s64 pkt_num, u32 n)
 	s64 cand;
 
 	cand = (expected & ~mask) | pkt_num;
-	if (cand <= expected - hwin && cand < (1ULL << 62) - win)
+	if (cand <= expected - hwin && cand < BIT_ULL(QUIC_PN_BITS) - win)
 		return cand + win;
 	if (cand > expected + hwin && cand >= win)
 		return cand - win;

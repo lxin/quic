@@ -265,7 +265,6 @@ static void *quic_crypto_skcipher_mem_alloc(struct crypto_skcipher *tfm, u32 mas
 }
 
 #define QUIC_SAMPLE_LEN		16
-#define QUIC_MAX_PN_LEN		4
 
 #define QUIC_HEADER_FORM_BIT	0x80
 #define QUIC_LONG_HEADER_MASK	0x0f
@@ -303,7 +302,7 @@ static int quic_crypto_header_encrypt(struct crypto_skcipher *tfm, struct sk_buf
 	 *     nonce = sample[4..15]
 	 *     mask = ChaCha20(hp_key, counter, nonce, {0,0,0,0,0})
 	 */
-	memcpy((chacha ? iv : mask), skb->data + cb->number_offset + QUIC_MAX_PN_LEN,
+	memcpy((chacha ? iv : mask), skb->data + cb->number_offset + QUIC_PN_MAX_LEN,
 	       QUIC_SAMPLE_LEN);
 	sg_init_one(&sg, mask, QUIC_SAMPLE_LEN);
 	skcipher_request_set_tfm(req, tfm);
@@ -343,7 +342,7 @@ static void quic_crypto_get_header(struct sk_buff *skb)
 {
 	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
 	struct quichdr *hdr = quic_hdr(skb);
-	u32 len = QUIC_MAX_PN_LEN;
+	u32 len = QUIC_PN_MAX_LEN;
 	u8 *p = (u8 *)hdr;
 
 	/* rfc9000#section-17.1:
@@ -377,14 +376,14 @@ static int quic_crypto_header_decrypt(struct crypto_skcipher *tfm, struct sk_buf
 	if (!mask)
 		return -ENOMEM;
 
-	if (len < QUIC_MAX_PN_LEN + QUIC_SAMPLE_LEN) {
+	if (len < QUIC_PN_MAX_LEN + QUIC_SAMPLE_LEN) {
 		err = -EINVAL;
 		goto err;
 	}
 
 	/* Similar logic to quic_crypto_header_encrypt(). */
 	p = (u8 *)hdr + cb->number_offset;
-	memcpy((chacha ? iv : mask), p + QUIC_MAX_PN_LEN, QUIC_SAMPLE_LEN);
+	memcpy((chacha ? iv : mask), p + QUIC_PN_MAX_LEN, QUIC_SAMPLE_LEN);
 	sg_init_one(&sg, mask, QUIC_SAMPLE_LEN);
 	skcipher_request_set_tfm(req, tfm);
 	skcipher_request_set_crypt(req, &sg, &sg, QUIC_SAMPLE_LEN, iv);

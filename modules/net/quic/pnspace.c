@@ -202,7 +202,7 @@ static int quic_pnspace_next_gap_ack(const struct quic_pnspace *space,
 /* Generate gap acknowledgment blocks (GABs).  GABs describe ranges of unacknowledged
  * packets between received ones, and are used in ACK frames.
  *
- * Returns: Number of generated GABs (up to QUIC_PN_MAX_GABS).
+ * Returns: Number of generated GABs (up to QUIC_PN_MAP_MAX_GABS).
  */
 u16 quic_pnspace_num_gabs(struct quic_pnspace *space, struct quic_gap_ack_block *gabs)
 {
@@ -216,7 +216,7 @@ u16 quic_pnspace_num_gabs(struct quic_pnspace *space, struct quic_gap_ack_block 
 	/* Loop through all gaps until the end of the window or max allowed gaps. */
 	while (quic_pnspace_next_gap_ack(space, &iter, &start, &end)) {
 		gabs[ngaps].start = start;
-		if (ngaps == QUIC_PN_MAX_GABS - 1) {
+		if (ngaps == QUIC_PN_MAP_MAX_GABS - 1) {
 			gabs[ngaps].end = (u16)(space->max_pn_seen - space->base_pn);
 			ngaps++;
 			break;
