@@ -36,14 +36,11 @@ int sysctl_quic_alpn_demux;
 static int quic_inet_connect(struct socket *sock, struct sockaddr *addr, int addr_len, int flags)
 {
 	struct sock *sk = sock->sk;
-	const struct proto *prot;
 
 	if (addr_len < (int)sizeof(addr->sa_family))
 		return -EINVAL;
 
-	prot = READ_ONCE(sk->sk_prot);
-
-	return prot->connect(sk, addr, addr_len);
+	return sk->sk_prot->connect(sk, addr, addr_len);
 }
 
 static int quic_inet_listen(struct socket *sock, int backlog)
