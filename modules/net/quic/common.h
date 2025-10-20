@@ -187,7 +187,6 @@ static inline void quic_data_free(struct quic_data *d)
 
 struct quic_shash_head *quic_sock_head(struct net *net, union quic_addr *s, union quic_addr *d);
 struct quic_shash_head *quic_listen_sock_head(struct net *net, u16 port);
-struct quic_shash_head *quic_stream_head(struct quic_shash_table *ht, s64 stream_id);
 struct quic_shash_head *quic_source_conn_id_head(struct net *net, u8 *scid);
 struct quic_uhash_head *quic_udp_sock_head(struct net *net, u16 port);
 

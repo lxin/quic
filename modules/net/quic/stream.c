@@ -42,12 +42,19 @@ static bool quic_stream_id_uni(s64 stream_id)
 	return stream_id & QUIC_STREAM_TYPE_UNI_MASK;
 }
 
+#define QUIC_STREAM_HT_SIZE	64
+
+static struct hlist_head *quic_stream_head(struct quic_stream_table *streams, s64 stream_id)
+{
+	return &streams->head[stream_id & (QUIC_STREAM_HT_SIZE - 1)];
+}
+
 struct quic_stream *quic_stream_find(struct quic_stream_table *streams, s64 stream_id)
 {
-	struct quic_shash_head *head = quic_stream_head(&streams->ht, stream_id);
+	struct hlist_head *head = quic_stream_head(streams, stream_id);
 	struct quic_stream *stream;
 
-	hlist_for_each_entry(stream, &head->head, node) {
+	hlist_for_each_entry(stream, head, node) {
 		if (stream->id == stream_id)
 			break;
 	}
@@ -56,10 +63,10 @@ struct quic_stream *quic_stream_find(struct quic_stream_table *streams, s64 stre
 
 static void quic_stream_add(struct quic_stream_table *streams, struct quic_stream *stream)
 {
-	struct quic_shash_head *head;
+	struct hlist_head *head;
 
-	head = quic_stream_head(&streams->ht, stream->id);
-	hlist_add_head(&stream->node, &head->head);
+	head = quic_stream_head(streams, stream->id);
+	hlist_add_head(&stream->node, head);
 }
 
 static void quic_stream_delete(struct quic_stream *stream)
@@ -385,38 +392,36 @@ bool quic_stream_max_streams_update(struct quic_stream_table *streams, s64 *max_
 	return *max_uni || *max_bidi;
 }
 
-#define QUIC_STREAM_HT_SIZE	64
-
 int quic_stream_init(struct quic_stream_table *streams)
 {
-	struct quic_shash_table *ht = &streams->ht;
-	int i, size = QUIC_STREAM_HT_SIZE;
-	struct quic_shash_head *head;
+	struct hlist_head *head;
+	int i;
 
-	head = kmalloc_array(size, sizeof(*head), GFP_KERNEL);
+	head = kmalloc_array(QUIC_STREAM_HT_SIZE, sizeof(*head), GFP_KERNEL);
 	if (!head)
 		return -ENOMEM;
-	for (i = 0; i < size; i++)
-		INIT_HLIST_HEAD(&head[i].head);
-	ht->size = size;
-	ht->hash = head;
+	for (i = 0; i < QUIC_STREAM_HT_SIZE; i++)
+		INIT_HLIST_HEAD(&head[i]);
+	streams->head = head;
 	return 0;
 }
 
 void quic_stream_free(struct quic_stream_table *streams)
 {
-	struct quic_shash_table *ht = &streams->ht;
-	struct quic_shash_head *head;
 	struct quic_stream *stream;
+	struct hlist_head *head;
 	struct hlist_node *tmp;
 	int i;
 
-	for (i = 0; i < ht->size; i++) {
-		head = &ht->hash[i];
-		hlist_for_each_entry_safe(stream, tmp, &head->head, node)
+	if (!streams->head)
+		return;
+
+	for (i = 0; i < QUIC_STREAM_HT_SIZE; i++) {
+		head = &streams->head[i];
+		hlist_for_each_entry_safe(stream, tmp, head, node)
 			quic_stream_delete(stream);
 	}
-	kfree(ht->hash);
+	kfree(streams->head);
 }
 
 /* Populate transport parameters from stream hash table. */

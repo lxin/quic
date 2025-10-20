@@ -80,11 +80,6 @@ struct quic_uhash_head *quic_udp_sock_head(struct net *net, u16 port)
 	return &ht->hash[port & (ht->size - 1)];
 }
 
-struct quic_shash_head *quic_stream_head(struct quic_shash_table *ht, s64 stream_id)
-{
-	return &ht->hash[stream_id & (ht->size - 1)];
-}
-
 static void quic_shash_table_free(struct quic_shash_table *ht)
 {
 	free_pages((unsigned long)ht->hash, get_order(ht->size * sizeof(struct quic_shash_head)));
