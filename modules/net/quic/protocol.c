@@ -654,7 +654,8 @@ static __init int quic_init(void)
 	if (err)
 		goto err_percpu_counter;
 
-	if (quic_hash_tables_init())
+	err = quic_hash_tables_init();
+	if (err)
 		goto err_hash;
 
 	err = register_pernet_subsys(&quic_net_ops);
