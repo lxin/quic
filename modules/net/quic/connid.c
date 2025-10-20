@@ -196,8 +196,8 @@ void quic_conn_id_update_active(struct quic_conn_id_set *id_set, u32 number)
 
 void quic_conn_id_set_init(struct quic_conn_id_set *id_set, bool source)
 {
-	id_set->entry_size = source ? sizeof(struct quic_source_conn_id)
-				    : sizeof(struct quic_dest_conn_id);
+	id_set->entry_size = source ? sizeof(struct quic_source_conn_id) :
+				      sizeof(struct quic_dest_conn_id);
 	INIT_LIST_HEAD(&id_set->head);
 }
 

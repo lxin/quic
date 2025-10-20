@@ -226,8 +226,8 @@ static inline void quic_set_state(struct sock *sk, int state)
 		return;
 
 	if (state == QUIC_SS_ESTABLISHED) {
-		mib = quic_is_serv(sk) ? QUIC_MIB_CONN_PASSIVEESTABS
-				       : QUIC_MIB_CONN_ACTIVEESTABS;
+		mib = quic_is_serv(sk) ? QUIC_MIB_CONN_PASSIVEESTABS :
+					 QUIC_MIB_CONN_ACTIVEESTABS;
 		QUIC_INC_STATS(net, mib);
 		QUIC_INC_STATS(net, QUIC_MIB_CONN_CURRENTESTABS);
 	} else if (quic_is_established(sk)) {
