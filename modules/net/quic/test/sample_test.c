@@ -224,17 +224,17 @@ static int quic_test_do_sample_client(void)
 
 	/* Send a message on a new unidirectional stream and then receive a response.
 	 *
-	 * - MSG_STREAM_NEW tells the stack to open a new stream with the given stream ID (sid).
+	 * - MSG_QUIC_STREAM_NEW tells the stack to open a new stream with given stream ID (sid).
 	 *   Alternatively, a stream can be opened via getsockopt(QUIC_SOCKOPT_STREAM_OPEN).
 	 *
-	 * - MSG_STREAM_FIN marks the end of the stream, signaling no more data will follow.
+	 * - MSG_QUIC_STREAM_FIN marks the end of the stream, signaling no more data will follow.
 	 *
 	 * We send "hello quic server!" on a unidirectional stream (QUIC_STREAM_TYPE_UNI_MASK),
 	 * and expect a response on a peer-initiated stream, which we receive with recvmsg().
 	 */
 	strscpy(msg, "hello quic server!", sizeof(msg));
 	sid = QUIC_STREAM_TYPE_UNI_MASK;
-	flags = MSG_STREAM_NEW | MSG_STREAM_FIN;
+	flags = MSG_QUIC_STREAM_NEW | MSG_QUIC_STREAM_FIN;
 	err = quic_test_sendmsg(sock, msg, strlen(msg), sid, flags);
 	if (err < 0) {
 		pr_info("quic_test: send err: %d\n", err);
@@ -326,7 +326,7 @@ static int quic_test_do_ticket_client(void)
 
 	strscpy(msg, "hello quic server!", sizeof(msg));
 	sid = QUIC_STREAM_TYPE_UNI_MASK;
-	flags = MSG_STREAM_NEW | MSG_STREAM_FIN;
+	flags = MSG_QUIC_STREAM_NEW | MSG_QUIC_STREAM_FIN;
 	err = quic_test_sendmsg(sock, msg, strlen(msg), sid, flags);
 	if (err < 0) {
 		pr_info("quic_test: send err: %d\n", err);
@@ -380,7 +380,7 @@ static int quic_test_do_ticket_client(void)
 	/* Queue early application data to be sent before the handshake begins. */
 	strscpy(msg, "hello quic server! I'm back!", sizeof(msg));
 	sid = QUIC_STREAM_TYPE_UNI_MASK;
-	flags = MSG_STREAM_NEW | MSG_STREAM_FIN;
+	flags = MSG_QUIC_STREAM_NEW | MSG_QUIC_STREAM_FIN;
 	err = quic_test_sendmsg(sock, msg, strlen(msg), sid, flags);
 	if (err < 0) {
 		pr_info("quic_test: send err: %d\n", err);
@@ -463,7 +463,7 @@ static int quic_test_do_sample_server(void)
 
 	strscpy(msg, "hello quic client!", sizeof(msg));
 	sid = QUIC_STREAM_TYPE_SERVER_MASK;
-	flags = MSG_STREAM_NEW | MSG_STREAM_FIN;
+	flags = MSG_QUIC_STREAM_NEW | MSG_QUIC_STREAM_FIN;
 	err = quic_test_sendmsg(newsock, msg, strlen(msg), sid, flags);
 	if (err < 0) {
 		pr_info("quic_test: send err: %d\n", err);
@@ -536,7 +536,7 @@ static int quic_test_do_ticket_server(void)
 
 	strscpy(msg, "hello quic client!", sizeof(msg));
 	sid = QUIC_STREAM_TYPE_SERVER_MASK;
-	flags = MSG_STREAM_NEW | MSG_STREAM_FIN;
+	flags = MSG_QUIC_STREAM_NEW | MSG_QUIC_STREAM_FIN;
 	err = quic_test_sendmsg(newsock, msg, strlen(msg), sid, flags);
 	if (err < 0) {
 		pr_info("quic_test: send err: %d\n", err);
@@ -575,7 +575,7 @@ static int quic_test_do_ticket_server(void)
 
 	strscpy(msg, "hello quic client! welcome back!", sizeof(msg));
 	sid = QUIC_STREAM_TYPE_SERVER_MASK;
-	flags = MSG_STREAM_NEW | MSG_STREAM_FIN;
+	flags = MSG_QUIC_STREAM_NEW | MSG_QUIC_STREAM_FIN;
 	err = quic_test_sendmsg(newsock, msg, strlen(msg), sid, flags);
 	if (err < 0) {
 		pr_info("quic_test: send err: %d\n", err);

@@ -69,7 +69,7 @@ static int do_client_notification_test(int sockfd)
 	}
 	printf("test1: PASS (enable stream update event)\n");
 
-	flags = MSG_STREAM_NEW | MSG_STREAM_FIN;
+	flags = MSG_QUIC_STREAM_NEW | MSG_QUIC_STREAM_FIN;
 	sid = 100;
 	strcpy(msg, "quic event test2");
 	ret = quic_sendmsg(sockfd, msg, strlen(msg), sid, flags); /* stream_id: 100 */
@@ -83,7 +83,7 @@ static int do_client_notification_test(int sockfd)
 		printf("recv error %d\n", errno);
 		return -1;
 	}
-	if (!(flags & MSG_NOTIFICATION) || msg[0] != QUIC_EVENT_STREAM_UPDATE) {
+	if (!(flags & MSG_QUIC_NOTIFICATION) || msg[0] != QUIC_EVENT_STREAM_UPDATE) {
 		printf("test2: FAIL flags %u, event %d\n", flags, msg[0]);
 		return -1;
 	}
@@ -100,7 +100,7 @@ static int do_client_notification_test(int sockfd)
 		printf("recv error %d\n", errno);
 		return -1;
 	}
-	if (!(flags & MSG_NOTIFICATION) || msg[0] != QUIC_EVENT_STREAM_UPDATE) {
+	if (!(flags & MSG_QUIC_NOTIFICATION) || msg[0] != QUIC_EVENT_STREAM_UPDATE) {
 		printf("test3: FAIL flags %u, event %d\n", flags, msg[0]);
 		return -1;
 	}
@@ -117,7 +117,7 @@ static int do_client_notification_test(int sockfd)
 		printf("recv error %d\n", errno);
 		return -1;
 	}
-	if (!(flags & MSG_NOTIFICATION) || msg[0] != QUIC_EVENT_STREAM_UPDATE) {
+	if (!(flags & MSG_QUIC_NOTIFICATION) || msg[0] != QUIC_EVENT_STREAM_UPDATE) {
 		printf("test4: FAIL flags %u, event %d\n", flags, msg[0]);
 		return -1;
 	}
@@ -141,7 +141,7 @@ static int do_client_notification_test(int sockfd)
 	}
 	printf("test5: PASS (receive msg after events)\n");
 
-	flags = MSG_STREAM_NEW;
+	flags = MSG_QUIC_STREAM_NEW;
 	sid  = 102;
 	strcpy(msg, "client reset");
 	ret = quic_sendmsg(sockfd, msg, strlen(msg), sid, flags); /* stream_id: 102 */
@@ -163,7 +163,7 @@ static int do_client_notification_test(int sockfd)
 		printf("recv error %d\n", errno);
 		return -1;
 	}
-	if (!(flags & MSG_NOTIFICATION) || msg[0] != QUIC_EVENT_STREAM_UPDATE) {
+	if (!(flags & MSG_QUIC_NOTIFICATION) || msg[0] != QUIC_EVENT_STREAM_UPDATE) {
 		printf("test6: FAIL flags %u, event %d\n", flags, msg[0]);
 		return -1;
 	}
@@ -174,7 +174,7 @@ static int do_client_notification_test(int sockfd)
 	}
 	printf("test6: PASS (QUIC_EVENT_STREAM_UPDATE/QUIC_STREAM_SEND_STATE_RESET_RECVD event)\n");
 
-	flags = MSG_STREAM_NEW;
+	flags = MSG_QUIC_STREAM_NEW;
 	sid  = 104;
 	strcpy(msg, "client stop_sending");
 	ret = quic_sendmsg(sockfd, msg, strlen(msg), sid, flags); /* stream_id: 104 */
@@ -189,7 +189,7 @@ static int do_client_notification_test(int sockfd)
 		printf("recv error %d\n", errno);
 		return -1;
 	}
-	if (!(flags & MSG_NOTIFICATION) || msg[0] != QUIC_EVENT_STREAM_UPDATE) {
+	if (!(flags & MSG_QUIC_NOTIFICATION) || msg[0] != QUIC_EVENT_STREAM_UPDATE) {
 		printf("test7: FAIL flags %u event %d\n", flags, msg[0]);
 		return -1;
 	}
@@ -206,7 +206,7 @@ static int do_client_notification_test(int sockfd)
 		printf("recv error %d\n", errno);
 		return -1;
 	}
-	if (!(flags & MSG_NOTIFICATION) || msg[0] != QUIC_EVENT_STREAM_UPDATE) {
+	if (!(flags & MSG_QUIC_NOTIFICATION) || msg[0] != QUIC_EVENT_STREAM_UPDATE) {
 		printf("test8: FAIL flags %u, event %d\n", flags, msg[0]);
 		return -1;
 	}
@@ -218,7 +218,7 @@ static int do_client_notification_test(int sockfd)
 	printf("test8: PASS (QUIC_EVENT_STREAM_UPDATE/QUIC_STREAM_SEND_STATE_RESET_RECVD "
 	       "event by stop_sending)\n");
 
-	flags = MSG_STREAM_NEW | MSG_STREAM_FIN;
+	flags = MSG_QUIC_STREAM_NEW | MSG_QUIC_STREAM_FIN;
 	sid  = 106;
 	strcpy(msg, "client reset");
 	ret = quic_sendmsg(sockfd, msg, strlen(msg), sid, flags); /* stream_id: 106 */
@@ -239,7 +239,7 @@ static int do_client_notification_test(int sockfd)
 		printf("recv error %d\n", errno);
 		return -1;
 	}
-	if (!(flags & MSG_NOTIFICATION) || msg[0] != QUIC_EVENT_STREAM_UPDATE) {
+	if (!(flags & MSG_QUIC_NOTIFICATION) || msg[0] != QUIC_EVENT_STREAM_UPDATE) {
 		printf("test9: FAIL flags %u, event %d\n", flags, msg[0]);
 		return -1;
 	}
@@ -257,7 +257,7 @@ static int do_client_notification_test(int sockfd)
 		printf("recv error %d\n", errno);
 		return -1;
 	}
-	if (!(flags & MSG_NOTIFICATION) || msg[0] != QUIC_EVENT_STREAM_UPDATE) {
+	if (!(flags & MSG_QUIC_NOTIFICATION) || msg[0] != QUIC_EVENT_STREAM_UPDATE) {
 		printf("test10: FAIL flags %u, event %d\n", flags, msg[0]);
 		return -1;
 	}
@@ -287,7 +287,7 @@ static int do_client_notification_test(int sockfd)
 	printf("test12: PASS (enable max stream event)\n");
 
 
-	flags = MSG_STREAM_FIN;
+	flags = MSG_QUIC_STREAM_FIN;
 	sid  = 200;
 	strcpy(msg, "quic test13");
 	ret = quic_sendmsg(sockfd, msg, strlen(msg), sid, flags);
@@ -302,7 +302,7 @@ static int do_client_notification_test(int sockfd)
 		printf("recv error %d\n", errno);
 		return -1;
 	}
-	if (!(flags & MSG_NOTIFICATION) || msg[0] != QUIC_EVENT_STREAM_MAX_STREAM) {
+	if (!(flags & MSG_QUIC_NOTIFICATION) || msg[0] != QUIC_EVENT_STREAM_MAX_STREAM) {
 		printf("test13: FAIL flags %u, event %d\n", flags, msg[0]);
 		return -1;
 	}
@@ -338,7 +338,7 @@ static int do_client_notification_test(int sockfd)
 		printf("recv error %d\n", errno);
 		return -1;
 	}
-	if (!(flags & MSG_NOTIFICATION) || msg[0] != QUIC_EVENT_STREAM_MAX_STREAM) {
+	if (!(flags & MSG_QUIC_NOTIFICATION) || msg[0] != QUIC_EVENT_STREAM_MAX_STREAM) {
 		printf("test14: FAIL flags %u, event %d\n", flags, msg[0]);
 		return -1;
 	}
@@ -379,7 +379,7 @@ static int do_client_notification_test(int sockfd)
 		printf("socket setsockopt migration error %d\n", errno);
 		return -1;
 	}
-	flags = MSG_STREAM_NEW | MSG_STREAM_FIN;
+	flags = MSG_QUIC_STREAM_NEW | MSG_QUIC_STREAM_FIN;
 	sid  = 108;
 	strcpy(msg, "quic event test17");
 	ret = quic_sendmsg(sockfd, msg, strlen(msg), sid, flags); /* stream_id: 108 */
@@ -393,7 +393,7 @@ static int do_client_notification_test(int sockfd)
 		printf("recv error %d\n", errno);
 		return -1;
 	}
-	if (!(flags & MSG_NOTIFICATION) || msg[0] != QUIC_EVENT_CONNECTION_MIGRATION) {
+	if (!(flags & MSG_QUIC_NOTIFICATION) || msg[0] != QUIC_EVENT_CONNECTION_MIGRATION) {
 		printf("test17: FAIL flags %u, event %d\n", flags, msg[0]);
 		return -1;
 	}
@@ -414,7 +414,7 @@ static int do_client_notification_test(int sockfd)
 	}
 	printf("test17: PASS (QUIC_EVENT_CONNECTION_MIGRATION event for local migration)\n");
 
-	flags = MSG_STREAM_NEW | MSG_STREAM_FIN;
+	flags = MSG_QUIC_STREAM_NEW | MSG_QUIC_STREAM_FIN;
 	sid  = 110;
 	strcpy(msg, "client migration");
 	ret = quic_sendmsg(sockfd, msg, strlen(msg), sid, flags); /* stream_id: 110 */
@@ -429,7 +429,7 @@ static int do_client_notification_test(int sockfd)
 		printf("recv error %d\n", errno);
 		return -1;
 	}
-	if (!(flags & MSG_NOTIFICATION) || msg[0] != QUIC_EVENT_CONNECTION_MIGRATION) {
+	if (!(flags & MSG_QUIC_NOTIFICATION) || msg[0] != QUIC_EVENT_CONNECTION_MIGRATION) {
 		printf("test18: FAIL flags %u, event %d\n", flags, msg[0]);
 		return -1;
 	}
@@ -473,7 +473,7 @@ static int do_client_notification_test(int sockfd)
 		printf("socket setsockopt migration error %d\n", errno);
 		return -1;
 	}
-	flags = MSG_STREAM_NEW | MSG_STREAM_FIN;
+	flags = MSG_QUIC_STREAM_NEW | MSG_QUIC_STREAM_FIN;
 	sid  = 112;
 	strcpy(msg, "quic event test21");
 	ret = quic_sendmsg(sockfd, msg, strlen(msg), sid, flags); /* stream_id: 112 */
@@ -493,7 +493,7 @@ static int do_client_notification_test(int sockfd)
 	}
 	printf("test21: PASS (QUIC_EVENT_KEY_UPDATE event for local key_update)\n");
 
-	flags = MSG_STREAM_NEW | MSG_STREAM_FIN;
+	flags = MSG_QUIC_STREAM_NEW | MSG_QUIC_STREAM_FIN;
 	sid  = 116;
 	strcpy(msg, "client key_update");
 	ret = quic_sendmsg(sockfd, msg, strlen(msg), sid, flags); /* stream_id: 116 */
@@ -507,7 +507,7 @@ static int do_client_notification_test(int sockfd)
 		printf("recv error %d\n", errno);
 		return -1;
 	}
-	if (!(flags & MSG_NOTIFICATION) || msg[0] != QUIC_EVENT_KEY_UPDATE) {
+	if (!(flags & MSG_QUIC_NOTIFICATION) || msg[0] != QUIC_EVENT_KEY_UPDATE) {
 		printf("test22: FAIL flags %u, event %d\n", flags, msg[0]);
 		return -1;
 	}
@@ -546,7 +546,7 @@ static int do_client_notification_test(int sockfd)
 	}
 	printf("test24: PASS (enable new token event)\n");
 
-	flags = MSG_STREAM_NEW | MSG_STREAM_FIN;
+	flags = MSG_QUIC_STREAM_NEW | MSG_QUIC_STREAM_FIN;
 	sid  = 120;
 	strcpy(msg, "client new_token");
 	ret = quic_sendmsg(sockfd, msg, strlen(msg), sid, flags); /* stream_id: 120 */
@@ -560,7 +560,7 @@ static int do_client_notification_test(int sockfd)
 		printf("recv error %d\n", errno);
 		return -1;
 	}
-	if (!(flags & MSG_NOTIFICATION) || msg[0] != QUIC_EVENT_NEW_TOKEN) {
+	if (!(flags & MSG_QUIC_NOTIFICATION) || msg[0] != QUIC_EVENT_NEW_TOKEN) {
 		printf("test25: FAIL flags %u, event %d\n", flags, msg[0]);
 		return -1;
 	}
@@ -617,7 +617,7 @@ static int do_client_notification_test(int sockfd)
 		printf("recv error %d\n", errno);
 		return -1;
 	}
-	if (!(flags & MSG_NOTIFICATION) || msg[0] != QUIC_EVENT_CONNECTION_ID) {
+	if (!(flags & MSG_QUIC_NOTIFICATION) || msg[0] != QUIC_EVENT_CONNECTION_ID) {
 		printf("test28: FAIL flags %u, event %d\n", flags, msg[0]);
 		return -1;
 	}
@@ -651,7 +651,7 @@ static int do_client_notification_test(int sockfd)
 		printf("recv error %d\n", errno);
 		return -1;
 	}
-	if (!(flags & MSG_NOTIFICATION) || msg[0] != QUIC_EVENT_CONNECTION_ID) {
+	if (!(flags & MSG_QUIC_NOTIFICATION) || msg[0] != QUIC_EVENT_CONNECTION_ID) {
 		printf("test29: FAIL flags %u, event %d\n", flags, msg[0]);
 		return -1;
 	}
@@ -742,7 +742,7 @@ static int do_client_close_test(int sockfd)
 	}
 	printf("test5: PASS (enable close event)\n");
 
-	flags = MSG_STREAM_NEW | MSG_STREAM_FIN;
+	flags = MSG_QUIC_STREAM_NEW | MSG_QUIC_STREAM_FIN;
 	sid = 64;
 	strcpy(msg, "client close");
 	ret = quic_sendmsg(sockfd, msg, strlen(msg), sid, flags);
@@ -768,7 +768,7 @@ static int do_client_close_test(int sockfd)
 		printf("recv error %d\n", errno);
 		return -1;
 	}
-	if (!(flags & MSG_NOTIFICATION) || msg[0] != QUIC_EVENT_CONNECTION_CLOSE) {
+	if (!(flags & MSG_QUIC_NOTIFICATION) || msg[0] != QUIC_EVENT_CONNECTION_CLOSE) {
 		printf("test7: FAIL flags %u, event %d\n", flags, msg[0]);
 		return -1;
 	}
@@ -1244,7 +1244,7 @@ static int do_client_connection_test(int sockfd)
 	}
 	printf("test25: PASS (not allowed to set token with an null value on client)\n");
 
-	flags = MSG_DATAGRAM;
+	flags = MSG_QUIC_DATAGRAM;
 	strcpy(msg, "client datagram");
 	ret = quic_sendmsg(sockfd, msg, strlen(msg), sid, flags);
 	if (ret == -1) {
@@ -1261,13 +1261,13 @@ static int do_client_connection_test(int sockfd)
 		printf("test26: FAIL msg %s\n", msg);
 		return -1;
 	}
-	if (!(flags & MSG_DATAGRAM)) {
+	if (!(flags & MSG_QUIC_DATAGRAM)) {
 		printf("test26: FAIL flags %u\n", flags);
 		return -1;
 	}
 	printf("test26: PASS (send and recv datagram)\n");
 
-	flags = MSG_DATAGRAM;
+	flags = MSG_QUIC_DATAGRAM;
 	strcpy(msg, "client datagram");
 	ret = quic_sendmsg(sockfd, msg, sizeof(msg), sid, flags);
 	if (ret != -1) {
@@ -1321,7 +1321,8 @@ static int do_client_stream_test(int sockfd)
 	printf("test2: PASS (use send(MSG_SYN) to open one stream)\n");
 
 	strcpy(msg, "quic test3");
-	ret = send(sockfd, msg, strlen(msg), MSG_SYN | MSG_FIN | MSG_STREAM_UNI); /* stream_id: 2 */
+	ret = send(sockfd, msg, strlen(msg),
+		   MSG_SYN | MSG_FIN | MSG_QUIC_STREAM_UNI); /* stream_id: 2 */
 	if (ret == -1) {
 		printf("send error %d\n", errno);
 		return -1;
@@ -1417,7 +1418,7 @@ static int do_client_stream_test(int sockfd)
 
 	optlen = sizeof(info);
 	info.stream_id = -1;
-	info.stream_flags = MSG_STREAM_UNI;
+	info.stream_flags = MSG_QUIC_STREAM_UNI;
 	ret = getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_STREAM_OPEN,
 			 &info, &optlen); /* stream_id: 10 */
 	if (ret == -1) {
@@ -1441,7 +1442,7 @@ static int do_client_stream_test(int sockfd)
 	}
 	printf("test8: PASS (use getsockopt(QUIC_SOCKOPT_STREAM_OPEN) to open next uni stream)\n");
 
-	flags = MSG_STREAM_NEW;
+	flags = MSG_QUIC_STREAM_NEW;
 	sid  = 0;
 	strcpy(msg, "quic ");
 	ret = quic_sendmsg(sockfd, msg, strlen(msg), sid, flags);
@@ -1450,9 +1451,9 @@ static int do_client_stream_test(int sockfd)
 		return -1;
 	}
 	printf("test9: PASS (not allowed to open a stream that is already closed with "
-	       "sendmsg(MSG_STREAM_NEW))\n");
+	       "sendmsg(MSG_QUIC_STREAM_NEW))\n");
 
-	flags = MSG_STREAM_NEW;
+	flags = MSG_QUIC_STREAM_NEW;
 	sid  = 12;
 	strcpy(msg, "quic ");
 	ret = quic_sendmsg(sockfd, msg, strlen(msg), sid, flags); /* stream_id: 12 */
@@ -1466,9 +1467,10 @@ static int do_client_stream_test(int sockfd)
 		printf("test10: FAIL\n");
 		return -1;
 	}
-	printf("test10: PASS (not allowed to open a stream twice with sendmsg(MSG_STREAM_NEW))\n");
+	printf("test10: PASS (not allowed to open a stream twice with "
+	       "sendmsg(MSG_QUIC_STREAM_NEW))\n");
 
-	flags = MSG_STREAM_FIN;
+	flags = MSG_QUIC_STREAM_FIN;
 	sid  = 12;
 	strcpy(msg, "test11");
 	ret = quic_sendmsg(sockfd, msg, strlen(msg), sid, flags);
@@ -1488,7 +1490,7 @@ static int do_client_stream_test(int sockfd)
 	}
 	printf("test11: PASS (sendmsg with a specific stream normally)\n");
 
-	flags = MSG_STREAM_NEW | MSG_STREAM_UNI;
+	flags = MSG_QUIC_STREAM_NEW | MSG_QUIC_STREAM_UNI;
 	sid  = -1;
 	strcpy(msg, "quic ");
 	ret = quic_sendmsg(sockfd, msg, strlen(msg), sid, flags); /* stream_id: 14 */
@@ -1505,7 +1507,7 @@ static int do_client_stream_test(int sockfd)
 	printf("test12: PASS (not allowed to open a stream with sendmsg(sid == -1) "
 	       "if it the old one is not closed\n");
 
-	flags = MSG_STREAM_FIN;
+	flags = MSG_QUIC_STREAM_FIN;
 	strcpy(msg, "test13");
 	ret = quic_sendmsg(sockfd, msg, strlen(msg), sid, flags);
 	if (ret == -1) {
@@ -1524,7 +1526,7 @@ static int do_client_stream_test(int sockfd)
 	}
 	printf("test13: PASS (open next uni stream with sendmsg(sid == -1))\n");
 
-	flags = MSG_STREAM_NEW | MSG_STREAM_FIN;
+	flags = MSG_QUIC_STREAM_NEW | MSG_QUIC_STREAM_FIN;
 	sid  = -1;
 	strcpy(msg, "quic test14");
 	ret = quic_sendmsg(sockfd, msg, strlen(msg), sid, flags); /* stream_id: 16 */
@@ -1560,7 +1562,7 @@ static int do_client_stream_test(int sockfd)
 		printf("socket getsockopt stream open error %d\n", errno);
 		return -1;
 	}
-	flags = MSG_STREAM_FIN;
+	flags = MSG_QUIC_STREAM_FIN;
 	sid  = 18;
 	strcpy(msg, "quic test15");
 	ret = quic_sendmsg(sockfd, msg, strlen(msg), sid, flags);
@@ -1580,7 +1582,7 @@ static int do_client_stream_test(int sockfd)
 	}
 	printf("test15: PASS (open multiple stream and send on 1st one)\n");
 
-	flags = MSG_STREAM_FIN;
+	flags = MSG_QUIC_STREAM_FIN;
 	sid  = 20;
 	strcpy(msg, "quic test16");
 	ret = quic_sendmsg(sockfd, msg, strlen(msg), sid, flags);
@@ -1600,7 +1602,7 @@ static int do_client_stream_test(int sockfd)
 	}
 	printf("test16: PASS (open multiple stream and send on 2nd one)\n");
 
-	flags = MSG_STREAM_FIN;
+	flags = MSG_QUIC_STREAM_FIN;
 	sid  = 20;
 	strcpy(msg, "quic test17");
 	ret = quic_sendmsg(sockfd, msg, strlen(msg), sid, flags);
@@ -1610,7 +1612,7 @@ static int do_client_stream_test(int sockfd)
 	}
 	printf("test17: PASS (not allowed to send data on a closed stream)\n");
 
-	flags = MSG_STREAM_NEW | MSG_STREAM_FIN;
+	flags = MSG_QUIC_STREAM_NEW | MSG_QUIC_STREAM_FIN;
 	sid  = 400;
 	strcpy(msg, "quic test18");
 	ret = quic_sendmsg(sockfd, msg, strlen(msg), sid, flags);
@@ -1630,7 +1632,7 @@ static int do_client_stream_test(int sockfd)
 	}
 	printf("test18: PASS (sendmsg with sid > original max_streams_bidi)\n");
 
-	flags = MSG_STREAM_NEW | MSG_STREAM_FIN;
+	flags = MSG_QUIC_STREAM_NEW | MSG_QUIC_STREAM_FIN;
 	sid  = 402;
 	strcpy(msg, "quic test19");
 	ret = quic_sendmsg(sockfd, msg, strlen(msg), sid, flags);
@@ -1650,7 +1652,7 @@ static int do_client_stream_test(int sockfd)
 	}
 	printf("test19: PASS (sendmsg with sid > original max_streams_uni)\n");
 
-	flags = MSG_STREAM_NEW | MSG_STREAM_FIN | MSG_STREAM_DONTWAIT;
+	flags = MSG_QUIC_STREAM_NEW | MSG_QUIC_STREAM_FIN | MSG_QUIC_STREAM_DONTWAIT;
 	sid  = 428;
 	strcpy(msg, "quic test20");
 	ret = quic_sendmsg(sockfd, msg, strlen(msg), sid, flags);
@@ -1660,7 +1662,7 @@ static int do_client_stream_test(int sockfd)
 	}
 	printf("test20: PASS (return -EAGAIN if sid > current max_streams_bidi)\n");
 
-	flags = MSG_STREAM_NEW | MSG_STREAM_FIN;
+	flags = MSG_QUIC_STREAM_NEW | MSG_QUIC_STREAM_FIN;
 	sid  = 404;
 	strcpy(msg, "quic test21");
 	ret = quic_sendmsg(sockfd, msg, strlen(msg), sid, flags);
@@ -1678,7 +1680,7 @@ static int do_client_stream_test(int sockfd)
 		printf("test21: FAIL msg %s, sid %d\n", msg, (int)sid);
 		return -1;
 	}
-	flags = MSG_STREAM_NEW | MSG_STREAM_FIN;
+	flags = MSG_QUIC_STREAM_NEW | MSG_QUIC_STREAM_FIN;
 	sid  = 428;
 	strcpy(msg, "quic test21");
 	ret = quic_sendmsg(sockfd, msg, strlen(msg), sid, flags);
@@ -1698,7 +1700,7 @@ static int do_client_stream_test(int sockfd)
 	}
 	printf("test21: PASS (sendmsg after current max_streams_bidi grows)\n");
 
-	flags = MSG_STREAM_NEW | MSG_STREAM_FIN | MSG_STREAM_DONTWAIT;
+	flags = MSG_QUIC_STREAM_NEW | MSG_QUIC_STREAM_FIN | MSG_QUIC_STREAM_DONTWAIT;
 	sid  = 426;
 	strcpy(msg, "quic test22");
 	ret = quic_sendmsg(sockfd, msg, strlen(msg), sid, flags);
@@ -1708,7 +1710,7 @@ static int do_client_stream_test(int sockfd)
 	}
 	printf("test22: PASS (return -EAGAIN if sid > current max_streams_uni)\n");
 
-	flags = MSG_STREAM_NEW | MSG_STREAM_FIN;
+	flags = MSG_QUIC_STREAM_NEW | MSG_QUIC_STREAM_FIN;
 	sid  = 406;
 	strcpy(msg, "quic test23");
 	ret = quic_sendmsg(sockfd, msg, strlen(msg), sid, flags);
@@ -1726,7 +1728,7 @@ static int do_client_stream_test(int sockfd)
 		printf("test23: FAIL msg %s, sid %d\n", msg, (int)sid);
 		return -1;
 	}
-	flags = MSG_STREAM_NEW | MSG_STREAM_FIN;
+	flags = MSG_QUIC_STREAM_NEW | MSG_QUIC_STREAM_FIN;
 	sid  = 426;
 	strcpy(msg, "quic test23");
 	ret = quic_sendmsg(sockfd, msg, strlen(msg), sid, flags);
@@ -1754,7 +1756,7 @@ static int do_client_stream_test(int sockfd)
 		printf("socket getsockopt stream open error %d\n", errno);
 		return -1;
 	}
-	flags = MSG_STREAM_FIN;
+	flags = MSG_QUIC_STREAM_FIN;
 	sid = 408;
 	strcpy(msg, "quic test24");
 	ret = quic_sendmsg(sockfd, msg, strlen(msg), sid, flags);
@@ -1782,7 +1784,7 @@ static int do_client_stream_test(int sockfd)
 		printf("socket getsockopt stream open error %d\n", errno);
 		return -1;
 	}
-	flags = MSG_STREAM_FIN;
+	flags = MSG_QUIC_STREAM_FIN;
 	sid  = 410;
 	strcpy(msg, "quic test25");
 	ret = quic_sendmsg(sockfd, msg, strlen(msg), sid, flags);
@@ -1803,7 +1805,7 @@ static int do_client_stream_test(int sockfd)
 	printf("test25: PASS (getsockopt(STREAM_OPEN) with sid > original max_streams_uni)\n");
 
 	optlen = sizeof(info);
-	info.stream_flags = MSG_STREAM_DONTWAIT;
+	info.stream_flags = MSG_QUIC_STREAM_DONTWAIT;
 	info.stream_id = 440;
 	ret = getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_STREAM_OPEN,
 			 &info, &optlen); /* stream_id: 440 */
@@ -1813,7 +1815,7 @@ static int do_client_stream_test(int sockfd)
 	}
 	printf("test26: PASS (return -EAGAIN if sid > current max_streams_bidi)\n");
 
-	flags = MSG_STREAM_NEW | MSG_STREAM_FIN;
+	flags = MSG_QUIC_STREAM_NEW | MSG_QUIC_STREAM_FIN;
 	sid  = 412;
 	strcpy(msg, "quic test27");
 	ret = quic_sendmsg(sockfd, msg, strlen(msg), sid, flags);
@@ -1840,7 +1842,7 @@ static int do_client_stream_test(int sockfd)
 		printf("test27: FAIL ret %d, error %d\n", ret, errno);
 		return -1;
 	}
-	flags = MSG_STREAM_FIN;
+	flags = MSG_QUIC_STREAM_FIN;
 	sid  = 440;
 	strcpy(msg, "quic test27");
 	ret = quic_sendmsg(sockfd, msg, strlen(msg), sid, flags);
@@ -1861,7 +1863,7 @@ static int do_client_stream_test(int sockfd)
 	printf("test27: PASS (getsockopt(STREAM_OPEN) after max_streams_bidi grows)\n");
 
 	optlen = sizeof(info);
-	info.stream_flags = MSG_STREAM_DONTWAIT;
+	info.stream_flags = MSG_QUIC_STREAM_DONTWAIT;
 	info.stream_id = 438;
 	ret = getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_STREAM_OPEN,
 			 &info, &optlen); /* stream_id: 438 */
@@ -1871,7 +1873,7 @@ static int do_client_stream_test(int sockfd)
 	}
 	printf("test28: PASS (return -EAGAIN if sid > current max_streams_uni)\n");
 
-	flags = MSG_STREAM_NEW | MSG_STREAM_FIN;
+	flags = MSG_QUIC_STREAM_NEW | MSG_QUIC_STREAM_FIN;
 	sid  = 414;
 	strcpy(msg, "quic test29");
 	ret = quic_sendmsg(sockfd, msg, strlen(msg), sid, flags);
@@ -1898,7 +1900,7 @@ static int do_client_stream_test(int sockfd)
 		printf("test29: FAIL ret %d, errno %d\n", ret, errno);
 		return -1;
 	}
-	flags = MSG_STREAM_FIN;
+	flags = MSG_QUIC_STREAM_FIN;
 	sid  = 438;
 	strcpy(msg, "quic test29");
 	ret = quic_sendmsg(sockfd, msg, strlen(msg), sid, flags);
@@ -1928,7 +1930,7 @@ static int do_client_stream_test(int sockfd)
 	}
 	printf("test30: PASS (not allowed to reset a closed stream)\n");
 
-	flags = MSG_STREAM_FIN;
+	flags = MSG_QUIC_STREAM_FIN;
 	sid  = 416;
 	strcpy(msg, "quic test31");
 	ret = quic_sendmsg(sockfd, msg, strlen(msg), sid, flags);
@@ -1946,7 +1948,7 @@ static int do_client_stream_test(int sockfd)
 		printf("test31: FAIL msg %s, sid %d\n", msg, (int)sid);
 		return -1;
 	}
-	flags = MSG_STREAM_FIN;
+	flags = MSG_QUIC_STREAM_FIN;
 	sid  = 420;
 	strcpy(msg, "quic test31");
 	ret = quic_sendmsg(sockfd, msg, strlen(msg), sid, flags);
@@ -1974,7 +1976,7 @@ static int do_client_stream_test(int sockfd)
 	}
 	printf("test31: PASS (not allowed to reset a stream that hasn't opened)\n");
 
-	flags = MSG_STREAM_NEW;
+	flags = MSG_QUIC_STREAM_NEW;
 	sid  = 444;
 	strcpy(msg, "client reset");
 	ret = quic_sendmsg(sockfd, msg, strlen(msg), sid, flags); /* stream_id: 444 */
@@ -2001,7 +2003,7 @@ static int do_client_stream_test(int sockfd)
 	}
 	printf("test33: PASS (not allowed to send data on a reset stream)\n");
 
-	flags = MSG_STREAM_FIN;
+	flags = MSG_QUIC_STREAM_FIN;
 	strcpy(msg, "test34");
 	ret = quic_sendmsg(sockfd, msg, strlen(msg), sid, flags);
 	if (ret != -1 || errno != EINVAL) {
@@ -2010,7 +2012,7 @@ static int do_client_stream_test(int sockfd)
 	}
 	printf("test34: PASS (not allowed to send data with FIN on a reset stream)\n");
 
-	flags = MSG_STREAM_NEW;
+	flags = MSG_QUIC_STREAM_NEW;
 	sid  = 418;
 	strcpy(msg, "client stop_sending");
 	ret = quic_sendmsg(sockfd, msg, strlen(msg), sid, flags); /* stream_id: 418 */
@@ -2028,7 +2030,7 @@ static int do_client_stream_test(int sockfd)
 	}
 	printf("test35: PASS (not allowed to send data on a reset stream by peer stop_sending)\n");
 
-	flags = MSG_STREAM_FIN;
+	flags = MSG_QUIC_STREAM_FIN;
 	strcpy(msg, "test36");
 	ret = quic_sendmsg(sockfd, msg, strlen(msg), sid, flags);
 	if (ret != -1 || errno != ENOSTR) {
@@ -2070,11 +2072,11 @@ static int do_server_test(int sockfd)
 		}
 		len += ret;
 		if (!strcmp(msg, "client reset")) {
-			if (flags & MSG_STREAM_FIN) {
+			if (flags & MSG_QUIC_STREAM_FIN) {
 				sleep(1);
-				flags = MSG_STREAM_NEW;
+				flags = MSG_QUIC_STREAM_NEW;
 				if (sid & QUIC_STREAM_TYPE_UNI_MASK) {
-					flags |= MSG_STREAM_NEW;
+					flags |= MSG_QUIC_STREAM_NEW;
 					sid  |= QUIC_STREAM_TYPE_SERVER_MASK;
 				}
 				ret = quic_sendmsg(sockfd, msg, strlen(msg), sid, flags);
@@ -2109,7 +2111,7 @@ static int do_server_test(int sockfd)
 			goto reset;
 		}
 
-		if (!(flags & MSG_STREAM_FIN) && !(flags & MSG_DATAGRAM))
+		if (!(flags & MSG_QUIC_STREAM_FIN) && !(flags & MSG_QUIC_DATAGRAM))
 			continue;
 
 		if (!strcmp(msg, "client migration")) {
@@ -2146,7 +2148,7 @@ static int do_server_test(int sockfd)
 		}
 
 		if (!strcmp(msg, "client datagram")) {
-			flags = MSG_DATAGRAM;
+			flags = MSG_QUIC_DATAGRAM;
 			goto reply;
 		}
 
@@ -2168,9 +2170,9 @@ static int do_server_test(int sockfd)
 			printf("TEST DONE\n");
 		}
 
-		flags = MSG_STREAM_FIN;
+		flags = MSG_QUIC_STREAM_FIN;
 		if (sid & QUIC_STREAM_TYPE_UNI_MASK) { /* use the corresp sid in server */
-			flags |= MSG_STREAM_NEW;
+			flags |= MSG_QUIC_STREAM_NEW;
 			sid  |= QUIC_STREAM_TYPE_SERVER_MASK;
 		}
 reply:

@@ -605,10 +605,11 @@ out:
 }
 
 #define QUIC_MSG_STREAM_FLAGS \
-	(MSG_STREAM_NEW | MSG_STREAM_FIN | MSG_STREAM_UNI | MSG_STREAM_DONTWAIT)
+	(MSG_QUIC_STREAM_NEW | MSG_QUIC_STREAM_FIN | MSG_QUIC_STREAM_UNI | MSG_QUIC_STREAM_DONTWAIT)
 
 #define QUIC_MSG_FLAGS \
-	(QUIC_MSG_STREAM_FLAGS | MSG_BATCH | MSG_MORE | MSG_DONTWAIT | MSG_DATAGRAM | MSG_NOSIGNAL)
+	(QUIC_MSG_STREAM_FLAGS | MSG_BATCH | MSG_MORE | MSG_DONTWAIT | MSG_NOSIGNAL | \
+	 MSG_QUIC_DATAGRAM)
 
 /* Parse control messages and extract stream or handshake metadata from msghdr. */
 static int quic_msghdr_parse(struct sock *sk, struct msghdr *msg, struct quic_handshake_info *hinfo,
@@ -676,12 +677,12 @@ static int quic_msghdr_parse(struct sock *sk, struct msghdr *msg, struct quic_ha
 	}
 	/* No active stream, pick the next to open based on stream direction. */
 	sinfo->stream_id = streams->send.next_bidi_stream_id;
-	if (sinfo->stream_flags & MSG_STREAM_UNI)
+	if (sinfo->stream_flags & MSG_QUIC_STREAM_UNI)
 		sinfo->stream_id = streams->send.next_uni_stream_id;
 	return 0;
 }
 
-/* Returns 1 if stream_id is within allowed limits or 0 otherwise.  If MSG_STREAM_SNDBLOCK is
+/* Returns 1 if stream_id is within allowed limits or 0 otherwise.  If MSG_QUIC_STREAM_SNDBLOCK is
  * set, may send a STREAMS_BLOCKED frame.
  */
 static int quic_sock_stream_available(struct sock *sk, s64 stream_id, u32 flags)
@@ -692,7 +693,7 @@ static int quic_sock_stream_available(struct sock *sk, s64 stream_id, u32 flags)
 	if (!quic_stream_id_exceeds(streams, stream_id, true))
 		return 1;
 
-	if (!(flags & MSG_STREAM_SNDBLOCK))
+	if (!(flags & MSG_QUIC_STREAM_SNDBLOCK))
 		return 0;
 
 	blocked = streams->send.bidi_blocked;
@@ -710,7 +711,7 @@ static int quic_sock_stream_available(struct sock *sk, s64 stream_id, u32 flags)
 /* Wait until the given stream ID becomes available for sending. */
 static int quic_wait_for_stream(struct sock *sk, s64 stream_id, u32 flags)
 {
-	long timeo = sock_sndtimeo(sk, flags & MSG_STREAM_DONTWAIT);
+	long timeo = sock_sndtimeo(sk, flags & MSG_QUIC_STREAM_DONTWAIT);
 	DEFINE_WAIT(wait);
 	int err = 0;
 
@@ -828,7 +829,7 @@ static int quic_sock_stream_writable(struct sock *sk, struct quic_stream *stream
 				     u32 flags, u32 len)
 {
 	/* Check if flow control limits allow sending 'len' bytes. */
-	if (quic_outq_flow_control(sk, stream, len, flags & MSG_STREAM_SNDBLOCK))
+	if (quic_outq_flow_control(sk, stream, len, flags & MSG_QUIC_STREAM_SNDBLOCK))
 		return 0;
 	/* Check socket send buffer space and memory scheduling capacity. */
 	if (sk_stream_wspace(sk) < len || !sk_wmem_schedule(sk, len))
@@ -965,7 +966,7 @@ static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 		goto err;
 	}
 
-	if (flags & MSG_DATAGRAM) { /* Datagram Messages Send Path. */
+	if (flags & MSG_QUIC_DATAGRAM) { /* Datagram Messages Send Path. */
 		if (!outq->max_datagram_frame_size) { /* Peer doesn't allow datagrams. */
 			err = -EINVAL;
 			goto err;
@@ -1050,7 +1051,7 @@ static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 out:
 	err = bytes; /* Return total bytes sent. */
 err:
-	if (err < 0 && !has_hinfo && !(flags & MSG_DATAGRAM))
+	if (err < 0 && !has_hinfo && !(flags & MSG_QUIC_DATAGRAM))
 		err = sk_stream_error(sk, flags, err); /* Handle error and possibly send SIGPIPE. */
 	release_sock(sk);
 	return err;
@@ -1134,7 +1135,7 @@ static int quic_recvmsg(struct sock *sk, struct msghdr *msg, size_t msg_len, int
 		fin = frame->stream_fin;
 		stream = frame->stream;
 		if (frame->event) {
-			msg->msg_flags |= MSG_NOTIFICATION; /* An Event received. */
+			msg->msg_flags |= MSG_QUIC_NOTIFICATION; /* An Event received. */
 		} else if (frame->level) {
 			/* Attach handshake info control message if crypto level present. */
 			hinfo.crypto_level = frame->level;
@@ -1144,7 +1145,7 @@ static int quic_recvmsg(struct sock *sk, struct msghdr *msg, size_t msg_len, int
 				goto out;
 			}
 		} else if (frame->dgram) {
-			msg->msg_flags |= MSG_DATAGRAM; /* A Datagram Message received. */
+			msg->msg_flags |= MSG_QUIC_DATAGRAM; /* A Datagram Message received. */
 		}
 		if (flags & MSG_PEEK) /* For peek, only look at first frame, don't consume data. */
 			break;
@@ -1172,7 +1173,7 @@ static int quic_recvmsg(struct sock *sk, struct msghdr *msg, size_t msg_len, int
 			 * state, which is a terminal state.
 			 */
 			stream->recv.state = QUIC_STREAM_RECV_STATE_READ;
-			sinfo.stream_flags |= MSG_STREAM_FIN;
+			sinfo.stream_flags |= MSG_QUIC_STREAM_FIN;
 			break;
 		}
 
@@ -2163,10 +2164,10 @@ static int quic_sock_stream_open(struct sock *sk, u32 len, sockptr_t optval, soc
 	/* If stream_id is -1, assign the next available ID (bidi or uni). */
 	if (sinfo.stream_id == -1) {
 		sinfo.stream_id = streams->send.next_bidi_stream_id;
-		if (sinfo.stream_flags & MSG_STREAM_UNI)
+		if (sinfo.stream_flags & MSG_QUIC_STREAM_UNI)
 			sinfo.stream_id = streams->send.next_uni_stream_id;
 	}
-	sinfo.stream_flags |= MSG_STREAM_NEW; /* Mark stream as to be created. */
+	sinfo.stream_flags |= MSG_QUIC_STREAM_NEW; /* Mark stream as to be created. */
 
 	stream = quic_sock_send_stream(sk, &sinfo); /* Actually create or find the stream. */
 	if (IS_ERR(stream))
