@@ -17,6 +17,9 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>
  */
 
+#ifndef _NETINET_QUIC_H
+#define _NETINET_QUIC_H
+
 #include <gnutls/abstract.h>
 #include <sys/socket.h>
 #include <linux/quic.h>
@@ -102,3 +105,5 @@ int quic_set_log_level(int level);
 #ifdef __cplusplus
 }
 #endif
+
+#endif /* _NETINET_QUIC_H */
