@@ -272,7 +272,7 @@ static struct quic_frame *quic_frame_stream_create(struct sock *sk, void *data, 
 	if ((u64)msg_len <= wspace) { /* All data fits in flow control limit. */
 		if (msg_len <= max_frame_len - hlen) { /* Fits in MSS. */
 			/* If message fits fully, include FIN bit if requested. */
-			if (info->flags & MSG_STREAM_FIN)
+			if (info->flags & MSG_QUIC_STREAM_FIN)
 				type |= QUIC_STREAM_BIT_FIN;
 		} else { /* Limit to MSS and mark as nodelay. */
 			nodelay = 1;
@@ -2275,7 +2275,7 @@ int quic_frame_stream_append(struct sock *sk, struct quic_frame *frame,
 	wspace = quic_outq_wspace(sk, stream);
 	if ((u64)msg_len <= wspace) {
 		if (msg_len <= max_frame_len - hlen - frame->bytes) {
-			if (info->flags & MSG_STREAM_FIN)
+			if (info->flags & MSG_QUIC_STREAM_FIN)
 				type |= QUIC_STREAM_BIT_FIN;
 		} else {
 			nodelay = 1;

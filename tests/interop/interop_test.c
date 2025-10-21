@@ -686,7 +686,7 @@ static int http3_write_data(struct http_ctx *ctx, nghttp3_conn *httpconn, int so
 		sent = 0;
 		for (i = 0; i < cnt; i++) {
 			if (i == cnt - 1 && fin)
-				flags |= MSG_STREAM_FIN;
+				flags |= MSG_QUIC_STREAM_FIN;
 			http_log_debug("%s: %d %ld %d\n", __func__, vec[i].len, stream_id, flags);
 			ret = quic_sendmsg(sockfd, vec[i].base, vec[i].len, stream_id, flags);
 			if (ret < 0)
@@ -718,7 +718,7 @@ static int http3_read_data(struct http_ctx *ctx, nghttp3_conn *httpconn, int soc
 		}
 		http_log_debug("%s: %d %ld %d\n", __func__, ret, stream_id, flags);
 		ret = nghttp3_conn_read_stream(httpconn, stream_id, ctx->buf, ret,
-					       flags & MSG_STREAM_FIN);
+					       flags & MSG_QUIC_STREAM_FIN);
 		if (ret < 0) {
 			errno = -ret;
 			return -1;
@@ -852,7 +852,7 @@ static int http3_client_create_conn(nghttp3_conn **httpconn, struct http_ctx *ct
 		return -1;
 
 	sinfo.stream_id = -1;
-	sinfo.stream_flags = MSG_STREAM_UNI;
+	sinfo.stream_flags = MSG_QUIC_STREAM_UNI;
 	ret = getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_STREAM_OPEN, &sinfo, &len);
 	if (ret) {
 		http_log_error("socket getsockopt stream_open ctrl failed\n");
@@ -867,7 +867,7 @@ static int http3_client_create_conn(nghttp3_conn **httpconn, struct http_ctx *ct
 	http_log_debug("%s ctrl_stream_id %llu\n", __func__, ctrl_stream_id);
 
 	sinfo.stream_id = -1;
-	sinfo.stream_flags = MSG_STREAM_UNI;
+	sinfo.stream_flags = MSG_QUIC_STREAM_UNI;
 	ret = getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_STREAM_OPEN, &sinfo, &len);
 	if (ret) {
 		http_log_error("socket getsockopt stream_open enc failed\n");
@@ -877,7 +877,7 @@ static int http3_client_create_conn(nghttp3_conn **httpconn, struct http_ctx *ct
 	http_log_debug("%s qpack_enc_stream_id %llu\n", __func__, qpack_enc_stream_id);
 
 	sinfo.stream_id = -1;
-	sinfo.stream_flags = MSG_STREAM_UNI;
+	sinfo.stream_flags = MSG_QUIC_STREAM_UNI;
 	ret = getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_STREAM_OPEN, &sinfo, &len);
 	if (ret) {
 		http_log_error("socket getsockopt stream_open dec failed\n");
@@ -1101,7 +1101,7 @@ static int http3_server_create_conn(nghttp3_conn **httpconn, struct http_ctx *ct
 	nghttp3_conn_set_max_client_streams_bidi(*httpconn, param.max_streams_bidi);
 
 	sinfo.stream_id = -1;
-	sinfo.stream_flags = MSG_STREAM_UNI;
+	sinfo.stream_flags = MSG_QUIC_STREAM_UNI;
 	ret = getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_STREAM_OPEN, &sinfo, &len);
 	if (ret) {
 		http_log_error("socket getsockopt stream_open ctrl failed\n");
@@ -1116,7 +1116,7 @@ static int http3_server_create_conn(nghttp3_conn **httpconn, struct http_ctx *ct
 	http_log_debug("%s ctrl_stream_id %llu\n", __func__, ctrl_stream_id);
 
 	sinfo.stream_id = -1;
-	sinfo.stream_flags = MSG_STREAM_UNI;
+	sinfo.stream_flags = MSG_QUIC_STREAM_UNI;
 	ret = getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_STREAM_OPEN, &sinfo, &len);
 	if (ret) {
 		http_log_error("socket getsockopt stream_open enc failed\n");
@@ -1126,7 +1126,7 @@ static int http3_server_create_conn(nghttp3_conn **httpconn, struct http_ctx *ct
 	http_log_debug("%s qpack_enc_stream_id %llu\n", __func__, qpack_enc_stream_id);
 
 	sinfo.stream_id = -1;
-	sinfo.stream_flags = MSG_STREAM_UNI;
+	sinfo.stream_flags = MSG_QUIC_STREAM_UNI;
 	ret = getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_STREAM_OPEN, &sinfo, &len);
 	if (ret) {
 		http_log_error("socket getsockopt stream_open dec failed\n");
@@ -1316,7 +1316,7 @@ static int http3_server(char *host, char *pkey_file, char *cert_file,
 static int http09_submit_request(struct http_ctx *ctx, int64_t stream_id)
 {
 	struct http_req *req = &ctx->reqs[stream_id >> 2];
-	uint32_t flags = MSG_STREAM_FIN;
+	uint32_t flags = MSG_QUIC_STREAM_FIN;
 	int ret, sockfd = ctx->sockfd;
 	char *data;
 
@@ -1362,7 +1362,7 @@ static int http09_client_recv_data(struct http_ctx *ctx, int64_t stream_id, uint
 		return -1;
 	}
 
-	if (flags & MSG_STREAM_FIN) {
+	if (flags & MSG_QUIC_STREAM_FIN) {
 		ctx->req_cnt--;
 		if (!ctx->req_cnt)
 			ctx->complete = 1;
@@ -1385,7 +1385,7 @@ static int http09_server_recv_data(struct http_ctx *ctx, int64_t stream_id, uint
 	char *path;
 
 	strncat(req->path, (const char *)data, datalen);
-	if (!(flags & MSG_STREAM_FIN))
+	if (!(flags & MSG_QUIC_STREAM_FIN))
 		return 0;
 
 	datalen = strlen(req->path);
@@ -1441,7 +1441,7 @@ static int http09_server_recv_data(struct http_ctx *ctx, int64_t stream_id, uint
 	}
 	close(fd);
 send:
-	ret = quic_sendmsg(sockfd, req->data, req->len, stream_id, MSG_STREAM_FIN);
+	ret = quic_sendmsg(sockfd, req->data, req->len, stream_id, MSG_QUIC_STREAM_FIN);
 	if (ret > 0)
 		ret = 0;
 out:

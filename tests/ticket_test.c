@@ -157,7 +157,7 @@ static int do_client(int argc, char *argv[])
 
 	strcpy(msg, "hello quic server!");
 	sid = QUIC_STREAM_TYPE_UNI_MASK;
-	flags = MSG_STREAM_NEW | MSG_STREAM_FIN;
+	flags = MSG_QUIC_STREAM_NEW | MSG_QUIC_STREAM_FIN;
 	ret = quic_sendmsg(sockfd, msg, strlen(msg), sid, flags);
 	if (ret == -1) {
 		printf("send error %d %d\n", ret, errno);
@@ -205,7 +205,7 @@ static int do_client(int argc, char *argv[])
 	/* send early data before handshake */
 	strcpy(msg, "hello quic server, I'm back!");
 	sid = QUIC_STREAM_TYPE_UNI_MASK;
-	flags = MSG_STREAM_NEW | MSG_STREAM_FIN;
+	flags = MSG_QUIC_STREAM_NEW | MSG_QUIC_STREAM_FIN;
 	ret = quic_sendmsg(sockfd, msg, strlen(msg), sid, flags);
 	if (ret == -1) {
 		printf("send error %d %d\n", ret, errno);
@@ -362,7 +362,7 @@ static int do_server(int argc, char *argv[])
 
 	strcpy(msg, "hello quic client!");
 	sid = QUIC_STREAM_TYPE_SERVER_MASK;
-	flags = MSG_STREAM_NEW | MSG_STREAM_FIN;
+	flags = MSG_QUIC_STREAM_NEW | MSG_QUIC_STREAM_FIN;
 	ret = quic_sendmsg(sockfd, msg, strlen(msg), sid, flags);
 	if (ret == -1) {
 		printf("send error %d %d\n", ret, errno);
@@ -395,7 +395,7 @@ static int do_server(int argc, char *argv[])
 
 	strcpy(msg, "hello quic client! welcome back!");
 	sid = QUIC_STREAM_TYPE_SERVER_MASK;
-	flags = MSG_STREAM_NEW | MSG_STREAM_FIN;
+	flags = MSG_QUIC_STREAM_NEW | MSG_QUIC_STREAM_FIN;
 	ret = quic_sendmsg(sockfd, msg, strlen(msg), sid, flags);
 	if (ret == -1) {
 		printf("send error %d %d\n", ret, errno);

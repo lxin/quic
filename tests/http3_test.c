@@ -321,7 +321,7 @@ static int http_client_create_conn(nghttp3_conn **httpconn, int sockfd, struct h
 		return -1;
 
 	sinfo.stream_id = -1;
-	sinfo.stream_flags = MSG_STREAM_UNI;
+	sinfo.stream_flags = MSG_QUIC_STREAM_UNI;
 	ret = getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_STREAM_OPEN, &sinfo, &len);
 	if (ret) {
 		http_log_error("socket getsockopt stream_open ctrl failed\n");
@@ -334,7 +334,7 @@ static int http_client_create_conn(nghttp3_conn **httpconn, int sockfd, struct h
 	http_log_debug("%s ctrl_stream_id %lld\n", __func__, ctrl_stream_id);
 
 	sinfo.stream_id = -1;
-	sinfo.stream_flags = MSG_STREAM_UNI;
+	sinfo.stream_flags = MSG_QUIC_STREAM_UNI;
 	ret = getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_STREAM_OPEN, &sinfo, &len);
 	if (ret) {
 		http_log_error("socket getsockopt stream_open enc failed\n");
@@ -344,7 +344,7 @@ static int http_client_create_conn(nghttp3_conn **httpconn, int sockfd, struct h
 	http_log_debug("%s qpack_enc_stream_id %lld\n", __func__, qpack_enc_stream_id);
 
 	sinfo.stream_id = -1;
-	sinfo.stream_flags = MSG_STREAM_UNI;
+	sinfo.stream_flags = MSG_QUIC_STREAM_UNI;
 	ret = getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_STREAM_OPEN, &sinfo, &len);
 	if (ret) {
 		http_log_error("socket getsockopt stream_open dec failed\n");
@@ -376,7 +376,7 @@ static int http_write_data(nghttp3_conn *httpconn, int sockfd)
 		sent = 0;
 		for (i = 0; i < cnt; i++) {
 			if (i == cnt - 1 && fin)
-				flags |= MSG_STREAM_FIN;
+				flags |= MSG_QUIC_STREAM_FIN;
 			http_log_debug("%s: %p %llu %lld %d\n", __func__, vec[i].base, vec[i].len,
 				       stream_id, flags);
 			n = quic_sendmsg(sockfd, vec[i].base, vec[i].len, stream_id, flags);
@@ -411,7 +411,7 @@ static int http_read_data(nghttp3_conn *httpconn, int sockfd)
 		}
 		http_log_debug("%s: %d %ld %d\n", __func__, ret, stream_id, flags);
 		ret = nghttp3_conn_read_stream(httpconn, stream_id, buf, ret,
-					       flags & MSG_STREAM_FIN);
+					       flags & MSG_QUIC_STREAM_FIN);
 		if (ret < 0)
 			return -1;
 	}
@@ -834,7 +834,7 @@ static int http_server_create_conn(nghttp3_conn **httpconn, int sockfd, struct h
 	nghttp3_conn_set_max_client_streams_bidi(*httpconn, param.max_streams_bidi);
 
 	sinfo.stream_id = -1;
-	sinfo.stream_flags = MSG_STREAM_UNI;
+	sinfo.stream_flags = MSG_QUIC_STREAM_UNI;
 	ret = getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_STREAM_OPEN, &sinfo, &len);
 	if (ret) {
 		http_log_error("socket getsockopt stream_open ctrl failed\n");
@@ -847,7 +847,7 @@ static int http_server_create_conn(nghttp3_conn **httpconn, int sockfd, struct h
 	http_log_debug("%s ctrl_stream_id %lld\n", __func__, ctrl_stream_id);
 
 	sinfo.stream_id = -1;
-	sinfo.stream_flags = MSG_STREAM_UNI;
+	sinfo.stream_flags = MSG_QUIC_STREAM_UNI;
 	ret = getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_STREAM_OPEN, &sinfo, &len);
 	if (ret) {
 		http_log_error("socket getsockopt stream_open enc failed\n");
@@ -857,7 +857,7 @@ static int http_server_create_conn(nghttp3_conn **httpconn, int sockfd, struct h
 	http_log_debug("%s qpack_enc_stream_id %lld\n", __func__, qpack_enc_stream_id);
 
 	sinfo.stream_id = -1;
-	sinfo.stream_flags = MSG_STREAM_UNI;
+	sinfo.stream_flags = MSG_QUIC_STREAM_UNI;
 	ret = getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_STREAM_OPEN, &sinfo, &len);
 	if (ret) {
 		http_log_error("socket getsockopt stream_open dec failed\n");
