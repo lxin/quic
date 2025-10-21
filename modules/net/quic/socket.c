@@ -164,9 +164,12 @@ struct sock *quic_sock_lookup(struct sk_buff *skb, union quic_addr *sa, union qu
 	struct net *net = sock_net(skb->sk);
 	struct quic_path_group *paths;
 	struct quic_shash_head *head;
+	unsigned int hash;
 	struct sock *sk;
 
-	head = quic_sock_head(net, sa, da);
+	hash = quic_sock_hash(net, sa, da);
+	head = quic_sock_head(hash);
+
 	read_lock(&head->lock);
 	sk_for_each(sk, &head->head) {
 		if (net != sock_net(sk))
@@ -202,11 +205,13 @@ struct sock *quic_listen_sock_lookup(struct sk_buff *skb, union quic_addr *sa, u
 	struct quic_shash_head *head;
 	struct quic_data alpn;
 	union quic_addr *a;
+	u32 hash, len;
 	u64 length;
-	u32 len;
 	u8 *p;
 
-	head = quic_listen_sock_head(net, ntohs(sa->v4.sin_port));
+	hash = quic_listen_sock_hash(net, ntohs(sa->v4.sin_port));
+	head = quic_listen_sock_head(hash);
+
 	read_lock(&head->lock);
 
 	if (!alpns->len) { /* No ALPN entries present or failed to parse the ALPNs. */
@@ -245,7 +250,7 @@ struct sock *quic_listen_sock_lookup(struct sk_buff *skb, union quic_addr *sa, u
 	}
 unlock:
 	if (sk && sk->sk_reuseport)
-		sk = reuseport_select_sock(sk, quic_shash(net, da), skb, 1);
+		sk = reuseport_select_sock(sk, quic_addr_hash(net, da), skb, 1);
 	if (sk)
 		sock_hold(sk);
 
@@ -520,7 +525,7 @@ static int quic_hash(struct sock *sk)
 	sa = quic_path_saddr(paths, 0);
 	da = quic_path_daddr(paths, 0);
 	if (!sk->sk_max_ack_backlog) { /* Hash a regular socket with source and dest addrs/ports. */
-		head = quic_sock_head(net, sa, da);
+		head = quic_sock_head(quic_sock_hash(net, sa, da));
 		write_lock_bh(&head->lock);
 		__sk_add_node(sk, &head->head);
 		write_unlock_bh(&head->lock);
@@ -528,7 +533,7 @@ static int quic_hash(struct sock *sk)
 	}
 
 	/* Hash a listen socket with source port only. */
-	head = quic_listen_sock_head(net, ntohs(sa->v4.sin_port));
+	head = quic_listen_sock_head(quic_listen_sock_hash(net, ntohs(sa->v4.sin_port)));
 	write_lock_bh(&head->lock);
 
 	any = quic_is_any_addr(sa);
@@ -591,10 +596,10 @@ static void quic_unhash(struct sock *sk)
 			list_del(&req->list);
 			quic_request_sock_free(req);
 		}
-		head = quic_listen_sock_head(net, ntohs(sa->v4.sin_port));
+		head = quic_listen_sock_head(quic_listen_sock_hash(net, ntohs(sa->v4.sin_port)));
 		goto out;
 	}
-	head = quic_sock_head(net, sa, da);
+	head = quic_sock_head(quic_sock_hash(net, sa, da));
 
 out:
 	write_lock_bh(&head->lock);

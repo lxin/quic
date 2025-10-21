@@ -19,7 +19,7 @@
 /* Lookup a source connection ID (scid) in the global source connection ID hash table. */
 struct quic_conn_id *quic_conn_id_lookup(struct net *net, u8 *scid, u32 len)
 {
-	struct quic_shash_head *head = quic_source_conn_id_head(net, scid);
+	struct quic_shash_head *head = quic_source_conn_id_head(net, scid, len);
 	struct quic_source_conn_id *s_conn_id;
 	struct quic_conn_id *conn_id = NULL;
 
@@ -68,10 +68,11 @@ static void quic_source_conn_id_free_rcu(struct rcu_head *head)
 static void quic_source_conn_id_free(struct quic_source_conn_id *s_conn_id)
 {
 	u8 *data = s_conn_id->common.id.data;
+	u32 len = s_conn_id->common.id.len;
 	struct quic_shash_head *head;
 
 	if (!hlist_unhashed(&s_conn_id->node)) {
-		head = quic_source_conn_id_head(sock_net(s_conn_id->sk), data);
+		head = quic_source_conn_id_head(sock_net(s_conn_id->sk), data, len);
 		write_lock_bh(&head->lock);
 		hlist_del_init(&s_conn_id->node);
 		write_unlock_bh(&head->lock);
@@ -133,7 +134,8 @@ int quic_conn_id_add(struct quic_conn_id_set *id_set,
 		s_conn_id = (struct quic_source_conn_id *)common;
 		s_conn_id->sk = data;
 
-		head = quic_source_conn_id_head(sock_net(s_conn_id->sk), common->id.data);
+		head = quic_source_conn_id_head(sock_net(s_conn_id->sk), common->id.data,
+						common->id.len);
 		write_lock_bh(&head->lock);
 		hlist_add_head(&s_conn_id->node, &head->head);
 		write_unlock_bh(&head->lock);

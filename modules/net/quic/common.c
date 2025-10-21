@@ -10,7 +10,9 @@
  *    Xin Long <lucien.xin@gmail.com>
  */
 
+#include <net/netns/hash.h>
 #include <linux/vmalloc.h>
+#include <linux/jhash.h>
 
 #include "common.h"
 
@@ -39,16 +41,20 @@ u32 quic_sock_hash_size(void)
 	return quic_hashinfo.chash.size;
 }
 
-struct quic_shash_head *quic_sock_hash(u32 hash)
+u32 quic_sock_hash(struct net *net, union quic_addr *s, union quic_addr *d)
 {
-	return &quic_hashinfo.chash.hash[hash];
+	u32 ports = ((__force u32)s->v4.sin_port) << 16 | (__force u32)d->v4.sin_port;
+	u32 saddr = (s->sa.sa_family == AF_INET6) ? jhash(&s->v6.sin6_addr, 16, 0) :
+						    (__force u32)s->v4.sin_addr.s_addr;
+	u32 daddr = (d->sa.sa_family == AF_INET6) ? jhash(&d->v6.sin6_addr, 16, 0) :
+						    (__force u32)d->v4.sin_addr.s_addr;
+
+	return jhash_3words(saddr, ports, net_hash_mix(net), daddr) & (quic_sock_hash_size() - 1);
 }
 
-struct quic_shash_head *quic_sock_head(struct net *net, union quic_addr *s, union quic_addr *d)
+struct quic_shash_head *quic_sock_head(u32 hash)
 {
-	struct quic_shash_table *ht = &quic_hashinfo.chash;
-
-	return &ht->hash[quic_ahash(net, s, d) & (ht->size - 1)];
+	return &quic_hashinfo.chash.hash[hash];
 }
 
 u32 quic_listen_sock_hash_size(void)
@@ -56,30 +62,37 @@ u32 quic_listen_sock_hash_size(void)
 	return quic_hashinfo.lhash.size;
 }
 
-struct quic_shash_head *quic_listen_sock_hash(u32 hash)
+u32 quic_listen_sock_hash(struct net *net, u16 port)
+{
+	return jhash_2words((__force u32)port, net_hash_mix(net), 0) &
+		(quic_listen_sock_hash_size() - 1);
+}
+
+struct quic_shash_head *quic_listen_sock_head(u32 hash)
 {
 	return &quic_hashinfo.lhash.hash[hash];
 }
 
-struct quic_shash_head *quic_listen_sock_head(struct net *net, u16 port)
-{
-	struct quic_shash_table *ht = &quic_hashinfo.lhash;
-
-	return &ht->hash[port & (ht->size - 1)];
-}
-
-struct quic_shash_head *quic_source_conn_id_head(struct net *net, u8 *scid)
+struct quic_shash_head *quic_source_conn_id_head(struct net *net, u8 *scid, u32 len)
 {
 	struct quic_shash_table *ht = &quic_hashinfo.shash;
 
-	return &ht->hash[jhash(scid, 4, 0) & (ht->size - 1)];
+	return &ht->hash[jhash_2words(jhash(scid, len, 0), net_hash_mix(net), 0) & (ht->size - 1)];
 }
 
 struct quic_uhash_head *quic_udp_sock_head(struct net *net, u16 port)
 {
 	struct quic_uhash_table *ht = &quic_hashinfo.uhash;
 
-	return &ht->hash[port & (ht->size - 1)];
+	return &ht->hash[jhash_2words((__force u32)port, net_hash_mix(net), 0) & (ht->size - 1)];
+}
+
+u32 quic_addr_hash(struct net *net, union quic_addr *a)
+{
+	u32 addr = (a->sa.sa_family == AF_INET6) ? jhash(&a->v6.sin6_addr, 16, 0) :
+						   (__force u32)a->v4.sin_addr.s_addr;
+
+	return  jhash_3words(addr, (__force u32)a->v4.sin_port, net_hash_mix(net), 0);
 }
 
 static void quic_shash_table_free(struct quic_shash_table *ht)

@@ -223,7 +223,7 @@ static int quic_conns_seq_show(struct seq_file *seq, void *v)
 	if (hash >= quic_sock_hash_size())
 		return -ENOMEM;
 
-	head = quic_sock_hash(hash);
+	head = quic_sock_head(hash);
 	read_lock_bh(&head->lock);
 	sk_for_each(sk, &head->head) {
 		if (net != sock_net(sk))
@@ -289,7 +289,7 @@ static int quic_eps_seq_show(struct seq_file *seq, void *v)
 	if (hash >= quic_listen_sock_hash_size())
 		return -ENOMEM;
 
-	head = quic_listen_sock_hash(hash);
+	head = quic_listen_sock_head(hash);
 	read_lock_bh(&head->lock);
 	sk_for_each(sk, &head->head) {
 		if (net != sock_net(sk))
