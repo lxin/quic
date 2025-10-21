@@ -163,28 +163,37 @@ struct sock *quic_sock_lookup(struct sk_buff *skb, union quic_addr *sa, union qu
 {
 	struct net *net = sock_net(skb->sk);
 	struct quic_path_group *paths;
+	struct hlist_nulls_node *node;
 	struct quic_shash_head *head;
+	struct sock *sk = NULL, *tmp;
 	unsigned int hash;
-	struct sock *sk;
 
 	hash = quic_sock_hash(net, sa, da);
 	head = quic_sock_head(hash);
 
-	read_lock(&head->lock);
-	sk_for_each(sk, &head->head) {
-		if (net != sock_net(sk))
+	rcu_read_lock();
+begin:
+	sk_nulls_for_each_rcu(tmp, node, &head->head) {
+		if (net != sock_net(tmp))
 			continue;
-		paths = quic_paths(sk);
-		if (quic_cmp_sk_addr(sk, quic_path_saddr(paths, 0), sa) &&
-		    quic_cmp_sk_addr(sk, quic_path_daddr(paths, 0), da) &&
+		paths = quic_paths(tmp);
+		if (quic_cmp_sk_addr(tmp, quic_path_saddr(paths, 0), sa) &&
+		    quic_cmp_sk_addr(tmp, quic_path_daddr(paths, 0), da) &&
 		    quic_path_usock(paths, 0) == skb->sk &&
 		    (!dcid || !quic_conn_id_cmp(quic_path_orig_dcid(paths), dcid))) {
-			sock_hold(sk);
+			sk = tmp;
 			break;
 		}
 	}
-	read_unlock(&head->lock);
+	/* If the nulls value we got at the end of the iteration is different from the expected
+	 * one, we must restart the lookup as the list was modified concurrently.
+	 */
+	if (!sk && get_nulls_value(node) != hash)
+		goto begin;
 
+	if (sk && unlikely(!refcount_inc_not_zero(&sk->sk_refcnt)))
+		sk = NULL;
+	rcu_read_unlock();
 	return sk;
 }
 
@@ -201,6 +210,7 @@ struct sock *quic_listen_sock_lookup(struct sk_buff *skb, union quic_addr *sa, u
 				     struct quic_data *alpns)
 {
 	struct net *net = sock_net(skb->sk);
+	struct hlist_nulls_node *node;
 	struct sock *sk = NULL, *tmp;
 	struct quic_shash_head *head;
 	struct quic_data alpn;
@@ -212,10 +222,10 @@ struct sock *quic_listen_sock_lookup(struct sk_buff *skb, union quic_addr *sa, u
 	hash = quic_listen_sock_hash(net, ntohs(sa->v4.sin_port));
 	head = quic_listen_sock_head(hash);
 
-	read_lock(&head->lock);
-
+	rcu_read_lock();
+begin:
 	if (!alpns->len) { /* No ALPN entries present or failed to parse the ALPNs. */
-		sk_for_each(tmp, &head->head) {
+		sk_nulls_for_each_rcu(tmp, node, &head->head) {
 			/* If alpns->data != NULL, TLS parsing succeeded but no ALPN was found.
 			 * In this case, only match sockets that have no ALPN set.
 			 */
@@ -228,14 +238,14 @@ struct sock *quic_listen_sock_lookup(struct sk_buff *skb, union quic_addr *sa, u
 					break;
 			}
 		}
-		goto unlock;
+		goto out;
 	}
 
 	/* ALPN present: loop through each ALPN entry. */
 	for (p = alpns->data, len = alpns->len; len; len -= length, p += length) {
 		quic_get_int(&p, &len, &length, 1);
 		quic_data(&alpn, p, length);
-		sk_for_each(tmp, &head->head) {
+		sk_nulls_for_each_rcu(tmp, node, &head->head) {
 			a = quic_path_saddr(quic_paths(tmp), 0);
 			if (net == sock_net(tmp) && quic_cmp_sk_addr(tmp, a, sa) &&
 			    quic_path_usock(quic_paths(tmp), 0) == skb->sk &&
@@ -248,13 +258,19 @@ struct sock *quic_listen_sock_lookup(struct sk_buff *skb, union quic_addr *sa, u
 		if (sk)
 			break;
 	}
-unlock:
+out:
+	/* If the nulls value we got at the end of the iteration is different from the expected
+	 * one, we must restart the lookup as the list was modified concurrently.
+	 */
+	if (!sk && get_nulls_value(node) != hash)
+		goto begin;
+
 	if (sk && sk->sk_reuseport)
 		sk = reuseport_select_sock(sk, quic_addr_hash(net, da), skb, 1);
-	if (sk)
-		sock_hold(sk);
 
-	read_unlock(&head->lock);
+	if (sk && unlikely(!refcount_inc_not_zero(&sk->sk_refcnt)))
+		sk = NULL;
+	rcu_read_unlock();
 	return sk;
 }
 
@@ -517,6 +533,7 @@ static int quic_hash(struct sock *sk)
 	struct quic_path_group *paths = quic_paths(sk);
 	struct quic_data *alpns = quic_alpn(sk);
 	struct net *net = sock_net(sk);
+	struct hlist_nulls_node *node;
 	struct quic_shash_head *head;
 	union quic_addr *sa, *da;
 	struct sock *nsk;
@@ -526,18 +543,19 @@ static int quic_hash(struct sock *sk)
 	da = quic_path_daddr(paths, 0);
 	if (!sk->sk_max_ack_backlog) { /* Hash a regular socket with source and dest addrs/ports. */
 		head = quic_sock_head(quic_sock_hash(net, sa, da));
-		write_lock_bh(&head->lock);
-		__sk_add_node(sk, &head->head);
-		write_unlock_bh(&head->lock);
+		spin_lock_bh(&head->lock);
+		sock_set_flag(sk, SOCK_RCU_FREE);
+		__sk_nulls_add_node_rcu(sk, &head->head);
+		spin_unlock_bh(&head->lock);
 		return 0;
 	}
 
 	/* Hash a listen socket with source port only. */
 	head = quic_listen_sock_head(quic_listen_sock_hash(net, ntohs(sa->v4.sin_port)));
-	write_lock_bh(&head->lock);
+	spin_lock_bh(&head->lock);
 
 	any = quic_is_any_addr(sa);
-	sk_for_each(nsk, &head->head) {
+	sk_nulls_for_each(nsk, node, &head->head) {
 		if (net == sock_net(nsk) && quic_cmp_sk_addr(nsk, quic_path_saddr(paths, 0), sa) &&
 		    quic_path_usock(paths, 0) == quic_path_usock(quic_paths(nsk), 0)) {
 			/* Take the ALPNs into account, which allows directing the request to
@@ -551,7 +569,8 @@ static int quic_hash(struct sock *sk)
 					 */
 					err = reuseport_add_sock(sk, nsk, any);
 					if (!err) {
-						__sk_add_node(sk, &head->head);
+						sock_set_flag(sk, SOCK_RCU_FREE);
+						__sk_nulls_add_node_rcu(sk, &head->head);
 						INIT_LIST_HEAD(quic_reqs(sk));
 					}
 				}
@@ -570,10 +589,11 @@ static int quic_hash(struct sock *sk)
 		if (err)
 			goto out;
 	}
-	__sk_add_node(sk, &head->head);
+	sock_set_flag(sk, SOCK_RCU_FREE);
+	__sk_nulls_add_node_rcu(sk, &head->head);
 	INIT_LIST_HEAD(quic_reqs(sk));
 out:
-	write_unlock_bh(&head->lock);
+	spin_unlock_bh(&head->lock);
 	return err;
 }
 
@@ -602,11 +622,11 @@ static void quic_unhash(struct sock *sk)
 	head = quic_sock_head(quic_sock_hash(net, sa, da));
 
 out:
-	write_lock_bh(&head->lock);
+	spin_lock_bh(&head->lock);
 	if (rcu_access_pointer(sk->sk_reuseport_cb))
 		reuseport_detach_sock(sk); /* If socket was part of a reuseport group, detach it. */
-	__sk_del_node_init(sk);
-	write_unlock_bh(&head->lock);
+	__sk_nulls_del_node_init_rcu(sk);
+	spin_unlock_bh(&head->lock);
 }
 
 #define QUIC_MSG_STREAM_FLAGS \

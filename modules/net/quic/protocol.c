@@ -214,6 +214,7 @@ static int quic_conns_seq_show(struct seq_file *seq, void *v)
 {
 	struct net *net = seq_file_net(seq);
 	u32 hash = (u32)(*(loff_t *)v);
+	struct hlist_nulls_node *node;
 	struct quic_path_group *paths;
 	struct quic_shash_head *head;
 	struct quic_outqueue *outq;
@@ -224,8 +225,8 @@ static int quic_conns_seq_show(struct seq_file *seq, void *v)
 		return -ENOMEM;
 
 	head = quic_sock_head(hash);
-	read_lock_bh(&head->lock);
-	sk_for_each(sk, &head->head) {
+	rcu_read_lock();
+	sk_nulls_for_each_rcu(sk, node, &head->head) {
 		if (net != sock_net(sk))
 			continue;
 
@@ -245,7 +246,7 @@ static int quic_conns_seq_show(struct seq_file *seq, void *v)
 		uid = from_kuid_munged(seq_user_ns(seq), sock_net_uid(net, sk));
 		seq_printf(seq, "%u\t%lu\n", uid, sock_i_ino(sk));
 	}
-	read_unlock_bh(&head->lock);
+	rcu_read_unlock();
 	return 0;
 }
 
@@ -281,6 +282,7 @@ static int quic_eps_seq_show(struct seq_file *seq, void *v)
 {
 	struct net *net = seq_file_net(seq);
 	u32 hash = (u32)(*(loff_t *)v);
+	struct hlist_nulls_node *node;
 	struct quic_path_group *paths;
 	struct quic_shash_head *head;
 	struct sock *sk;
@@ -290,8 +292,8 @@ static int quic_eps_seq_show(struct seq_file *seq, void *v)
 		return -ENOMEM;
 
 	head = quic_listen_sock_head(hash);
-	read_lock_bh(&head->lock);
-	sk_for_each(sk, &head->head) {
+	rcu_read_lock();
+	sk_nulls_for_each_rcu(sk, node, &head->head) {
 		if (net != sock_net(sk))
 			continue;
 
@@ -304,7 +306,7 @@ static int quic_eps_seq_show(struct seq_file *seq, void *v)
 		uid = from_kuid_munged(seq_user_ns(seq), sock_net_uid(net, sk));
 		seq_printf(seq, "%u\t%lu\n", uid, sock_i_ino(sk));
 	}
-	read_unlock_bh(&head->lock);
+	rcu_read_unlock();
 	return 0;
 }
 

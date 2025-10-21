@@ -125,8 +125,8 @@ static int quic_shash_table_init(struct quic_shash_table *ht, u32 size)
 
 	ht->size = size;
 	for (i = 0; i < ht->size; i++) {
-		rwlock_init(&ht->hash[i].lock);
-		INIT_HLIST_HEAD(&ht->hash[i].head);
+		spin_lock_init(&ht->hash[i].lock);
+		INIT_HLIST_NULLS_HEAD(&ht->hash[i].head, i);
 	}
 	return 0;
 }

@@ -125,8 +125,8 @@ static inline union quic_addr *quic_addr(const void *addr)
 }
 
 struct quic_shash_head {
-	struct hlist_head	head;
-	rwlock_t		lock;	/* Protects 'head' in atomic context */
+	struct hlist_nulls_head	head;
+	spinlock_t		lock;	/* Protects 'head' in atomic context */
 };
 
 struct quic_shash_table {

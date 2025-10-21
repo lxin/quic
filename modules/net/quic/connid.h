@@ -24,9 +24,9 @@ struct quic_common_conn_id {
 
 struct quic_source_conn_id {
 	struct quic_common_conn_id common;
-	struct hlist_node node; /* Hash table node for fast lookup by Connection ID */
-	struct rcu_head rcu;	/* RCU header for deferred destruction */
-	struct sock *sk;	/* Pointer to sk associated with this Connection ID */
+	struct hlist_nulls_node node;	/* Hash table node for fast lookup by Connection ID */
+	struct rcu_head rcu;		/* RCU header for deferred destruction */
+	struct sock *sk;		/* Pointer to sk associated with this Connection ID */
 };
 
 struct quic_dest_conn_id {

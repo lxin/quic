@@ -22,18 +22,16 @@ struct quic_conn_id *quic_conn_id_lookup(struct net *net, u8 *scid, u32 len)
 	struct quic_shash_head *head = quic_source_conn_id_head(net, scid, len);
 	struct quic_source_conn_id *s_conn_id;
 	struct quic_conn_id *conn_id = NULL;
+	struct hlist_nulls_node *node;
 
-	read_lock(&head->lock);
-	hlist_for_each_entry(s_conn_id, &head->head, node) {
+	hlist_nulls_for_each_entry_rcu(s_conn_id, node, &head->head, node) {
 		if (net == sock_net(s_conn_id->sk) && s_conn_id->common.id.len == len &&
 		    !memcmp(scid, &s_conn_id->common.id.data, s_conn_id->common.id.len)) {
-			sock_hold(s_conn_id->sk);
-			conn_id = &s_conn_id->common.id;
+			if (likely(refcount_inc_not_zero(&s_conn_id->sk->sk_refcnt)))
+				conn_id = &s_conn_id->common.id;
 			break;
 		}
 	}
-
-	read_unlock(&head->lock);
 	return conn_id;
 }
 
@@ -71,11 +69,11 @@ static void quic_source_conn_id_free(struct quic_source_conn_id *s_conn_id)
 	u32 len = s_conn_id->common.id.len;
 	struct quic_shash_head *head;
 
-	if (!hlist_unhashed(&s_conn_id->node)) {
+	if (!hlist_nulls_unhashed(&s_conn_id->node)) {
 		head = quic_source_conn_id_head(sock_net(s_conn_id->sk), data, len);
-		write_lock_bh(&head->lock);
-		hlist_del_init(&s_conn_id->node);
-		write_unlock_bh(&head->lock);
+		spin_lock_bh(&head->lock);
+		hlist_nulls_del_init_rcu(&s_conn_id->node);
+		spin_unlock_bh(&head->lock);
 	}
 
 	/* Freeing is deferred via RCU to avoid use-after-free during concurrent lookups. */
@@ -136,9 +134,9 @@ int quic_conn_id_add(struct quic_conn_id_set *id_set,
 
 		head = quic_source_conn_id_head(sock_net(s_conn_id->sk), common->id.data,
 						common->id.len);
-		write_lock_bh(&head->lock);
-		hlist_add_head(&s_conn_id->node, &head->head);
-		write_unlock_bh(&head->lock);
+		spin_lock_bh(&head->lock);
+		hlist_nulls_add_head_rcu(&s_conn_id->node, &head->head);
+		spin_unlock_bh(&head->lock);
 	}
 	list_add_tail(&common->list, list);
 
