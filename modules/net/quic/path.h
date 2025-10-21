@@ -46,7 +46,7 @@ enum {
 struct quic_udp_sock {
 	struct work_struct work;	/* Workqueue to destroy UDP tunnel socket */
 	struct hlist_node node;		/* Entry in address-based UDP socket hash table */
-	union quic_addr addr;
+	union quic_addr addr;		/* Source address of underlying UDP tunnel socket */
 	int bind_ifindex;
 	refcount_t refcnt;
 	struct sock *sk;		/* Underlying UDP tunnel socket */
@@ -55,7 +55,11 @@ struct quic_udp_sock {
 struct quic_path {
 	union quic_addr daddr;		/* Destination address */
 	union quic_addr saddr;		/* Source address */
+
 	struct quic_udp_sock *udp_sk;	/* Wrapped UDP socket used to receive QUIC packets */
+	/* Cached UDP tunnel socket and its source address for RCU-protected lookup/access */
+	union quic_addr uaddr;
+	struct sock *usk;
 };
 
 struct quic_path_group {
@@ -122,12 +126,12 @@ static inline void quic_path_set_daddr(struct quic_path_group *paths, u8 path,
 
 static inline union quic_addr *quic_path_uaddr(struct quic_path_group *paths, u8 path)
 {
-	return &paths->path[path].udp_sk->addr;
+	return &paths->path[path].uaddr;
 }
 
 static inline struct sock *quic_path_usock(struct quic_path_group *paths, u8 path)
 {
-	return paths->path[path].udp_sk->sk;
+	return paths->path[path].usk;
 }
 
 static inline bool quic_path_alt_state(struct quic_path_group *paths, u8 state)

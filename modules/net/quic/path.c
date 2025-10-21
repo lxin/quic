@@ -133,6 +133,20 @@ static struct quic_udp_sock *quic_udp_sock_lookup(struct sock *sk, union quic_ad
 	return NULL;
 }
 
+static void quic_path_set_udp_sk(struct quic_path *path, struct quic_udp_sock *us)
+{
+	quic_udp_sock_put(path->udp_sk);
+
+	path->udp_sk = us;
+	if (!us) {
+		path->usk = NULL;
+		memset(&path->uaddr, 0, sizeof(path->uaddr));
+		return;
+	}
+	path->usk = us->sk;
+	memcpy(&path->uaddr, &us->addr, sizeof(us->addr));
+}
+
 /* Binds a QUIC path to a local port and sets up a UDP socket. */
 int quic_path_bind(struct sock *sk, struct quic_path_group *paths, u8 path)
 {
@@ -156,9 +170,7 @@ int quic_path_bind(struct sock *sk, struct quic_path_group *paths, u8 path)
 			}
 		}
 		mutex_unlock(&head->lock);
-
-		quic_udp_sock_put(paths->path[path].udp_sk);
-		paths->path[path].udp_sk = us;
+		quic_path_set_udp_sk(&paths->path[path], us);
 		return 0;
 	}
 
@@ -193,8 +205,7 @@ int quic_path_bind(struct sock *sk, struct quic_path_group *paths, u8 path)
 		}
 		mutex_unlock(&head->lock);
 
-		quic_udp_sock_put(paths->path[path].udp_sk);
-		paths->path[path].udp_sk = us;
+		quic_path_set_udp_sk(&paths->path[path], us);
 		__sk_dst_reset(sk);
 		return 0;
 	} while (--remaining > 0);
@@ -237,8 +248,8 @@ void quic_path_free(struct sock *sk, struct quic_path_group *paths, u8 path)
 	paths->alt_probes = 0;
 	paths->alt_state = QUIC_PATH_ALT_NONE;
 
-	quic_udp_sock_put(paths->path[path].udp_sk);
-	paths->path[path].udp_sk = NULL;
+	quic_path_set_udp_sk(&paths->path[path], NULL);
+
 	memset(quic_path_daddr(paths, path), 0, sizeof(union quic_addr));
 	memset(quic_path_saddr(paths, path), 0, sizeof(union quic_addr));
 }
