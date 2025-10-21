@@ -22,6 +22,10 @@
 #include <linux/quic.h>
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /* Socket option layer for QUIC */
 #ifndef SOL_QUIC
 #define SOL_QUIC		288
@@ -94,3 +98,7 @@ ssize_t quic_recvmsg(int sockfd, void *msg, size_t len,
 typedef void (*quic_set_log_func_t)(int level, const char *msg);
 quic_set_log_func_t quic_set_log_func(quic_set_log_func_t func);
 int quic_set_log_level(int level);
+
+#ifdef __cplusplus
+}
+#endif
