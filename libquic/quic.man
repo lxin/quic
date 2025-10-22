@@ -159,7 +159,7 @@ this flag.
 Prevents blocking if there is no send buffer available.
 
 .IP \[bu] 4
-.B `MSG_DATAGRAM`:
+.B `MSG_QUIC_DATAGRAM`:
 Sends the data as an unreliable datagram.
 
 .PP
@@ -194,11 +194,11 @@ may be set to:
 Indicates that the received data is read completely.
 
 .IP \[bu] 4
-.B `MSG_DATAGRAM`:
+.B `MSG_QUIC_DATAGRAM`:
 Indicates that the received data is an unreliable datagram.
 
 .IP \[bu] 4
-.B `MSG_NOTIFICATION`:
+.B `MSG_QUIC_NOTIFICATION`:
 Indicates that the received data is a notification message.
 
 .PP
@@ -236,10 +236,10 @@ The fields in the `quic_stream_info` structure are defined as follows:
 Value -1 is special handling based on the flags:
 
 .IP \[bu] 4
-.B If `MSG_STREAM_NEW` is set:
+.B If `MSG_QUIC_STREAM_NEW` is set:
 Opens the next bidirectional stream and uses it for sending data.
 .IP \[bu] 4
-.B If both `MSG_STREAM_NEW` and `MSG_STREAM_UNI` are set:
+.B If both `MSG_QUIC_STREAM_NEW` and `MSG_QUIC_STREAM_UNI` are set:
 Opens the next unidirectional stream and uses it for sending data.
 .IP \[bu] 4
 .B Otherwise:
@@ -262,19 +262,19 @@ Indicates a unidirectional stream.
 
 .RS 4
 .IP \[bu] 4
-.B `MSG_STREAM_NEW`:
+.B `MSG_QUIC_STREAM_NEW`:
 Opens a stream and sends the first data.
 .IP \[bu] 4
-.B `MSG_STREAM_FIN`:
+.B `MSG_QUIC_STREAM_FIN`:
 Sends the last data and closes the stream.
 .IP \[bu] 4
-.B `MSG_STREAM_UNI`:
+.B `MSG_QUIC_STREAM_UNI`:
 Opens the next unidirectional stream.
 .IP \[bu] 4
-.B `MSG_STREAM_DONTWAIT`:
+.B `MSG_QUIC_STREAM_DONTWAIT`:
 Opens the stream without blocking.
 .IP \[bu] 4
-.B `MSG_STREAM_SNDBLOCK`:
+.B `MSG_QUIC_STREAM_SNDBLOCK`:
 Send streams blocked when no capacity.
 .RE
 
@@ -293,7 +293,7 @@ Identifies the stream to which the received data belongs.
 
 .RS 4
 .IP \[bu] 4
-.B `MSG_STREAM_FIN`:
+.B `MSG_QUIC_STREAM_FIN`:
 Indicates that the data received is the last one for this stream.
 .RE
 
@@ -714,7 +714,7 @@ enum quic_event_type {
 
 .PP
 When a notification arrives, `recvmsg()` returns the notification in the
-application-supplied data buffer via `msg_iov`, and sets `MSG_NOTIFICATION`
+application-supplied data buffer via `msg_iov`, and sets `MSG_QUIC_NOTIFICATION`
 in `msg_flags` of `msghdr`. The first byte of the received data indicates the
 type of the event, corresponding to one of the values in the `quic_event_type`
 enum. The subsequent bytes contain the content of the event. To manage and
@@ -800,7 +800,7 @@ The updated maximum amount of data that can be sent on the stream.
 
 .SS QUIC_EVENT_STREAM_MAX_STREAM
 Delivered when a `MAX_STREAMS` frame is received. Useful when
-using `MSG_STREAM_DONTWAIT` to open a stream whose ID exceeds the current
+using `MSG_QUIC_STREAM_DONTWAIT` to open a stream whose ID exceeds the current
 maximum stream count. After receiving this notification, the application
 SHOULD attempt to open the stream again.
 
