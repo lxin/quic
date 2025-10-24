@@ -1319,8 +1319,8 @@ static int quic_sock_apply_config(struct sock *sk, struct quic_config *c)
 	return 0;
 }
 
-/* Initialize an accept QUIC socket from a listen socket and a connection request. */
-static int quic_copy_sock(struct sock *nsk, struct sock *sk, struct quic_request_sock *req)
+/* Initialize an accept QUIC socket from a listen socket. */
+static int quic_accept_sock_init(struct sock *nsk, struct sock *sk)
 {
 	struct quic_pnspace *space = quic_pnspace(sk, QUIC_CRYPTO_INITIAL);
 	struct quic_transport_param param = {};
@@ -1342,9 +1342,6 @@ static int quic_copy_sock(struct sock *nsk, struct sock *sk, struct quic_request
 	nsk->sk_bound_dev_if = sk->sk_bound_dev_if;
 
 	inet_sk(nsk)->pmtudisc = inet_sk(sk)->pmtudisc;
-
-	/* Move matching packets from request socket's backlog to accept socket. */
-	skb_queue_splice_init(&req->backlog_list, &quic_inq(nsk)->backlog_list);
 
 	/* Record the creation time of this accept socket in microseconds.  Used by
 	 * quic_accept_sock_exists() to determine if a packet from sk_backlog of
@@ -1374,7 +1371,6 @@ static int quic_accept_sock_setup(struct sock *sk, struct quic_request_sock *req
 	struct quic_packet *packet = quic_packet(sk);
 	struct quic_inqueue *inq = quic_inq(sk);
 	struct quic_conn_id conn_id;
-	struct sk_buff_head tmpq;
 	struct sk_buff *skb;
 	int err;
 
@@ -1424,12 +1420,10 @@ static int quic_accept_sock_setup(struct sock *sk, struct quic_request_sock *req
 	quic_timer_start(sk, QUIC_TIMER_IDLE, inq->timeout);
 
 	/* Process all packets in backlog list of this socket. */
-	__skb_queue_head_init(&tmpq);
-	skb_queue_splice_init(&inq->backlog_list, &tmpq);
-	skb = __skb_dequeue(&tmpq);
+	skb = __skb_dequeue(&req->backlog_list);
 	while (skb) {
 		quic_packet_process(sk, skb);
-		skb = __skb_dequeue(&tmpq);
+		skb = __skb_dequeue(&req->backlog_list);
 	}
 
 out:
@@ -1471,9 +1465,10 @@ static struct sock *quic_accept(struct sock *sk, int flags, int *errp, bool kern
 	if (err)
 		goto free;
 
-	err = quic_copy_sock(nsk, sk, req);
+	err = quic_accept_sock_init(nsk, sk);
 	if (err)
 		goto free;
+
 	err = nsk->sk_prot->bind(nsk, &req->saddr.sa, sizeof(req->saddr));
 	if (err)
 		goto free;
