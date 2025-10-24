@@ -993,7 +993,7 @@ static int quic_packet_listen_process(struct sock *sk, struct sk_buff *skb)
 	}
 
 	/* Add request sock for this new QUIC connection. */
-	req = quic_request_sock_enqueue(sk, &odcid, retry);
+	req = quic_request_sock_create(sk, &odcid, retry);
 	if (!req) {
 		if (quic_packet_backlog_schedule(net, skb))
 			return 0;

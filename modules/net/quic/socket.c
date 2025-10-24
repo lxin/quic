@@ -44,8 +44,8 @@ struct quic_request_sock *quic_request_sock_lookup(struct sock *sk)
 }
 
 /* Create and enqueue a QUIC request sock for a new incoming connection. */
-struct quic_request_sock *quic_request_sock_enqueue(struct sock *sk, struct quic_conn_id *odcid,
-						    u8 retry)
+struct quic_request_sock *quic_request_sock_create(struct sock *sk, struct quic_conn_id *odcid,
+						   u8 retry)
 {
 	struct quic_packet *packet = quic_packet(sk);
 	struct quic_request_sock *req;
@@ -73,17 +73,6 @@ struct quic_request_sock *quic_request_sock_enqueue(struct sock *sk, struct quic
 	return req;
 }
 
-static struct quic_request_sock *quic_request_sock_dequeue(struct sock *sk)
-{
-	struct quic_request_sock *req;
-
-	req = list_first_entry(quic_reqs(sk), struct quic_request_sock, list);
-
-	list_del_init(&req->list);
-	sk_acceptq_removed(sk);
-	return req;
-}
-
 int quic_request_sock_backlog_tail(struct sock *sk, struct quic_request_sock *req,
 				   struct sk_buff *skb)
 {
@@ -97,9 +86,11 @@ int quic_request_sock_backlog_tail(struct sock *sk, struct quic_request_sock *re
 	return 0;
 }
 
-static void quic_request_sock_free(struct quic_request_sock *req)
+static void quic_request_sock_free(struct sock *sk, struct quic_request_sock *req)
 {
 	__skb_queue_purge(&req->backlog_list);
+	list_del_init(&req->list);
+	sk_acceptq_removed(sk);
 	kfree(req);
 }
 
@@ -612,10 +603,8 @@ static void quic_unhash(struct sock *sk)
 	da = quic_path_daddr(paths, 0);
 	if (sk->sk_max_ack_backlog) {
 		/* Unhash a listen socket: clean up all pending connection requests. */
-		list_for_each_entry_safe(req, tmp, quic_reqs(sk), list) {
-			list_del(&req->list);
-			quic_request_sock_free(req);
-		}
+		list_for_each_entry_safe(req, tmp, quic_reqs(sk), list)
+			quic_request_sock_free(sk, req);
 		head = quic_listen_sock_head(quic_listen_sock_hash(net, ntohs(sa->v4.sin_port)));
 		goto out;
 	}
@@ -1459,7 +1448,7 @@ static struct sock *quic_accept(struct sock *sk, int flags, int *errp, bool kern
 	}
 	sock_init_data(NULL, nsk);
 
-	req = quic_request_sock_dequeue(sk);
+	req = list_first_entry(quic_reqs(sk), struct quic_request_sock, list);
 
 	err = nsk->sk_prot->init(nsk);
 	if (err)
@@ -1477,13 +1466,12 @@ static struct sock *quic_accept(struct sock *sk, int flags, int *errp, bool kern
 	if (err)
 		goto free;
 
-	quic_request_sock_free(req);
+	quic_request_sock_free(sk, req);
 out:
 	release_sock(sk);
 	*errp = err;
 	return nsk;
 free:
-	quic_request_sock_free(req);
 	nsk->sk_prot->close(nsk, 0);
 	nsk = NULL;
 	goto out;
