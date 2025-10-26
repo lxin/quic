@@ -52,10 +52,11 @@ static void quic_udp_sock_put_work(struct work_struct *work)
 	struct quic_udp_sock *us = container_of(work, struct quic_udp_sock, work);
 	struct quic_uhash_head *head;
 
+	udp_tunnel_sock_release(us->sk->sk_socket);
+
 	head = quic_udp_sock_head(sock_net(us->sk), ntohs(us->addr.v4.sin_port));
 	mutex_lock(&head->lock);
 	__hlist_del(&us->node);
-	udp_tunnel_sock_release(us->sk->sk_socket);
 	mutex_unlock(&head->lock);
 	kfree(us);
 }
@@ -99,12 +100,12 @@ static struct quic_udp_sock *quic_udp_sock_create(struct sock *sk, union quic_ad
 
 static bool quic_udp_sock_get(struct quic_udp_sock *us)
 {
-	return (us && refcount_inc_not_zero(&us->refcnt));
+	return refcount_inc_not_zero(&us->refcnt);
 }
 
 static void quic_udp_sock_put(struct quic_udp_sock *us)
 {
-	if (us && refcount_dec_and_test(&us->refcnt))
+	if (refcount_dec_and_test(&us->refcnt))
 		schedule_work(&us->work);
 }
 
@@ -137,7 +138,8 @@ static struct quic_udp_sock *quic_udp_sock_lookup(struct sock *sk, union quic_ad
 
 static void quic_path_set_udp_sk(struct quic_path *path, struct quic_udp_sock *us)
 {
-	quic_udp_sock_put(path->udp_sk);
+	if (path->udp_sk)
+		quic_udp_sock_put(path->udp_sk);
 
 	path->udp_sk = us;
 	if (!us) {
@@ -164,7 +166,12 @@ int quic_path_bind(struct sock *sk, struct quic_path_group *paths, u8 path)
 		head = quic_udp_sock_head(net, port);
 		mutex_lock(&head->lock);
 		us = quic_udp_sock_lookup(sk, a, port);
-		if (!quic_udp_sock_get(us)) {
+		if (us) {
+			if (!quic_udp_sock_get(us)) { /* Releasing in workqueue; retry later. */
+				mutex_unlock(&head->lock);
+				return -EAGAIN;
+			}
+		} else {
 			us = quic_udp_sock_create(sk, a);
 			if (!us) {
 				mutex_unlock(&head->lock);
