@@ -434,7 +434,7 @@ static int quic_bind(struct sock *sk, struct sockaddr *addr, int addr_len)
 	union quic_addr a;
 	int err = -EINVAL;
 
-	lock_sock_nested(sk, SINGLE_DEPTH_NESTING);
+	lock_sock(sk);
 
 	if (quic_path_saddr(paths, 0)->v4.sin_port || quic_get_user_addr(sk, &a, addr, addr_len))
 		goto out;
@@ -1313,6 +1313,11 @@ static int quic_accept_sock_init(struct sock *nsk, struct sock *sk)
 {
 	struct quic_pnspace *space = quic_pnspace(sk, QUIC_CRYPTO_INITIAL);
 	struct quic_transport_param param = {};
+	int err;
+
+	err = quic_init_sock(nsk);
+	if (err)
+		return err;
 
 	/* Duplicate ALPN from listen to accept socket for handshake. */
 	if (quic_data_dup(quic_alpn(nsk), quic_alpn(sk)->data, quic_alpn(sk)->len))
@@ -1362,6 +1367,12 @@ static int quic_accept_sock_setup(struct sock *sk, struct quic_request_sock *req
 	struct quic_conn_id conn_id;
 	struct sk_buff *skb;
 	int err;
+
+	quic_path_set_saddr(paths, 0, &req->saddr);
+	err = quic_path_bind(sk, paths, 0);
+	if (err)
+		return err;
+	quic_set_sk_addr(sk, &req->saddr, true);
 
 	lock_sock_nested(sk, SINGLE_DEPTH_NESTING);
 	/* Set destination address and resolve route (may also auto-set source address). */
@@ -1450,15 +1461,7 @@ static struct sock *quic_accept(struct sock *sk, int flags, int *errp, bool kern
 
 	req = list_first_entry(quic_reqs(sk), struct quic_request_sock, list);
 
-	err = nsk->sk_prot->init(nsk);
-	if (err)
-		goto free;
-
 	err = quic_accept_sock_init(nsk, sk);
-	if (err)
-		goto free;
-
-	err = nsk->sk_prot->bind(nsk, &req->saddr.sa, sizeof(req->saddr));
 	if (err)
 		goto free;
 
