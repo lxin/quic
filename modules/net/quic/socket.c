@@ -1472,14 +1472,14 @@ out:
 	*errp = err;
 	return nsk;
 free:
-	nsk->sk_prot->close(nsk, 0);
+	sk_common_release(nsk);
 	nsk = NULL;
 	goto out;
 }
 
 static void quic_close(struct sock *sk, long timeout)
 {
-	lock_sock_nested(sk, SINGLE_DEPTH_NESTING);
+	lock_sock(sk);
 
 	quic_outq_transmit_app_close(sk);
 	quic_set_state(sk, QUIC_SS_CLOSED);
