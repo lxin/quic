@@ -95,24 +95,12 @@ u32 quic_addr_hash(struct net *net, union quic_addr *a)
 	return  jhash_3words(addr, (__force u32)a->v4.sin_port, net_hash_mix(net), 0);
 }
 
-static void quic_shash_table_free(struct quic_shash_table *ht)
-{
-	vfree(ht->hash);
-	ht->hash = NULL;
-}
-
-static void quic_uhash_table_free(struct quic_uhash_table *ht)
-{
-	vfree(ht->hash);
-	ht->hash = NULL;
-}
-
 void quic_hash_tables_destroy(void)
 {
-	quic_shash_table_free(&quic_hashinfo.shash);
-	quic_shash_table_free(&quic_hashinfo.lhash);
-	quic_shash_table_free(&quic_hashinfo.chash);
-	quic_uhash_table_free(&quic_hashinfo.uhash);
+	vfree(quic_hashinfo.shash.hash);
+	vfree(quic_hashinfo.lhash.hash);
+	vfree(quic_hashinfo.chash.hash);
+	vfree(quic_hashinfo.uhash.hash);
 }
 
 static int quic_shash_table_init(struct quic_shash_table *ht, u32 size)
