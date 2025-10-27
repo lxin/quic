@@ -51,13 +51,25 @@ static void quic_udp_sock_put_work(struct work_struct *work)
 {
 	struct quic_udp_sock *us = container_of(work, struct quic_udp_sock, work);
 	struct quic_uhash_head *head;
+	struct sock *sk = us->sk;
 
-	udp_tunnel_sock_release(us->sk->sk_socket);
+	/* Hold the sock to safely access it in quic_udp_sock_lookup() even after
+	 * udp_tunnel_sock_release(). The release must occur before __hlist_del()
+	 * so a new UDP tunnel socket can be created for the same address and port
+	 * if quic_udp_sock_lookup() fails to find one.
+	 *
+	 * Note: udp_tunnel_sock_release() cannot be called under the mutex due to
+	 * some lockdep warnings.
+	 */
+	sock_hold(sk);
+	udp_tunnel_sock_release(sk->sk_socket);
 
-	head = quic_udp_sock_head(sock_net(us->sk), ntohs(us->addr.v4.sin_port));
+	head = quic_udp_sock_head(sock_net(sk), ntohs(us->addr.v4.sin_port));
 	mutex_lock(&head->lock);
 	__hlist_del(&us->node);
 	mutex_unlock(&head->lock);
+
+	sock_put(sk);
 	kfree(us);
 }
 
