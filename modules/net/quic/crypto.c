@@ -807,6 +807,7 @@ err:
 int quic_crypto_set_secret(struct quic_crypto *crypto, struct quic_crypto_secret *srt,
 			   u32 version, u8 flag)
 {
+	struct quic_cipher *cipher;
 	int err;
 
 	/* If no cipher has been initialized yet, set it up. */
@@ -815,11 +816,12 @@ int quic_crypto_set_secret(struct quic_crypto *crypto, struct quic_crypto_secret
 		if (err)
 			return err;
 	}
+	cipher = crypto->cipher;
 
 	/* Handle RX path setup. */
 	if (!srt->send) {
 		crypto->version = version;
-		memcpy(crypto->rx_secret, srt->secret, crypto->cipher->secretlen);
+		memcpy(crypto->rx_secret, srt->secret, cipher->secretlen);
 		err = quic_crypto_rx_keys_derive_and_install(crypto);
 		if (err)
 			return err;
@@ -829,7 +831,7 @@ int quic_crypto_set_secret(struct quic_crypto *crypto, struct quic_crypto_secret
 
 	/* Handle TX path setup. */
 	crypto->version = version;
-	memcpy(crypto->tx_secret, srt->secret, crypto->cipher->secretlen);
+	memcpy(crypto->tx_secret, srt->secret, cipher->secretlen);
 	err = quic_crypto_tx_keys_derive_and_install(crypto);
 	if (err)
 		return err;
