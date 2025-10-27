@@ -658,7 +658,7 @@ void quic_inq_decrypted_tail(struct sock *sk, struct sk_buff *skb)
 	/* Schedule work to process queued decrypted packets.  If work was already pending,
 	 * drop the extra hold.
 	 */
-	if (!schedule_work(&inq->work))
+	if (!queue_work(quic_wq, &inq->work))
 		sock_put(sk);
 }
 

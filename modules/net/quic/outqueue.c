@@ -1233,7 +1233,7 @@ void quic_outq_encrypted_tail(struct sock *sk, struct sk_buff *skb)
 	/* Schedule work to process queued encrypted packets.  If work was already pending,
 	 * drop the extra hold.
 	 */
-	if (!schedule_work(&outq->work))
+	if (!queue_work(quic_wq, &outq->work))
 		sock_put(sk);
 }
 

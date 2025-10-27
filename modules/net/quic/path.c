@@ -106,7 +106,7 @@ static bool quic_udp_sock_get(struct quic_udp_sock *us)
 static void quic_udp_sock_put(struct quic_udp_sock *us)
 {
 	if (refcount_dec_and_test(&us->refcnt))
-		schedule_work(&us->work);
+		queue_work(quic_wq, &us->work);
 }
 
 /* Lookup a quic_udp_sock in the global hash table by port or address.  If 'a' is provided, it

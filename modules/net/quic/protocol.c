@@ -27,6 +27,7 @@ static unsigned int quic_net_id __read_mostly;
 struct quic_transport_param quic_default_param __read_mostly;
 struct kmem_cache *quic_frame_cachep __read_mostly;
 struct percpu_counter quic_sockets_allocated;
+struct workqueue_struct *quic_wq;
 
 long sysctl_quic_mem[3];
 int sysctl_quic_rmem[3];
@@ -655,6 +656,12 @@ static __init int quic_init(void)
 	if (err)
 		goto err_hash;
 
+	quic_wq = create_workqueue("quic_workqueue");
+	if (!quic_wq) {
+		err = -ENOMEM;
+		goto err_wq;
+	}
+
 	err = register_pernet_subsys(&quic_net_ops);
 	if (err)
 		goto err_def_ops;
@@ -672,6 +679,8 @@ static __init int quic_init(void)
 err_protosw:
 	unregister_pernet_subsys(&quic_net_ops);
 err_def_ops:
+	destroy_workqueue(quic_wq);
+err_wq:
 	quic_hash_tables_destroy();
 err_hash:
 	percpu_counter_destroy(&quic_sockets_allocated);
@@ -688,6 +697,8 @@ static __exit void quic_exit(void)
 #endif
 	quic_protosw_exit();
 	unregister_pernet_subsys(&quic_net_ops);
+	flush_workqueue(quic_wq);
+	destroy_workqueue(quic_wq);
 	quic_hash_tables_destroy();
 	percpu_counter_destroy(&quic_sockets_allocated);
 	kmem_cache_destroy(quic_frame_cachep);

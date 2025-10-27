@@ -286,7 +286,7 @@ static int quic_packet_backlog_schedule(struct net *net, struct sk_buff *skb)
 
 	cb->backlog = 1;
 	skb_queue_tail(&qn->backlog_list, skb);
-	schedule_work(&qn->work);
+	queue_work(quic_wq, &qn->work);
 	return 1;
 }
 
