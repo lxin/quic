@@ -1274,7 +1274,7 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb)
 	struct quic_crypto *crypto;
 	struct quic_pnspace *space;
 	struct udphdr *uh;
-	int err = -EINVAL;
+	int err;
 
 	/* Associate skb with sk to ensure sk is valid during async decryption completion. */
 	WARN_ON(!skb_set_owner_sk_safe(skb, sk));
@@ -1302,6 +1302,7 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb)
 		/* Parse long-header and handle Retry or Version Negotiation if present. */
 		if (quic_packet_handshake_header_process(sk, skb)) {
 			QUIC_INC_STATS(net, QUIC_MIB_PKT_INVHDRDROP);
+			err = -EINVAL;
 			goto err;
 		}
 		if (!packet->level) /* If already consumed (e.g., Retry), stop processing. */
@@ -1334,6 +1335,7 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb)
 			 */
 			QUIC_INC_STATS(net, QUIC_MIB_PKT_INVHDRDROP);
 			packet->errcode = QUIC_TRANSPORT_ERROR_PROTOCOL_VIOLATION;
+			err = -EINVAL;
 			goto err;
 		}
 
