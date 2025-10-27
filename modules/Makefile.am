@@ -2,7 +2,7 @@ EXTRA_DIST	= include net
 MODULES		= quic_unit_test quic_sample_test quic
 
 all:
-	$(MAKE) -C $(KERNEL_BUILD) M=$(CURDIR)/net/quic modules \
+	$(MAKE) -C $(KERNEL_BUILD) W=1 M=$(CURDIR)/net/quic modules \
 		ROOTDIR=$(CURDIR) CONFIG_IP_QUIC=m CONFIG_IP_QUIC_TEST=m
 
 install: uninstall_modules install_headers install_modules depmod

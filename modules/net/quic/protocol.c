@@ -49,7 +49,6 @@ static int quic_inet_listen(struct socket *sock, int backlog)
 	struct quic_path_group *paths;
 	struct quic_conn_id conn_id;
 	struct quic_crypto *crypto;
-	struct quic_packet *packet;
 	struct sock *sk = sock->sk;
 	union quic_addr *a;
 	int err = -EINVAL;
@@ -57,7 +56,6 @@ static int quic_inet_listen(struct socket *sock, int backlog)
 	lock_sock(sk);
 
 	crypto = quic_crypto(sk, QUIC_CRYPTO_INITIAL);
-	packet = quic_packet(sk);
 	source = quic_source(sk);
 	dest = quic_dest(sk);
 	paths = quic_paths(sk);
