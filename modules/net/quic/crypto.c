@@ -186,20 +186,23 @@ static int quic_crypto_tx_keys_derive_and_install(struct quic_crypto *crypto)
 		hp = quic_data(&hp_k, tx_hp_key, keylen);
 	err = quic_crypto_keys_derive(crypto->secret_tfm, &srt, &k, &iv, hp, crypto->version);
 	if (err)
-		return err;
+		goto out;
 	err = crypto_aead_setauthsize(crypto->tx_tfm[phase], QUIC_TAG_LEN);
 	if (err)
-		return err;
+		goto out;
 	err = crypto_aead_setkey(crypto->tx_tfm[phase], tx_key, keylen);
 	if (err)
-		return err;
+		goto out;
 	if (hp) {
 		err = crypto_skcipher_setkey(crypto->tx_hp_tfm, tx_hp_key, keylen);
 		if (err)
-			return err;
+			goto out;
 	}
 	pr_debug("%s: k: %16phN, iv: %12phN, hp_k:%16phN\n", __func__, k.data, iv.data, hp_k.data);
-	return 0;
+out:
+	memzero_explicit(tx_key, sizeof(tx_key));
+	memzero_explicit(tx_hp_key, sizeof(tx_hp_key));
+	return err;
 }
 
 /* Derive and install reception (RX) packet protection keys for the current key phase.
@@ -221,20 +224,23 @@ static int quic_crypto_rx_keys_derive_and_install(struct quic_crypto *crypto)
 		hp = quic_data(&hp_k, rx_hp_key, keylen);
 	err = quic_crypto_keys_derive(crypto->secret_tfm, &srt, &k, &iv, hp, crypto->version);
 	if (err)
-		return err;
+		goto out;
 	err = crypto_aead_setauthsize(crypto->rx_tfm[phase], QUIC_TAG_LEN);
 	if (err)
-		return err;
+		goto out;
 	err = crypto_aead_setkey(crypto->rx_tfm[phase], rx_key, keylen);
 	if (err)
-		return err;
+		goto out;
 	if (hp) {
 		err = crypto_skcipher_setkey(crypto->rx_hp_tfm, rx_hp_key, keylen);
 		if (err)
-			return err;
+			goto out;
 	}
 	pr_debug("%s: k: %16phN, iv: %12phN, hp_k:%16phN\n", __func__, k.data, iv.data, hp_k.data);
-	return 0;
+out:
+	memzero_explicit(rx_key, sizeof(rx_key));
+	memzero_explicit(rx_hp_key, sizeof(rx_hp_key));
+	return err;
 }
 
 static void *quic_crypto_skcipher_mem_alloc(struct crypto_skcipher *tfm, u32 mask_size,
@@ -333,7 +339,7 @@ static int quic_crypto_header_encrypt(struct crypto_skcipher *tfm, struct sk_buf
 	for (i = 1; i <= cb->number_len; i++)
 		*p++ ^= mask[i];
 err:
-	kfree(mask);
+	kfree_sensitive(mask);
 	return err;
 }
 
@@ -401,7 +407,7 @@ static int quic_crypto_header_decrypt(struct crypto_skcipher *tfm, struct sk_buf
 	quic_crypto_get_header(skb);
 
 err:
-	kfree(mask);
+	kfree_sensitive(mask);
 	return err;
 }
 
@@ -439,7 +445,7 @@ static void *quic_crypto_aead_mem_alloc(struct crypto_aead *tfm, u32 ctx_size,
 
 static void quic_crypto_destruct_skb(struct sk_buff *skb)
 {
-	kfree(skb_shinfo(skb)->destructor_arg);
+	kfree_sensitive(skb_shinfo(skb)->destructor_arg);
 	sock_efree(skb);
 }
 
@@ -516,11 +522,13 @@ static int quic_crypto_payload_encrypt(struct crypto_aead *tfm, struct sk_buff *
 		/* Will complete asynchronously; set destructor to free context. */
 		skb->destructor = quic_crypto_destruct_skb;
 		skb_shinfo(skb)->destructor_arg = ctx;
+		memzero_explicit(nonce, sizeof(nonce));
 		return err;
 	}
 
 err:
-	kfree(ctx);
+	kfree_sensitive(ctx);
+	memzero_explicit(nonce, sizeof(nonce));
 	return err;
 }
 
@@ -569,10 +577,12 @@ static int quic_crypto_payload_decrypt(struct crypto_aead *tfm, struct sk_buff *
 	if (err == -EINPROGRESS) {
 		skb->destructor = quic_crypto_destruct_skb;
 		skb_shinfo(skb)->destructor_arg = ctx;
+		memzero_explicit(nonce, sizeof(nonce));
 		return err;
 	}
 err:
-	kfree(ctx);
+	kfree_sensitive(ctx);
+	memzero_explicit(nonce, sizeof(nonce));
 	return err;
 }
 
@@ -903,13 +913,16 @@ int quic_crypto_key_update(struct quic_crypto *crypto)
 	err = quic_crypto_rx_keys_derive_and_install(crypto);
 	if (err)
 		goto err;
-	return 0;
+out:
+	memzero_explicit(tx_secret, sizeof(tx_secret));
+	memzero_explicit(rx_secret, sizeof(rx_secret));
+	return err;
 err:
 	crypto->key_pending = 0;
 	memcpy(crypto->tx_secret, tx_secret, secret_len);
 	memcpy(crypto->rx_secret, rx_secret, secret_len);
 	crypto->key_phase = !crypto->key_phase;
-	return err;
+	goto out;
 }
 EXPORT_SYMBOL_GPL(quic_crypto_key_update);
 
@@ -932,7 +945,7 @@ void quic_crypto_free(struct quic_crypto *crypto)
 	if (crypto->tx_hp_tfm)
 		crypto_free_skcipher(crypto->tx_hp_tfm);
 
-	memset(crypto, 0, offsetof(struct quic_crypto, send_offset));
+	memzero_explicit(crypto, offsetof(struct quic_crypto, send_offset));
 }
 EXPORT_SYMBOL_GPL(quic_crypto_free);
 
@@ -989,7 +1002,7 @@ int quic_crypto_initial_keys_install(struct quic_crypto *crypto, struct quic_con
 	quic_data(&s, secret, TLS_CIPHER_AES_GCM_128_SECRET_SIZE);
 	err = quic_crypto_hkdf_extract(crypto->secret_tfm, &salt, &dcid, &s);
 	if (err)
-		return err;
+		goto out;
 
 	quic_data(&l, tl, strlen(tl));
 	quic_data(&k, srt.secret, TLS_CIPHER_AES_GCM_128_SECRET_SIZE);
@@ -997,10 +1010,10 @@ int quic_crypto_initial_keys_install(struct quic_crypto *crypto, struct quic_con
 	srt.send = 1;
 	err = quic_crypto_hkdf_expand(crypto->secret_tfm, &s, &l, &z, &k);
 	if (err)
-		return err;
+		goto out;
 	err = quic_crypto_set_secret(crypto, &srt, version, 0);
 	if (err)
-		return err;
+		goto out;
 
 	quic_data(&l, rl, strlen(rl));
 	quic_data(&k, srt.secret, TLS_CIPHER_AES_GCM_128_SECRET_SIZE);
@@ -1008,8 +1021,12 @@ int quic_crypto_initial_keys_install(struct quic_crypto *crypto, struct quic_con
 	srt.send = 0;
 	err = quic_crypto_hkdf_expand(crypto->secret_tfm, &s, &l, &z, &k);
 	if (err)
-		return err;
-	return quic_crypto_set_secret(crypto, &srt, version, 0);
+		goto out;
+	err = quic_crypto_set_secret(crypto, &srt, version, 0);
+out:
+	memzero_explicit(secret, sizeof(secret));
+	memzero_explicit(&srt, sizeof(srt));
+	return err;
 }
 EXPORT_SYMBOL_GPL(quic_crypto_initial_keys_install);
 
@@ -1074,7 +1091,7 @@ int quic_crypto_get_retry_tag(struct quic_crypto *crypto, struct sk_buff *skb,
 	err = crypto_aead_encrypt(req);
 	if (!err)
 		memcpy(tag, p, QUIC_TAG_LEN);
-	kfree(pseudo_retry);
+	kfree_sensitive(pseudo_retry);
 	return err;
 }
 EXPORT_SYMBOL_GPL(quic_crypto_get_retry_tag);
@@ -1093,9 +1110,10 @@ EXPORT_SYMBOL_GPL(quic_crypto_get_retry_tag);
 int quic_crypto_generate_token(struct quic_crypto *crypto, void *addr, u32 addrlen,
 			       struct quic_conn_id *conn_id, u8 *token, u32 *tlen)
 {
-	u8 key[TLS_CIPHER_AES_GCM_128_KEY_SIZE], iv[QUIC_IV_LEN], *retry_token, *tx_iv, *p;
+	u8 key[TLS_CIPHER_AES_GCM_128_KEY_SIZE], iv[QUIC_IV_LEN];
 	struct crypto_aead *tfm = crypto->tag_tfm;
 	u32 ts = jiffies_to_usecs(jiffies), len;
+	u8 *retry_token = NULL, *tx_iv, *p;
 	struct quic_data srt = {}, k, i;
 	struct aead_request *req;
 	struct scatterlist *sg;
@@ -1106,18 +1124,20 @@ int quic_crypto_generate_token(struct quic_crypto *crypto, void *addr, u32 addrl
 	quic_data(&i, iv, QUIC_IV_LEN);
 	err = quic_crypto_keys_derive(crypto->secret_tfm, &srt, &k, &i, NULL, QUIC_VERSION_V1);
 	if (err)
-		return err;
+		goto out;
 	err = crypto_aead_setauthsize(tfm, QUIC_TAG_LEN);
 	if (err)
-		return err;
+		goto out;
 	err = crypto_aead_setkey(tfm, key, TLS_CIPHER_AES_GCM_128_KEY_SIZE);
 	if (err)
-		return err;
+		goto out;
 	token++;
 	len = addrlen + sizeof(ts) + conn_id->len + QUIC_TAG_LEN;
 	retry_token = quic_crypto_aead_mem_alloc(tfm, len, &tx_iv, &req, &sg, 1);
-	if (!retry_token)
-		return -ENOMEM;
+	if (!retry_token) {
+		err = -ENOMEM;
+		goto out;
+	}
 
 	p = retry_token;
 	p = quic_put_data(p, addr, addrlen);
@@ -1128,11 +1148,14 @@ int quic_crypto_generate_token(struct quic_crypto *crypto, void *addr, u32 addrl
 	aead_request_set_ad(req, addrlen);
 	aead_request_set_crypt(req, sg, sg, len - addrlen - QUIC_TAG_LEN, iv);
 	err = crypto_aead_encrypt(req);
-	if (!err) {
-		memcpy(token, retry_token, len);
-		*tlen = len + 1;
-	}
-	kfree(retry_token);
+	if (err)
+		goto out;
+	memcpy(token, retry_token, len);
+	*tlen = len + 1;
+out:
+	kfree_sensitive(retry_token);
+	memzero_explicit(key, sizeof(key));
+	memzero_explicit(iv, sizeof(iv));
 	return err;
 }
 EXPORT_SYMBOL_GPL(quic_crypto_generate_token);
@@ -1151,7 +1174,7 @@ int quic_crypto_verify_token(struct quic_crypto *crypto, void *addr, u32 addrlen
 {
 	u32 ts = jiffies_to_usecs(jiffies), timeout = QUIC_TOKEN_TIMEOUT_RETRY;
 	u8 key[TLS_CIPHER_AES_GCM_128_KEY_SIZE], iv[QUIC_IV_LEN];
-	u8 *retry_token, *rx_iv, *p, flag = *token;
+	u8 *retry_token = NULL, *rx_iv, *p, flag = *token;
 	struct crypto_aead *tfm = crypto->tag_tfm;
 	struct quic_data srt = {}, k, i;
 	struct aead_request *req;
@@ -1166,18 +1189,20 @@ int quic_crypto_verify_token(struct quic_crypto *crypto, void *addr, u32 addrlen
 	quic_data(&i, iv, QUIC_IV_LEN);
 	err = quic_crypto_keys_derive(crypto->secret_tfm, &srt, &k, &i, NULL, QUIC_VERSION_V1);
 	if (err)
-		return err;
+		goto out;
 	err = crypto_aead_setauthsize(tfm, QUIC_TAG_LEN);
 	if (err)
-		return err;
+		goto out;
 	err = crypto_aead_setkey(tfm, key, TLS_CIPHER_AES_GCM_128_KEY_SIZE);
 	if (err)
-		return err;
+		goto out;
 	len--;
 	token++;
 	retry_token = quic_crypto_aead_mem_alloc(tfm, len, &rx_iv, &req, &sg, 1);
-	if (!retry_token)
-		return -ENOMEM;
+	if (!retry_token) {
+		err = -ENOMEM;
+		goto out;
+	}
 
 	memcpy(retry_token, token, len);
 	sg_init_one(sg, retry_token, len);
@@ -1206,7 +1231,9 @@ int quic_crypto_verify_token(struct quic_crypto *crypto, void *addr, u32 addrlen
 		quic_conn_id_update(conn_id, p, len);
 	err = 0;
 out:
-	kfree(retry_token);
+	kfree_sensitive(retry_token);
+	memzero_explicit(key, sizeof(key));
+	memzero_explicit(iv, sizeof(iv));
 	return err;
 }
 EXPORT_SYMBOL_GPL(quic_crypto_verify_token);
@@ -1225,11 +1252,14 @@ static int quic_crypto_generate_key(struct quic_crypto *crypto, void *data, u32 
 	quic_data(&s, secret, TLS_CIPHER_AES_GCM_128_SECRET_SIZE);
 	err = quic_crypto_hkdf_extract(tfm, &salt, &k, &s);
 	if (err)
-		return err;
+		goto out;
 
 	quic_data(&l, label, strlen(label));
 	quic_data(&k, token, key_len);
-	return quic_crypto_hkdf_expand(tfm, &s, &l, &z, &k);
+	err = quic_crypto_hkdf_expand(tfm, &s, &l, &z, &k);
+out:
+	memzero_explicit(secret, sizeof(secret));
+	return err;
 }
 
 /* Derive a stateless reset token from connection-specific input. */
