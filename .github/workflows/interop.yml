@@ -33,10 +33,10 @@ jobs:
           STARTTIME=$(date +%s)
           echo $STARTTIME
           echo "starttime=$STARTTIME" >> $GITHUB_OUTPUT
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           repository: quic-interop/quic-interop-runner
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: 3.8
       - name: Determine servers
@@ -65,7 +65,7 @@ jobs:
       matrix:
         image: [ 'quic-network-simulator', 'quic-interop-iperf-endpoint' ]
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
       with:
         repository: quic-interop/quic-interop-runner
     - name: Pull
@@ -93,7 +93,7 @@ jobs:
         image: ${{ fromJson(needs.config.outputs.images) }}
     name: Pull ${{ matrix.image }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           repository: quic-interop/quic-interop-runner
       - name: Run docker pull
@@ -151,14 +151,14 @@ jobs:
     env:
       LOGNAME: ${{ needs.config.outputs.logname }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           repository: quic-interop/quic-interop-runner
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: 3.8
       - name: Download results
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           pattern: results-*
       - name: Aggregate results
@@ -178,7 +178,7 @@ jobs:
           name: result-aggregated
           path: result.json
       - name: Upload logs to interop.seemann.io
-        uses: burnett01/rsync-deployments@796cf0d5e4b535745ce49d7429f77cf39e25ef39 # v7.0.1
+        uses: burnett01/rsync-deployments@33214bd98ba4ac2be90f5976672b3f030fce9ce4 # v7.1.0
         if: ${{ github.event_name == 'schedule' }}
         with:
           switches: -avzr
@@ -188,7 +188,7 @@ jobs:
           remote_user: ${{ secrets.INTEROP_SEEMANN_IO_USER }}
           remote_key: ${{ secrets.INTEROP_SEEMANN_IO_SSH_KEY }}
       - name: Point interop.seemann.io to the latest result
-        uses: appleboy/ssh-action@7eaf76671a0d7eec5d98ee897acda4f968735a17 # v1.2.0
+        uses: appleboy/ssh-action@2ead5e36573f08b82fbfce1504f1a4b05a647c6f # v1.2.2
         if: ${{ github.event_name == 'schedule' }}
         with:
           host: interop.seemann.io

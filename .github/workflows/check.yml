@@ -5,7 +5,7 @@ on: [ push, pull_request, workflow_dispatch ]
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - name: Install dependencies
         run: |
@@ -15,7 +15,7 @@ jobs:
                linux-headers-$(uname -r)
 
       - name: Checkout linuxquic
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
       - name: Install quic module and libquic from linuxquic
         run: |
           ./autogen.sh
@@ -25,7 +25,7 @@ jobs:
 
       # nghttp3
       - name: Checkout nghttp3
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: ngtcp2/nghttp3
           submodules: recursive
@@ -41,7 +41,7 @@ jobs:
 
       # ktls-utils
       - name: Checkout ktls-utils
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: oracle/ktls-utils
           path: ktls-utils
