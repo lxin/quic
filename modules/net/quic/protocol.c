@@ -708,8 +708,8 @@ static __exit void quic_exit(void)
 module_init(quic_init);
 module_exit(quic_exit);
 
-MODULE_ALIAS("net-pf-" __stringify(PF_INET) "-proto-261");
-MODULE_ALIAS("net-pf-" __stringify(PF_INET6) "-proto-261");
+MODULE_ALIAS_NET_PF_PROTO(PF_INET, 261); /* IPPROTO_QUIC == 261 */
+MODULE_ALIAS_NET_PF_PROTO(PF_INET6, 261);
 MODULE_AUTHOR("Xin Long <lucien.xin@gmail.com>");
 MODULE_DESCRIPTION("Support for the QUIC protocol (RFC9000)");
 MODULE_LICENSE("GPL");
