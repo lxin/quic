@@ -127,7 +127,7 @@ static __poll_t quic_inet_poll(struct file *file, struct socket *sock, poll_tabl
 	struct list_head *head;
 	__poll_t mask;
 
-	poll_wait(file, sk_sleep(sk), wait);
+	sock_poll_wait(file, sock, wait);
 
 	sock_rps_record_flow(sk); /* Record the flow's CPU association for RFS. */
 
