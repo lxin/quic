@@ -41,6 +41,7 @@ struct quic_skb_cb {
 	void (*crypto_done)(struct sk_buff *skb, int err);
 	union {
 		struct sk_buff *last;		/* Last packet in TX bundle */
+		void *crypto_ctx;		/* Temporary crypto context to free */
 		s64 seqno;			/* Dest connection ID number on RX */
 	};
 	s64 number_max;		/* Largest packet number seen before parsing this one */

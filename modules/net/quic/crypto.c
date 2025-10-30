@@ -443,12 +443,6 @@ static void *quic_crypto_aead_mem_alloc(struct crypto_aead *tfm, u32 ctx_size,
 	return (void *)mem;
 }
 
-static void quic_crypto_destruct_skb(struct sk_buff *skb)
-{
-	kfree_sensitive(skb_shinfo(skb)->destructor_arg);
-	sock_efree(skb);
-}
-
 static void quic_crypto_done(void *data, int err)
 {
 	struct crypto_async_request *base = data;
@@ -457,6 +451,7 @@ static void quic_crypto_done(void *data, int err)
 	if (base->flags == CRYPTO_TFM_REQ_MAY_BACKLOG)
 		skb = base->data;
 
+	kfree_sensitive(QUIC_SKB_CB(skb)->crypto_ctx);
 	QUIC_SKB_CB(skb)->crypto_done(skb, err);
 }
 
@@ -517,11 +512,9 @@ static int quic_crypto_payload_encrypt(struct crypto_aead *tfm, struct sk_buff *
 	aead_request_set_crypt(req, sg, sg, len - hlen, iv);
 	aead_request_set_callback(req, CRYPTO_TFM_REQ_MAY_BACKLOG, (void *)quic_crypto_done, skb);
 
+	cb->crypto_ctx = ctx; /* Set crypto_ctx for async free in quic_crypto_done(). */
 	err = crypto_aead_encrypt(req);
 	if (err == -EINPROGRESS) {
-		/* Will complete asynchronously; set destructor to free context. */
-		skb->destructor = quic_crypto_destruct_skb;
-		skb_shinfo(skb)->destructor_arg = ctx;
 		memzero_explicit(nonce, sizeof(nonce));
 		return err;
 	}
@@ -573,10 +566,9 @@ static int quic_crypto_payload_decrypt(struct crypto_aead *tfm, struct sk_buff *
 	aead_request_set_crypt(req, sg, sg, len - hlen, iv);
 	aead_request_set_callback(req, CRYPTO_TFM_REQ_MAY_BACKLOG, (void *)quic_crypto_done, skb);
 
+	cb->crypto_ctx = ctx;
 	err = crypto_aead_decrypt(req);
 	if (err == -EINPROGRESS) {
-		skb->destructor = quic_crypto_destruct_skb;
-		skb_shinfo(skb)->destructor_arg = ctx;
 		memzero_explicit(nonce, sizeof(nonce));
 		return err;
 	}
