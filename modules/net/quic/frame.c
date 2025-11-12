@@ -2222,7 +2222,10 @@ static void quic_frame_free(struct quic_frame *frame)
 {
 	struct quic_frame_frag *frag, *next;
 
-	if (!frame->type && frame->skb) { /* RX path frame with skb. */
+	/* Handle RX stream/crypto/dgram frames. Use !frame->type to detect RX,
+	 * since frame->skb shares a union with frame->flist, used only on TX.
+	 */
+	if (!frame->type && frame->skb) {
 		kfree_skb(frame->skb);
 		goto out;
 	}

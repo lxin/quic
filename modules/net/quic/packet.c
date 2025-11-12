@@ -434,7 +434,7 @@ static int quic_packet_parse_alpn(struct sk_buff *skb, struct quic_data *alpn)
 		return err;
 	if (!quic_get_var(&p, &len, &length) || length > (u64)len)
 		return err;
-	if (!cb->backlog) {
+	if (!cb->backlog) { /* skb_get() needed as caller will free skb on this path. */
 		quic_packet_backlog_schedule(net, skb_get(skb));
 		return err;
 	}
