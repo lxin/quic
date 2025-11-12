@@ -85,7 +85,7 @@ static int quic_v4_flow_route(struct sock *sk, union quic_addr *da, union quic_a
 	if (IS_ERR(rt))
 		return PTR_ERR(rt);
 
-	if (!sa->v4.sin_family) {
+	if (quic_v4_is_any_addr(sa)) {
 		sa->v4.sin_family = AF_INET;
 		sa->v4.sin_addr.s_addr = fl4->saddr;
 	}
@@ -131,7 +131,7 @@ static int quic_v6_flow_route(struct sock *sk, union quic_addr *da, union quic_a
 	if (IS_ERR(dst))
 		return PTR_ERR(dst);
 
-	if (!sa->v6.sin6_family) {
+	if (quic_v6_is_any_addr(sa)) {
 		sa->v6.sin6_family = AF_INET6;
 		sa->v6.sin6_addr = fl6->saddr;
 	}
