@@ -233,7 +233,6 @@ static int quic_packet_rcv_err(struct sk_buff *skb)
 {
 	union quic_addr daddr, saddr;
 	struct sock *sk = NULL;
-	int ret = 0;
 	u32 info;
 
 	/* All we can do is lookup the matching QUIC socket by addresses. */
@@ -242,14 +241,13 @@ static int quic_packet_rcv_err(struct sk_buff *skb)
 	if (!sk)
 		return -ENOENT;
 
+	if (quic_get_mtu_info(skb, &info)) {
+		sock_put(sk);
+		return 0;
+	}
+
+	/* Success: update socket path MTU info. */
 	bh_lock_sock(sk);
-	if (quic_is_listen(sk))
-		goto out;
-
-	if (quic_get_mtu_info(skb, &info))
-		goto out;
-
-	ret = 1; /* Success: update socket path MTU info. */
 	quic_paths(sk)->mtu_info = info;
 	if (sock_owned_by_user(sk)) {
 		/* Socket is in use by userspace context.  Defer MTU processing to later via
@@ -264,7 +262,7 @@ static int quic_packet_rcv_err(struct sk_buff *skb)
 out:
 	bh_unlock_sock(sk);
 	sock_put(sk);
-	return ret;
+	return 1;
 }
 
 #define QUIC_PACKET_BACKLOG_MAX		4096
