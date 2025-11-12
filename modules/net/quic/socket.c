@@ -297,7 +297,7 @@ static void quic_sock_fetch_transport_param(struct sock *sk, struct quic_transpo
 	quic_outq_get_param(sk, p);
 	quic_conn_id_get_param(id_set, p);
 	quic_path_get_param(quic_paths(sk), p);
-	quic_stream_get_param(quic_streams(sk), p, quic_is_serv(sk));
+	quic_stream_get_param(quic_streams(sk), p);
 }
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 5, 0)

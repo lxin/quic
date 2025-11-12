@@ -63,46 +63,34 @@ struct quic_stream {
 	} recv;
 };
 
+struct quic_stream_limits {
+	/* Stream limit parameters defined in rfc9000#section-18.2 */
+	u64 max_stream_data_bidi_remote;	/* initial_max_stream_data_bidi_remote */
+	u64 max_stream_data_bidi_local;		/* initial_max_stream_data_bidi_local */
+	u64 max_stream_data_uni;		/* initial_max_stream_data_uni */
+	u64 max_streams_bidi;			/* initial_max_streams_bidi */
+	u64 max_streams_uni;			/* initial_max_streams_uni */
+
+	s64 next_bidi_stream_id;	/* Next bidi stream ID to open or accept */
+	s64 next_uni_stream_id;		/* Next uni stream ID to open or accept */
+	s64 max_bidi_stream_id;		/* Highest allowed bidi stream ID */
+	s64 max_uni_stream_id;		/* Highest allowed uni stream ID */
+	s64 active_stream_id;		/* Most recently opened stream ID */
+
+	u8 bidi_blocked:1;	/* STREAMS_BLOCKED_BIDI sent, awaiting ACK */
+	u8 uni_blocked:1;	/* STREAMS_BLOCKED_UNI sent, awaiting ACK */
+	u8 bidi_pending:1;	/* MAX_STREAMS_BIDI needs to be sent */
+	u8 uni_pending:1;	/* MAX_STREAMS_UNI needs to be sent */
+
+	u16 streams_bidi;	/* Number of open bidi streams */
+	u16 streams_uni;	/* Number of open uni streams */
+};
+
 struct quic_stream_table {
 	struct hlist_head *head;	/* Hash table storing all active streams */
 
-	struct {
-		/* Parameters received from peer, defined in rfc9000#section-18.2 */
-		u64 max_stream_data_bidi_remote;	/* initial_max_stream_data_bidi_remote */
-		u64 max_stream_data_bidi_local;		/* initial_max_stream_data_bidi_local */
-		u64 max_stream_data_uni;		/* initial_max_stream_data_uni */
-		u64 max_streams_bidi;			/* initial_max_streams_bidi */
-		u64 max_streams_uni;			/* initial_max_streams_uni */
-
-		s64 next_bidi_stream_id;	/* Next bidi stream ID to be opened */
-		s64 next_uni_stream_id;		/* Next uni stream ID to be opened */
-		s64 max_bidi_stream_id;		/* Highest allowed bidi stream ID */
-		s64 max_uni_stream_id;		/* Highest allowed uni stream ID */
-		s64 active_stream_id;		/* Most recently opened stream ID */
-
-		u8 bidi_blocked:1;	/* True if STREAMS_BLOCKED_BIDI was sent and not ACKed */
-		u8 uni_blocked:1;	/* True if STREAMS_BLOCKED_UNI was sent and not ACKed */
-		u16 streams_bidi;	/* Number of currently active bidi streams */
-		u16 streams_uni;	/* Number of currently active uni streams */
-	} send;
-	struct {
-		 /* Our advertised limits to the peer, per rfc9000#section-18.2 */
-		u64 max_stream_data_bidi_remote;	/* initial_max_stream_data_bidi_remote */
-		u64 max_stream_data_bidi_local;		/* initial_max_stream_data_bidi_local */
-		u64 max_stream_data_uni;		/* initial_max_stream_data_uni */
-		u64 max_streams_bidi;			/* initial_max_streams_bidi */
-		u64 max_streams_uni;			/* initial_max_streams_uni */
-
-		s64 next_bidi_stream_id;	/* Next expected bidi stream ID from peer */
-		s64 next_uni_stream_id;		/* Next expected uni stream ID from peer */
-		s64 max_bidi_stream_id;		/* Current allowed bidi stream ID range */
-		s64 max_uni_stream_id;		/* Current allowed uni stream ID range */
-
-		u8 bidi_pending:1;	/* True if MAX_STREAMS_BIDI needs to be sent */
-		u8 uni_pending:1;	/* True if MAX_STREAMS_UNI needs to be sent */
-		u16 streams_bidi;	/* Number of currently open bidi streams */
-		u16 streams_uni;	/* Number of currently open uni streams */
-	} recv;
+	struct quic_stream_limits send;	/* Limits advertised by peer */
+	struct quic_stream_limits recv;	/* Limits we advertise to peer */
 };
 
 static inline u64 quic_stream_id_to_streams(s64 stream_id)
@@ -128,8 +116,7 @@ bool quic_stream_max_streams_update(struct quic_stream_table *streams, s64 *max_
 bool quic_stream_id_exceeds(struct quic_stream_table *streams, s64 stream_id, bool send);
 struct quic_stream *quic_stream_find(struct quic_stream_table *streams, s64 stream_id);
 
-void quic_stream_get_param(struct quic_stream_table *streams, struct quic_transport_param *p,
-			   bool is_serv);
+void quic_stream_get_param(struct quic_stream_table *streams, struct quic_transport_param *p);
 void quic_stream_set_param(struct quic_stream_table *streams, struct quic_transport_param *p,
 			   bool is_serv);
 void quic_stream_free(struct quic_stream_table *streams);

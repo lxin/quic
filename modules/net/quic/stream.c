@@ -75,93 +75,49 @@ static void quic_stream_delete(struct quic_stream *stream)
 	kfree(stream);
 }
 
-/* Create and register new streams for sending. */
-static struct quic_stream *quic_stream_send_create(struct quic_stream_table *streams,
-						   s64 max_stream_id, u8 is_serv)
+/* Create and register new streams for sending or receiving. */
+static struct quic_stream *quic_stream_create(struct quic_stream_table *streams,
+					      s64 max_stream_id, bool send, bool is_serv)
 {
+	struct quic_stream_limits *limits = &streams->send;
 	struct quic_stream *stream = NULL;
+	gfp_t gfp = GFP_KERNEL_ACCOUNT;
 	s64 stream_id;
 
-	stream_id = streams->send.next_bidi_stream_id;
-	if (quic_stream_id_uni(max_stream_id))
-		stream_id = streams->send.next_uni_stream_id;
-
-	/* rfc9000#section-2.1: A stream ID that is used out of order results in all streams
-	 * of that type with lower-numbered stream IDs also being opened.
-	 */
-	while (stream_id <= max_stream_id) {
-		stream = kzalloc(sizeof(*stream), GFP_KERNEL_ACCOUNT);
-		if (!stream)
-			return NULL;
-
-		stream->id = stream_id;
-		if (quic_stream_id_uni(stream_id)) {
-			stream->send.max_bytes = streams->send.max_stream_data_uni;
-
-			if (streams->send.next_uni_stream_id < stream_id + QUIC_STREAM_ID_STEP)
-				streams->send.next_uni_stream_id = stream_id + QUIC_STREAM_ID_STEP;
-			streams->send.streams_uni++;
-
-			quic_stream_add(streams, stream);
-			stream_id += QUIC_STREAM_ID_STEP;
-			continue;
-		}
-
-		if (streams->send.next_bidi_stream_id < stream_id + QUIC_STREAM_ID_STEP)
-			streams->send.next_bidi_stream_id = stream_id + QUIC_STREAM_ID_STEP;
-		streams->send.streams_bidi++;
-
-		if (quic_stream_id_local(stream_id, is_serv)) {
-			stream->send.max_bytes = streams->send.max_stream_data_bidi_remote;
-			stream->recv.max_bytes = streams->recv.max_stream_data_bidi_local;
-		} else {
-			stream->send.max_bytes = streams->send.max_stream_data_bidi_local;
-			stream->recv.max_bytes = streams->recv.max_stream_data_bidi_remote;
-		}
-		stream->recv.window = stream->recv.max_bytes;
-
-		quic_stream_add(streams, stream);
-		stream_id += QUIC_STREAM_ID_STEP;
+	if (!send) {
+		limits = &streams->recv;
+		gfp = GFP_ATOMIC | __GFP_ACCOUNT;
 	}
-	return stream;
-}
-
-/* Create and register new streams for receiving. */
-static struct quic_stream *quic_stream_recv_create(struct quic_stream_table *streams,
-						   s64 max_stream_id, u8 is_serv)
-{
-	struct quic_stream *stream = NULL;
-	s64 stream_id;
-
-	stream_id = streams->recv.next_bidi_stream_id;
+	stream_id = limits->next_bidi_stream_id;
 	if (quic_stream_id_uni(max_stream_id))
-		stream_id = streams->recv.next_uni_stream_id;
+		stream_id = limits->next_uni_stream_id;
 
 	/* rfc9000#section-2.1: A stream ID that is used out of order results in all streams
 	 * of that type with lower-numbered stream IDs also being opened.
 	 */
 	while (stream_id <= max_stream_id) {
-		stream = kzalloc(sizeof(*stream), GFP_ATOMIC | __GFP_ACCOUNT);
+		stream = kzalloc(sizeof(*stream), gfp);
 		if (!stream)
 			return NULL;
 
 		stream->id = stream_id;
 		if (quic_stream_id_uni(stream_id)) {
-			stream->recv.window = streams->recv.max_stream_data_uni;
-			stream->recv.max_bytes = stream->recv.window;
-
-			if (streams->recv.next_uni_stream_id < stream_id + QUIC_STREAM_ID_STEP)
-				streams->recv.next_uni_stream_id = stream_id + QUIC_STREAM_ID_STEP;
-			streams->recv.streams_uni++;
+			if (send) {
+				stream->send.max_bytes = limits->max_stream_data_uni;
+			} else {
+				stream->recv.max_bytes = limits->max_stream_data_uni;
+				stream->recv.window = stream->recv.max_bytes;
+			}
+			/* Streams must be opened sequentially. Update the next stream ID so the
+			 * correct starting point is known if an out-of-order open is requested.
+			 */
+			limits->next_uni_stream_id = stream_id + QUIC_STREAM_ID_STEP;
+			limits->streams_uni++;
 
 			quic_stream_add(streams, stream);
 			stream_id += QUIC_STREAM_ID_STEP;
 			continue;
 		}
-
-		if (streams->recv.next_bidi_stream_id < stream_id + QUIC_STREAM_ID_STEP)
-			streams->recv.next_bidi_stream_id = stream_id + QUIC_STREAM_ID_STEP;
-		streams->recv.streams_bidi++;
 
 		if (quic_stream_id_local(stream_id, is_serv)) {
 			stream->send.max_bytes = streams->send.max_stream_data_bidi_remote;
@@ -171,6 +127,9 @@ static struct quic_stream *quic_stream_recv_create(struct quic_stream_table *str
 			stream->recv.max_bytes = streams->recv.max_stream_data_bidi_remote;
 		}
 		stream->recv.window = stream->recv.max_bytes;
+
+		limits->next_bidi_stream_id = stream_id + QUIC_STREAM_ID_STEP;
+		limits->streams_bidi++;
 
 		quic_stream_add(streams, stream);
 		stream_id += QUIC_STREAM_ID_STEP;
@@ -181,14 +140,11 @@ static struct quic_stream *quic_stream_recv_create(struct quic_stream_table *str
 /* Check if a send or receive stream ID is already closed. */
 static bool quic_stream_id_closed(struct quic_stream_table *streams, s64 stream_id, bool send)
 {
-	if (quic_stream_id_uni(stream_id)) {
-		if (send)
-			return stream_id < streams->send.next_uni_stream_id;
-		return stream_id < streams->recv.next_uni_stream_id;
-	}
-	if (send)
-		return stream_id < streams->send.next_bidi_stream_id;
-	return stream_id < streams->recv.next_bidi_stream_id;
+	struct quic_stream_limits *limits = send ? &streams->send : &streams->recv;
+
+	if (quic_stream_id_uni(stream_id))
+		return stream_id < limits->next_uni_stream_id;
+	return stream_id < limits->next_bidi_stream_id;
 }
 
 /* Check if a stream ID would exceed local (recv) or peer (send) limits. */
@@ -217,7 +173,7 @@ bool quic_stream_id_exceeds(struct quic_stream_table *streams, s64 stream_id, bo
 	return nstreams + streams->send.streams_bidi > streams->send.max_streams_bidi;
 }
 
-/* Get or create a send stream by ID. */
+/* Get or create a send stream by ID. Requires sock lock held. */
 struct quic_stream *quic_stream_send_get(struct quic_stream_table *streams, s64 stream_id,
 					 u32 flags, bool is_serv)
 {
@@ -243,14 +199,14 @@ struct quic_stream *quic_stream_send_get(struct quic_stream_table *streams, s64 
 	if (quic_stream_id_exceeds(streams, stream_id, true))
 		return ERR_PTR(-EAGAIN);
 
-	stream = quic_stream_send_create(streams, stream_id, is_serv);
+	stream = quic_stream_create(streams, stream_id, true, is_serv);
 	if (!stream)
 		return ERR_PTR(-ENOSTR);
 	streams->send.active_stream_id = stream_id;
 	return stream;
 }
 
-/* Get or create a receive stream by ID. */
+/* Get or create a receive stream by ID. Requires sock lock held. */
 struct quic_stream *quic_stream_recv_get(struct quic_stream_table *streams, s64 stream_id,
 					 bool is_serv)
 {
@@ -275,7 +231,7 @@ struct quic_stream *quic_stream_recv_get(struct quic_stream_table *streams, s64 
 	if (quic_stream_id_exceeds(streams, stream_id, false))
 		return ERR_PTR(-EAGAIN);
 
-	stream = quic_stream_recv_create(streams, stream_id, is_serv);
+	stream = quic_stream_create(streams, stream_id, false, is_serv);
 	if (!stream)
 		return ERR_PTR(-ENOSTR);
 	if (quic_stream_id_valid(stream_id, is_serv, true))
@@ -283,8 +239,32 @@ struct quic_stream *quic_stream_recv_get(struct quic_stream_table *streams, s64 
 	return stream;
 }
 
-/* Release or clean up a send stream. This function updates stream counters and state when
- * a send stream has either successfully sent all data or has been reset.
+/* Common helper for handling bidi stream cleanup in both send and recv put operations. */
+static void quic_stream_bidi_put(struct quic_stream_table *streams, struct quic_stream *stream,
+				 bool is_serv)
+{
+	if (quic_stream_id_local(stream->id, is_serv)) {
+		/* Local-initiated stream: mark send done and decrement send.bidi count. */
+		if (!stream->send.done) {
+			stream->send.done = 1;
+			streams->send.streams_bidi--;
+		}
+	} else {
+		/* Remote-initiated stream: mark recv done and decrement recv bidi count. */
+		if (!stream->recv.done) {
+			stream->recv.done = 1;
+			streams->recv.streams_bidi--;
+			streams->recv.bidi_pending = 1;
+		}
+	}
+
+	/* Delete stream if fully read or reset. */
+	if (stream->recv.state != QUIC_STREAM_RECV_STATE_RECVD)
+		quic_stream_delete(stream);
+}
+
+/* Release or clean up a send stream. This function updates stream counters and state when a
+ * send stream has either successfully sent all data or has been reset. Requires sock lock held.
  */
 void quic_stream_send_put(struct quic_stream_table *streams, struct quic_stream *stream,
 			  bool is_serv)
@@ -302,28 +282,11 @@ void quic_stream_send_put(struct quic_stream_table *streams, struct quic_stream 
 	    stream->recv.state != QUIC_STREAM_RECV_STATE_RESET_RECVD)
 		return;
 
-	if (quic_stream_id_local(stream->id, is_serv)) {
-		/* Local-initiated stream: mark send done and decrement send.bidi count. */
-		if (!stream->send.done) {
-			stream->send.done = 1;
-			streams->send.streams_bidi--;
-		}
-		goto out;
-	}
-	/* Remote-initiated stream: mark recv done and decrement recv bidi count. */
-	if (!stream->recv.done) {
-		stream->recv.done = 1;
-		streams->recv.streams_bidi--;
-		streams->recv.bidi_pending = 1;
-	}
-out:
-	/* Delete stream if fully read or reset. */
-	if (stream->recv.state != QUIC_STREAM_RECV_STATE_RECVD)
-		quic_stream_delete(stream);
+	quic_stream_bidi_put(streams, stream, is_serv);
 }
 
 /* Release or clean up a receive stream. This function updates stream counters and state when
- * the receive side has either consumed all data or has been reset.
+ * the receive side has either consumed all data or has been reset. Requires sock lock held.
  */
 void quic_stream_recv_put(struct quic_stream_table *streams, struct quic_stream *stream,
 			  bool is_serv)
@@ -335,7 +298,10 @@ void quic_stream_recv_put(struct quic_stream_table *streams, struct quic_stream 
 			streams->recv.streams_uni--;
 			streams->recv.uni_pending = 1;
 		}
-		goto out;
+		/* Delete stream if fully read or reset. */
+		if (stream->recv.state != QUIC_STREAM_RECV_STATE_RECVD)
+			quic_stream_delete(stream);
+		return;
 	}
 
 	/* For bidi streams, only proceed if send side is in a final state. */
@@ -343,24 +309,7 @@ void quic_stream_recv_put(struct quic_stream_table *streams, struct quic_stream 
 	    stream->send.state != QUIC_STREAM_SEND_STATE_RESET_RECVD)
 		return;
 
-	if (quic_stream_id_local(stream->id, is_serv)) {
-		/* Local-initiated stream: mark send done and decrement send.bidi count. */
-		if (!stream->send.done) {
-			stream->send.done = 1;
-			streams->send.streams_bidi--;
-		}
-		goto out;
-	}
-	/* Remote-initiated stream: mark recv done and decrement recv bidi count. */
-	if (!stream->recv.done) {
-		stream->recv.done = 1;
-		streams->recv.streams_bidi--;
-		streams->recv.bidi_pending = 1;
-	}
-out:
-	/* Delete stream if fully read or reset. */
-	if (stream->recv.state != QUIC_STREAM_RECV_STATE_RECVD)
-		quic_stream_delete(stream);
+	quic_stream_bidi_put(streams, stream, is_serv);
 }
 
 /* Updates the maximum allowed incoming stream IDs if any streams were recently closed.
@@ -425,90 +374,42 @@ void quic_stream_free(struct quic_stream_table *streams)
 }
 
 /* Populate transport parameters from stream hash table. */
-void quic_stream_get_param(struct quic_stream_table *streams, struct quic_transport_param *p,
-			   bool is_serv)
+void quic_stream_get_param(struct quic_stream_table *streams, struct quic_transport_param *p)
 {
-	if (p->remote) {
-		p->max_stream_data_bidi_remote = streams->send.max_stream_data_bidi_remote;
-		p->max_stream_data_bidi_local = streams->send.max_stream_data_bidi_local;
-		p->max_stream_data_uni = streams->send.max_stream_data_uni;
-		p->max_streams_bidi = streams->send.max_streams_bidi;
-		p->max_streams_uni = streams->send.max_streams_uni;
-		return;
-	}
+	struct quic_stream_limits *limits = p->remote ? &streams->send : &streams->recv;
 
-	p->max_stream_data_bidi_remote = streams->recv.max_stream_data_bidi_remote;
-	p->max_stream_data_bidi_local = streams->recv.max_stream_data_bidi_local;
-	p->max_stream_data_uni = streams->recv.max_stream_data_uni;
-	p->max_streams_bidi = streams->recv.max_streams_bidi;
-	p->max_streams_uni = streams->recv.max_streams_uni;
+	p->max_stream_data_bidi_remote = limits->max_stream_data_bidi_remote;
+	p->max_stream_data_bidi_local = limits->max_stream_data_bidi_local;
+	p->max_stream_data_uni = limits->max_stream_data_uni;
+	p->max_streams_bidi = limits->max_streams_bidi;
+	p->max_streams_uni = limits->max_streams_uni;
 }
 
 /* Configure stream hashtable from transport parameters. */
 void quic_stream_set_param(struct quic_stream_table *streams, struct quic_transport_param *p,
 			   bool is_serv)
 {
-	u8 type;
+	struct quic_stream_limits *limits = p->remote ? &streams->send : &streams->recv;
+	u8 bidi_type, uni_type;
 
-	if (p->remote) {
-		streams->send.max_stream_data_bidi_local = p->max_stream_data_bidi_local;
-		streams->send.max_stream_data_bidi_remote = p->max_stream_data_bidi_remote;
-		streams->send.max_stream_data_uni = p->max_stream_data_uni;
-		streams->send.max_streams_bidi = p->max_streams_bidi;
-		streams->send.max_streams_uni = p->max_streams_uni;
-		streams->send.active_stream_id = -1;
+	limits->max_stream_data_bidi_local = p->max_stream_data_bidi_local;
+	limits->max_stream_data_bidi_remote = p->max_stream_data_bidi_remote;
+	limits->max_stream_data_uni = p->max_stream_data_uni;
+	limits->max_streams_bidi = p->max_streams_bidi;
+	limits->max_streams_uni = p->max_streams_uni;
+	limits->active_stream_id = -1;
 
-		if (is_serv) {
-			type = QUIC_STREAM_TYPE_SERVER_BIDI;
-			streams->send.max_bidi_stream_id =
-				quic_stream_streams_to_id(p->max_streams_bidi, type);
-			streams->send.next_bidi_stream_id = type;
-
-			type = QUIC_STREAM_TYPE_SERVER_UNI;
-			streams->send.max_uni_stream_id =
-				quic_stream_streams_to_id(p->max_streams_uni, type);
-			streams->send.next_uni_stream_id = type;
-			return;
-		}
-
-		type = QUIC_STREAM_TYPE_CLIENT_BIDI;
-		streams->send.max_bidi_stream_id =
-			quic_stream_streams_to_id(p->max_streams_bidi, type);
-		streams->send.next_bidi_stream_id = type;
-
-		type = QUIC_STREAM_TYPE_CLIENT_UNI;
-		streams->send.max_uni_stream_id =
-			quic_stream_streams_to_id(p->max_streams_uni, type);
-		streams->send.next_uni_stream_id = type;
-		return;
+	if (p->remote ^ is_serv) {
+		bidi_type = QUIC_STREAM_TYPE_CLIENT_BIDI;
+		uni_type = QUIC_STREAM_TYPE_CLIENT_UNI;
+	} else {
+		bidi_type = QUIC_STREAM_TYPE_SERVER_BIDI;
+		uni_type = QUIC_STREAM_TYPE_SERVER_UNI;
 	}
 
-	streams->recv.max_stream_data_bidi_local = p->max_stream_data_bidi_local;
-	streams->recv.max_stream_data_bidi_remote = p->max_stream_data_bidi_remote;
-	streams->recv.max_stream_data_uni = p->max_stream_data_uni;
-	streams->recv.max_streams_bidi = p->max_streams_bidi;
-	streams->recv.max_streams_uni = p->max_streams_uni;
+	limits->max_bidi_stream_id = quic_stream_streams_to_id(p->max_streams_bidi, bidi_type);
+	limits->next_bidi_stream_id = bidi_type;
 
-	if (is_serv) {
-		type = QUIC_STREAM_TYPE_CLIENT_BIDI;
-		streams->recv.max_bidi_stream_id =
-			quic_stream_streams_to_id(p->max_streams_bidi, type);
-		streams->recv.next_bidi_stream_id = type;
-
-		type = QUIC_STREAM_TYPE_CLIENT_UNI;
-		streams->recv.max_uni_stream_id =
-			quic_stream_streams_to_id(p->max_streams_uni, type);
-		streams->recv.next_uni_stream_id = type;
-		return;
-	}
-
-	type = QUIC_STREAM_TYPE_SERVER_BIDI;
-	streams->recv.max_bidi_stream_id =
-		quic_stream_streams_to_id(p->max_streams_bidi, type);
-	streams->recv.next_bidi_stream_id = type;
-
-	type = QUIC_STREAM_TYPE_SERVER_UNI;
-	streams->recv.max_uni_stream_id =
-		quic_stream_streams_to_id(p->max_streams_uni, type);
-	streams->recv.next_uni_stream_id = type;
+	limits->max_uni_stream_id = quic_stream_streams_to_id(p->max_streams_uni, uni_type);
+	limits->next_uni_stream_id = uni_type;
 }
