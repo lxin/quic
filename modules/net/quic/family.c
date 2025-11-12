@@ -385,6 +385,16 @@ static bool quic_v4_cmp_sk_addr(struct sock *sk, union quic_addr *a, union quic_
 	return a->v4.sin_addr.s_addr == addr->v4.sin_addr.s_addr;
 }
 
+static bool quic_v4_match_v6_addr(union quic_addr *a4, union quic_addr *a6)
+{
+	if (ipv6_addr_any(&a6->v6.sin6_addr))
+		return true;
+	if (ipv6_addr_v4mapped(&a6->v6.sin6_addr) &&
+	    a6->v6.sin6_addr.s6_addr32[3] == a4->v4.sin_addr.s_addr)
+		return true;
+	return false;
+}
+
 static bool quic_v6_cmp_sk_addr(struct sock *sk, union quic_addr *a, union quic_addr *addr)
 {
 	if (a->v4.sin_port != addr->v4.sin_port)
@@ -400,17 +410,9 @@ static bool quic_v6_cmp_sk_addr(struct sock *sk, union quic_addr *a, union quic_
 	if (a->sa.sa_family != addr->sa.sa_family) {
 		if (ipv6_only_sock(sk))
 			return false;
-		if (a->sa.sa_family == AF_INET6 && ipv6_addr_any(&a->v6.sin6_addr))
-			return true;
-		if (a->sa.sa_family == AF_INET && addr->sa.sa_family == AF_INET6 &&
-		    ipv6_addr_v4mapped(&addr->v6.sin6_addr) &&
-		    addr->v6.sin6_addr.s6_addr32[3] == a->v4.sin_addr.s_addr)
-			return true;
-		if (addr->sa.sa_family == AF_INET && a->sa.sa_family == AF_INET6 &&
-		    ipv6_addr_v4mapped(&a->v6.sin6_addr) &&
-		    a->v6.sin6_addr.s6_addr32[3] == addr->v4.sin_addr.s_addr)
-			return true;
-		return false;
+		if (a->sa.sa_family == AF_INET)
+			return quic_v4_match_v6_addr(a, addr);
+		return quic_v4_match_v6_addr(addr, a);
 	}
 
 	if (ipv6_addr_any(&a->v6.sin6_addr) || ipv6_addr_any(&addr->v6.sin6_addr))
