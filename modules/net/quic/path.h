@@ -101,7 +101,6 @@ struct quic_path_group {
 	u8 validated:1;		/* Path validated with PATH_RESPONSE */
 	u8 blocked:1;		/* Blocked by anti-amplification limit */
 	u8 retry:1;		/* Retry used in initial packet */
-	u8 serv:1;		/* Indicates server side */
 };
 
 static inline union quic_addr *quic_path_saddr(struct quic_path_group *paths, u8 path)

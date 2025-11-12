@@ -505,15 +505,16 @@ static int quic_connect(struct sock *sk, struct sockaddr *addr, int addr_len)
 		goto free;
 
 	/* Add socket to hash table, change state to ESTABLISHING, and start idle timer. */
+	quic_set_state(sk, QUIC_SS_ESTABLISHING);
 	err = sk->sk_prot->hash(sk);
 	if (err)
 		goto free;
-	quic_set_state(sk, QUIC_SS_ESTABLISHING);
 	quic_timer_start(sk, QUIC_TIMER_IDLE, inq->timeout);
 out:
 	release_sock(sk);
 	return err;
 free:
+	quic_set_state(sk, QUIC_SS_CLOSED);
 	quic_conn_id_set_free(source);
 	quic_conn_id_set_free(dest);
 	quic_crypto_free(crypto);
@@ -533,7 +534,7 @@ static int quic_hash(struct sock *sk)
 
 	sa = quic_path_saddr(paths, 0);
 	da = quic_path_daddr(paths, 0);
-	if (!sk->sk_max_ack_backlog) { /* Hash a regular socket with source and dest addrs/ports. */
+	if (!quic_is_listen(sk)) { /* Hash a regular socket with source and dest addrs/ports. */
 		head = quic_sock_head(quic_sock_hash(net, sa, da));
 		spin_lock_bh(&head->lock);
 		sock_set_flag(sk, SOCK_RCU_FREE);
@@ -602,7 +603,7 @@ static void quic_unhash(struct sock *sk)
 
 	sa = quic_path_saddr(paths, 0);
 	da = quic_path_daddr(paths, 0);
-	if (sk->sk_max_ack_backlog) {
+	if (quic_is_listen(sk)) {
 		/* Unhash a listen socket: clean up all pending connection requests. */
 		list_for_each_entry_safe(req, tmp, quic_reqs(sk), list)
 			quic_request_sock_free(sk, req);
@@ -1329,6 +1330,7 @@ static int quic_accept_sock_init(struct sock *nsk, struct sock *sk)
 	nsk->sk_flags = sk->sk_flags;
 	nsk->sk_protocol = IPPROTO_QUIC;
 	nsk->sk_backlog_rcv = sk->sk_prot->backlog_rcv;
+	nsk->sk_max_ack_backlog = sk->sk_max_ack_backlog;
 
 	nsk->sk_sndbuf = sk->sk_sndbuf;
 	nsk->sk_rcvbuf = sk->sk_rcvbuf;
@@ -1348,7 +1350,6 @@ static int quic_accept_sock_init(struct sock *nsk, struct sock *sk)
 		inet_sk(nsk)->pinet6 = &((struct quic6_sock *)nsk)->inet6;
 
 	quic_inq(nsk)->events = quic_inq(sk)->events;
-	quic_paths(nsk)->serv = 1; /* Mark this as a server. */
 
 	/* Copy the QUIC settings and transport parameters to accept socket. */
 	quic_sock_apply_config(nsk, quic_config(sk));
@@ -1414,10 +1415,10 @@ static int quic_accept_sock_setup(struct sock *sk, struct quic_request_sock *req
 	}
 
 	/* Add socket to hash table, change state to ESTABLISHING, and start idle timer. */
+	quic_set_state(sk, QUIC_SS_ESTABLISHING);
 	err = sk->sk_prot->hash(sk);
 	if (err)
 		goto out;
-	quic_set_state(sk, QUIC_SS_ESTABLISHING);
 	quic_timer_start(sk, QUIC_TIMER_IDLE, inq->timeout);
 
 	/* Process all packets in backlog list of this socket. */
@@ -1486,8 +1487,8 @@ static void quic_close(struct sock *sk, long timeout)
 	lock_sock(sk);
 
 	quic_outq_transmit_app_close(sk);
-	quic_set_state(sk, QUIC_SS_CLOSED);
 	sk->sk_prot->unhash(sk);
+	quic_set_state(sk, QUIC_SS_CLOSED);
 
 	release_sock(sk);
 
