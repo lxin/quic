@@ -262,40 +262,40 @@ static u8 quic_v6_get_msg_ecn(struct sk_buff *skb)
 	return (ipv6_get_dsfield(ipv6_hdr(skb)) & INET_ECN_MASK);
 }
 
-static int quic_v4_get_user_addr(struct sock *sk, union quic_addr *a, struct sockaddr *addr,
-				 int addr_len)
+static int quic_v4_get_addr_from_user(struct sock *sk, union quic_addr *a, struct sockaddr *addr,
+				      int addr_len)
 {
 	u32 len = sizeof(struct sockaddr_in);
 
 	if (addr_len < len || addr->sa_family != AF_INET)
-		return 1;
+		return -EINVAL;
 	if (ipv4_is_multicast(quic_addr(addr)->v4.sin_addr.s_addr))
-		return 1;
+		return -EINVAL;
 	memcpy(a, addr, len);
 	return 0;
 }
 
-static int quic_v6_get_user_addr(struct sock *sk, union quic_addr *a, struct sockaddr *addr,
-				 int addr_len)
+static int quic_v6_get_addr_from_user(struct sock *sk, union quic_addr *a, struct sockaddr *addr,
+				      int addr_len)
 {
 	u32 len = sizeof(struct sockaddr_in);
 	int type;
 
 	if (addr_len < len)
-		return 1;
+		return -EINVAL;
 
 	if (addr->sa_family != AF_INET6) {
 		if (ipv6_only_sock(sk))
-			return 1;
-		return quic_v4_get_user_addr(sk, a, addr, addr_len);
+			return -EINVAL;
+		return quic_v4_get_addr_from_user(sk, a, addr, addr_len);
 	}
 
 	len = sizeof(struct sockaddr_in6);
 	if (addr_len < len)
-		return 1;
+		return -EINVAL;
 	type = ipv6_addr_type(&quic_addr(addr)->v6.sin6_addr);
 	if (type != IPV6_ADDR_ANY && !(type & IPV6_ADDR_UNICAST))
-		return 1;
+		return -EINVAL;
 	memcpy(a, addr, len);
 	return 0;
 }
@@ -547,11 +547,12 @@ u8 quic_get_msg_ecn(struct sk_buff *skb)
 
 #define quic_pf_ipv4(sk)	((sk)->sk_family == PF_INET)
 
-int quic_get_user_addr(struct sock *sk, union quic_addr *a, struct sockaddr *addr, int addr_len)
+int quic_get_addr_from_user(struct sock *sk, union quic_addr *a, struct sockaddr *addr,
+			    int addr_len)
 {
 	memset(a, 0, sizeof(*a));
-	return quic_pf_ipv4(sk) ? quic_v4_get_user_addr(sk, a, addr, addr_len) :
-				  quic_v6_get_user_addr(sk, a, addr, addr_len);
+	return quic_pf_ipv4(sk) ? quic_v4_get_addr_from_user(sk, a, addr, addr_len) :
+				  quic_v6_get_addr_from_user(sk, a, addr, addr_len);
 }
 
 void quic_get_pref_addr(struct sock *sk, union quic_addr *addr, u8 **pp, u32 *plen)

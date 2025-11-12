@@ -436,7 +436,8 @@ static int quic_bind(struct sock *sk, struct sockaddr *addr, int addr_len)
 
 	lock_sock(sk);
 
-	if (quic_path_saddr(paths, 0)->v4.sin_port || quic_get_user_addr(sk, &a, addr, addr_len))
+	if (quic_path_saddr(paths, 0)->v4.sin_port ||
+	    quic_get_addr_from_user(sk, &a, addr, addr_len))
 		goto out;
 
 	quic_path_set_saddr(paths, 0, &a);
@@ -464,7 +465,7 @@ static int quic_connect(struct sock *sk, struct sockaddr *addr, int addr_len)
 	int err = -EINVAL;
 
 	lock_sock(sk);
-	if (!sk_unhashed(sk) || quic_get_user_addr(sk, &a, addr, addr_len))
+	if (!sk_unhashed(sk) || quic_get_addr_from_user(sk, &a, addr, addr_len))
 		goto out;
 
 	/* Set destination address and resolve route (may also auto-set source address). */
@@ -1672,7 +1673,7 @@ static int quic_sock_connection_migrate(struct sock *sk, struct sockaddr *addr, 
 	union quic_addr a;
 	int err;
 
-	if (quic_get_user_addr(sk, &a, addr, addr_len))
+	if (quic_get_addr_from_user(sk, &a, addr, addr_len))
 		return -EINVAL;
 	/* Reject if connection is closed or address matches the current path's source. */
 	if (quic_is_closed(sk) || quic_cmp_sk_addr(sk, quic_path_saddr(paths, 0), &a))
