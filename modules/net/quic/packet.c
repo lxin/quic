@@ -2383,7 +2383,7 @@ xmit:
 }
 
 /* Create and transmit a new QUIC packet. */
-int quic_packet_create(struct sock *sk)
+int quic_packet_create_and_xmit(struct sock *sk)
 {
 	struct quic_packet *packet = quic_packet(sk);
 	struct sk_buff *skb;

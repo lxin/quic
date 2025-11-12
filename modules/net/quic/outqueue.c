@@ -52,7 +52,7 @@ static int quic_outq_transmit_flush(struct sock *sk)
 
 	outq->count = 0;
 	if (!quic_packet_empty(packet))
-		count += quic_packet_create(sk);
+		count += quic_packet_create_and_xmit(sk);
 	quic_packet_flush(sk);
 
 	return count;
@@ -88,7 +88,7 @@ static void quic_outq_transmit_ctrl(struct sock *sk, u8 level)
 		if (quic_packet_tail(sk, frame))
 			continue; /* Frame appended. */
 		/* Flush already appended frames before processing this one. */
-		outq->count += quic_packet_create(sk);
+		outq->count += quic_packet_create_and_xmit(sk);
 		next = frame; /* Re-append this frame. */
 	}
 }
@@ -111,7 +111,7 @@ static void quic_outq_transmit_dgram(struct sock *sk)
 			break;
 		if (quic_packet_tail(sk, frame))
 			continue;
-		outq->count += quic_packet_create(sk);
+		outq->count += quic_packet_create_and_xmit(sk);
 		next = frame;
 	}
 }
@@ -236,7 +236,7 @@ static void quic_outq_transmit_stream(struct sock *sk)
 			outq->stream_list_len -= frame->len;
 			continue;
 		}
-		outq->count += quic_packet_create(sk);
+		outq->count += quic_packet_create_and_xmit(sk);
 		next = frame;
 	}
 }
@@ -265,7 +265,7 @@ static void quic_outq_transmit_old(struct sock *sk, u8 level)
 			break;
 		if (quic_packet_tail(sk, frame))
 			continue;
-		outq->count += quic_packet_create(sk);
+		outq->count += quic_packet_create_and_xmit(sk);
 		next = frame;
 	}
 }
