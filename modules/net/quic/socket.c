@@ -428,7 +428,12 @@ static void quic_destroy_sock(struct sock *sk)
 	sock_prot_inuse_add(sock_net(sk), sk->sk_prot, -1);
 }
 
+
+#ifdef TLS_MIN_RECORD_SIZE_LIM
+static int quic_bind(struct sock *sk, struct sockaddr_unsized *addr, int addr_len)
+#else
 static int quic_bind(struct sock *sk, struct sockaddr *addr, int addr_len)
+#endif
 {
 	struct quic_path_group *paths = quic_paths(sk);
 	union quic_addr a;
@@ -437,7 +442,7 @@ static int quic_bind(struct sock *sk, struct sockaddr *addr, int addr_len)
 	lock_sock(sk);
 
 	if (quic_path_saddr(paths, 0)->v4.sin_port ||
-	    quic_get_addr_from_user(sk, &a, addr, addr_len))
+	    quic_get_addr_from_user(sk, &a, (struct sockaddr *)addr, addr_len))
 		goto out;
 
 	quic_path_set_saddr(paths, 0, &a);
@@ -453,7 +458,11 @@ out:
 	return err;
 }
 
+#ifdef TLS_MIN_RECORD_SIZE_LIM
+static int quic_connect(struct sock *sk, struct sockaddr_unsized *addr, int addr_len)
+#else
 static int quic_connect(struct sock *sk, struct sockaddr *addr, int addr_len)
+#endif
 {
 	struct quic_conn_id_set *dest = quic_dest(sk), *source = quic_source(sk);
 	struct quic_crypto *crypto = quic_crypto(sk, QUIC_CRYPTO_INITIAL);
@@ -465,7 +474,7 @@ static int quic_connect(struct sock *sk, struct sockaddr *addr, int addr_len)
 	int err = -EINVAL;
 
 	lock_sock(sk);
-	if (!sk_unhashed(sk) || quic_get_addr_from_user(sk, &a, addr, addr_len))
+	if (!sk_unhashed(sk) || quic_get_addr_from_user(sk, &a, (struct sockaddr *)addr, addr_len))
 		goto out;
 
 	/* Set destination address and resolve route (may also auto-set source address). */

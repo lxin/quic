@@ -34,7 +34,12 @@ int sysctl_quic_rmem[3];
 int sysctl_quic_wmem[3];
 int sysctl_quic_alpn_demux;
 
+#ifdef TLS_MIN_RECORD_SIZE_LIM
+static int quic_inet_connect(struct socket *sock, struct sockaddr_unsized *addr, int addr_len,
+			     int flags)
+#else
 static int quic_inet_connect(struct socket *sock, struct sockaddr *addr, int addr_len, int flags)
+#endif
 {
 	struct sock *sk = sock->sk;
 

@@ -212,7 +212,7 @@ static int quic_test_do_sample_client(void)
 	ra.sin_port = htons((u16)port);
 	if (!in4_pton(ip, strlen(ip), (u8 *)&ra.sin_addr.s_addr, -1, NULL))
 		goto free;
-	err = kernel_connect(sock, (struct sockaddr *)&ra, sizeof(ra), 0);
+	err = kernel_connect(sock, (void *)&ra, sizeof(ra), 0);
 	if (err < 0)
 		goto free;
 
@@ -292,7 +292,7 @@ static int quic_test_do_ticket_client(void)
 	ra.sin_port = htons((u16)port);
 	if (!in4_pton(ip, strlen(ip), (u8 *)&ra.sin_addr.s_addr, -1, NULL))
 		goto free;
-	err = kernel_connect(sock, (struct sockaddr *)&ra, sizeof(ra), 0);
+	err = kernel_connect(sock, (void *)&ra, sizeof(ra), 0);
 	if (err < 0)
 		goto free;
 
@@ -360,7 +360,7 @@ static int quic_test_do_ticket_client(void)
 	ra.sin_port = htons((u16)port);
 	if (!in4_pton(ip, strlen(ip), (u8 *)&ra.sin_addr.s_addr, -1, NULL))
 		goto free;
-	err = kernel_connect(sock, (struct sockaddr *)&ra, sizeof(ra), 0);
+	err = kernel_connect(sock, (void *)&ra, sizeof(ra), 0);
 	if (err < 0)
 		goto free;
 
@@ -427,7 +427,7 @@ static int quic_test_do_sample_server(void)
 	la.sin_port = htons((u16)port);
 	if (!in4_pton(ip, strlen(ip), (u8 *)&la.sin_addr.s_addr, -1, NULL))
 		goto free;
-	err = kernel_bind(sock, (struct sockaddr *)&la, sizeof(la));
+	err = kernel_bind(sock, (void *)&la, sizeof(la));
 	if (err < 0)
 		goto free;
 	err = quic_kernel_setsockopt(sock->sk, QUIC_SOCKOPT_ALPN, alpn, strlen(alpn));
@@ -499,7 +499,7 @@ static int quic_test_do_ticket_server(void)
 	la.sin_port = htons((u16)port);
 	if (!in4_pton(ip, strlen(ip), (u8 *)&la.sin_addr.s_addr, -1, NULL))
 		goto free;
-	err = kernel_bind(sock, (struct sockaddr *)&la, sizeof(la));
+	err = kernel_bind(sock, (void *)&la, sizeof(la));
 	if (err < 0)
 		goto free;
 	err = quic_kernel_setsockopt(sock->sk, QUIC_SOCKOPT_ALPN, alpn, strlen(alpn));
