@@ -348,6 +348,7 @@ static void quic_crypto_get_header(struct sk_buff *skb)
 {
 	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
 	struct quichdr *hdr = quic_hdr(skb);
+	s64 number_max = cb->number;
 	u32 len = QUIC_PN_MAX_LEN;
 	u8 *p = (u8 *)hdr;
 
@@ -361,10 +362,7 @@ static void quic_crypto_get_header(struct sk_buff *skb)
 	cb->key_phase = hdr->key;
 	cb->number_len = hdr->pnl + 1;
 	quic_get_int(&p, &len, &cb->number, cb->number_len);
-	cb->number = quic_get_num(cb->number_max, cb->number, cb->number_len);
-
-	if (cb->number > cb->number_max)
-		cb->number_max = cb->number;
+	cb->number = quic_get_num(number_max, cb->number, cb->number_len);
 }
 
 #define QUIC_PN_LEN_BITS_MASK	0x03

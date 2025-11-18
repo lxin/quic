@@ -1310,7 +1310,7 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb)
 		space = quic_pnspace(sk, packet->level);
 
 		/* Set highest received packet number for packet number decode during decryption. */
-		cb->number_max = space->max_pn_seen;
+		cb->number = space->max_pn_seen;
 		cb->crypto_done = quic_packet_decrypt_done;
 		err = quic_crypto_decrypt(crypto, skb); /* Do packet decryption. */
 		if (err) {
@@ -1480,7 +1480,7 @@ err:
 /* Process detected connection migration. Either initiate probing on a newly discovered
  * alternate path or finalize migration if the new path is now active.
  */
-static void quic_packet_path_alt_process(struct sock *sk, struct sk_buff *skb)
+static void quic_packet_path_alt_process(struct sock *sk, struct sk_buff *skb, s64 number_max)
 {
 	struct quic_path_group *paths = quic_paths(sk);
 	struct quic_packet *packet = quic_packet(sk);
@@ -1495,7 +1495,7 @@ static void quic_packet_path_alt_process(struct sock *sk, struct sk_buff *skb)
 		return;
 	}
 
-	if (!packet->non_probing || cb->number != cb->number_max ||
+	if (!packet->non_probing || cb->number != number_max ||
 	    !quic_path_alt_state(paths, QUIC_PATH_ALT_SWAPPED))
 		return;
 
@@ -1533,7 +1533,7 @@ static int quic_packet_app_process_done(struct sock *sk, struct sk_buff *skb)
 	 */
 	quic_pnspace_inc_ecn_count(space, quic_get_msg_ecn(skb));
 
-	quic_packet_path_alt_process(sk, skb); /* Process connection migration. */
+	quic_packet_path_alt_process(sk, skb, space->max_pn_seen); /* Check connection migration. */
 
 	if (!paths->validated) /* Increase anti-amplification credit if path isn't validated. */
 		paths->ampl_rcvlen += skb->len;
@@ -1644,7 +1644,7 @@ static int quic_packet_app_process(struct sock *sk, struct sk_buff *skb)
 	cb->length = (u16)(skb->len - cb->number_offset);
 
 	/* Set highest received packet number for packet number decode during decryption. */
-	cb->number_max = space->max_pn_seen;
+	cb->number = space->max_pn_seen;
 	cb->crypto_done = quic_packet_decrypt_done;
 
 	/* draft-banks-quic-disable-encryption#section-2.1:

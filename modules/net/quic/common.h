@@ -37,15 +37,14 @@ static inline void quic_conn_id_update(struct quic_conn_id *conn_id, u8 *data, u
 }
 
 struct quic_skb_cb {
-	/* Callback when encryption/decryption completes in async mode */
+	/* Callback and temporary context when encryption/decryption completes in async mode */
 	void (*crypto_done)(struct sk_buff *skb, int err);
+	void *crypto_ctx;
 	union {
-		struct sk_buff *last;		/* Last packet in TX bundle */
-		void *crypto_ctx;		/* Temporary crypto context to free */
-		s64 seqno;			/* Dest connection ID number on RX */
+		struct sk_buff *last;	/* Last packet in bundle on TX */
+		s64 seqno;		/* Dest connection ID number on RX */
 	};
-	s64 number_max;		/* Largest packet number seen before parsing this one */
-	s64 number;		/* Parsed packet number */
+	s64 number;		/* Parsed packet number, or the largest previously seen */
 	u16 errcode;		/* Error code if encryption/decryption fails */
 	u16 length;		/* Payload length + packet number length */
 	u32 time;		/* Arrival time in UDP tunnel */
