@@ -42,12 +42,12 @@ struct quic_skb_cb {
 	void *crypto_ctx;
 	union {
 		struct sk_buff *last;	/* Last packet in bundle on TX */
-		s64 seqno;		/* Dest connection ID number on RX */
+		u64 time;		/* Arrival timestamp in UDP tunnel on RX */
 	};
 	s64 number;		/* Parsed packet number, or the largest previously seen */
+	u32 seqno;		/* Dest connection ID number on RX */
 	u16 errcode;		/* Error code if encryption/decryption fails */
 	u16 length;		/* Payload length + packet number length */
-	u32 time;		/* Arrival time in UDP tunnel */
 
 	u16 number_offset;	/* Offset of packet number field */
 	u16 udph_offset;	/* Offset of UDP header */
@@ -166,6 +166,11 @@ static inline void quic_data_free(struct quic_data *d)
 	kfree(d->data);
 	d->data = NULL;
 	d->len = 0;
+}
+
+static inline u64 quic_ktime_get_us(void)
+{
+	return ktime_to_us(ktime_get());
 }
 
 u32 quic_sock_hash(struct net *net, union quic_addr *s, union quic_addr *d);

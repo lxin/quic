@@ -1815,8 +1815,8 @@ static u8 *quic_packet_pack_frames(struct sock *sk, struct sk_buff *skb,
 	struct quic_packet *packet = quic_packet(sk);
 	struct quic_outqueue *outq = quic_outq(sk);
 	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
-	u32 now = jiffies_to_usecs(jiffies);
 	struct quic_frame *frame, *next;
+	u64 now = quic_ktime_get_us();
 	struct quic_frame_frag *frag;
 	struct quic_pnspace *space;
 	u8 *p = skb->data + off;

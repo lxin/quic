@@ -68,7 +68,7 @@ static struct quic_frame *quic_frame_ack_create(struct sock *sk, void *data, u8 
 		smallest = space->base_pn + gabs[num_gabs - 1].end;
 	range = largest - smallest; /* rfc9000#section-19.3.1: smallest = largest - ack_range. */
 	/* Calculate ACK Delay, adjusted by the ACK delay exponent. */
-	delay = jiffies_to_usecs(jiffies) - space->max_pn_time;
+	delay = quic_ktime_get_us() - space->max_pn_time;
 	delay >>= outq->ack_delay_exponent;
 
 	/* Estimate the maximum frame length: type + 4 * varints + ranges + ECN Counts. */

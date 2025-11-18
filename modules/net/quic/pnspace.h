@@ -67,20 +67,21 @@ struct quic_pnspace {
 	u8  sack_path:1;	/* Path used for sending the SACK frame */
 
 	s64 last_max_pn_seen;	/* Highest packet number seen before pn_map advanced */
-	u32 last_max_pn_time;	/* Timestamp when last_max_pn_seen was received */
-	u32 max_time_limit;	/* Time threshold to trigger pn_map advancement on packet receipt */
+	u64 last_max_pn_time;	/* Timestamp when last_max_pn_seen was received */
 	s64 min_pn_seen;	/* Smallest packet number received in this space */
 	s64 max_pn_seen;	/* Largest packet number received in this space */
-	u32 max_pn_time;	/* Time at which max_pn_seen was received */
+	u64 max_pn_time;	/* Timestamp when max_pn_seen was received */
 	s64 base_pn;		/* Packet number corresponding to the start of the pn_map */
-	u32 time;		/* Cached current time, or time accept a socket (listen socket) */
+	u64 time;		/* Cached current timestamp, or latest socket accept timestamp */
 
 	s64 max_pn_acked_seen;	/* Largest packet number acknowledged by the peer */
-	u32 max_pn_acked_time;	/* Time at which max_pn_acked_seen was acknowledged */
-	u32 last_sent_time;	/* Time when the last ack-eliciting packet was sent */
-	u32 loss_time;		/* Time after which the next packet can be declared lost */
-	u32 inflight;		/* Bytes of all ack-eliciting frames in flight in this space */
+	u64 max_pn_acked_time;	/* Timestamp when max_pn_acked_seen was acknowledged */
+	u64 last_sent_time;	/* Timestamp when the last ack-eliciting packet was sent */
+	u64 loss_time;		/* Timestamp after which the next packet can be declared lost */
 	s64 next_pn;		/* Next packet number to send in this space */
+
+	u32 max_time_limit;	/* Time threshold to trigger pn_map advancement on packet receipt */
+	u32 inflight;		/* Bytes of all ack-eliciting frames in flight in this space */
 };
 
 static inline void quic_pnspace_set_max_pn_acked_seen(struct quic_pnspace *space,
@@ -89,7 +90,7 @@ static inline void quic_pnspace_set_max_pn_acked_seen(struct quic_pnspace *space
 	if (space->max_pn_acked_seen >= max_pn_acked_seen)
 		return;
 	space->max_pn_acked_seen = max_pn_acked_seen;
-	space->max_pn_acked_time = jiffies_to_usecs(jiffies);
+	space->max_pn_acked_time = quic_ktime_get_us();
 }
 
 static inline void quic_pnspace_set_base_pn(struct quic_pnspace *space, s64 pn)

@@ -264,7 +264,7 @@ static void cubic_recovery(struct quic_cong *cong)
 	cong->window = cong->ssthresh;
 }
 
-static int quic_cong_check_persistent_congestion(struct quic_cong *cong, u32 time)
+static int quic_cong_check_persistent_congestion(struct quic_cong *cong, u64 time)
 {
 	u32 ssthresh;
 
@@ -285,7 +285,7 @@ static int quic_cong_check_persistent_congestion(struct quic_cong *cong, u32 tim
 	return 1;
 }
 
-static void quic_cubic_on_packet_lost(struct quic_cong *cong, u32 time, u32 bytes, s64 number)
+static void quic_cubic_on_packet_lost(struct quic_cong *cong, u64 time, u32 bytes, s64 number)
 {
 	if (quic_cong_check_persistent_congestion(cong, time))
 		return;
@@ -310,7 +310,7 @@ static void quic_cubic_on_packet_lost(struct quic_cong *cong, u32 time, u32 byte
 	cubic_recovery(cong);
 }
 
-static void quic_cubic_on_packet_acked(struct quic_cong *cong, u32 time, u32 bytes, s64 number)
+static void quic_cubic_on_packet_acked(struct quic_cong *cong, u64 time, u32 bytes, s64 number)
 {
 	switch (cong->state) {
 	case QUIC_CONG_SLOW_START:
@@ -377,7 +377,7 @@ static void quic_cubic_on_init(struct quic_cong *cong)
 	cubic->css_rounds = 0;
 }
 
-static void quic_cubic_on_packet_sent(struct quic_cong *cong, u32 time, u32 bytes, s64 number)
+static void quic_cubic_on_packet_sent(struct quic_cong *cong, u64 time, u32 bytes, s64 number)
 {
 	struct quic_cubic *cubic = quic_cong_priv(cong);
 
@@ -422,7 +422,7 @@ static void quic_cubic_on_rtt_update(struct quic_cong *cong)
 }
 
 /* NEW RENO APIs */
-static void quic_reno_on_packet_lost(struct quic_cong *cong, u32 time, u32 bytes, s64 number)
+static void quic_reno_on_packet_lost(struct quic_cong *cong, u64 time, u32 bytes, s64 number)
 {
 	if (quic_cong_check_persistent_congestion(cong, time))
 		return;
@@ -449,7 +449,7 @@ static void quic_reno_on_packet_lost(struct quic_cong *cong, u32 time, u32 bytes
 	cong->window = cong->ssthresh;
 }
 
-static void quic_reno_on_packet_acked(struct quic_cong *cong, u32 time, u32 bytes, s64 number)
+static void quic_reno_on_packet_acked(struct quic_cong *cong, u64 time, u32 bytes, s64 number)
 {
 	switch (cong->state) {
 	case QUIC_CONG_SLOW_START:
@@ -522,13 +522,13 @@ static struct quic_cong_ops quic_congs[] = {
 };
 
 /* COMMON APIs */
-void quic_cong_on_packet_lost(struct quic_cong *cong, u32 time, u32 bytes, s64 number)
+void quic_cong_on_packet_lost(struct quic_cong *cong, u64 time, u32 bytes, s64 number)
 {
 	cong->ops->on_packet_lost(cong, time, bytes, number);
 }
 EXPORT_SYMBOL_GPL(quic_cong_on_packet_lost);
 
-void quic_cong_on_packet_acked(struct quic_cong *cong, u32 time, u32 bytes, s64 number)
+void quic_cong_on_packet_acked(struct quic_cong *cong, u64 time, u32 bytes, s64 number)
 {
 	cong->ops->on_packet_acked(cong, time, bytes, number);
 }
@@ -566,8 +566,7 @@ static void quic_cong_pto_update(struct quic_cong *cong)
  */
 static void quic_cong_update_pacing_time(struct quic_cong *cong, u32 bytes)
 {
-	unsigned long rate = READ_ONCE(cong->pacing_rate);
-	u64 prior_time, credit, len_ns;
+	u64 prior_time, credit, len_ns, rate = READ_ONCE(cong->pacing_rate);
 
 	if (!rate)
 		return;
@@ -583,21 +582,22 @@ static void quic_cong_update_pacing_time(struct quic_cong *cong, u32 bytes)
 }
 
 /* Compute and update the pacing rate based on congestion window and smoothed RTT. */
-static void quic_cong_pace_update(struct quic_cong *cong, u32 bytes, u32 max_rate)
+static void quic_cong_pace_update(struct quic_cong *cong, u32 bytes, u64 max_rate)
 {
 	u64 rate;
 
+	if (unlikely(!cong->smoothed_rtt))
+		return;
+
 	/* rate = N * congestion_window / smoothed_rtt */
-	rate = (u64)cong->window * USEC_PER_SEC * 2;
-	if (likely(cong->smoothed_rtt))
-		rate = div64_ul(rate, cong->smoothed_rtt);
+	rate = div64_ul((u64)cong->window * USEC_PER_SEC * 2, cong->smoothed_rtt);
 
 	WRITE_ONCE(cong->pacing_rate, min_t(u64, rate, max_rate));
-	pr_debug("%s: update pacing rate: %u, max rate: %u, srtt: %u\n",
+	pr_debug("%s: update pacing rate: %llu, max rate: %llu, srtt: %u\n",
 		 __func__, cong->pacing_rate, max_rate, cong->smoothed_rtt);
 }
 
-void quic_cong_on_packet_sent(struct quic_cong *cong, u32 time, u32 bytes, s64 number)
+void quic_cong_on_packet_sent(struct quic_cong *cong, u64 time, u32 bytes, s64 number)
 {
 	if (!bytes)
 		return;
@@ -607,7 +607,7 @@ void quic_cong_on_packet_sent(struct quic_cong *cong, u32 time, u32 bytes, s64 n
 }
 EXPORT_SYMBOL_GPL(quic_cong_on_packet_sent);
 
-void quic_cong_on_ack_recv(struct quic_cong *cong, u32 bytes, u32 max_rate)
+void quic_cong_on_ack_recv(struct quic_cong *cong, u32 bytes, u64 max_rate)
 {
 	if (!bytes)
 		return;
@@ -618,7 +618,7 @@ void quic_cong_on_ack_recv(struct quic_cong *cong, u32 bytes, u32 max_rate)
 EXPORT_SYMBOL_GPL(quic_cong_on_ack_recv);
 
 /* rfc9002#section-5: Estimating the Round-Trip Time */
-void quic_cong_rtt_update(struct quic_cong *cong, u32 time, u32 ack_delay)
+void quic_cong_rtt_update(struct quic_cong *cong, u64 time, u32 ack_delay)
 {
 	u32 adjusted_rtt, rttvar_sample;
 

@@ -736,10 +736,10 @@ void quic_outq_transmitted_sack(struct sock *sk, u8 level, s64 largest, s64 smal
  * Handshake, and Application. Return the earliest loss time and update the level to indicate
  * which packet number space it belongs to.
  */
-static u32 quic_outq_get_loss_time(struct sock *sk, u8 *level)
+static u64 quic_outq_get_loss_time(struct sock *sk, u8 *level)
 {
 	struct quic_pnspace *s;
-	u32 time, t;
+	u64 time, t;
 
 	/* Start with Initial packet number space loss time. */
 	s = quic_pnspace(sk, QUIC_CRYPTO_INITIAL);
@@ -772,14 +772,14 @@ static u32 quic_outq_get_loss_time(struct sock *sk, u8 *level)
  * Returns the time at which the PTO expires and updates the level indicating the packet number
  * space associated with the PTO timer.
  */
-static u32 quic_outq_get_pto_time(struct sock *sk, u8 *level)
+static u64 quic_outq_get_pto_time(struct sock *sk, u8 *level)
 {
-	u32 duration, t, time = 0, now = jiffies_to_usecs(jiffies);
+	u64 duration, t, time = 0, now = quic_ktime_get_us();
 	struct quic_outqueue *outq = quic_outq(sk);
 	struct quic_pnspace *s;
 
 	/* PTO duration scaled by (2 ^ pto_count). */
-	duration = quic_cong(sk)->pto * BIT(outq->pto_count);
+	duration = (u64)quic_cong(sk)->pto * BIT(outq->pto_count);
 
 	if (!outq->inflight) {
 		/* If nothing is inflight, PTO is scheduled for the next expected handshake or
@@ -835,9 +835,9 @@ static u32 quic_outq_get_pto_time(struct sock *sk, u8 *level)
  */
 void quic_outq_update_loss_timer(struct sock *sk)
 {
+	u64 t = jiffies_to_usecs(1), time, now = quic_ktime_get_us();
 	struct quic_path_group *paths = quic_paths(sk);
 	struct quic_outqueue *outq = quic_outq(sk);
-	u32 time, now = jiffies_to_usecs(jiffies);
 	u8 level;
 
 	time = quic_outq_get_loss_time(sk, &level);
@@ -850,8 +850,9 @@ void quic_outq_update_loss_timer(struct sock *sk)
 	time = quic_outq_get_pto_time(sk, &level);
 
 out:
-	time = (time > now) ? (time - now) : 1;
-	quic_timer_reset(sk, QUIC_TIMER_LOSS, time);
+	if (time > now + t)
+		t = time - now;
+	quic_timer_reset(sk, QUIC_TIMER_LOSS, t);
 }
 
 /* Syncs the congestion window with the socket send buffer size.  Called after congestion
@@ -965,7 +966,7 @@ void quic_outq_retransmit_mark(struct sock *sk, u8 level, u8 immediate)
 	struct quic_packet_sent *sent, *next;
 
 	space->loss_time = 0;
-	cong->time = jiffies_to_usecs(jiffies);
+	cong->time = quic_ktime_get_us();
 
 	list_for_each_entry_safe(sent, next, &outq->packet_sent_list, list) {
 		if (level && !sent->level)
@@ -1036,7 +1037,7 @@ void quic_outq_transmit_pto(struct sock *sk)
 {
 	struct quic_outqueue *outq = quic_outq(sk);
 	struct quic_probeinfo info = {};
-	u32 time;
+	u64 time;
 	u8 level;
 
 	/* Check if there is a loss time set and retransmit lost frames if so. */

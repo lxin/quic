@@ -635,7 +635,7 @@ int quic_crypto_encrypt(struct quic_crypto *crypto, struct sk_buff *skb)
 	 * quic_crypto_decrypt()).
 	 */
 	if (crypto->key_pending && !crypto->key_update_send_time)
-		crypto->key_update_send_time = jiffies_to_usecs(jiffies);
+		crypto->key_update_send_time = quic_ktime_get_us();
 
 	ccm = quic_crypto_is_cipher_ccm(crypto);
 	err = quic_crypto_payload_encrypt(crypto->tx_tfm[phase], skb, iv, ccm);
@@ -657,7 +657,7 @@ int quic_crypto_decrypt(struct quic_crypto *crypto, struct sk_buff *skb)
 	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
 	u8 *iv, cha, ccm, phase;
 	int err = 0;
-	u32 time;
+	u64 time;
 
 	/* Payload was decrypted asynchronously.  Proceed with parsing packet number and key
 	 * phase.
@@ -722,7 +722,7 @@ out:
 	 */
 	if (crypto->key_pending && cb->key_phase == crypto->key_phase) {
 		time = crypto->key_update_send_time;
-		if (time && jiffies_to_usecs(jiffies) - time >= crypto->key_update_time) {
+		if (time && quic_ktime_get_us() - time >= crypto->key_update_time) {
 			crypto->key_pending = 0;
 			crypto->key_update_time = 0;
 		}
@@ -1102,12 +1102,12 @@ int quic_crypto_generate_token(struct quic_crypto *crypto, void *addr, u32 addrl
 {
 	u8 key[TLS_CIPHER_AES_GCM_128_KEY_SIZE], iv[QUIC_IV_LEN];
 	struct crypto_aead *tfm = crypto->tag_tfm;
-	u32 ts = jiffies_to_usecs(jiffies), len;
 	u8 *retry_token = NULL, *tx_iv, *p;
 	struct quic_data srt = {}, k, i;
+	u64 ts = quic_ktime_get_us();
 	struct aead_request *req;
 	struct scatterlist *sg;
-	int err;
+	int err, len;
 
 	quic_data(&srt, quic_random_data, QUIC_RANDOM_DATA_LEN);
 	quic_data(&k, key, TLS_CIPHER_AES_GCM_128_KEY_SIZE);
@@ -1162,7 +1162,7 @@ EXPORT_SYMBOL_GPL(quic_crypto_generate_token);
 int quic_crypto_verify_token(struct quic_crypto *crypto, void *addr, u32 addrlen,
 			     struct quic_conn_id *conn_id, u8 *token, u32 len)
 {
-	u32 ts = jiffies_to_usecs(jiffies), timeout = QUIC_TOKEN_TIMEOUT_RETRY;
+	u64 t, ts = quic_ktime_get_us(), timeout = QUIC_TOKEN_TIMEOUT_RETRY;
 	u8 key[TLS_CIPHER_AES_GCM_128_KEY_SIZE], iv[QUIC_IV_LEN];
 	u8 *retry_token = NULL, *rx_iv, *p, flag = *token;
 	struct crypto_aead *tfm = crypto->tag_tfm;
@@ -1170,7 +1170,6 @@ int quic_crypto_verify_token(struct quic_crypto *crypto, void *addr, u32 addrlen
 	struct aead_request *req;
 	struct scatterlist *sg;
 	int err;
-	u64 t;
 
 	if (len < sizeof(flag) + addrlen + sizeof(ts) + QUIC_TAG_LEN)
 		return -EINVAL;

@@ -42,15 +42,15 @@ struct quic_crypto {
 	u8 tx_iv[2][QUIC_IV_LEN];		/* IVs for TX (key phase 0 and 1) */
 	u8 rx_iv[2][QUIC_IV_LEN];		/* IVs for RX (key phase 0 and 1) */
 
-	u32 key_update_send_time;		/* Time when 1st packet was sent after key update */
-	u32 key_update_time;			/* Time to retain old keys after key update */
-	u32 version;				/* QUIC version in use */
+	u64 key_update_send_time;	/* Timestamp when 1st packet is sent after key update */
+	u64 key_update_time;		/* Timestamp until old keys are retained after key update */
+	u32 version;			/* QUIC version in use */
 
-	u8 ticket_ready:1;			/* True if a session ticket is ready to read */
-	u8 key_pending:1;			/* A key update is in progress */
-	u8 send_ready:1;			/* TX encryption context is initialized */
-	u8 recv_ready:1;			/* RX decryption context is initialized */
-	u8 key_phase:1;				/* Current key phase being used (0 or 1) */
+	u8 ticket_ready:1;		/* True if a session ticket is ready to read */
+	u8 key_pending:1;		/* A key update is in progress */
+	u8 send_ready:1;		/* TX encryption context is initialized */
+	u8 recv_ready:1;		/* RX decryption context is initialized */
+	u8 key_phase:1;			/* Current key phase being used (0 or 1) */
 
 	u64 send_offset;	/* Number of handshake bytes sent by user at this level */
 	u64 recv_offset;	/* Number of handshake bytes read by user at this level */

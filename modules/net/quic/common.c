@@ -328,6 +328,10 @@ u8 *quic_put_int(u8 *p, u64 num, u8 len)
 		n.be32 = cpu_to_be32((u32)num);
 		*((__be32 *)p) = n.be32;
 		return p + 4;
+	case 8:
+		n.be64 = cpu_to_be64(num);
+		*((__be64 *)p) = n.be64;
+		return p + 8;
 	default:
 		return NULL;
 	}

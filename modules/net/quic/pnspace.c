@@ -12,6 +12,7 @@
 
 #include <linux/slab.h>
 
+#include "common.h"
 #include "pnspace.h"
 
 int quic_pnspace_init(struct quic_pnspace *space)

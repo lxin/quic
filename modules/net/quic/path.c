@@ -29,7 +29,7 @@ static int quic_udp_rcv(struct sock *sk, struct sk_buff *skb)
 	memset(skb->cb, 0, sizeof(skb->cb));
 	QUIC_SKB_CB(skb)->seqno = -1;
 	QUIC_SKB_CB(skb)->udph_offset = skb->transport_header;
-	QUIC_SKB_CB(skb)->time = jiffies_to_usecs(jiffies);
+	QUIC_SKB_CB(skb)->time = quic_ktime_get_us();
 
 	skb_set_transport_header(skb, sizeof(struct udphdr));
 	skb_dst_force(skb);

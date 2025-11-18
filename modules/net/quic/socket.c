@@ -1353,7 +1353,7 @@ static int quic_accept_sock_init(struct sock *nsk, struct sock *sk)
 	 * quic_accept_sock_exists() to determine if a packet from sk_backlog of
 	 * listen socket predates this socket.
 	 */
-	space->time = jiffies_to_usecs(jiffies);
+	space->time = quic_ktime_get_us();
 
 	if (sk->sk_family == AF_INET6) /* Set IPv6 specific state if applicable. */
 		inet_sk(nsk)->pinet6 = &((struct quic6_sock *)nsk)->inet6;

@@ -17,8 +17,8 @@
 #include <net/sock.h>
 #include <net/tls.h>
 
-#include "../pnspace.h"
 #include "../common.h"
+#include "../pnspace.h"
 #include "../connid.h"
 #include "../crypto.h"
 #include "../cong.h"
