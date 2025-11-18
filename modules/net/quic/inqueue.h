@@ -23,7 +23,6 @@ struct quic_inqueue {
 	struct list_head stream_list;		/* STREAM frames awaiting reassembly */
 	struct list_head early_list;		/* 0-RTT STREAM frames already reassembled */
 	struct list_head recv_list;		/* Reassembled frames ready for user delivery */
-	struct work_struct work;	/* Workqueue item to process async crypto completion */
 
 	/* Flow Control */
 	u64 max_bytes;			/* Maximum data allowed to be received */
@@ -55,7 +54,6 @@ int quic_inq_dgram_recv(struct sock *sk, struct quic_frame *frame);
 int quic_inq_event_recv(struct sock *sk, u8 event, void *args);
 
 void quic_inq_list_purge(struct sock *sk, struct list_head *head, struct quic_stream *stream);
-void quic_inq_decrypted_tail(struct sock *sk, struct sk_buff *skb);
 void quic_inq_backlog_tail(struct sock *sk, struct sk_buff *skb);
 void quic_inq_data_read(struct sock *sk, u32 bytes);
 

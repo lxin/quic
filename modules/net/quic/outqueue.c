@@ -1184,60 +1184,6 @@ int quic_outq_transmit_retire_conn_id(struct sock *sk, u64 prior, u8 path, u8 co
 	return 0;
 }
 
-/* Workqueue handler to transmit encrypted QUIC packets. */
-static void quic_outq_encrypted_work(struct work_struct *work)
-{
-	struct quic_sock *qs = container_of(work, struct quic_sock, outq.work);
-	struct sock *sk = &qs->inet.sk;
-	struct sk_buff_head *head;
-	struct quic_skb_cb *cb;
-	struct sk_buff *skb;
-
-	lock_sock(sk);
-	head = &sk->sk_write_queue;
-	if (quic_is_closed(sk)) { /* If the socket is already closed, drop all pending skbs. */
-		skb_queue_purge(head);
-		goto out;
-	}
-
-	skb = skb_dequeue(head);
-	while (skb) {
-		cb = QUIC_SKB_CB(skb);
-		if (quic_packet_config(sk, cb->level, cb->path)) {
-			kfree_skb(skb);
-			skb = skb_dequeue(head);
-			continue;
-		}
-		cb->resume = 1; /* Mark this skb encrypted already before sending. */
-		quic_packet_xmit(sk, skb);
-		skb = skb_dequeue(head);
-	}
-	quic_packet_flush(sk);
-out:
-	release_sock(sk);
-	sock_put(sk); /* Drop the hold from quic_outq_encrypted_tail(). */
-}
-
-/* Queue an encrypted SKB and schedule transmission.
- *
- * This function queues a fully encrypted skb for asynchronous transmission and schedules
- * the workqueue to process it.
- */
-void quic_outq_encrypted_tail(struct sock *sk, struct sk_buff *skb)
-{
-	struct quic_outqueue *outq = quic_outq(sk);
-
-	sock_hold(sk);
-	/* Add skb to write queue, and send it later in quic_outq_encrypted_work(). */
-	skb_queue_tail(&sk->sk_write_queue, skb);
-
-	/* Schedule work to process queued encrypted packets.  If work was already pending,
-	 * drop the extra hold.
-	 */
-	if (!queue_work(quic_wq, &outq->work))
-		sock_put(sk);
-}
-
 /* Configure outqueue from transport parameters. */
 void quic_outq_set_param(struct sock *sk, struct quic_transport_param *p)
 {
@@ -1299,7 +1245,6 @@ void quic_outq_init(struct sock *sk)
 	INIT_LIST_HEAD(&outq->datagram_list);
 	INIT_LIST_HEAD(&outq->transmitted_list);
 	INIT_LIST_HEAD(&outq->packet_sent_list);
-	INIT_WORK(&outq->work, quic_outq_encrypted_work);
 }
 
 static void quic_outq_psent_list_purge(struct sock *sk, struct list_head *head)

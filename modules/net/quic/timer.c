@@ -185,7 +185,7 @@ static enum hrtimer_restart quic_timer_pace_timeout(struct hrtimer *hr)
 
 	bh_lock_sock(sk);
 	if (sock_owned_by_user(sk)) {
-		if (!test_and_set_bit(QUIC_TSQ_DEFERRED, &sk->sk_tsq_flags))
+		if (!test_and_set_bit(QUIC_PACE_DEFERRED, &sk->sk_tsq_flags))
 			sock_hold(sk);
 		goto out;
 	}

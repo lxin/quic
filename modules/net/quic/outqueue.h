@@ -14,7 +14,6 @@ struct quic_outqueue {
 	struct list_head datagram_list;		/* DATAGRAM frames waiting to be sent */
 	struct list_head control_list;		/* ACK, PING, CONNECTION_CLOSE, etc. */
 	struct list_head stream_list;		/* STREAM frames queued for transmission */
-	struct work_struct work;	/* Workqueue item to process async crypto completion */
 
 	/* Flow Control */
 	u64 last_max_bytes;		/* Maximum send bytes advertised by peer at last update */
@@ -81,7 +80,6 @@ void quic_outq_update_loss_timer(struct sock *sk);
 
 void quic_outq_list_purge(struct sock *sk, struct list_head *head, struct quic_stream *stream);
 void quic_outq_transmit_close(struct sock *sk, u8 frame, u32 errcode, u8 level);
-void quic_outq_encrypted_tail(struct sock *sk, struct sk_buff *skb);
 void quic_outq_transmit_app_close(struct sock *sk);
 void quic_outq_transmit_probe(struct sock *sk);
 

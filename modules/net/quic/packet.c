@@ -1154,8 +1154,29 @@ err:
 	return -EINVAL;
 }
 
+void quic_packet_flush_rxq(struct sock *sk)
+{
+	struct sk_buff_head *head;
+	struct sk_buff *skb;
+
+	head = &sk->sk_receive_queue;
+	if (quic_is_closed(sk)) { /* If the socket is already closed, drop all pending skbs. */
+		__skb_queue_purge(head);
+		return;
+	}
+
+	skb = __skb_dequeue(head);
+	while (skb) {
+		QUIC_SKB_CB(skb)->resume = 1; /* Mark skb decrypted already before processing. */
+		quic_packet_process(sk, skb);
+		skb = __skb_dequeue(head);
+	}
+}
+
 static void quic_packet_decrypt_done(struct sk_buff *skb, int err)
 {
+	struct sock *sk = skb->sk;
+
 	if (err) {
 		QUIC_INC_STATS(sock_net(skb->sk), QUIC_MIB_PKT_DECDROP);
 		kfree_skb(skb);
@@ -1163,8 +1184,19 @@ static void quic_packet_decrypt_done(struct sk_buff *skb, int err)
 		return;
 	}
 
-	/* Decryption succeeded: queue the decrypted skb for asynchronous processing. */
-	quic_inq_decrypted_tail(skb->sk, skb);
+	sock_hold(sk);
+	bh_lock_sock(sk);
+	__skb_queue_tail(&sk->sk_receive_queue, skb);
+	if (sock_owned_by_user(sk)) {
+		if (!test_and_set_bit(QUIC_RXQ_DEFERRED, &sk->sk_tsq_flags))
+			sock_hold(sk);
+		goto out;
+	}
+
+	quic_packet_flush_rxq(sk);
+out:
+	bh_unlock_sock(sk);
+	sock_put(sk);
 }
 
 /* Process the header of an incoming long-header QUIC handshake packet.  Parses the packet type
@@ -2290,17 +2322,59 @@ int quic_packet_config(struct sock *sk, u8 level, u8 path)
 	return 0;
 }
 
+static int quic_packet_xmit(struct sock *sk, struct sk_buff *skb);
+
+void quic_packet_flush_txq(struct sock *sk)
+{
+	struct sk_buff_head *head;
+	struct quic_skb_cb *cb;
+	struct sk_buff *skb;
+
+	head = &sk->sk_write_queue;
+	if (quic_is_closed(sk)) { /* If the socket is already closed, drop all pending skbs. */
+		__skb_queue_purge(head);
+		return;
+	}
+
+	skb = __skb_dequeue(head);
+	while (skb) {
+		cb = QUIC_SKB_CB(skb);
+		if (quic_packet_config(sk, cb->level, cb->path)) {
+			kfree_skb(skb);
+			skb = __skb_dequeue(head);
+			continue;
+		}
+		cb->resume = 1; /* Mark this skb encrypted already before sending. */
+		quic_packet_xmit(sk, skb);
+		skb = __skb_dequeue(head);
+	}
+	quic_packet_flush(sk);
+}
+
 static void quic_packet_encrypt_done(struct sk_buff *skb, int err)
 {
+	struct sock *sk = skb->sk;
+
 	if (err) {
-		QUIC_INC_STATS(sock_net(skb->sk), QUIC_MIB_PKT_ENCDROP);
+		QUIC_INC_STATS(sock_net(sk), QUIC_MIB_PKT_ENCDROP);
 		kfree_skb(skb);
 		pr_debug("%s: err: %d\n", __func__, err);
 		return;
 	}
 
-	/* Encryption succeeded: queue the encrypted skb for asynchronous transmission. */
-	quic_outq_encrypted_tail(skb->sk, skb);
+	sock_hold(sk);
+	bh_lock_sock(sk);
+	__skb_queue_tail(&sk->sk_write_queue, skb);
+	if (sock_owned_by_user(sk)) {
+		if (!test_and_set_bit(QUIC_TXQ_DEFERRED, &sk->sk_tsq_flags))
+			sock_hold(sk);
+		goto out;
+	}
+
+	quic_packet_flush_txq(sk);
+out:
+	bh_unlock_sock(sk);
+	sock_put(sk);
 }
 
 /* Coalescing Packets. */
@@ -2347,7 +2421,7 @@ out:
 }
 
 /* Transmit a QUIC packet, possibly encrypting and bundling it. */
-int quic_packet_xmit(struct sock *sk, struct sk_buff *skb)
+static int quic_packet_xmit(struct sock *sk, struct sk_buff *skb)
 {
 	struct quic_packet *packet = quic_packet(sk);
 	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);

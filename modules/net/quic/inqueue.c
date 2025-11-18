@@ -616,52 +616,6 @@ void quic_inq_data_read(struct sock *sk, u32 bytes)
 	quic_inq_rfree((int)bytes, sk);
 }
 
-/* Workqueue handler to process decrypted QUIC packets. */
-static void quic_inq_decrypted_work(struct work_struct *work)
-{
-	struct quic_sock *qs = container_of(work, struct quic_sock, inq.work);
-	struct sock *sk = &qs->inet.sk;
-	struct sk_buff_head *head;
-	struct sk_buff *skb;
-
-	lock_sock(sk);
-	head = &sk->sk_receive_queue;
-	if (quic_is_closed(sk)) { /* If the socket is already closed, drop all pending skbs. */
-		skb_queue_purge(head);
-		goto out;
-	}
-
-	skb = skb_dequeue(head);
-	while (skb) {
-		QUIC_SKB_CB(skb)->resume = 1; /* Mark skb decrypted already before processing. */
-		quic_packet_process(sk, skb);
-		skb = skb_dequeue(head);
-	}
-out:
-	release_sock(sk);
-	sock_put(sk); /* Drop the hold from quic_inq_decrypted_tail(). */
-}
-
-/* Queue an decrypted SKB and schedule processing.
- *
- * This function queues a fully decrypted skb for asynchronous processing and schedules
- * the workqueue to process it.
- */
-void quic_inq_decrypted_tail(struct sock *sk, struct sk_buff *skb)
-{
-	struct quic_inqueue *inq = quic_inq(sk);
-
-	sock_hold(sk);
-	/* Add skb to receive queue, and process it later in quic_inq_decrypted_work(). */
-	skb_queue_tail(&sk->sk_receive_queue, skb);
-
-	/* Schedule work to process queued decrypted packets.  If work was already pending,
-	 * drop the extra hold.
-	 */
-	if (!queue_work(quic_wq, &inq->work))
-		sock_put(sk);
-}
-
 void quic_inq_backlog_tail(struct sock *sk, struct sk_buff *skb)
 {
 	__skb_queue_tail(&quic_inq(sk)->backlog_list, skb);
@@ -676,7 +630,6 @@ void quic_inq_init(struct sock *sk)
 	INIT_LIST_HEAD(&inq->stream_list);
 	INIT_LIST_HEAD(&inq->early_list);
 	INIT_LIST_HEAD(&inq->recv_list);
-	INIT_WORK(&inq->work, quic_inq_decrypted_work);
 }
 
 void quic_inq_free(struct sock *sk)

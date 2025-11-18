@@ -113,8 +113,9 @@ int quic_packet_tail(struct sock *sk, struct quic_frame *frame);
 int quic_packet_process(struct sock *sk, struct sk_buff *skb);
 int quic_packet_config(struct sock *sk, u8 level, u8 path);
 
-int quic_packet_xmit(struct sock *sk, struct sk_buff *skb);
 int quic_packet_create_and_xmit(struct sock *sk);
+void quic_packet_flush_txq(struct sock *sk);
+void quic_packet_flush_rxq(struct sock *sk);
 int quic_packet_route(struct sock *sk);
 
 void quic_packet_mss_update(struct sock *sk, u32 mss);
