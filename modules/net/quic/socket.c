@@ -99,7 +99,6 @@ static void quic_request_sock_free(struct sock *sk, struct quic_request_sock *re
  */
 bool quic_accept_sock_exists(struct sock *sk, struct sk_buff *skb)
 {
-	struct quic_pnspace *space = quic_pnspace(sk, QUIC_CRYPTO_INITIAL);
 	struct quic_packet *packet = quic_packet(sk);
 	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
 	bool exist = false;
@@ -107,7 +106,7 @@ bool quic_accept_sock_exists(struct sock *sk, struct sk_buff *skb)
 	/* Skip if packet is newer than the last accept socket creation time.  No matching
 	 * socket could exist in this case.
 	 */
-	if (QUIC_SKB_CB(skb)->time > space->time)
+	if (QUIC_SKB_CB(skb)->time > quic_pnspace(sk, QUIC_CRYPTO_INITIAL)->time)
 		return exist;
 
 	/* Look up an accepted socket that matches the packet's addresses and DCID. */
@@ -1322,7 +1321,6 @@ static int quic_sock_apply_config(struct sock *sk, struct quic_config *c)
 /* Initialize an accept QUIC socket from a listen socket. */
 static int quic_accept_sock_init(struct sock *nsk, struct sock *sk)
 {
-	struct quic_pnspace *space = quic_pnspace(sk, QUIC_CRYPTO_INITIAL);
 	struct quic_transport_param param = {};
 	int err;
 
@@ -1348,12 +1346,6 @@ static int quic_accept_sock_init(struct sock *nsk, struct sock *sk)
 	nsk->sk_bound_dev_if = sk->sk_bound_dev_if;
 
 	inet_sk(nsk)->pmtudisc = inet_sk(sk)->pmtudisc;
-
-	/* Record the creation time of this accept socket in microseconds.  Used by
-	 * quic_accept_sock_exists() to determine if a packet from sk_backlog of
-	 * listen socket predates this socket.
-	 */
-	space->time = quic_ktime_get_us();
 
 	if (sk->sk_family == AF_INET6) /* Set IPv6 specific state if applicable. */
 		inet_sk(nsk)->pinet6 = &((struct quic6_sock *)nsk)->inet6;
@@ -1480,6 +1472,11 @@ static struct sock *quic_accept(struct sock *sk, int flags, int *errp, bool kern
 	if (err)
 		goto free;
 
+	/* Record the creation time of this accept socket in microseconds.  Used by
+	 * quic_accept_sock_exists() to determine if a packet from sk_backlog of
+	 * listen socket predates this socket.
+	 */
+	quic_pnspace(sk, QUIC_CRYPTO_INITIAL)->time = quic_ktime_get_us();
 	quic_request_sock_free(sk, req);
 out:
 	release_sock(sk);
