@@ -408,7 +408,7 @@ static void quic_crypto_test1(struct kunit *test)
 	ret = quic_crypto_generate_token(&crypto, &addr, sizeof(addr),
 					 &conn_id, token, &tokenlen);
 	KUNIT_EXPECT_EQ(test, ret, 0);
-	KUNIT_EXPECT_EQ(test, tokenlen, 1 + sizeof(addr) + 4 + conn_id.len + QUIC_TAG_LEN);
+	KUNIT_EXPECT_EQ(test, tokenlen, 1 + sizeof(addr) + 8 + conn_id.len + QUIC_TAG_LEN);
 
 	ret = quic_crypto_verify_token(&crypto, &addr, sizeof(addr), &tmpid, token, tokenlen);
 	KUNIT_EXPECT_EQ(test, ret, 0);
