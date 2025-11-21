@@ -866,6 +866,8 @@ static int quic_wait_for_stream_send(struct sock *sk, struct quic_stream *stream
 				     u32 len)
 {
 	long timeo = sock_sndtimeo(sk, flags & MSG_DONTWAIT);
+	struct quic_stream_table *streams = quic_streams(sk);
+	s64 stream_id = stream->id;
 	DEFINE_WAIT(wait);
 	int err = 0;
 
@@ -902,6 +904,19 @@ static int quic_wait_for_stream_send(struct sock *sk, struct quic_stream *stream
 		release_sock(sk);
 		timeo = schedule_timeout(timeo);
 		lock_sock(sk);
+
+		/* Re-fetch the stream after sleeping. It may have been closed, reset, or freed
+		 * while the socket lock was released.
+		 */
+		stream = quic_stream_send_get(streams, stream_id, flags, quic_is_serv(sk));
+		if (IS_ERR(stream)) {
+			err = PTR_ERR(stream);
+			break;
+		}
+		if (stream->send.state >= QUIC_STREAM_SEND_STATE_SENT) {
+			err = -EINVAL;
+			break;
+		}
 	}
 	finish_wait(sk_sleep(sk), &wait);
 	return err;
