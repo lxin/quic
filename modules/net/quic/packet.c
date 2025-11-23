@@ -1535,7 +1535,7 @@ static void quic_packet_path_alt_process(struct sock *sk, struct sk_buff *skb, s
 	 * highest-numbered received packet after the new path was successfully swapped in as
 	 * active.
 	 */
-	quic_path_free(sk, paths, 1);
+	quic_path_unbind(sk, paths, 1);
 	quic_conn_id_set_alt(quic_dest(sk), NULL);
 	/* Update the active source connection ID after connection migration.  This ID is not used
 	 * in 1-RTT packets but is tracked to detect changes in the destination connection ID of

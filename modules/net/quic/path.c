@@ -264,7 +264,7 @@ void quic_path_swap(struct quic_path_group *paths)
  *
  * This is used for cleanup during error handling or when the path is no longer needed.
  */
-void quic_path_free(struct sock *sk, struct quic_path_group *paths, u8 path)
+void quic_path_unbind(struct sock *sk, struct quic_path_group *paths, u8 path)
 {
 	paths->alt_probes = 0;
 	paths->alt_state = QUIC_PATH_ALT_NONE;

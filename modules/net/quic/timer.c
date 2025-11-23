@@ -108,7 +108,7 @@ void quic_timer_path_handler(struct sock *sk)
 	}
 
 	/* Probing failed; drop the alternate path. */
-	quic_path_free(sk, paths, 1);
+	quic_path_unbind(sk, paths, 1);
 
 out:
 	quic_outq_transmit_frame(sk, QUIC_FRAME_PATH_CHALLENGE, NULL, path, false);

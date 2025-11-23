@@ -411,8 +411,8 @@ static void quic_destroy_sock(struct sock *sk)
 	for (i = 0; i < QUIC_CRYPTO_MAX; i++)
 		quic_crypto_free(quic_crypto(sk, i));
 
-	quic_path_free(sk, quic_paths(sk), 0);
-	quic_path_free(sk, quic_paths(sk), 1);
+	quic_path_unbind(sk, quic_paths(sk), 0);
+	quic_path_unbind(sk, quic_paths(sk), 1);
 
 	quic_conn_id_set_free(quic_source(sk));
 	quic_conn_id_set_free(quic_dest(sk));
@@ -1730,7 +1730,7 @@ static int quic_sock_connection_migrate(struct sock *sk, struct sockaddr *addr, 
 		return -EINVAL;
 	err = quic_outq_probe_path_alt(sk, false); /* Start connection migration using new path. */
 	if (err)
-		quic_path_free(sk, paths, 1); /* Cleanup path 1 on failure. */
+		quic_path_unbind(sk, paths, 1); /* Cleanup path 1 on failure. */
 	return err;
 }
 
