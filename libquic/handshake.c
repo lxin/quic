@@ -592,7 +592,6 @@ static int quic_handshake_process(gnutls_session_t session, uint8_t level,
 	}
 	return 0;
 err:
-	gnutls_alert_send_appropriate(session, ret);
 	quic_log_gnutls_error(ret);
 	return ret;
 }
@@ -1002,9 +1001,12 @@ int quic_session_get_data(gnutls_session_t session, void *data, size_t *size)
 		return 0;
 	}
 
-	ret = quic_handshake_process(session, QUIC_CRYPTO_APP, data, len);
-	if (ret)
+	ret = gnutls_handshake_write(session, GNUTLS_ENCRYPTION_LEVEL_APPLICATION, data, len);
+	if (ret && gnutls_error_is_fatal(ret)) {
+		quic_log_gnutls_error(ret);
 		return ret;
+	}
+
 	return gnutls_session_get_data(session, data, size);
 }
 
