@@ -1438,11 +1438,8 @@ static int quic_accept_sock_setup(struct sock *sk, struct quic_request_sock *req
 	quic_timer_start(sk, QUIC_TIMER_IDLE, inq->timeout);
 
 	/* Process all packets in backlog list of this socket. */
-	skb = __skb_dequeue(&req->backlog_list);
-	while (skb) {
+	while ((skb = __skb_dequeue(&req->backlog_list)) != NULL)
 		quic_packet_process(sk, skb);
-		skb = __skb_dequeue(&req->backlog_list);
-	}
 
 out:
 	release_sock(sk);
@@ -1972,11 +1969,8 @@ static int quic_sock_set_crypto_secret(struct sock *sk, struct quic_crypto_secre
 		 */
 		__skb_queue_head_init(&tmpq);
 		skb_queue_splice_init(&inq->backlog_list, &tmpq);
-		skb = __skb_dequeue(&tmpq);
-		while (skb) {
+		while ((skb = __skb_dequeue(&tmpq)) != NULL)
 			quic_packet_process(sk, skb);
-			skb = __skb_dequeue(&tmpq);
-		}
 		return 0;
 	}
 
@@ -2006,11 +2000,8 @@ static int quic_sock_set_crypto_secret(struct sock *sk, struct quic_crypto_secre
 	/* App receive key is ready; decrypt and process all buffered App/1-RTT packets. */
 	__skb_queue_head_init(&tmpq);
 	skb_queue_splice_init(&inq->backlog_list, &tmpq);
-	skb = __skb_dequeue(&tmpq);
-	while (skb) {
+	while ((skb = __skb_dequeue(&tmpq)) != NULL)
 		quic_packet_process(sk, skb);
-		skb = __skb_dequeue(&tmpq);
-	}
 
 	if (!crypto->send_ready)
 		return 0;

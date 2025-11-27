@@ -1165,11 +1165,9 @@ void quic_packet_flush_rxq(struct sock *sk)
 		return;
 	}
 
-	skb = __skb_dequeue(head);
-	while (skb) {
+	while ((skb = __skb_dequeue(head)) != NULL) {
 		QUIC_SKB_CB(skb)->resume = 1; /* Mark skb decrypted already before processing. */
 		quic_packet_process(sk, skb);
-		skb = __skb_dequeue(head);
 	}
 }
 
@@ -1811,26 +1809,26 @@ int quic_packet_process(struct sock *sk, struct sk_buff *skb)
 void quic_packet_backlog_work(struct work_struct *work)
 {
 	struct quic_net *qn = container_of(work, struct quic_net, work);
+	struct sk_buff_head *head = &qn->backlog_list;
 	struct sk_buff *skb;
 	struct sock *sk;
 
-	skb = skb_dequeue(&qn->backlog_list);
-	while (skb) {
+	while ((skb = skb_dequeue(head)) != NULL) {
 		sk = skb->sk;
 		if (sk->sk_protocol == IPPROTO_QUIC) {
 			sock_hold(sk);
 		} else {
 			sk = quic_packet_get_listen_sock(skb);
-			if (!sk)
+			if (!sk) {
+				kfree_skb(skb);
 				continue;
+			}
 		}
 
 		lock_sock(sk);
 		quic_packet_process(sk, skb);
 		release_sock(sk);
 		sock_put(sk);
-
-		skb = skb_dequeue(&qn->backlog_list);
 	}
 }
 
@@ -2336,17 +2334,14 @@ void quic_packet_flush_txq(struct sock *sk)
 		return;
 	}
 
-	skb = __skb_dequeue(head);
-	while (skb) {
+	while ((skb = __skb_dequeue(head)) != NULL) {
 		cb = QUIC_SKB_CB(skb);
 		if (quic_packet_config(sk, cb->level, cb->path)) {
 			kfree_skb(skb);
-			skb = __skb_dequeue(head);
 			continue;
 		}
 		cb->resume = 1; /* Mark this skb encrypted already before sending. */
 		quic_packet_xmit(sk, skb);
-		skb = __skb_dequeue(head);
 	}
 	quic_packet_flush(sk);
 }
