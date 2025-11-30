@@ -1573,7 +1573,8 @@ out:
 
 static int quic_frame_connection_close_process(struct sock *sk, struct quic_frame *frame, u8 type)
 {
-	u8 *p = frame->data, buf[QUIC_FRAME_BUF_LARGE] = {};
+	u8 *p = frame->data, buf[QUIC_FRAME_BUF_LARGE] = {}, *data;
+	struct quic_outqueue *outq = quic_outq(sk);
 	struct quic_connection_close *close;
 	u64 err_code, phrase_len, ftype = 0;
 	u32 len = frame->len;
@@ -1600,6 +1601,15 @@ static int quic_frame_connection_close_process(struct sock *sk, struct quic_fram
 	close->errcode = err_code;
 	close->frame = (u8)ftype;
 	quic_inq_event_recv(sk, QUIC_EVENT_CONNECTION_CLOSE, close);
+
+	/* Save close frame info so that user space can retrieve it via getsockopt(). */
+	data = kzalloc(phrase_len + 1, GFP_ATOMIC);
+	if (data) {
+		outq->close_errcode = err_code;
+		outq->close_frame = (u8)ftype;
+		kfree(outq->close_phrase);
+		outq->close_phrase = memcpy(data, p, phrase_len);
+	}
 
 	quic_set_state(sk, QUIC_SS_CLOSED);
 	pr_debug("%s: errcode: %d, frame: %d\n", __func__, close->errcode, close->frame);
