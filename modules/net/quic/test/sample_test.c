@@ -24,7 +24,7 @@
 #include <net/sock.h>
 
 #define ROLE_LEN	10
-#define IP_LEN		20
+#define IP_LEN		64
 #define ALPN_LEN	20
 
 static char role[ROLE_LEN] = "client";
@@ -180,17 +180,38 @@ wait:
 	return priv->status;
 }
 
+static int quic_test_build_address(struct sockaddr_storage *a)
+{
+	struct sockaddr_in6 *a6 = (struct sockaddr_in6 *)a;
+	struct sockaddr_in *a4 = (struct sockaddr_in *)a;
+
+	if (in4_pton(ip, strlen(ip), (u8 *)&a4->sin_addr, -1, NULL)) {
+		a4->sin_family = AF_INET;
+		a4->sin_port = htons((u16)port);
+		return PF_INET;
+	}
+	if (in6_pton(ip, strlen(ip), (u8 *)&a6->sin6_addr, -1, NULL)) {
+		a6->sin6_family = AF_INET6;
+		a6->sin6_port = htons((u16)port);
+		return PF_INET6;
+	}
+	return -1;
+}
+
 static int quic_test_do_sample_client(void)
 {
 	struct quic_test_priv priv = {};
-	struct sockaddr_in ra = {};
+	struct sockaddr_storage ra = {};
 	struct socket *sock;
+	int err, family;
 	u32 flags = 0;
 	char msg[64];
-	int err;
 	s64 sid;
 
-	err = __sock_create(&init_net, PF_INET, SOCK_DGRAM, IPPROTO_QUIC, &sock, 1);
+	family = quic_test_build_address(&ra);
+	if (family < 0)
+		return -EINVAL;
+	err = __sock_create(&init_net, family, SOCK_DGRAM, IPPROTO_QUIC, &sock, 1);
 	if (err < 0)
 		return err;
 	/* Allocate a file descriptor for the new socket to expose it to userspace. */
@@ -207,10 +228,6 @@ static int quic_test_do_sample_client(void)
 	 */
 	err = quic_kernel_setsockopt(sock->sk, QUIC_SOCKOPT_ALPN, alpn, strlen(alpn));
 	if (err)
-		goto free;
-	ra.sin_family = AF_INET;
-	ra.sin_port = htons((u16)port);
-	if (!in4_pton(ip, strlen(ip), (u8 *)&ra.sin_addr.s_addr, -1, NULL))
 		goto free;
 	err = kernel_connect(sock, (void *)&ra, sizeof(ra), 0);
 	if (err < 0)
@@ -262,15 +279,18 @@ static int quic_test_do_ticket_client(void)
 	struct quic_transport_param param = {};
 	unsigned int param_len, ticket_len;
 	struct quic_test_priv priv = {};
+	struct sockaddr_storage ra = {};
 	struct quic_config config = {};
-	struct sockaddr_in ra = {};
 	struct socket *sock;
+	int err, family;
 	u32 flags = 0;
 	char msg[64];
-	int err;
 	s64 sid;
 
-	err = __sock_create(&init_net, PF_INET, SOCK_DGRAM, IPPROTO_QUIC, &sock, 1);
+	family = quic_test_build_address(&ra);
+	if (family < 0)
+		return -EINVAL;
+	err = __sock_create(&init_net, family, SOCK_DGRAM, IPPROTO_QUIC, &sock, 1);
 	if (err < 0)
 		return err;
 	priv.filp = sock_alloc_file(sock, 0, NULL);
@@ -288,10 +308,6 @@ static int quic_test_do_ticket_client(void)
 	if (err)
 		goto free;
 
-	ra.sin_family = AF_INET;
-	ra.sin_port = htons((u16)port);
-	if (!in4_pton(ip, strlen(ip), (u8 *)&ra.sin_addr.s_addr, -1, NULL))
-		goto free;
 	err = kernel_connect(sock, (void *)&ra, sizeof(ra), 0);
 	if (err < 0)
 		goto free;
@@ -346,7 +362,7 @@ static int quic_test_do_ticket_client(void)
 	__fput_sync(priv.filp);
 	msleep(100);
 
-	err = __sock_create(&init_net, PF_INET, SOCK_DGRAM, IPPROTO_QUIC, &sock, 1);
+	err = __sock_create(&init_net, family, SOCK_DGRAM, IPPROTO_QUIC, &sock, 1);
 	if (err < 0)
 		return err;
 	priv.filp = sock_alloc_file(sock, 0, NULL);
@@ -356,10 +372,6 @@ static int quic_test_do_ticket_client(void)
 	if (err)
 		goto free;
 
-	ra.sin_family = AF_INET;
-	ra.sin_port = htons((u16)port);
-	if (!in4_pton(ip, strlen(ip), (u8 *)&ra.sin_addr.s_addr, -1, NULL))
-		goto free;
 	err = kernel_connect(sock, (void *)&ra, sizeof(ra), 0);
 	if (err < 0)
 		goto free;
@@ -412,21 +424,20 @@ free:
 static int quic_test_do_sample_server(void)
 {
 	struct quic_test_priv priv = {};
+	struct sockaddr_storage la = {};
 	struct socket *sock, *newsock;
-	struct sockaddr_in la = {};
+	int err, family;
 	u32 flags = 0;
 	char msg[64];
-	int err;
 	s64 sid;
 
-	err = __sock_create(&init_net, PF_INET, SOCK_DGRAM, IPPROTO_QUIC, &sock, 1);
+	family = quic_test_build_address(&la);
+	if (family < 0)
+		return -EINVAL;
+	err = __sock_create(&init_net, family, SOCK_DGRAM, IPPROTO_QUIC, &sock, 1);
 	if (err < 0)
 		return err;
 
-	la.sin_family = AF_INET;
-	la.sin_port = htons((u16)port);
-	if (!in4_pton(ip, strlen(ip), (u8 *)&la.sin_addr.s_addr, -1, NULL))
-		goto free;
 	err = kernel_bind(sock, (void *)&la, sizeof(la));
 	if (err < 0)
 		goto free;
@@ -484,21 +495,20 @@ free:
 static int quic_test_do_ticket_server(void)
 {
 	struct quic_test_priv priv = {};
+	struct sockaddr_storage la = {};
 	struct socket *sock, *newsock;
-	struct sockaddr_in la = {};
+	int err, family;
 	u32 flags = 0;
 	char msg[64];
-	int err;
 	s64 sid;
 
-	err = __sock_create(&init_net, PF_INET, SOCK_DGRAM, IPPROTO_QUIC, &sock, 1);
+	family = quic_test_build_address(&la);
+	if (family < 0)
+		return -EINVAL;
+	err = __sock_create(&init_net, family, SOCK_DGRAM, IPPROTO_QUIC, &sock, 1);
 	if (err < 0)
 		return err;
 
-	la.sin_family = AF_INET;
-	la.sin_port = htons((u16)port);
-	if (!in4_pton(ip, strlen(ip), (u8 *)&la.sin_addr.s_addr, -1, NULL))
-		goto free;
 	err = kernel_bind(sock, (void *)&la, sizeof(la));
 	if (err < 0)
 		goto free;
