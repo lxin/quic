@@ -208,7 +208,8 @@ void quic_packet_rcv_err_pmtu(struct sock *sk)
 			return;
 
 		dst = __sk_dst_get(sk);
-		dst->ops->update_pmtu(dst, sk, NULL, info, true);
+		if (dst)
+			dst->ops->update_pmtu(dst, sk, NULL, info, true);
 		quic_packet_mss_update(sk, info - packet->hlen);
 		/* Retransmit all outstanding data as MTU may have increased. */
 		quic_outq_retransmit_mark(sk, QUIC_CRYPTO_APP, 1);
