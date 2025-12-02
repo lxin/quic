@@ -344,13 +344,12 @@ err:
 }
 
 /* Extracts and reconstructs the packet number from an incoming QUIC packet. */
-static void quic_crypto_get_header(struct sk_buff *skb)
+static int quic_crypto_get_number(struct sk_buff *skb)
 {
 	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
-	struct quichdr *hdr = quic_hdr(skb);
 	s64 number_max = cb->number;
-	u32 len = QUIC_PN_MAX_LEN;
-	u8 *p = (u8 *)hdr;
+	u32 len = cb->length;
+	u8 *p;
 
 	/* rfc9000#section-17.1:
 	 *
@@ -358,29 +357,27 @@ static void quic_crypto_get_header(struct sk_buff *skb)
 	 * number value that is closest to the next expected packet. The next expected packet is
 	 * the highest received packet number plus one.
 	 */
-	p += cb->number_offset;
-	cb->key_phase = hdr->key;
-	cb->number_len = hdr->pnl + 1;
-	quic_get_int(&p, &len, &cb->number, cb->number_len);
+	p = (u8 *)quic_hdr(skb) + cb->number_offset;
+	if (!quic_get_int(&p, &len, &cb->number, cb->number_len))
+		return -EINVAL;
 	cb->number = quic_get_num(number_max, cb->number, cb->number_len);
+	return 0;
 }
-
-#define QUIC_PN_LEN_BITS_MASK	0x03
 
 static int quic_crypto_header_decrypt(struct crypto_skcipher *tfm, struct sk_buff *skb, bool chacha)
 {
 	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
 	struct quichdr *hdr = quic_hdr(skb);
-	int err, i, len = cb->length;
 	struct skcipher_request *req;
 	struct scatterlist sg;
 	u8 *mask, *iv, *p;
+	int err, i;
 
 	mask = quic_crypto_skcipher_mem_alloc(tfm, QUIC_SAMPLE_LEN, &iv, &req);
 	if (!mask)
 		return -ENOMEM;
 
-	if (len < QUIC_PN_MAX_LEN + QUIC_SAMPLE_LEN) {
+	if (cb->length < QUIC_PN_MAX_LEN + QUIC_SAMPLE_LEN) {
 		err = -EINVAL;
 		goto err;
 	}
@@ -398,11 +395,12 @@ static int quic_crypto_header_decrypt(struct crypto_skcipher *tfm, struct sk_buf
 	p = (u8 *)hdr;
 	*p = (u8)(*p ^ (mask[0] & (((*p & QUIC_HEADER_FORM_BIT) == QUIC_HEADER_FORM_BIT) ?
 				   QUIC_LONG_HEADER_MASK : QUIC_SHORT_HEADER_MASK)));
-	cb->number_len = (*p & QUIC_PN_LEN_BITS_MASK) + 1;
+	cb->number_len = hdr->pnl + 1;
+	cb->key_phase = hdr->key;
 	p += cb->number_offset;
 	for (i = 0; i < cb->number_len; ++i)
 		*(p + i) = *((u8 *)hdr + cb->number_offset + i) ^ mask[i + 1];
-	quic_crypto_get_header(skb);
+	err = quic_crypto_get_number(skb);
 
 err:
 	kfree_sensitive(mask);
@@ -663,7 +661,9 @@ int quic_crypto_decrypt(struct quic_crypto *crypto, struct sk_buff *skb)
 	 * phase.
 	 */
 	if (cb->resume) {
-		quic_crypto_get_header(skb);
+		err = quic_crypto_get_number(skb);
+		if (err)
+			return err;
 		goto out;
 	}
 	if (!cb->number_len) { /* Packet header not yet decrypted. */

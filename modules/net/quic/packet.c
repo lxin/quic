@@ -1685,8 +1685,10 @@ static int quic_packet_app_process(struct sock *sk, struct sk_buff *skb)
 	 * instead sent as cleartext; both header and packet protections are disabled.
 	 */
 	taglen = quic_packet_taglen(packet);
-	if (!taglen) /* Indicates disable_1rtt_encryption was negotiated. */
+	if (!taglen) { /* Indicates disable_1rtt_encryption was negotiated. */
+		cb->number_len = quic_hdr(skb)->pnl + 1;
 		cb->resume = 1;
+	}
 	/* Associate skb with sk to ensure sk is valid during async decryption completion. */
 	WARN_ON(!skb_set_owner_sk_safe(skb, sk));
 	err = quic_crypto_decrypt(crypto, skb); /* Do packet decryption. */
