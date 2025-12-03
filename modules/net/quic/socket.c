@@ -908,12 +908,8 @@ static int quic_wait_for_stream_send(struct sock *sk, struct quic_stream *stream
 		/* Re-fetch the stream after sleeping. It may have been closed, reset, or freed
 		 * while the socket lock was released.
 		 */
-		stream = quic_stream_send_get(streams, stream_id, flags, quic_is_serv(sk));
-		if (IS_ERR(stream)) {
-			err = PTR_ERR(stream);
-			break;
-		}
-		if (stream->send.state >= QUIC_STREAM_SEND_STATE_SENT) {
+		stream = quic_stream_find(streams, stream_id);
+		if (!stream || stream->send.state >= QUIC_STREAM_SEND_STATE_SENT) {
 			err = -EINVAL;
 			break;
 		}
