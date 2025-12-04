@@ -2209,7 +2209,6 @@ static int ticket_client(void)
 	if (client_handshake(sockfd))
 		return -1;
 
-	sleep(1); /* Wait for new session ticket msg */
 	ticket_len = sizeof(ticket);
 	if (getopt_pass(sockfd, QUIC_SOCKOPT_SESSION_TICKET, ticket, &ticket_len))
 		return -1;
@@ -2488,10 +2487,9 @@ int main(int argc, char *argv[])
 	if (!strcmp(argv[1], "sample"))
 		return sample_test(argv[2], argv[3]);
 
-	if (!strcmp(argv[1], "ticket")) {
-		early_data = 1;
+	early_data = 1;
+	if (!strcmp(argv[1], "ticket"))
 		return sample_test(argv[2], argv[3]);
-	}
 
 	if (!strcmp(argv[1], "tlshd"))
 		return fake_tlshd(argv[2]);
