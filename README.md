@@ -2,104 +2,123 @@
 
 ## Introduction
 
-As mentioned in https://github.com/lxin/tls_hs#the-backgrounds: "some people may argue that TLS
-handshake should stay in user space and use up-call to user space in kernel to complete the
-handshake". This repo is to implement the idea. Note that the main part of the QUIC protocol
-is still in Kernel space.
+The QUIC protocol, defined in RFC 9000, is a secure, multiplexed transport built on top of UDP. It
+enables low-latency connection establishment, stream-based communication with flow control, and
+supports connection migration across network paths, while ensuring confidentiality, integrity, and
+availability.
 
-There are several compelling reasons for implementing in-kernel QUIC:
-- Meeting the needs of kernel consumers like SMB and NFS.
-- Standardizing socket APIs, including essential operations such as listen, accept,
-  connect, sendmsg, recvmsg, close, get/setsockopt and getsock/peername().
-- Incorporating ALPN matching within the kernel, efficiently directing incoming
-  requests to relevant applications across different processes based on ALPN.
-- Minimizing data duplication by utilizing zero-copy techniques like sendfile().
-- Facilitating the crypto offloading in NICs to further enhance performance.
+This implementation introduces QUIC support in Linux Kernel, offering several key advantages:
+
+- **In-Kernel QUIC Support for Subsystems**: Enables kernel subsystems such as SMB and NFS to
+operate over QUIC with minimal changes. Once the handshake is complete via the net/handshake APIs,
+data exchange proceeds over standard in-kernel transport interfaces.
+
+- **Standard Socket API Semantics**: Implements core socket operations (listen(), accept(),
+connect(), sendmsg(), recvmsg(), close(), getsockopt(), setsockopt(), getsockname(), and
+getpeername()), allowing user space to interact with QUIC sockets in a familiar, POSIX-compliant
+way.
+
+- **ALPN-Based Connection Dispatching**: Supports in-kernel ALPN (Application-Layer Protocol
+Negotiation) routing, allowing demultiplexing of QUIC connections across different user-space
+processes based on the ALPN identifiers.
+
+- **Performance Enhancements**: Handles all control messages in-kernel to reduce syscall overhead,
+incorporates zero-copy mechanisms such as sendfile() minimize data movement, and is also
+structured to support future crypto hardware offloads.
 
 ## Implementation
 
 ### General Idea
 
-- **What's in Userspace**: Only raw TLS Handshake Messages processing and creating via gnutls.
-These messages are sent and received via sendmsg/recvmsg() with crypto level in cmsg. See:
-[libquic/](https://github.com/lxin/quic/tree/main/libquic).
+The central design is to implement QUIC within the kernel while delegating the handshake to
+userspace.
 
-- **What's in Kernel**: All QUIC protocol except TLS Handshake Messages processing and creating.
-Instead of a ULP layer, it creates IPPROTO_QUIC type socket (similar to IPPROTO_MPTCP and no
-protocol number needed from IANA) running over UDP TUNNELs. See:
-[modules/net/quic/](https://github.com/lxin/quic/tree/main/modules/net/quic).
+- **What's in Userspace**: Only the processing and creation of raw TLS Handshake Messages are
+handled in userspace, facilitated by a TLS library like GnuTLS. These messages are exchanged
+between kernel and userspace via sendmsg() and recvmsg(), with cryptographic details conveyed
+through control messages (cmsg). See: [libquic/](https://github.com/lxin/quic/tree/main/libquic).
 
-- **How Kernel Consumers Use It**: Kernel users can send Handshake request from kernel via
-[handshake netlink](https://docs.kernel.org/networking/tls-handshake.html) to Userspace. tlshd
-in [ktls-utils](https://github.com/oracle/ktls-utils) will handle the handshake request for QUIC.
+- **What's in Kernel**: The entire QUIC protocol, aside from the TLS Handshake Messages processing
+and creation, is managed within the kernel. Rather than using a Upper Layer Protocol (ULP) layer,
+this implementation establishes a socket of type IPPROTO_QUIC (similar to IPPROTO_MPTCP), operating
+over UDP tunnels. See: [modules/net/quic/](https://github.com/lxin/quic/tree/main/modules/net/quic).
+
+- **How Kernel Consumers Use It**: Kernel consumers can initiate a handshake request from the kernel
+to userspace using the existing
+[net/handshake netlink](https://docs.kernel.org/networking/tls-handshake.html). The userspace
+component, such as tlshd service in [ktls-utils](https://github.com/oracle/ktls-utils), then manages
+the processing of the QUIC handshake request.
 
 ### Infrastructures
 
-- Handshake Archtechiture:
-
-      +------+  +------+     Other
-      | APP1 |  | APP2 | ... Userspace
-      +------+  +------+     Applications
-      +--------------------------------------------+
-      |            libquic (gnutls)                |
-      |       {quic_handshake_server/client()}     |
-      +--------------------------------------------+        +------------------+
-       {send/recvmsg()}       {set/getsockopt()}            |tlshd (ktls-utils)|
-       [CMSG handshake_info]  [SOCKOPT_CRYPTO_SECRET]       +------------------+
-                              [SOCKOPT_TRANSPORT_PARAM_EXT]
-                  | ^                    | ^                        | ^
-      Userspace   | |                    | |                        | |
-      ------------|-|--------------------|-|------------------------|-|---------
-      Kernel      | |                    | |                        | |
-                  v |                    v |                        v |
-      +---------------------------------------------+         +-------------+
-      | socket (IPPRTOTO_QUIC) |      protocol      |<---+    | handshake   |
-      +---------------------------------------------+    |    | netlink APIs|
-      |  stream |  connid |  cong |  path |  timer  |    |    +-------------+
-      +---------------------------------------------+    |       |      |
-      |  packet  |  frame  |  crypto   |   pnspace  |    |    +-----+ +-----+
-      +---------------------------------------------+    |    |     | |     |   Other
-      |         input        |       output         |    |----| SMB | | NFS |.. Kernel
-      +---------------------------------------------+    |    |     | |     |   Consumers
-      |                UDP tunnels                  |    |    +-----+ +--+--+
-      +---------------------------------------------+    +---------------|
-
-- Application Data Archtechiture:
+- Handshake Architecture:
 
       +------+  +------+
-      | APP1 |  | APP2 | ... Other Userspace Applications
+      | APP1 |  | APP2 | ...
       +------+  +------+
-        {send/recvmsg()}         {set/getsockopt()}
-        [CMSG stream_info]       [SOCKOPT_KEY_UPDATE]
-                                 [SOCKOPT_CONNECTION_MIGRATION]
-                                 [SOCKOPT_STREAM_OPEN/RESET/STOP_SENDING]
-                                 [...]
-                | ^                    | ^
-      Userspace | |                    | |
-      ----------|-|--------------------|-|----------------
-      Kernel    | |                    | |
-                v |                    v |
-      +---------------------------------------------+
-      | socket (IPPRTOTO_QUIC) |      protocol      |<---+    {kernel_}
-      +---------------------------------------------+    |    {send/recvmsg()}
-      |  stream |  connid |  cong |  path |  timer  |    |    {set/getsockopt()}
-      +---------------------------------------------+    |
-      |   packet  |   frame  |  crypto  |  pnspace  |    |    +-----+ +-----+
-      +---------------------------------------------+    |    |     | |     |   Other
-      |         input        |       output         |    |----| SMB | | NFS |.. Kernel
-      +---------------------------------------------+    |    |     | |     |   Consumers
-      |                UDP tunnels                  |    |    +-----+ +--+--+
-      +---------------------------------------------+    +---------------|
+      +------------------------------------------+
+      |     {quic_client/server_handshake()}     |
+      +------------------------------------------+       +-------------+
+       {send/recvmsg()}      {set/getsockopt()}          |    tlshd    |
+       [CMSG handshake_info] [SOCKOPT_CRYPTO_SECRET]     +-------------+
+                             [SOCKOPT_TRANSPORT_PARAM_EXT]    |   ^
+                    | ^                  | ^                  |   |
+      Userspace     | |                  | |                  |   |
+      --------------|-|------------------|-|------------------|---|-------
+      Kernel        | |                  | |                  |   |
+                    v |                  v |                  v   |
+      +------------------+-----------------------+       +-------------+
+      | protocol, timer, | socket (IPPROTO_QUIC) |<--+   | handshake   |
+      |                  +-----------------------+   |   |netlink APIs |
+      | common, family,  | outqueue  |  inqueue  |   |   +-------------+
+      |                  +-----------------------+   |      |       |
+      | stream, connid,  |         frame         |   |   +-----+ +-----+
+      |                  +-----------------------+   |   |     | |     |
+      | path, pnspace,   |         packet        |   |---| SMB | | NFS |...
+      |                  +-----------------------+   |   |     | |     |
+      | cong, crypto     |       UDP tunnels     |   |   +--+--+ +--+--+
+      +------------------+-----------------------+   +------+-------|
+
+- Application Data Architecture:
+
+      +------+  +------+
+      | APP1 |  | APP2 | ...
+      +------+  +------+
+       {send/recvmsg()}   {set/getsockopt()}              {recvmsg()}
+       [CMSG stream_info] [SOCKOPT_KEY_UPDATE]            [EVENT conn update]
+                          [SOCKOPT_CONNECTION_MIGRATION]  [EVENT stream update]
+                          [SOCKOPT_STREAM_OPEN/RESET/STOP]
+                    | ^               | ^                     ^
+      Userspace     | |               | |                     |
+      --------------|-|---------------|-|---------------------|-----------
+      Kernel        | |               | |                     |
+                    v |               v |  |------------------+
+      +------------------+-----------------------+
+      | protocol, timer, | socket (IPPROTO_QUIC) |<--+{kernel_send/recvmsg()}
+      |                  +-----------------------+   |{kernel_set/getsockopt()}
+      | common, family,  | outqueue  |  inqueue  |   |{kernel_recvmsg()}
+      |                  +-----------------------+   |
+      | stream, connid,  |         frame         |   |   +-----+ +-----+
+      |                  +-----------------------+   |   |     | |     |
+      | path, pnspace,   |         packet        |   |---| SMB | | NFS |...
+      |                  +-----------------------+   |   |     | |     |
+      | cong, crypto     |       UDP tunnels     |   |   +--+--+ +--+--+
+      +------------------+-----------------------+   +------+-------|
 
 ### Features
-- RFC9000 - *QUIC: A UDP-Based Multiplexed and Secure Transport*
-- RFC9001 - *Using TLS to Secure QUIC*
-- RFC9002 - *QUIC Loss Detection and Congestion Control*
-- RFC9221 - *An Unreliable Datagram Extension to QUIC*
-- RFC9287 - *Greasing the QUIC Bit*
-- RFC9368 - *Compatible Version Negotiation for QUIC*
-- RFC9369 - *QUIC Version 2*
-- Internet-Draft - *Sockets API Extensions for In-kernel QUIC Implementations*
+This implementation offers fundamental support for the following RFCs:
+
+- RFC9000 - QUIC: A UDP-Based Multiplexed and Secure Transport
+- RFC9001 - Using TLS to Secure QUIC
+- RFC9002 - QUIC Loss Detection and Congestion Control
+- RFC9221 - An Unreliable Datagram Extension to QUIC
+- RFC9287 - Greasing the QUIC Bit
+- RFC9368 - Compatible Version Negotiation for QUIC
+- RFC9369 - QUIC Version 2
+
+The socket APIs for QUIC follow the RFC draft:
+
+- The Sockets API Extensions for In-kernel QUIC Implementations
 
 ### Next Step
 - Submit QUIC module to upstream kernel.
@@ -124,10 +143,9 @@ Both QUIC Kernel Module and Libquic will be built and installed simply by the co
     # sudo make install
     # sudo make check (optional, run selftests)
 
-NOTE: For these who want to integrate QUIC modules into kernel source code
-(e.g. /home/lxin/net-next/), follow the instruction below to build and install
-kernel first, then the commands above will skip QUIC modules building and use
-the one provided by kernel.
+NOTE: For these who want to integrate QUIC modules into kernel source code (e.g.
+/home/lxin/net-next/), follow the instruction below to build and install kernel first, then the
+commands above will skip QUIC modules building and use the one provided by kernel.
 
     # cp -r modules/include modules/net /home/lxin/net-next
     # cd /home/lxin/net-next/
@@ -180,8 +198,8 @@ the QUIC handshake, see
     # cd /home/lxin/quic
     # sudo make check tests=tlshd (optional, run some tests for tlshd)
 
-After tlshd service is started, Kernel Consumers can use these user APIs
-from kernel space, see [Use in Kernel Space](https://github.com/lxin/quic/#use-in-kernel-space).
+After tlshd service is started, Kernel Consumers can use these user APIs from kernel space,
+see [Use in Kernel Space](https://github.com/lxin/quic/#use-in-kernel-space).
 
 ### HTTP/3 Client with Curl:
     # cd /home/lxin
@@ -247,9 +265,8 @@ The test can be done with curl:
     # cd quic-interop-runner/
     # pip3 install -r requirements.txt
 
-You can change implementations.json file to run test cases between different
-implementations. Here displays the testing result between linuxquic ngtcp2
-quiche and msquic:
+You can change implementations.json file to run test cases between different implementations. Here
+displays the testing result between linuxquic ngtcp2 quiche and msquic:
 
     # cat implementations.json
       {
@@ -278,44 +295,50 @@ quiche and msquic:
     # python3 run.py
       ...
       Run took 7:03:10.119649
-      +-----------+---------------------------------------------------+---------------------------------------------------+
-      |           |                     linuxquic                     |                       ngtcp2                      |
-      +-----------+---------------------------------------------------+---------------------------------------------------+
-      | linuxquic | ✓(H,DC,LR,C20,M,S,R,Z,3,B,U,E,A,L1,L2,C1,C2,6,V2) | ✓(H,DC,LR,C20,M,S,R,Z,3,B,U,E,A,L1,L2,C1,C2,6,V2) |
-      |           |                        ?()                        |                        ?()                        |
-      |           |                        ✕()                        |                        ✕()                        |
-      +-----------+---------------------------------------------------+---------------------------------------------------+
-      |   ngtcp2  | ✓(H,DC,LR,C20,M,S,R,Z,3,B,U,E,A,L1,L2,C1,C2,6,V2) | ✓(H,DC,LR,C20,M,S,R,Z,3,B,U,E,A,L1,L2,C1,C2,6,V2) |
-      |           |                        ?()                        |                        ?()                        |
-      |           |                        ✕()                        |                        ✕()                        |
-      +-----------+---------------------------------------------------+---------------------------------------------------+ ~
-      |   quiche  |       ✓(H,DC,LR,M,S,R,Z,3,B,A,L1,L2,C1,C2,6)      |       ✓(H,DC,LR,M,S,R,Z,3,B,A,L1,L2,C1,C2,6)      |
-      |           |                   ?(C20,U,E,V2)                   |                   ?(C20,U,E,V2)                   |
-      |           |                        ✕()                        |                        ✕()                        |
-      +-----------+---------------------------------------------------+---------------------------------------------------+
-      |   msquic  |    ✓(H,DC,LR,C20,M,S,R,B,U,A,L1,L2,C1,C2,6,V2)    |      ✓(H,DC,LR,C20,M,S,R,B,U,A,L1,L2,C1,C2,6)     |
-      |           |                      ?(Z,3,E)                     |                      ?(Z,3,E)                     |
-      |           |                        ✕()                        |                       ✕(V2)                       |
-      +-----------+---------------------------------------------------+---------------------------------------------------+
-         +-----------+----------------------------------------------+-----------------------------------------------+
-         |           |                    quiche                    |                     msquic                    |
-         +-----------+----------------------------------------------+-----------------------------------------------+
-         | linuxquic | ✓(H,DC,LR,C20,M,S,R,Z,3,B,U,A,L1,L2,C1,C2,6) | ✓(H,DC,LR,C20,M,S,R,Z,B,U,A,L1,L2,C1,C2,6,V2) |
-         |           |                   ?(E,V2)                    |                     ?(3,E)                    |
-         |           |                     ✕()                      |                      ✕()                      |
-         +-----------+----------------------------------------------+-----------------------------------------------+
-         |   ngtcp2  | ✓(H,DC,LR,C20,M,S,R,Z,3,B,U,A,L1,L2,C1,C2,6) |  ✓(H,DC,LR,C20,M,S,R,Z,B,U,L1,L2,C1,C2,6,V2)  |
-         |           |                   ?(E,V2)                    |                    ?(3,E,A)                   |
-         |           |                     ✕()                      |                      ✕()                      |
-       ~ +-----------+----------------------------------------------+-----------------------------------------------+
-         |   quiche  |     ✓(H,DC,LR,M,S,R,Z,3,B,A,L1,L2,C2,6)      |          ✓(H,DC,LR,M,S,R,Z,B,L2,C2,6)         |
-         |           |                ?(C20,U,E,V2)                 |                ?(C20,3,U,E,V2)                |
-         |           |                    ✕(C1)                     |                   ✕(A,L1,C1)                  |
-         +-----------+----------------------------------------------+-----------------------------------------------+
-         |   msquic  |    ✓(H,DC,LR,C20,M,S,R,B,A,L1,L2,C1,C2,6)    |   ✓(H,DC,LR,C20,M,S,R,B,U,L1,L2,C1,C2,6,V2)   |
-         |           |                 ?(Z,3,E,V2)                  |                   ?(Z,3,E,A)                  |
-         |           |                     ✕(U)                     |                      ✕()                      |
-         +-----------+----------------------------------------------+-----------------------------------------------+
+
+      Tests:
+      +-----------+---------------------------------------------+----------------------------------------------+
+      |           |                     linuxquic               |                       ngtcp2                 |
+      +-----------+---------------------------------------------+----------------------------------------------+
+      | linuxquic | ✓(H,DC,LR,C20,M,S,R,Z,3,B,U,E,A,L1,L2,C1,C2,| ✓(H,DC,LR,C20,M,S,R,Z,3,B,U,E,A,L1,L2,C1,C2, |
+      |           |   6,V2)                                     |   6,V2)                                      |
+      |           |                      ?()                    |                      ?()                     |
+      |           |                      ✕()                    |                      ✕()                     |
+      +-----------+---------------------------------------------+----------------------------------------------+
+      |   ngtcp2  | ✓(H,DC,LR,C20,M,S,R,Z,3,B,U,E,A,L1,L2,C1,C2,| ✓(H,DC,LR,C20,M,S,R,Z,3,B,U,E,A,L1,L2,C1,C2, |
+      |           |   6,V2)                                     |   6,V2)                                      |
+      |           |                      ?()                    |                      ?()                     |
+      |           |                      ✕()                    |                      ✕()                     |
+      +-----------+---------------------------------------------+----------------------------------------------+
+      |   quiche  |    ✓(H,DC,LR,M,S,R,Z,3,B,A,L1,L2,C1,C2,6)   |   ✓(H,DC,LR,M,S,R,Z,3,B,A,L1,L2,C1,C2,6)     |
+      |           |                 ?(C20,U,E,V2)               |                 ?(C20,U,E,V2)                |
+      |           |                      ✕()                    |                      ✕()                     |
+      +-----------+---------------------------------------------+----------------------------------------------+
+      |   msquic  |    ✓(H,DC,LR,C20,M,S,R,B,U,A,L1,L2,C1,C2,6, |   ✓(H,DC,LR,C20,M,S,R,B,U,A,L1,L2,C1,C2,6)   |
+      |           |                    ?(Z,3,E)                 |                    ?(Z,3,E)                  |
+      |           |                      ✕()                    |                     ✕(V2)                    |
+      +-----------+---------------------------------------------+----------------------------------------------+
+      +-----------+---------------------------------------------+----------------------------------------------+
+      |           |                    quiche                   |                     msquic                   |
+      +-----------+---------------------------------------------+----------------------------------------------+
+      | linuxquic | ✓(H,DC,LR,C20,M,S,R,Z,3,B,U,A,L1,L2,C1,C2,6)| ✓(H,DC,LR,C20,M,S,R,Z,B,U,A,L1,L2,C1,C2,6,V2)|
+      |           |                   ?(E,V2)                   |                     ?(3,E)                   |
+      |           |                     ✕()                     |                      ✕()                     |
+      +-----------+---------------------------------------------+----------------------------------------------+
+      |   ngtcp2  | ✓(H,DC,LR,C20,M,S,R,Z,3,B,U,A,L1,L2,C1,C2,6)|  ✓(H,DC,LR,C20,M,S,R,Z,B,U,L1,L2,C1,C2,6,V2) |
+      |           |                   ?(E,V2)                   |                    ?(3,E,A)                  |
+      |           |                     ✕()                     |                      ✕()                     |
+      +-----------+---------------------------------------------+----------------------------------------------+
+      |   quiche  |     ✓(H,DC,LR,M,S,R,Z,3,B,A,L1,L2,C2,6)     |          ✓(H,DC,LR,M,S,R,Z,B,L2,C2,6)        |
+      |           |                ?(C20,U,E,V2)                |                ?(C20,3,U,E,V2)               |
+      |           |                    ✕(C1)                    |                   ✕(A,L1,C1)                 |
+      +-----------+---------------------------------------------+----------------------------------------------+
+      |   msquic  |    ✓(H,DC,LR,C20,M,S,R,B,A,L1,L2,C1,C2,6)   |   ✓(H,DC,LR,C20,M,S,R,B,U,L1,L2,C1,C2,6,V2)  |
+      |           |                 ?(Z,3,E,V2)                 |                   ?(Z,3,E,A)                 |
+      |           |                     ✕(U)                    |                      ✕()                     |
+      +-----------+---------------------------------------------+----------------------------------------------+
+
+      Measurments:
       +-----------+----------------------+-----------------------+----------------------+----------------------+
       |           |      linuxquic       |         ngtcp2        |        quiche        |        msquic        |
       +-----------+----------------------+-----------------------+----------------------+----------------------+
@@ -358,8 +381,8 @@ QUIC vs kTLS iperf testing over 100G physical NIC with different packet size and
     mtu:9000    2.17 | 2.41    5.47 | 6.19    6.45 | 8.66    7.48 | 8.90
     no GSO           | 2.30         | 5.69         | 8.66         | 8.82
 
-QUIC (disable\_1rtt\_encryption) vs TCP iperf testing over 100G physical NIC with
-different packet size and MTU:
+QUIC (disable_1rtt_encryption) vs TCP iperf testing over 100G physical NIC with different packet
+size and MTU:
 
     On server:
     # iperf3 -s --pkey /home/lxin/quic/tests/keys/server-key.pem  \
@@ -377,13 +400,13 @@ different packet size and MTU:
     mtu:9000    2.47 | 2.54    7.66 | 7.97    14.7 | 20.3    19.1 | 31.3
     no GSO           | 2.51         | 8.34         | 18.3         | 22.3
 
-Note kTLS testing is using iperf from https://github.com/Mellanox/iperf_ssl, and
-the only way to disable TCP GSO is to remove sk_is_tcp() check in sk_setup_caps()
-and bring sk_can_gso() back in kernel code.
+Note kTLS testing is using iperf from https://github.com/Mellanox/iperf_ssl, and the only way to
+disable TCP GSO is to remove sk_is_tcp() check in sk_setup_caps() and bring sk_can_gso() back in
+kernel code.
 
-As the test data shows, the TCP GSO contributes to performance a lot for TCP and
-kTLS with mtu 1500 and large msgs. With TCP GSO disabled, the small performance
-gap between QUIC and kTLS, QUIC with disable_1rtt_encryption and TCP is caused by:
+As the test data shows, the TCP GSO contributes to performance a lot for TCP and kTLS with mtu 1500
+and large msgs. With TCP GSO disabled, the small performance gap between QUIC and kTLS, QUIC with
+disable_1rtt_encryption and TCP is caused by:
 
 - QUIC has an extra copy on TX path.
 - QUIC has an extra encryption for header protection.
@@ -391,11 +414,11 @@ gap between QUIC and kTLS, QUIC with disable_1rtt_encryption and TCP is caused b
 
 ## USER APIS
 
-Similar to TCP and SCTP, a typical server and client use the following system
-call sequence to communicate:
+Similar to TCP and SCTP, a typical server and client use the following system call sequence to
+communicate:
 
-       Client				    Server
-    ------------------------------------------------------------------
+      Client                             Server
+    ----------------------------------------------------------------------
     sockfd = socket(IPPROTO_QUIC)      listenfd = socket(IPPROTO_QUIC)
     bind(sockfd)                       bind(listenfd)
                                        listen(listenfd)
@@ -464,12 +487,12 @@ This section shows you the basic usage of QUIC, you can get more details via man
 
 ### Raw Socket APIs with more Control
 
-quic_client/server_handshake() and quic_handshake() in libquic are implemented with gnutls
-APIs and socket APIs such as send/recvmsg() and set/getsocket().
+quic_client/server_handshake() and quic_handshake() in libquic are implemented with gnutls APIs and
+socket APIs such as send/recvmsg() and set/getsocket().
 
-For these who want more control or flexibility in the handshake, instead of using the APIs
-from libquic, they should use the raw socket APIs and gnutls APIs to implement their own
-QUIC handshake functions, and they may copy and reuse some code from libquic.
+For these who want more control or flexibility in the handshake, instead of using the APIs from
+libquic, they should use the raw socket APIs and gnutls APIs to implement their own QUIC handshake
+functions, and they may copy and reuse some code from libquic.
 
 ### Use in Kernel Space
 
@@ -480,27 +503,29 @@ as it receives and handles the kernel handshake request for kernel sockets.
 In kernel space, the use is pretty much like TCP sockets, except a extra handshake up-call.
 (See [modules/net/quic/test/sample_test.c](https://github.com/lxin/quic/blob/main/modules/net/quic/test/sample_test.c) for examples)
 
-       Client				    Server
-    ---------------------------------------------------------------------------
-    __sock_create(IPPROTO_QUIC, &sock)     __sock_create(IPPROTO_QUIC, &sock)
-    kernel_bind(sock)                      kernel_bind(sock)
-                                           kernel_listen(sock)
+      Client                             Server
+    -------------------------------------------------------------------------
+    __sock_create(IPPROTO_QUIC, &sock)  __sock_create(IPPROTO_QUIC, &sock)
+    kernel_bind(sock)                   kernel_bind(sock)
+                                        kernel_listen(sock)
     kernel_connect(sock)
     tls_client_hello_x509(args:{sock})
-                                           kernel_accept(sock, &newsock)
-                                           tls_server_hello_x509(args:{newsock})
+                                        kernel_accept(sock, &newsock)
+                                        tls_server_hello_x509(args:{newsock})
 
-    kernel_sendmsg(sock)                   kernel_recvmsg(newsock)
-    sock_release(sock)                     sock_release(newsock)
-                                           sock_release(sock)
+    kernel_sendmsg(sock)                kernel_recvmsg(newsock)
+    sock_release(sock)                  sock_release(newsock)
+                                        sock_release(sock)
 
-You can run the kernel test code as it shows in tlshd_tests() of [tests/runtest.sh](https://github.com/lxin/quic/blob/main/tests/runtest.sh)
+You can run the kernel test code as it shows in tlshd_tests() of
+[tests/runtest.sh](https://github.com/lxin/quic/blob/main/tests/runtest.sh)
 
 ## Contributing
 
 We welcome contributions from the community.
 
-- **Mailing List**: The Linux QUIC developer mailing list is available at [lists.linux.dev](https://subspace.kernel.org/lists.linux.dev.html).
+- **Mailing List**: The Linux QUIC developer mailing list is available at
+[lists.linux.dev](https://subspace.kernel.org/lists.linux.dev.html).
 You can subscribe to <quic@lists.linux.dev> or browse archived threads.
 
 - **Reporting Features or Issues**: Bugs, feature requests, or socket API RFC discussions can be
