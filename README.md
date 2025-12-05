@@ -173,13 +173,16 @@ the QUIC handshake, see
     # git clone https://github.com/oracle/ktls-utils
     # cd ktls-utils/
     # ./autogen.sh
-    # ./configure --with-systemd
+    # ./configure --with-systemd --sysconfdir=/etc
     # make
     # sudo make install
 
-    # sudo install -m 644 src/tlshd/tlshd.conf /etc/tlshd.conf
-    # sudo vim /etc/tlshd.conf
-      ...
+    # sudo vim /etc/tlshd/config
+      [debug]
+      loglevel=0
+      tls=0
+      nl=0
+
       [authenticate]
       keyrings=quic
 
