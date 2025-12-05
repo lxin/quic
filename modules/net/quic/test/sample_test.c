@@ -30,6 +30,7 @@
 static char role[ROLE_LEN] = "client";
 static char alpn[ALPN_LEN] = "sample";
 static char ip[IP_LEN] = "127.0.0.1";
+static char dev[IFNAMSIZ];
 static int port = 1234;
 static int psk;
 
@@ -198,6 +199,26 @@ static int quic_test_build_address(struct sockaddr_storage *a)
 	return -1;
 }
 
+static int quic_test_bind_device(struct sock *sk, char *name)
+{
+	struct net_device *dev;
+	int ifindex;
+
+	if (!name[0])
+		return 0;
+
+	rcu_read_lock();
+	dev = dev_get_by_name_rcu(sock_net(sk), name);
+	if (!dev) {
+		rcu_read_unlock();
+		return -ENODEV;
+	}
+	ifindex = dev->ifindex;
+	rcu_read_unlock();
+
+	return sock_bindtoindex(sk, ifindex, true);
+}
+
 static int quic_test_do_sample_client(void)
 {
 	struct quic_test_priv priv = {};
@@ -218,6 +239,9 @@ static int quic_test_do_sample_client(void)
 	priv.filp = sock_alloc_file(sock, 0, NULL);
 	if (IS_ERR(priv.filp))
 		return PTR_ERR(priv.filp);
+	err = quic_test_bind_device(sock->sk, dev);
+	if (err)
+		goto free;
 	/* Set ALPN (Application-Layer Protocol Negotiation) on the socket.
 	 *
 	 * This value will be exposed to userspace via getsockopt(QUIC_SOCKOPT_ALPN)
@@ -296,6 +320,9 @@ static int quic_test_do_ticket_client(void)
 	priv.filp = sock_alloc_file(sock, 0, NULL);
 	if (IS_ERR(priv.filp))
 		return PTR_ERR(priv.filp);
+	err = quic_test_bind_device(sock->sk, dev);
+	if (err)
+		goto free;
 	err = quic_kernel_setsockopt(sock->sk, QUIC_SOCKOPT_ALPN, alpn, strlen(alpn));
 	if (err)
 		goto free;
@@ -368,6 +395,9 @@ static int quic_test_do_ticket_client(void)
 	priv.filp = sock_alloc_file(sock, 0, NULL);
 	if (IS_ERR(priv.filp))
 		return PTR_ERR(priv.filp);
+	err = quic_test_bind_device(sock->sk, dev);
+	if (err)
+		goto free;
 	err = quic_kernel_setsockopt(sock->sk, QUIC_SOCKOPT_ALPN, alpn, strlen(alpn));
 	if (err)
 		goto free;
@@ -437,6 +467,9 @@ static int quic_test_do_sample_server(void)
 	err = __sock_create(&init_net, family, SOCK_DGRAM, IPPROTO_QUIC, &sock, 1);
 	if (err < 0)
 		return err;
+	err = quic_test_bind_device(sock->sk, dev);
+	if (err)
+		goto free;
 
 	err = kernel_bind(sock, (void *)&la, sizeof(la));
 	if (err < 0)
@@ -508,6 +541,9 @@ static int quic_test_do_ticket_server(void)
 	err = __sock_create(&init_net, family, SOCK_DGRAM, IPPROTO_QUIC, &sock, 1);
 	if (err < 0)
 		return err;
+	err = quic_test_bind_device(sock->sk, dev);
+	if (err)
+		goto free;
 
 	err = kernel_bind(sock, (void *)&la, sizeof(la));
 	if (err < 0)
@@ -631,6 +667,7 @@ module_exit(quic_test_exit);
 
 module_param_string(role, role, ROLE_LEN, 0644);
 module_param_string(alpn, alpn, ALPN_LEN, 0644);
+module_param_string(dev, dev, IFNAMSIZ, 0644);
 module_param_string(ip, ip, IP_LEN, 0644);
 module_param_named(port, port, int, 0644);
 module_param_named(psk, psk, int, 0644);
@@ -638,6 +675,7 @@ module_param_named(psk, psk, int, 0644);
 MODULE_PARM_DESC(role, "Client or server");
 MODULE_PARM_DESC(ip, "Server Address");
 MODULE_PARM_DESC(port, "Server Port");
+MODULE_PARM_DESC(dev, "Device Name");
 MODULE_PARM_DESC(alpn, "ALPN name");
 MODULE_PARM_DESC(psk, "key_serial_t for psk");
 
