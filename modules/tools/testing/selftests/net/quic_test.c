@@ -21,11 +21,10 @@
 #define SOL_QUIC	288
 #endif
 
-#define ADDR4	"127.0.0.1"
-#define ADDR6	"::1"
-#define PORT	1234
+static char *ip = "127.0.0.1";
+static int port = 1234;
+static char *dev[2];
 
-static int family = AF_INET;
 static char buf[65536];
 static char msg[256];
 
@@ -661,19 +660,23 @@ static int send_abnormal_client_hello(int sockfd)
 	return 0;
 }
 
-static void build_address(struct sockaddr_storage *a)
+static int build_address(struct sockaddr_storage *a)
 {
+	struct sockaddr_in6 *a6 = (struct sockaddr_in6 *)a;
 	struct sockaddr_in *a4 = (struct sockaddr_in *)a;
 
 	memset(a, 0, sizeof(*a));
 
-	a4->sin_family = family;
-	a4->sin_port = htons(PORT);
-	if (family == AF_INET) {
-		inet_pton(AF_INET, ADDR4, &a4->sin_addr);
-		return;
+	a4->sin_port = htons(port);
+	if (inet_pton(AF_INET, ip, &a4->sin_addr) == 1) {
+		a4->sin_family = AF_INET;
+		return PF_INET;
 	}
-	inet_pton(AF_INET6, ADDR6, &((struct sockaddr_in6 *)a)->sin6_addr);
+	if (inet_pton(AF_INET6, ip, &a6->sin6_addr) == 1) {
+		a6->sin6_family = AF_INET6;
+		return PF_INET6;
+	}
+	return -1;
 }
 
 static int change_port(struct sockaddr_storage *a)
@@ -688,13 +691,21 @@ static int change_port(struct sockaddr_storage *a)
 static int create_listen_socket(char *alpn)
 {
 	struct sockaddr_storage sa;
-	int listenfd;
+	int listenfd, family;
+	char *name = dev[1];
 
-	build_address(&sa);
-
+	family = build_address(&sa);
+	if (family < 0) {
+		printf("%s: errno=%d\n", __func__, errno);
+		return -1;
+	}
 	listenfd = socket(family, SOCK_DGRAM, IPPROTO_QUIC);
 	if (listenfd < 0) {
 		printf("socket: errno=%d\n", errno);
+		return -1;
+	}
+	if (name && setsockopt(listenfd, SOL_SOCKET, SO_BINDTODEVICE, name, strlen(name) + 1)) {
+		printf("setsockopt: errno=%d\n", errno);
 		return -1;
 	}
 	if (bind(listenfd, (struct sockaddr *)&sa, sizeof(sa))) {
@@ -713,13 +724,21 @@ static int create_listen_socket(char *alpn)
 static int create_connect_socket(void)
 {
 	struct sockaddr_storage sa;
-	int connectfd;
+	int connectfd, family;
+	char *name = dev[0];
 
-	build_address(&sa);
-
+	family = build_address(&sa);
+	if (family < 0) {
+		printf("%s: errno=%d\n", __func__, errno);
+		return -1;
+	}
 	connectfd = socket(family, SOCK_DGRAM, IPPROTO_QUIC);
 	if (connectfd < 0) {
 		printf("socket: errno=%d\n", errno);
+		return -1;
+	}
+	if (name && setsockopt(connectfd, SOL_SOCKET, SO_BINDTODEVICE, name, strlen(name) + 1)) {
+		printf("setsockopt: errno=%d\n", errno);
 		return -1;
 	}
 	if (connect(connectfd, (struct sockaddr *)&sa, sizeof(sa))) {
@@ -1814,12 +1833,24 @@ static int test_close(int connectfd, int acceptfd)
 	return 0;
 }
 
-static int func_test(char *af)
+static int func_test(char *argv[])
 {
 	int acceptfd, connectfd;
 
-	if (!strcmp(af, "6"))
-		family = AF_INET6;
+	if (argv[2]) {
+		ip = argv[2];
+		if (argv[3]) {
+			port = atoi(argv[3]);
+			if (!port)
+				goto err;
+			if (argv[4]) {
+				dev[0] = argv[4];
+				if (!argv[5])
+					goto err;
+				dev[1] = argv[5];
+			}
+		}
+	}
 
 	if (test_handshake(&connectfd, &acceptfd))
 		return -1;
@@ -1838,6 +1869,9 @@ static int func_test(char *af)
 
 	close_sockets(connectfd, acceptfd);
 	return 0;
+err:
+	printf(" ... [IP [PORT [C_DEV S_DEV]]]\n");
+	return -1;
 }
 
 static int server_handshake(int sockfd)
@@ -2089,15 +2123,15 @@ static void handle_msg(struct nlmsghdr *nlh, int family_id)
 	}
 }
 
-static int fake_tlshd(char *backlog)
+static int fake_tlshd(char *argv[])
 {
 	int fd, family_id, group_id, i, bl = 1024;
 	ssize_t len;
 
-	if (backlog) {
-		bl = atoi(backlog);
+	if (argv[2]) {
+		bl = atoi(argv[2]);
 		if (!bl) {
-			printf(" ... [backlog]\n");
+			printf(" ... [BACKLOG]\n");
 			return -1;
 		}
 	}
@@ -2340,13 +2374,24 @@ static int sample_client(void)
 	return 0;
 }
 
-static int sample_test(char *af, char *role)
+static int sample_test(char *argv[])
 {
-	if (!strcmp(af, "6"))
-		family = AF_INET6;
+	char *role;
 
-	if (!role)
+	if (!argv[2])
 		goto err;
+	role = argv[2];
+
+	if (argv[3]) {
+		ip = argv[3];
+		if (argv[4]) {
+			port = atoi(argv[4]);
+			if (!port)
+				goto err;
+			if (argv[5])
+				dev[0] = dev[1] = argv[5];
+		}
+	}
 
 	if (!strcmp(role, "server"))
 		return early_data ? ticket_server() : sample_server();
@@ -2355,7 +2400,7 @@ static int sample_test(char *af, char *role)
 		return early_data ? ticket_client() : sample_client();
 
 err:
-	printf(" ... <4 | 6> <server | client>\n");
+	printf(" ... <server | client> [IP [PORT [DEV]]]\n");
 	return -1;
 }
 
@@ -2449,19 +2494,33 @@ static int perf_client(int size)
 	return 0;
 }
 
-static int perf_test(char *af, char *role, char *msg_size)
+static int perf_test(char *argv[])
 {
+	char *role;
 	int size;
 
-	if (!strcmp(af, "6"))
-		family = AF_INET6;
-
-	if (!role || !msg_size)
+	if (!argv[2])
+		goto err;
+	role = argv[2];
+	if (!role)
 		goto err;
 
-	size = atoi(msg_size);
+	if (!argv[3])
+		goto err;
+	size = atoi(argv[3]);
 	if (!size || size > 65536)
 		goto err;
+
+	if (argv[4]) {
+		ip = argv[4];
+		if (argv[5]) {
+			port = atoi(argv[5]);
+			if (!port)
+				goto err;
+			if (argv[6])
+				dev[0] = dev[1] = argv[6];
+		}
+	}
 
 	if (!strcmp(role, "server"))
 		return perf_server(size);
@@ -2469,30 +2528,33 @@ static int perf_test(char *af, char *role, char *msg_size)
 	if (!strcmp(role, "client"))
 		return perf_client(size);
 err:
-	printf(" ... <4 | 6> <server | client> [msg_size]\n");
+	printf(" ... <server | client> MSG_SIZE [IP [PORT [DEV]]]\n");
 	return -1;
 }
 
 int main(int argc, char *argv[])
 {
-	if (argc < 3)
+	char *type;
+
+	if (!argv[1])
 		goto err;
+	type = argv[1];
 
-	if (!strcmp(argv[1], "func"))
-		return func_test(argv[2]);
+	if (!strcmp(type, "func"))
+		return func_test(argv);
 
-	if (!strcmp(argv[1], "perf"))
-		return perf_test(argv[2], argv[3], argv[4]);
+	if (!strcmp(type, "perf"))
+		return perf_test(argv);
 
-	if (!strcmp(argv[1], "sample"))
-		return sample_test(argv[2], argv[3]);
+	if (!strcmp(type, "sample"))
+		return sample_test(argv);
 
 	early_data = 1;
-	if (!strcmp(argv[1], "ticket"))
-		return sample_test(argv[2], argv[3]);
+	if (!strcmp(type, "ticket"))
+		return sample_test(argv);
 
-	if (!strcmp(argv[1], "tlshd"))
-		return fake_tlshd(argv[2]);
+	if (!strcmp(type, "tlshd"))
+		return fake_tlshd(argv);
 
 err:
 	printf("%s <func | perf | sample | ticket | tlshd>\n", argv[0]);
