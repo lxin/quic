@@ -670,7 +670,7 @@ static int quic_packet_retry_create(struct sock *sk)
 	quic_conn_id_generate(&conn_id); /* Generate new SCID for the Retry packet. */
 	/* Compute total packet length: header + token + integrity tag. */
 	len = QUIC_LONG_HLEN(&conn_id, &packet->scid) + tlen + QUIC_TAG_LEN;
-	hlen = quic_encap_len(da) + MAX_HEADER;
+	hlen = quic_encap_len(sk, da) + MAX_HEADER;
 	skb = alloc_skb(hlen + len, GFP_ATOMIC);
 	if (!skb)
 		return -ENOMEM;
@@ -745,7 +745,7 @@ static int quic_packet_version_create(struct sock *sk)
 
 	/* Compute packet length: header + supported version list. */
 	len = QUIC_LONG_HLEN(&packet->dcid, &packet->scid) + QUIC_VERSION_LEN * QUIC_VERSION_NUM;
-	hlen = quic_encap_len(da) + MAX_HEADER;
+	hlen = quic_encap_len(sk, da) + MAX_HEADER;
 	skb = alloc_skb(hlen + len, GFP_ATOMIC);
 	if (!skb)
 		return -ENOMEM;
@@ -818,7 +818,7 @@ static int quic_packet_stateless_reset_create(struct sock *sk)
 		return -EINVAL;
 
 	len = QUIC_STATELESS_RESET_DEF_LEN;
-	hlen = quic_encap_len(da) + MAX_HEADER;
+	hlen = quic_encap_len(sk, da) + MAX_HEADER;
 	skb = alloc_skb(hlen + len, GFP_ATOMIC);
 	if (!skb)
 		return -ENOMEM;
@@ -2268,7 +2268,7 @@ int quic_packet_route(struct sock *sk)
 	if (err)
 		return err;
 
-	packet->hlen = quic_encap_len(da);
+	packet->hlen = quic_encap_len(sk, da);
 	pmtu = min_t(u32, dst_mtu(__sk_dst_get(sk)), QUIC_PATH_MAX_PMTU);
 	quic_packet_mss_update(sk, pmtu - packet->hlen);
 
