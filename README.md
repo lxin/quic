@@ -415,6 +415,36 @@ disable_1rtt_encryption and TCP is caused by:
 - QUIC has an extra encryption for header protection.
 - QUIC has a longer header for the stream DATA.
 
+### QUIC Test with NetPerfMeter
+
+[Network Performance Meter&nbsp;(NetPerfMeter)](https://www.nntb.no/~dreibh/netperfmeter/) is a network performance metering tool for the TCP, MPTCP, SCTP, UDP, DCCP, and QUIC transport protocols. Particularly, it can be utilized to compare concurrent flows of different protocols to e.g.&nbsp;evaluate congestion control behavior using saturated and non-saturated flows, with various configuration options.
+
+NetPerfMeter can be built with support for Linux Kernel QUIC (details in [NetPerfMeter QUIC Communication](https://www.nntb.no/~dreibh/netperfmeter/#quic-communication)), to run performance evaluations:
+
+* Server side using base port 9000:
+
+  ```bash
+  netperfmeter 9000 \
+     --control-over-tcp \
+     --tls-key  server.domain.example.key \
+     --tls-cert server.domain.example.crt \
+     --tls-ca   ca.crt \
+  ```
+
+* Client side establishing a bidirectional, saturated QUIC flow using messages of 1000&nbsp;bytes:
+
+  ```bash
+   netperfmeter $SERVER_IP:9000 \
+      --control-over-tcp \
+      --tls-hostname server.domain.example \
+      --tls-ca $DIRECTORY/TestCA/TestLevel1/certs/TestLevel1.crt \
+      --quic const0:const1000:const0:const1000
+  ```
+
+  `SERVER_IP` contains the server's IP address.
+
+Wireshark in its latest version supports the dissection of NetPerfMeter payload traffic over QUIC for analysis; see [NetPerfMeter Wireshark](https://www.nntb.no/~dreibh/netperfmeter/#wireshark) for the configuration details.
+
 ## USER APIS
 
 Similar to TCP and SCTP, a typical server and client use the following system call sequence to
