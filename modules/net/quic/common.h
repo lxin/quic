@@ -50,7 +50,6 @@ struct quic_skb_cb {
 	u16 length;		/* Payload length + packet number length */
 
 	u16 number_offset;	/* Offset of packet number field */
-	u16 udph_offset;	/* Offset of UDP header */
 	u8 number_len;		/* Length of the packet number field */
 	u8 level;		/* Encryption level: Initial, Handshake, App, or Early */
 
@@ -63,11 +62,6 @@ struct quic_skb_cb {
 };
 
 #define QUIC_SKB_CB(skb)	((struct quic_skb_cb *)&((skb)->cb[0]))
-
-static inline struct udphdr *quic_udphdr(const struct sk_buff *skb)
-{
-	return (struct udphdr *)(skb->head + QUIC_SKB_CB(skb)->udph_offset);
-}
 
 struct quichdr {
 #if defined(__LITTLE_ENDIAN_BITFIELD)
@@ -89,7 +83,7 @@ struct quichdr {
 
 static inline struct quichdr *quic_hdr(struct sk_buff *skb)
 {
-	return (struct quichdr *)skb_transport_header(skb);
+	return (struct quichdr *)skb->data;
 }
 
 struct quichshdr {
@@ -110,7 +104,7 @@ struct quichshdr {
 
 static inline struct quichshdr *quic_hshdr(struct sk_buff *skb)
 {
-	return (struct quichshdr *)skb_transport_header(skb);
+	return (struct quichshdr *)skb->data;
 }
 
 union quic_addr {

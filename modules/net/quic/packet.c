@@ -593,8 +593,6 @@ int quic_packet_rcv(struct sk_buff *skb, u8 err)
 	if (unlikely(err))
 		return quic_packet_rcv_err(skb);
 
-	skb_pull(skb, skb_transport_offset(skb));
-
 	/* Look up socket from socket or connection IDs hash tables. */
 	sk = quic_packet_get_sock(skb);
 	if (!sk)
@@ -683,7 +681,6 @@ static int quic_packet_retry_create(struct sock *sk)
 	hdr->type = quic_packet_version_put_type(packet->version, QUIC_PACKET_RETRY);
 	hdr->reserved = 0;
 	hdr->pnl = 0;
-	skb_reset_transport_header(skb);
 
 	/* Write the QUIC version. */
 	p = (u8 *)hdr + QUIC_HLEN;
@@ -758,7 +755,6 @@ static int quic_packet_version_create(struct sock *sk)
 	hdr->type = 0;
 	hdr->reserved = 0;
 	hdr->pnl = 0;
-	skb_reset_transport_header(skb);
 
 	/* Write zero version. */
 	p = (u8 *)hdr + QUIC_HLEN;
@@ -827,7 +823,6 @@ static int quic_packet_stateless_reset_create(struct sock *sk)
 	p = skb_push(skb, len);
 	/* Write Unpredictable Bits. */
 	get_random_bytes(p, len);
-	skb_reset_transport_header(skb);
 
 	/* Build Short Packet header. */
 	quic_hdr(skb)->form = 0;
@@ -1444,7 +1439,6 @@ next:
 
 		cb->resume = 0; /* Clear resume flag for next packet decryption. */
 		cb->number_len = 0; /* Reset to mark header decryption incomplete. */
-		skb_reset_transport_header(skb);
 		if (!packet->ack_requested) /* If no ACK-eliciting frame, skip ACK generation. */
 			continue;
 
@@ -1472,7 +1466,7 @@ next:
 			 * close the connection by sending a CONNECTION_CLOSE frame with an
 			 * error code of PROTOCOL_VIOLATION.
 			 */
-			uh = quic_udphdr(skb);
+			uh = udp_hdr(skb);
 			if (ntohs(uh->len) - sizeof(*uh) < QUIC_MIN_UDP_PAYLOAD) {
 				packet->errcode = QUIC_TRANSPORT_ERROR_PROTOCOL_VIOLATION;
 				err = -EINVAL;
@@ -2093,7 +2087,6 @@ static struct sk_buff *quic_packet_handshake_create(struct sock *sk)
 	hdr->type = quic_packet_version_put_type(packet->version, type);
 	hdr->reserved = 0;
 	hdr->pnl = QUIC_PACKET_NUMBER_LEN - 1;
-	skb_reset_transport_header(skb);
 
 	/* Write the QUIC version. */
 	p = (u8 *)hdr + QUIC_HLEN;
@@ -2216,7 +2209,6 @@ static struct sk_buff *quic_packet_app_create(struct sock *sk)
 	hdr->spin = 0;
 	hdr->reserved = 0;
 	hdr->pnl = QUIC_PACKET_NUMBER_LEN - 1;
-	skb_reset_transport_header(skb);
 
 	/* Choose the active destination connection ID based on path. */
 	active = quic_conn_id_choose(id_set, packet->path);

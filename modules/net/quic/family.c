@@ -200,7 +200,7 @@ static void quic_v6_lower_xmit(struct sock *sk, struct sk_buff *skb, struct flow
 
 static void quic_v4_get_msg_addrs(struct sk_buff *skb, union quic_addr *da, union quic_addr *sa)
 {
-	struct udphdr *uh = quic_udphdr(skb);
+	struct udphdr *uh = udp_hdr(skb);
 
 	sa->v4.sin_family = AF_INET;
 	sa->v4.sin_port = uh->source;
@@ -213,7 +213,7 @@ static void quic_v4_get_msg_addrs(struct sk_buff *skb, union quic_addr *da, unio
 
 static void quic_v6_get_msg_addrs(struct sk_buff *skb, union quic_addr *da, union quic_addr *sa)
 {
-	struct udphdr *uh = quic_udphdr(skb);
+	struct udphdr *uh = udp_hdr(skb);
 
 	sa->v6.sin6_family = AF_INET6;
 	sa->v6.sin6_port = uh->source;
