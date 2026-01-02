@@ -1491,6 +1491,7 @@ out:
 	*errp = err;
 	return nsk;
 free:
+	quic_set_state(nsk, QUIC_SS_CLOSED);
 	sk_common_release(nsk);
 	nsk = NULL;
 	goto out;
