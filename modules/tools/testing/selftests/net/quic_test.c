@@ -688,32 +688,50 @@ static int change_port(struct sockaddr_storage *a)
 	return ntohs(a4->sin_port);
 }
 
-static int create_listen_socket(char *alpn)
+static int create_socket(struct sockaddr_storage *a, char *name)
 {
-	struct sockaddr_storage sa;
-	int listenfd, family;
-	char *name = dev[1];
+	struct timeval tv = { .tv_sec  = 3 };
+	int sockfd, family;
 
-	family = build_address(&sa);
+	family = build_address(a);
 	if (family < 0) {
 		printf("%s: errno=%d\n", __func__, errno);
 		return -1;
 	}
-	listenfd = socket(family, SOCK_DGRAM, IPPROTO_QUIC);
-	if (listenfd < 0) {
+	sockfd = socket(family, SOCK_DGRAM, IPPROTO_QUIC);
+	if (sockfd < 0) {
 		printf("socket: errno=%d\n", errno);
 		return -1;
 	}
-	if (name && setsockopt(listenfd, SOL_SOCKET, SO_BINDTODEVICE, name, strlen(name) + 1)) {
-		printf("setsockopt: errno=%d\n", errno);
+	if (name && setsockopt(sockfd, SOL_SOCKET, SO_BINDTODEVICE, name, strlen(name) + 1)) {
+		printf("setsockopt: SO_BINDTODEVICE errno=%d\n", errno);
 		return -1;
 	}
+	if (setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv))) {
+		printf("setsockopt: SO_RCVTIMEO errno=%d\n", errno);
+		return -1;
+	}
+	if (setsockopt(sockfd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv))) {
+		printf("setsockopt: SO_SNDTIMEO errno=%d\n", errno);
+		return -1;
+	}
+	return sockfd;
+}
+
+static int create_listen_socket(char *alpn)
+{
+	struct sockaddr_storage sa;
+	int listenfd;
+
+	listenfd = create_socket(&sa, dev[1]);
+	if (listenfd < 0)
+		return -1;
+	if (alpn && setopt_pass(listenfd, QUIC_SOCKOPT_ALPN, alpn, strlen(alpn)))
+		return -1;
 	if (bind(listenfd, (struct sockaddr *)&sa, sizeof(sa))) {
 		printf("bind: errno=%d\n", errno);
 		return -1;
 	}
-	if (alpn && setopt_pass(listenfd, QUIC_SOCKOPT_ALPN, alpn, strlen(alpn)))
-		return -1;
 	if (listen(listenfd, 1)) {
 		printf("listen: errno=%d\n", errno);
 		return -1;
@@ -724,23 +742,11 @@ static int create_listen_socket(char *alpn)
 static int create_connect_socket(void)
 {
 	struct sockaddr_storage sa;
-	int connectfd, family;
-	char *name = dev[0];
+	int connectfd;
 
-	family = build_address(&sa);
-	if (family < 0) {
-		printf("%s: errno=%d\n", __func__, errno);
+	connectfd = create_socket(&sa, dev[0]);
+	if (connectfd < 0)
 		return -1;
-	}
-	connectfd = socket(family, SOCK_DGRAM, IPPROTO_QUIC);
-	if (connectfd < 0) {
-		printf("socket: errno=%d\n", errno);
-		return -1;
-	}
-	if (name && setsockopt(connectfd, SOL_SOCKET, SO_BINDTODEVICE, name, strlen(name) + 1)) {
-		printf("setsockopt: errno=%d\n", errno);
-		return -1;
-	}
 	if (connect(connectfd, (struct sockaddr *)&sa, sizeof(sa))) {
 		printf("connect: errno=%d\n", errno);
 		return -1;
@@ -748,7 +754,7 @@ static int create_connect_socket(void)
 	return connectfd;
 }
 
-static int create_sockets(int *listenfd_p, int *connectfd_p)
+static int create_socket_pair(int *listenfd_p, int *connectfd_p)
 {
 	int listenfd, connectfd;
 
@@ -842,7 +848,7 @@ static int test_handshake(int *connectfd_p, int *acceptfd_p)
 	printf("=> Handshake Tests\n");
 	system("[ -f /proc/sys/net/quic/alpn_demux ] && sysctl -q net.quic.alpn_demux=0");
 
-	if (create_sockets(&listenfd, &connectfd))
+	if (create_socket_pair(&listenfd, &connectfd))
 		return -1;
 	memset(&config, 0, sizeof(config));
 	config.validate_peer_address = 1;
@@ -856,7 +862,7 @@ static int test_handshake(int *connectfd_p, int *acceptfd_p)
 	close_sockets(connectfd, acceptfd);
 	printf("[] Handshake with Retry\n");
 
-	if (create_sockets(&listenfd, &connectfd))
+	if (create_socket_pair(&listenfd, &connectfd))
 		return -1;
 	memset(&config, 0, sizeof(config));
 	config.version = QUIC_VERSION_V2;
@@ -870,7 +876,7 @@ static int test_handshake(int *connectfd_p, int *acceptfd_p)
 	close_sockets(connectfd, acceptfd);
 	printf("[] Handshake with V2\n");
 
-	if (create_sockets(&listenfd, &connectfd))
+	if (create_socket_pair(&listenfd, &connectfd))
 		return -1;
 	memset(&config, 0, sizeof(config));
 	config.version = 123;
@@ -884,7 +890,7 @@ static int test_handshake(int *connectfd_p, int *acceptfd_p)
 	close_sockets(connectfd, acceptfd);
 	printf("[] Handshake with Version Negotiation\n");
 
-	if (create_sockets(&listenfd, &connectfd))
+	if (create_socket_pair(&listenfd, &connectfd))
 		return -1;
 	change_fake_keys_type(TLS_CIPHER_AES_GCM_256);
 	acceptfd = accept_socket(listenfd, connectfd);
@@ -895,7 +901,7 @@ static int test_handshake(int *connectfd_p, int *acceptfd_p)
 	close_sockets(connectfd, acceptfd);
 	printf("[] Handshake with TLS_CIPHER_AES_GCM_256\n");
 
-	if (create_sockets(&listenfd, &connectfd))
+	if (create_socket_pair(&listenfd, &connectfd))
 		return -1;
 	change_fake_keys_type(TLS_CIPHER_AES_CCM_128);
 	acceptfd = accept_socket(listenfd, connectfd);
@@ -906,7 +912,7 @@ static int test_handshake(int *connectfd_p, int *acceptfd_p)
 	close_sockets(connectfd, acceptfd);
 	printf("[] Handshake with TLS_CIPHER_AES_CCM_128\n");
 
-	if (create_sockets(&listenfd, &connectfd))
+	if (create_socket_pair(&listenfd, &connectfd))
 		return -1;
 	change_fake_keys_type(TLS_CIPHER_CHACHA20_POLY1305);
 	acceptfd = accept_socket(listenfd, connectfd);
@@ -917,7 +923,7 @@ static int test_handshake(int *connectfd_p, int *acceptfd_p)
 	close_sockets(connectfd, acceptfd);
 	printf("[] Handshake with TLS_CIPHER_CHACHA20_POLY1305\n");
 
-	if (create_sockets(&listenfd, &connectfd))
+	if (create_socket_pair(&listenfd, &connectfd))
 		return -1;
 	acceptfd = accept_socket(listenfd, connectfd);
 	if (acceptfd < 0)
@@ -967,7 +973,7 @@ static int test_handshake(int *connectfd_p, int *acceptfd_p)
 	system("sysctl -q net.quic.alpn_demux=0");
 	printf("[] Handshake with ALPN demux (abnormal Client Hello)\n");
 
-	if (create_sockets(&listenfd, &connectfd))
+	if (create_socket_pair(&listenfd, &connectfd))
 		return -1;
 	memset(&param, 0, sizeof(param));
 	param.disable_1rtt_encryption = 1;
@@ -986,7 +992,7 @@ static int test_handshake(int *connectfd_p, int *acceptfd_p)
 	close_sockets(connectfd, acceptfd);
 	printf("[] Handshake with 1RTT Encryption disabled\n");
 
-	if (create_sockets(&listenfd, &connectfd))
+	if (create_socket_pair(&listenfd, &connectfd))
 		return -1;
 	memset(&param, 0, sizeof(param));
 	param.max_datagram_frame_size = 1400;

@@ -12,6 +12,9 @@ uninstall: uninstall_modules uninstall_headers depmod
 clean:
 	$(MAKE) -C $(KERNEL_BUILD) M=$(CURDIR)/net/quic clean
 
+selftests:
+	@cd $(CURDIR)/tools/testing/selftests/net/ && ./quic_test.sh
+
 install_headers:
 	install -m 644 include/uapi/linux/quic.h /usr/include/linux
 
