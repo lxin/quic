@@ -122,7 +122,7 @@ static void cubic_cong_avoid(struct quic_cong *cong, u32 bytes)
 	struct quic_cubic *cubic = quic_cong_priv(cong);
 	u64 tx, kx, time_delta, delta, t;
 	u64 target_add, tcp_add = 0;
-	u64 target, cwnd_thres, m;
+	u64 target, m;
 
 	if (cubic->epoch_start == U32_MAX) {
 		cubic->epoch_start = cong->time;
@@ -147,10 +147,10 @@ static void cubic_cong_avoid(struct quic_cong *cong, u32 bytes)
 	}
 
 	/*
-	 * t = t        - t
+	 * t = t        - t        + RTT
 	 *      current    epoch
 	 */
-	t = cong->time - cubic->epoch_start;
+	t = cong->time - cubic->epoch_start + cong->smoothed_rtt;
 	tx = div64_ul(t << 10, USEC_PER_SEC);
 	kx = (cubic->k << 10);
 	if (tx > kx)
@@ -169,13 +169,8 @@ static void cubic_cong_avoid(struct quic_cong *cong, u32 bytes)
 	else
 		target = cubic->origin_point - delta;
 
-	/*
-	 * W     (t + RTT)
-	 *  cubic
-	 */
-	cwnd_thres = (div64_ul((t + cong->smoothed_rtt) << 10, USEC_PER_SEC) * target) >> 10;
-	pr_debug("%s: tgt: %llu, thres: %llu, delta: %llu, t: %llu, srtt: %u, tx: %llu, kx: %llu\n",
-		 __func__, target, cwnd_thres, delta, t, cong->smoothed_rtt, tx, kx);
+	pr_debug("%s: tgt: %llu, delta: %llu, t: %llu, srtt: %u, tx: %llu, kx: %llu\n",
+		 __func__, target, delta, t, cong->smoothed_rtt, tx, kx);
 	/*
 	 *          ⎧
 	 *          ⎪cwnd            if  W     (t + RTT) < cwnd
@@ -185,12 +180,10 @@ static void cubic_cong_avoid(struct quic_cong *cong, u32 bytes)
 	 *          ⎪W     (t + RTT) otherwise
 	 *          ⎩ cubic
 	 */
-	if (cwnd_thres < cong->window)
+	if (target < cong->window)
 		target = cong->window;
-	else if (cwnd_thres * 2 > (u64)cong->window * 3)
+	else if (2 * target > 3 * cong->window)
 		target = cong->window * 3 / 2;
-	else
-		target = cwnd_thres;
 
 	/*
 	 * target - cwnd
