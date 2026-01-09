@@ -247,7 +247,7 @@ static inline void quic_set_state(struct sock *sk, int state)
 struct sock *quic_listen_sock_lookup(struct sk_buff *skb, union quic_addr *sa, union quic_addr *da,
 				     struct quic_data *alpns);
 struct sock *quic_sock_lookup(struct sk_buff *skb, union quic_addr *sa, union quic_addr *da,
-			      struct quic_conn_id *dcid);
+			      struct sock *usk, struct quic_conn_id *dcid);
 bool quic_accept_sock_exists(struct sock *sk, struct sk_buff *skb);
 
 struct quic_request_sock *quic_request_sock_create(struct sock *sk, struct quic_conn_id *odcid,

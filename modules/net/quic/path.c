@@ -18,31 +18,23 @@
 #include "family.h"
 #include "path.h"
 
-static int (*quic_path_rcv)(struct sk_buff *skb, u8 err);
+static int (*quic_path_rcv)(struct sock *sk, struct sk_buff *skb, u8 err);
 
 static int quic_udp_rcv(struct sock *sk, struct sk_buff *skb)
 {
-	/* Save the UDP socket to skb->sk for later QUIC socket lookup. */
-	if (skb_linearize(skb) || !skb_set_owner_sk_safe(skb, sk))
-		return 0;
-
 	memset(skb->cb, 0, sizeof(skb->cb));
 	QUIC_SKB_CB(skb)->seqno = -1;
 	QUIC_SKB_CB(skb)->time = quic_ktime_get_us();
 
 	skb_pull(skb, sizeof(struct udphdr));
 	skb_dst_force(skb);
-	quic_path_rcv(skb, 0);
+	quic_path_rcv(sk, skb, 0);
 	return 0;
 }
 
 static int quic_udp_err(struct sock *sk, struct sk_buff *skb)
 {
-	/* Save the UDP socket to skb->sk for later QUIC socket lookup. */
-	if (skb_linearize(skb) || !skb_set_owner_sk_safe(skb, sk))
-		return 0;
-
-	return quic_path_rcv(skb, 1);
+	return quic_path_rcv(sk, skb, 1);
 }
 
 static void quic_udp_sock_put_work(struct work_struct *work)
@@ -531,7 +523,7 @@ bool quic_path_pl_confirm(struct quic_path_group *paths, s64 largest, s64 smalle
 	return paths->pl.number && paths->pl.number >= smallest && paths->pl.number <= largest;
 }
 
-void quic_path_init(int (*rcv)(struct sk_buff *skb, u8 err))
+void quic_path_init(int (*rcv)(struct sock *sk, struct sk_buff *skb, u8 err))
 {
 	quic_path_rcv = rcv;
 }

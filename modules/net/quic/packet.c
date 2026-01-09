@@ -230,15 +230,14 @@ void quic_packet_rcv_err_pmtu(struct sock *sk)
 }
 
 /* Handle ICMP Toobig packet and update QUIC socket path MTU. */
-static int quic_packet_rcv_err(struct sk_buff *skb)
+static int quic_packet_rcv_err(struct sock *sk, struct sk_buff *skb)
 {
 	union quic_addr daddr, saddr;
-	struct sock *sk = NULL;
 	u32 info;
 
 	/* All we can do is lookup the matching QUIC socket by addresses. */
 	quic_get_msg_addrs(skb, &saddr, &daddr);
-	sk = quic_sock_lookup(skb, &daddr, &saddr, NULL);
+	sk = quic_sock_lookup(skb, &daddr, &saddr, sk, NULL);
 	if (!sk)
 		return -ENOENT;
 
@@ -556,7 +555,7 @@ static struct sock *quic_packet_get_sock(struct sk_buff *skb)
 		/* Final fallback: address-based connection lookup
 		 * (May be used to receive a stateless reset).
 		 */
-		return quic_sock_lookup(skb, &daddr, &saddr, NULL);
+		return quic_sock_lookup(skb, &daddr, &saddr, skb->sk, NULL);
 	}
 
 	/* Long header path. */
@@ -573,7 +572,7 @@ static struct sock *quic_packet_get_sock(struct sk_buff *skb)
 	 * (May be used for 0-RTT or a follow-up Client Initial packet).
 	 */
 	quic_get_msg_addrs(skb, &daddr, &saddr);
-	sk = quic_sock_lookup(skb, &daddr, &saddr, &dcid);
+	sk = quic_sock_lookup(skb, &daddr, &saddr, skb->sk, &dcid);
 	if (sk)
 		return sk;
 	/* Final fallback: listener socket lookup
@@ -585,13 +584,18 @@ static struct sock *quic_packet_get_sock(struct sk_buff *skb)
 }
 
 /* Entry point for processing received QUIC packets. */
-int quic_packet_rcv(struct sk_buff *skb, u8 err)
+int quic_packet_rcv(struct sock *sk, struct sk_buff *skb, u8 err)
 {
-	struct net *net = sock_net(skb->sk);
-	struct sock *sk;
+	struct net *net = sock_net(sk);
 
 	if (unlikely(err))
-		return quic_packet_rcv_err(skb);
+		return quic_packet_rcv_err(sk, skb);
+
+	/* Save the UDP socket to skb->sk for later QUIC socket lookup. */
+	if (skb_linearize(skb) || !skb_set_owner_sk_safe(skb, sk)) {
+		QUIC_INC_STATS(net, QUIC_MIB_PKT_RCVDROP);
+		goto err;
+	}
 
 	/* Look up socket from socket or connection IDs hash tables. */
 	sk = quic_packet_get_sock(skb);

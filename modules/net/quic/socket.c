@@ -111,7 +111,7 @@ bool quic_accept_sock_exists(struct sock *sk, struct sk_buff *skb)
 
 	/* Look up an accepted socket that matches the packet's addresses and DCID. */
 	local_bh_disable();
-	sk = quic_sock_lookup(skb, &packet->saddr, &packet->daddr, &packet->dcid);
+	sk = quic_sock_lookup(skb, &packet->saddr, &packet->daddr, skb->sk, &packet->dcid);
 	if (!sk)
 		goto out;
 
@@ -149,9 +149,9 @@ out:
  * Return: A pointer to the matching connected socket, or NULL if no match is found.
  */
 struct sock *quic_sock_lookup(struct sk_buff *skb, union quic_addr *sa, union quic_addr *da,
-			      struct quic_conn_id *dcid)
+			      struct sock *usk, struct quic_conn_id *dcid)
 {
-	struct net *net = sock_net(skb->sk);
+	struct net *net = sock_net(usk);
 	struct quic_path_group *paths;
 	struct hlist_nulls_node *node;
 	struct quic_shash_head *head;
@@ -169,7 +169,7 @@ begin:
 		paths = quic_paths(tmp);
 		if (quic_cmp_sk_addr(tmp, quic_path_saddr(paths, 0), sa) &&
 		    quic_cmp_sk_addr(tmp, quic_path_daddr(paths, 0), da) &&
-		    quic_path_usock(paths, 0) == skb->sk &&
+		    quic_path_usock(paths, 0) == usk &&
 		    (!dcid || !quic_conn_id_cmp(quic_path_orig_dcid(paths), dcid))) {
 			sk = tmp;
 			break;
