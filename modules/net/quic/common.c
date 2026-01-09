@@ -464,7 +464,8 @@ int quic_data_has(struct quic_data *d1, struct quic_data *d2)
 	u8 *p;
 
 	for (p = d1->data, len = d1->len; len; len -= length, p += length) {
-		quic_get_int(&p, &len, &length, 1);
+		if (!quic_get_int(&p, &len, &length, 1) || len < length)
+			return 0;
 		quic_data(&d, p, length);
 		if (!quic_data_cmp(&d, d2))
 			return 1;
@@ -487,7 +488,8 @@ int quic_data_match(struct quic_data *d1, struct quic_data *d2)
 	u8 *p;
 
 	for (p = d1->data, len = d1->len; len; len -= length, p += length) {
-		quic_get_int(&p, &len, &length, 1);
+		if (!quic_get_int(&p, &len, &length, 1) || len < length)
+			return 0;
 		quic_data(&d, p, length);
 		if (quic_data_has(d2, &d))
 			return 1;
