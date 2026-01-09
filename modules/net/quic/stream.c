@@ -110,6 +110,7 @@ static struct quic_stream *quic_stream_create(struct quic_stream_table *streams,
 			}
 			/* Streams must be opened sequentially. Update the next stream ID so the
 			 * correct starting point is known if an out-of-order open is requested.
+			 * Note overflow of next_uni_stream_id/streams_uni is impossible with u64.
 			 */
 			limits->next_uni_stream_id = stream_id + QUIC_STREAM_ID_STEP;
 			limits->streams_uni++;
@@ -153,6 +154,10 @@ bool quic_stream_id_exceeds(struct quic_stream_table *streams, s64 stream_id, bo
 	u64 nstreams;
 
 	if (!send) {
+		/* recv.max_uni_stream_id is updated in quic_stream_max_streams_update()
+		 * already based on next_uni/bidi_stream_id, max_streams_uni/bidi, and
+		 * streams_uni/bidi, so only recv.max_uni_stream_id needs to be checked.
+		 */
 		if (quic_stream_id_uni(stream_id))
 			return stream_id > streams->recv.max_uni_stream_id;
 		return stream_id > streams->recv.max_bidi_stream_id;
@@ -173,70 +178,59 @@ bool quic_stream_id_exceeds(struct quic_stream_table *streams, s64 stream_id, bo
 	return nstreams + streams->send.streams_bidi > streams->send.max_streams_bidi;
 }
 
-/* Get or create a send stream by ID. Requires sock lock held. */
-struct quic_stream *quic_stream_send_get(struct quic_stream_table *streams, s64 stream_id,
-					 u32 flags, bool is_serv)
+static struct quic_stream *quic_stream_get(struct quic_stream_table *streams, s64 stream_id,
+					   u32 flags, bool is_serv, bool send)
 {
 	struct quic_stream *stream;
 
-	if (!quic_stream_id_valid(stream_id, is_serv, true))
+	if (!quic_stream_id_valid(stream_id, is_serv, send))
 		return ERR_PTR(-EINVAL);
 
 	stream = quic_stream_find(streams, stream_id);
 	if (stream) {
-		if ((flags & MSG_QUIC_STREAM_NEW) &&
+		if (send && (flags & MSG_QUIC_STREAM_NEW) &&
 		    stream->send.state != QUIC_STREAM_SEND_STATE_READY)
 			return ERR_PTR(-EINVAL);
 		return stream;
 	}
 
-	if (quic_stream_id_closed(streams, stream_id, true))
+	if (!send && quic_stream_id_local(stream_id, is_serv)) {
+		if (quic_stream_id_closed(streams, stream_id, !send))
+			return ERR_PTR(-ENOSTR);
+		return ERR_PTR(-EINVAL);
+	}
+
+	if (quic_stream_id_closed(streams, stream_id, send))
 		return ERR_PTR(-ENOSTR);
 
-	if (!(flags & MSG_QUIC_STREAM_NEW))
+	if (send && !(flags & MSG_QUIC_STREAM_NEW))
 		return ERR_PTR(-EINVAL);
 
-	if (quic_stream_id_exceeds(streams, stream_id, true))
+	if (quic_stream_id_exceeds(streams, stream_id, send))
 		return ERR_PTR(-EAGAIN);
 
-	stream = quic_stream_create(streams, stream_id, true, is_serv);
+	stream = quic_stream_create(streams, stream_id, send, is_serv);
 	if (!stream)
 		return ERR_PTR(-ENOSTR);
-	streams->send.active_stream_id = stream_id;
+
+	if (send || quic_stream_id_valid(stream_id, is_serv, !send))
+		streams->send.active_stream_id = stream_id;
+
 	return stream;
+}
+
+/* Get or create a send stream by ID. Requires sock lock held. */
+struct quic_stream *quic_stream_send_get(struct quic_stream_table *streams, s64 stream_id,
+					 u32 flags, bool is_serv)
+{
+	return quic_stream_get(streams, stream_id, flags, is_serv, true);
 }
 
 /* Get or create a receive stream by ID. Requires sock lock held. */
 struct quic_stream *quic_stream_recv_get(struct quic_stream_table *streams, s64 stream_id,
 					 bool is_serv)
 {
-	struct quic_stream *stream;
-
-	if (!quic_stream_id_valid(stream_id, is_serv, false))
-		return ERR_PTR(-EINVAL);
-
-	stream = quic_stream_find(streams, stream_id);
-	if (stream)
-		return stream;
-
-	if (quic_stream_id_local(stream_id, is_serv)) {
-		if (quic_stream_id_closed(streams, stream_id, true))
-			return ERR_PTR(-ENOSTR);
-		return ERR_PTR(-EINVAL);
-	}
-
-	if (quic_stream_id_closed(streams, stream_id, false))
-		return ERR_PTR(-ENOSTR);
-
-	if (quic_stream_id_exceeds(streams, stream_id, false))
-		return ERR_PTR(-EAGAIN);
-
-	stream = quic_stream_create(streams, stream_id, false, is_serv);
-	if (!stream)
-		return ERR_PTR(-ENOSTR);
-	if (quic_stream_id_valid(stream_id, is_serv, true))
-		streams->send.active_stream_id = stream_id;
-	return stream;
+	return quic_stream_get(streams, stream_id, 0, is_serv, false);
 }
 
 /* Common helper for handling bidi stream cleanup in both send and recv put operations. */
