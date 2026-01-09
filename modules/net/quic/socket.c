@@ -2055,7 +2055,20 @@ out:
 	return 0;
 }
 
-static int quic_do_setsockopt(struct sock *sk, int optname, sockptr_t optval, unsigned int optlen)
+/**
+ * quic_do_setsockopt - set a QUIC socket option
+ * @sk: socket to configure
+ * @optname: option name (QUIC-level)
+ * @optval: user buffer containing the option value
+ * @optlen: size of the option value
+ *
+ * Sets a QUIC socket option on a given socket.
+ *
+ * Return:
+ * - On success, 0 is returned.
+ * - On error, a negative error value is returned.
+ */
+int quic_do_setsockopt(struct sock *sk, int optname, sockptr_t optval, unsigned int optlen)
 {
 	void *kopt = NULL;
 	int retval = 0;
@@ -2118,6 +2131,7 @@ static int quic_do_setsockopt(struct sock *sk, int optname, sockptr_t optval, un
 	kfree(kopt);
 	return retval;
 }
+EXPORT_SYMBOL_GPL(quic_do_setsockopt);
 
 static int quic_setsockopt(struct sock *sk, int level, int optname,
 			   sockptr_t optval, unsigned int optlen)
@@ -2127,25 +2141,6 @@ static int quic_setsockopt(struct sock *sk, int level, int optname,
 
 	return quic_do_setsockopt(sk, optname, optval, optlen);
 }
-
-/**
- * quic_kernel_setsockopt - set a QUIC socket option from within the kernel
- * @sk: socket to configure
- * @optname: option name (QUIC-level)
- * @optval: pointer to the option value
- * @optlen: size of the option value
- *
- * Sets a QUIC socket option on a kernel socket without involving user space.
- *
- * Return:
- * - On success, 0 is returned.
- * - On error, a negative error value is returned.
- */
-int quic_kernel_setsockopt(struct sock *sk, int optname, void *optval, unsigned int optlen)
-{
-	return quic_do_setsockopt(sk, optname, KERNEL_SOCKPTR(optval), optlen);
-}
-EXPORT_SYMBOL_GPL(quic_kernel_setsockopt);
 
 static int quic_sock_get_event(struct sock *sk, u32 len, sockptr_t optval, sockptr_t optlen)
 {
@@ -2411,7 +2406,20 @@ static int quic_sock_get_crypto_secret(struct sock *sk, u32 len,
 	return 0;
 }
 
-static int quic_do_getsockopt(struct sock *sk, int optname, sockptr_t optval, sockptr_t optlen)
+/**
+ * quic_do_getsockopt - get a QUIC socket option
+ * @sk: socket to query
+ * @optname: option name (QUIC-level)
+ * @optval: user buffer to receive the option value
+ * @optlen: in/out parameter for buffer size; updated with actual length on return
+ *
+ * Gets a QUIC socket option from a given socket.
+ *
+ * Return:
+ * - On success, 0 is returned.
+ * - On error, a negative error value is returned.
+ */
+int quic_do_getsockopt(struct sock *sk, int optname, sockptr_t optval, sockptr_t optlen)
 {
 	int retval = 0;
 	u32 len;
@@ -2461,6 +2469,7 @@ static int quic_do_getsockopt(struct sock *sk, int optname, sockptr_t optval, so
 	release_sock(sk);
 	return retval;
 }
+EXPORT_SYMBOL_GPL(quic_do_getsockopt);
 
 static int quic_getsockopt(struct sock *sk, int level, int optname,
 			   char __user *optval, int __user *optlen)
@@ -2470,25 +2479,6 @@ static int quic_getsockopt(struct sock *sk, int level, int optname,
 
 	return quic_do_getsockopt(sk, optname, USER_SOCKPTR(optval), USER_SOCKPTR(optlen));
 }
-
-/**
- * quic_kernel_getsockopt - get a QUIC socket option from within the kernel
- * @sk: socket to query
- * @optname: option name (QUIC-level)
- * @optval: pointer to the buffer to receive the option value
- * @optlen: pointer to the size of the buffer; updated to actual length on return
- *
- * Gets a QUIC socket option from a kernel socket, bypassing user space.
- *
- * Return:
- * - On success, 0 is returned.
- * - On error, a negative error value is returned.
- */
-int quic_kernel_getsockopt(struct sock *sk, int optname, void *optval, unsigned int *optlen)
-{
-	return quic_do_getsockopt(sk, optname, KERNEL_SOCKPTR(optval), KERNEL_SOCKPTR(optlen));
-}
-EXPORT_SYMBOL_GPL(quic_kernel_getsockopt);
 
 static void quic_release_cb(struct sock *sk)
 {

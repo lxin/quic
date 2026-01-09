@@ -250,7 +250,7 @@ static int quic_test_do_sample_client(void)
 	 * Setting this here allows the userspace handshake implementation to retrieve
 	 * and embed the ALPN value in the ClientHello sent to the server.
 	 */
-	err = quic_kernel_setsockopt(sock->sk, QUIC_SOCKOPT_ALPN, alpn, strlen(alpn));
+	err = quic_do_setsockopt(sock->sk, QUIC_SOCKOPT_ALPN, KERNEL_SOCKPTR(alpn), strlen(alpn));
 	if (err)
 		goto free;
 	err = kernel_connect(sock, (void *)&ra, sizeof(ra), 0);
@@ -323,7 +323,7 @@ static int quic_test_do_ticket_client(void)
 	err = quic_test_bind_device(sock->sk, dev);
 	if (err)
 		goto free;
-	err = quic_kernel_setsockopt(sock->sk, QUIC_SOCKOPT_ALPN, alpn, strlen(alpn));
+	err = quic_do_setsockopt(sock->sk, QUIC_SOCKOPT_ALPN, KERNEL_SOCKPTR(alpn), strlen(alpn));
 	if (err)
 		goto free;
 
@@ -331,7 +331,8 @@ static int quic_test_do_ticket_client(void)
 	 * during the handshake process via QUIC_SOCKOPT_SESSION_TICKET socket option.
 	 */
 	config.receive_session_ticket = 1;
-	err = quic_kernel_setsockopt(sock->sk, QUIC_SOCKOPT_CONFIG, &config, sizeof(config));
+	err = quic_do_setsockopt(sock->sk, QUIC_SOCKOPT_CONFIG, KERNEL_SOCKPTR(&config),
+				 sizeof(config));
 	if (err)
 		goto free;
 
@@ -350,8 +351,8 @@ static int quic_test_do_ticket_client(void)
 	 * 'session_data' for later session resumption.
 	 */
 	ticket_len = sizeof(session_data);
-	err = quic_kernel_getsockopt(sock->sk, QUIC_SOCKOPT_SESSION_TICKET, session_data,
-				     &ticket_len);
+	err = quic_do_getsockopt(sock->sk, QUIC_SOCKOPT_SESSION_TICKET,
+				 KERNEL_SOCKPTR(session_data), KERNEL_SOCKPTR(&ticket_len));
 	if (err < 0)
 		goto free;
 
@@ -360,7 +361,8 @@ static int quic_test_do_ticket_client(void)
 	 */
 	param_len = sizeof(param);
 	param.remote = 1;
-	err = quic_kernel_getsockopt(sock->sk, QUIC_SOCKOPT_TRANSPORT_PARAM, &param, &param_len);
+	err = quic_do_getsockopt(sock->sk, QUIC_SOCKOPT_TRANSPORT_PARAM, KERNEL_SOCKPTR(&param),
+				 KERNEL_SOCKPTR(&param_len));
 	if (err < 0)
 		goto free;
 
@@ -398,7 +400,7 @@ static int quic_test_do_ticket_client(void)
 	err = quic_test_bind_device(sock->sk, dev);
 	if (err)
 		goto free;
-	err = quic_kernel_setsockopt(sock->sk, QUIC_SOCKOPT_ALPN, alpn, strlen(alpn));
+	err = quic_do_setsockopt(sock->sk, QUIC_SOCKOPT_ALPN, KERNEL_SOCKPTR(alpn), strlen(alpn));
 	if (err)
 		goto free;
 
@@ -409,13 +411,14 @@ static int quic_test_do_ticket_client(void)
 	/* Provide the session ticket for resumption. It will be retrieved by userspace via
 	 * getsockopt(QUIC_SOCKOPT_SESSION_TICKET) and used during the handshake.
 	 */
-	err = quic_kernel_setsockopt(sock->sk, QUIC_SOCKOPT_SESSION_TICKET, session_data,
-				     ticket_len);
+	err = quic_do_setsockopt(sock->sk, QUIC_SOCKOPT_SESSION_TICKET,
+				 KERNEL_SOCKPTR(session_data), ticket_len);
 	if (err)
 		goto free;
 
 	/* Provide the server's transport parameters for early data transmission. */
-	err = quic_kernel_setsockopt(sock->sk, QUIC_SOCKOPT_TRANSPORT_PARAM, &param, param_len);
+	err = quic_do_setsockopt(sock->sk, QUIC_SOCKOPT_TRANSPORT_PARAM, KERNEL_SOCKPTR(&param),
+				 param_len);
 	if (err)
 		goto free;
 
@@ -474,7 +477,7 @@ static int quic_test_do_sample_server(void)
 	err = kernel_bind(sock, (void *)&la, sizeof(la));
 	if (err < 0)
 		goto free;
-	err = quic_kernel_setsockopt(sock->sk, QUIC_SOCKOPT_ALPN, alpn, strlen(alpn));
+	err = quic_do_setsockopt(sock->sk, QUIC_SOCKOPT_ALPN, KERNEL_SOCKPTR(alpn), strlen(alpn));
 	if (err)
 		goto free;
 	err = kernel_listen(sock, 1);
@@ -548,7 +551,7 @@ static int quic_test_do_ticket_server(void)
 	err = kernel_bind(sock, (void *)&la, sizeof(la));
 	if (err < 0)
 		goto free;
-	err = quic_kernel_setsockopt(sock->sk, QUIC_SOCKOPT_ALPN, alpn, strlen(alpn));
+	err = quic_do_setsockopt(sock->sk, QUIC_SOCKOPT_ALPN, KERNEL_SOCKPTR(alpn), strlen(alpn));
 	if (err)
 		goto free;
 	err = kernel_listen(sock, 1);
