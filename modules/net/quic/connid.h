@@ -49,6 +49,7 @@ static inline u32 quic_conn_id_first_number(struct quic_conn_id_set *id_set)
 {
 	struct quic_common_conn_id *common;
 
+	/* The id_set is guaranteed to be non-empty when called (sk is not in CLOSE state). */
 	common = list_first_entry(&id_set->head, struct quic_common_conn_id, list);
 	return common->number;
 }
