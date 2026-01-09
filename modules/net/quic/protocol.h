@@ -47,7 +47,7 @@ struct quic_mib {
 
 struct quic_net {
 	DEFINE_SNMP_STAT(struct quic_mib, stat);	/* Per-network namespace MIB statistics */
-#ifdef CONFIG_PROC_FS
+#if IS_ENABLED(CONFIG_PROC_FS)
 	struct proc_dir_entry *proc_net;	/* procfs entry for dumping QUIC socket stats */
 #endif
 	struct quic_crypto crypto;	/* Context for decrypting Initial packets for ALPN */

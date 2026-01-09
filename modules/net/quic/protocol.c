@@ -211,7 +211,7 @@ struct quic_net *quic_net(struct net *net)
 	return net_generic(net, quic_net_id);
 }
 
-#ifdef CONFIG_PROC_FS
+#if IS_ENABLED(CONFIG_PROC_FS)
 static int quic_conns_seq_show(struct seq_file *seq, void *v)
 {
 	struct net *net = seq_file_net(seq);
@@ -573,7 +573,7 @@ static int __net_init quic_net_init(struct net *net)
 	INIT_WORK(&qn->work, quic_packet_backlog_work);
 	skb_queue_head_init(&qn->backlog_list);
 
-#ifdef CONFIG_PROC_FS
+#if IS_ENABLED(CONFIG_PROC_FS)
 	err = quic_net_proc_init(net);
 	if (err) {
 		quic_crypto_free(&qn->crypto);
@@ -588,7 +588,7 @@ static void __net_exit quic_net_exit(struct net *net)
 {
 	struct quic_net *qn = quic_net(net);
 
-#ifdef CONFIG_PROC_FS
+#if IS_ENABLED(CONFIG_PROC_FS)
 	quic_net_proc_exit(net);
 #endif
 	skb_queue_purge(&qn->backlog_list);
@@ -605,7 +605,7 @@ static struct pernet_operations quic_net_ops = {
 	.size = sizeof(struct quic_net),
 };
 
-#ifdef CONFIG_SYSCTL
+#if IS_ENABLED(CONFIG_SYSCTL)
 static struct ctl_table_header *quic_sysctl_header;
 
 static void quic_sysctl_register(void)
@@ -673,7 +673,7 @@ static __init int quic_init(void)
 	if (err)
 		goto err_protosw;
 
-#ifdef CONFIG_SYSCTL
+#if IS_ENABLED(CONFIG_SYSCTL)
 	quic_sysctl_register();
 #endif
 	pr_info("quic: init\n");
@@ -695,7 +695,7 @@ err:
 
 static __exit void quic_exit(void)
 {
-#ifdef CONFIG_SYSCTL
+#if IS_ENABLED(CONFIG_SYSCTL)
 	quic_sysctl_unregister();
 #endif
 	quic_protosw_exit();
