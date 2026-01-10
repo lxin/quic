@@ -80,9 +80,12 @@ static struct quic_stream *quic_stream_create(struct quic_stream_table *streams,
 					      s64 max_stream_id, bool send, bool is_serv)
 {
 	struct quic_stream_limits *limits = &streams->send;
-	struct quic_stream *stream = NULL;
+	struct quic_stream *pos, *stream = NULL;
 	gfp_t gfp = GFP_KERNEL_ACCOUNT;
+	struct hlist_node *tmp;
+	HLIST_HEAD(head);
 	s64 stream_id;
+	u32 count = 0;
 
 	if (!send) {
 		limits = &streams->recv;
@@ -98,7 +101,7 @@ static struct quic_stream *quic_stream_create(struct quic_stream_table *streams,
 	while (stream_id <= max_stream_id) {
 		stream = kzalloc(sizeof(*stream), gfp);
 		if (!stream)
-			return NULL;
+			goto free;
 
 		stream->id = stream_id;
 		if (quic_stream_id_uni(stream_id)) {
@@ -108,14 +111,7 @@ static struct quic_stream *quic_stream_create(struct quic_stream_table *streams,
 				stream->recv.max_bytes = limits->max_stream_data_uni;
 				stream->recv.window = stream->recv.max_bytes;
 			}
-			/* Streams must be opened sequentially. Update the next stream ID so the
-			 * correct starting point is known if an out-of-order open is requested.
-			 * Note overflow of next_uni_stream_id/streams_uni is impossible with u64.
-			 */
-			limits->next_uni_stream_id = stream_id + QUIC_STREAM_ID_STEP;
-			limits->streams_uni++;
-
-			quic_stream_add(streams, stream);
+			hlist_add_head(&stream->node, &head);
 			stream_id += QUIC_STREAM_ID_STEP;
 			continue;
 		}
@@ -128,14 +124,36 @@ static struct quic_stream *quic_stream_create(struct quic_stream_table *streams,
 			stream->recv.max_bytes = streams->recv.max_stream_data_bidi_remote;
 		}
 		stream->recv.window = stream->recv.max_bytes;
-
-		limits->next_bidi_stream_id = stream_id + QUIC_STREAM_ID_STEP;
-		limits->streams_bidi++;
-
-		quic_stream_add(streams, stream);
+		hlist_add_head(&stream->node, &head);
 		stream_id += QUIC_STREAM_ID_STEP;
 	}
+
+	hlist_for_each_entry_safe(pos, tmp, &head, node) {
+		hlist_del_init(&pos->node);
+		quic_stream_add(streams, pos);
+		count++;
+	}
+
+	/* Streams must be opened sequentially. Update the next stream ID so the correct
+	 * starting point is known if an out-of-order open is requested.  Note overflow
+	 * of next_uni/bidi_stream_id and streams_uni/bidi is impossible with u64.
+	 */
+	if (quic_stream_id_uni(stream_id)) {
+		limits->next_uni_stream_id = stream_id;
+		limits->streams_uni += count;
+		return stream;
+	}
+
+	limits->next_bidi_stream_id = stream_id;
+	limits->streams_bidi += count;
 	return stream;
+
+free:
+	hlist_for_each_entry_safe(pos, tmp, &head, node) {
+		hlist_del_init(&pos->node);
+		kfree(pos);
+	}
+	return NULL;
 }
 
 /* Check if a send or receive stream ID is already closed. */
