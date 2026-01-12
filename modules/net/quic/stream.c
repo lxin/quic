@@ -196,8 +196,9 @@ bool quic_stream_id_exceeds(struct quic_stream_table *streams, s64 stream_id, bo
 	return nstreams + streams->send.streams_bidi > streams->send.max_streams_bidi;
 }
 
-static struct quic_stream *quic_stream_get(struct quic_stream_table *streams, s64 stream_id,
-					   u32 flags, bool is_serv, bool send)
+/* Get or create a send or recv stream by ID. Requires sock lock held. */
+struct quic_stream *quic_stream_get(struct quic_stream_table *streams, s64 stream_id, u32 flags,
+				    bool is_serv, bool send)
 {
 	struct quic_stream *stream;
 
@@ -237,24 +238,45 @@ static struct quic_stream *quic_stream_get(struct quic_stream_table *streams, s6
 	return stream;
 }
 
-/* Get or create a send stream by ID. Requires sock lock held. */
-struct quic_stream *quic_stream_send_get(struct quic_stream_table *streams, s64 stream_id,
-					 u32 flags, bool is_serv)
+/* Release or clean up a send or recv stream. This function updates stream counters and state
+ * when a send stream has either successfully sent all data or has been reset, or when a recv
+ * stream has either consumed all data or has been reset. Requires sock lock held.
+ */
+void quic_stream_put(struct quic_stream_table *streams, struct quic_stream *stream, bool is_serv,
+		     bool send)
 {
-	return quic_stream_get(streams, stream_id, flags, is_serv, true);
-}
+	if (quic_stream_id_uni(stream->id)) {
+		if (send) {
+			/* For uni streams, decrement uni count and delete immediately. */
+			streams->send.streams_uni--;
+			quic_stream_delete(stream);
+			return;
+		}
+		/* For uni streams, decrement uni count and mark done. */
+		if (!stream->recv.done) {
+			stream->recv.done = 1;
+			streams->recv.streams_uni--;
+			streams->recv.uni_pending = 1;
+		}
+		/* Delete stream if fully read or reset. */
+		if (stream->recv.state != QUIC_STREAM_RECV_STATE_RECVD)
+			quic_stream_delete(stream);
+		return;
+	}
 
-/* Get or create a receive stream by ID. Requires sock lock held. */
-struct quic_stream *quic_stream_recv_get(struct quic_stream_table *streams, s64 stream_id,
-					 bool is_serv)
-{
-	return quic_stream_get(streams, stream_id, 0, is_serv, false);
-}
+	if (send) {
+		/* For bidi streams, only proceed if receive side is in a final state. */
+		if (stream->recv.state != QUIC_STREAM_RECV_STATE_RECVD &&
+		    stream->recv.state != QUIC_STREAM_RECV_STATE_READ &&
+		    stream->recv.state != QUIC_STREAM_RECV_STATE_RESET_RECVD)
+			return;
+	} else {
+		/* For bidi streams, only proceed if send side is in a final state. */
+		if (stream->send.state != QUIC_STREAM_SEND_STATE_RECVD &&
+		    stream->send.state != QUIC_STREAM_SEND_STATE_RESET_RECVD)
+			return;
+	}
 
-/* Common helper for handling bidi stream cleanup in both send and recv put operations. */
-static void quic_stream_bidi_put(struct quic_stream_table *streams, struct quic_stream *stream,
-				 bool is_serv)
-{
 	if (quic_stream_id_local(stream->id, is_serv)) {
 		/* Local-initiated stream: mark send done and decrement send.bidi count. */
 		if (!stream->send.done) {
@@ -273,55 +295,6 @@ static void quic_stream_bidi_put(struct quic_stream_table *streams, struct quic_
 	/* Delete stream if fully read or reset. */
 	if (stream->recv.state != QUIC_STREAM_RECV_STATE_RECVD)
 		quic_stream_delete(stream);
-}
-
-/* Release or clean up a send stream. This function updates stream counters and state when a
- * send stream has either successfully sent all data or has been reset. Requires sock lock held.
- */
-void quic_stream_send_put(struct quic_stream_table *streams, struct quic_stream *stream,
-			  bool is_serv)
-{
-	if (quic_stream_id_uni(stream->id)) {
-		/* For unidirectional streams, decrement uni count and delete immediately. */
-		streams->send.streams_uni--;
-		quic_stream_delete(stream);
-		return;
-	}
-
-	/* For bidi streams, only proceed if receive side is in a final state. */
-	if (stream->recv.state != QUIC_STREAM_RECV_STATE_RECVD &&
-	    stream->recv.state != QUIC_STREAM_RECV_STATE_READ &&
-	    stream->recv.state != QUIC_STREAM_RECV_STATE_RESET_RECVD)
-		return;
-
-	quic_stream_bidi_put(streams, stream, is_serv);
-}
-
-/* Release or clean up a receive stream. This function updates stream counters and state when
- * the receive side has either consumed all data or has been reset. Requires sock lock held.
- */
-void quic_stream_recv_put(struct quic_stream_table *streams, struct quic_stream *stream,
-			  bool is_serv)
-{
-	if (quic_stream_id_uni(stream->id)) {
-		/* For uni streams, decrement uni count and mark done. */
-		if (!stream->recv.done) {
-			stream->recv.done = 1;
-			streams->recv.streams_uni--;
-			streams->recv.uni_pending = 1;
-		}
-		/* Delete stream if fully read or reset. */
-		if (stream->recv.state != QUIC_STREAM_RECV_STATE_RECVD)
-			quic_stream_delete(stream);
-		return;
-	}
-
-	/* For bidi streams, only proceed if send side is in a final state. */
-	if (stream->send.state != QUIC_STREAM_SEND_STATE_RECVD &&
-	    stream->send.state != QUIC_STREAM_SEND_STATE_RESET_RECVD)
-		return;
-
-	quic_stream_bidi_put(streams, stream, is_serv);
 }
 
 /* Updates the maximum allowed incoming stream IDs if any streams were recently closed.

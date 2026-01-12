@@ -120,7 +120,7 @@ static void quic_inq_stream_tail(struct sock *sk, struct quic_stream *stream,
 		 */
 		stream->recv.state = update.state;
 		/* Release stream and update limits to allow opening new streams. */
-		quic_stream_recv_put(quic_streams(sk), stream, quic_is_serv(sk));
+		quic_stream_put(quic_streams(sk), stream, quic_is_serv(sk), false);
 	}
 
 	frame->offset = 0; /* Reset offset as it will be reused as read offset in recvmsg(). */

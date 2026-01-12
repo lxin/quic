@@ -777,11 +777,11 @@ static struct quic_stream *quic_sock_send_stream(struct sock *sk, struct quic_st
 {
 	struct quic_crypto *crypto = quic_crypto(sk, QUIC_CRYPTO_APP);
 	struct quic_stream_table *streams = quic_streams(sk);
+	u8 is_serv = quic_is_serv(sk);
 	struct quic_stream *stream;
 	int err;
 
-	stream = quic_stream_send_get(streams, sinfo->stream_id,
-				      sinfo->stream_flags, quic_is_serv(sk));
+	stream = quic_stream_get(streams, sinfo->stream_id, sinfo->stream_flags, is_serv, true);
 	if (!IS_ERR(stream)) {
 		if (stream->send.state >= QUIC_STREAM_SEND_STATE_SENT)
 			return ERR_PTR(-EINVAL); /* Can't send on a closed or finished stream. */
@@ -803,8 +803,7 @@ static struct quic_stream *quic_sock_send_stream(struct sock *sk, struct quic_st
 	}
 
 	/* Stream should now be available, retry getting the stream. */
-	stream = quic_stream_send_get(streams, sinfo->stream_id,
-				      sinfo->stream_flags, quic_is_serv(sk));
+	stream = quic_stream_get(streams, sinfo->stream_id, sinfo->stream_flags, is_serv, true);
 	if (!IS_ERR(stream) && stream->send.state >= QUIC_STREAM_SEND_STATE_SENT)
 		return ERR_PTR(-EINVAL); /* Can't send on a closed or finished stream. */
 	return stream;
@@ -1232,7 +1231,7 @@ static int quic_recvmsg(struct sock *sk, struct msghdr *msg, size_t msg_len, int
 		/* If stream read completed, purge and release resources. */
 		if (stream->recv.state == QUIC_STREAM_RECV_STATE_READ) {
 			quic_inq_list_purge(sk, &inq->stream_list, stream);
-			quic_stream_recv_put(quic_streams(sk), stream, quic_is_serv(sk));
+			quic_stream_put(quic_streams(sk), stream, quic_is_serv(sk), false);
 		}
 	}
 
@@ -1537,7 +1536,7 @@ static int quic_sock_stream_reset(struct sock *sk, struct quic_errinfo *info, u3
 	if (len != sizeof(*info) || !quic_is_established(sk))
 		return -EINVAL;
 
-	stream = quic_stream_send_get(streams, info->stream_id, 0, quic_is_serv(sk));
+	stream = quic_stream_get(streams, info->stream_id, 0, quic_is_serv(sk), true);
 	if (IS_ERR(stream))
 		return PTR_ERR(stream);
 
@@ -1570,7 +1569,7 @@ static int quic_sock_stream_stop_sending(struct sock *sk, struct quic_errinfo *i
 	if (len != sizeof(*info) || !quic_is_established(sk))
 		return -EINVAL;
 
-	stream = quic_stream_recv_get(streams, info->stream_id, quic_is_serv(sk));
+	stream = quic_stream_get(streams, info->stream_id, 0, quic_is_serv(sk), false);
 	if (IS_ERR(stream))
 		return PTR_ERR(stream);
 

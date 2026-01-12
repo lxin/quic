@@ -103,14 +103,10 @@ static inline s64 quic_stream_streams_to_id(u64 streams, u8 type)
 	return (s64)((streams - 1) << QUIC_STREAM_TYPE_BITS) | type;
 }
 
-struct quic_stream *quic_stream_send_get(struct quic_stream_table *streams, s64 stream_id,
-					 u32 flags, bool is_serv);
-struct quic_stream *quic_stream_recv_get(struct quic_stream_table *streams, s64 stream_id,
-					 bool is_serv);
-void quic_stream_send_put(struct quic_stream_table *streams, struct quic_stream *stream,
-			  bool is_serv);
-void quic_stream_recv_put(struct quic_stream_table *streams, struct quic_stream *stream,
-			  bool is_serv);
+struct quic_stream *quic_stream_get(struct quic_stream_table *streams, s64 stream_id, u32 flags,
+				    bool is_serv, bool send);
+void quic_stream_put(struct quic_stream_table *streams, struct quic_stream *stream, bool is_serv,
+		     bool send);
 
 bool quic_stream_max_streams_update(struct quic_stream_table *streams, s64 *max_uni, s64 *max_bidi);
 bool quic_stream_id_exceeds(struct quic_stream_table *streams, s64 stream_id, bool send);

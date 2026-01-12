@@ -986,7 +986,7 @@ static int quic_frame_stream_process(struct sock *sk, struct quic_frame *frame, 
 	}
 
 	/* Look up the stream for receiving data (may create it if valid). */
-	stream = quic_stream_recv_get(streams, (s64)stream_id, quic_is_serv(sk));
+	stream = quic_stream_get(streams, (s64)stream_id, 0, quic_is_serv(sk), false);
 	if (IS_ERR(stream)) {
 		/* rfc9000#section-4.6:
 		 *
@@ -1329,7 +1329,7 @@ static int quic_frame_reset_stream_process(struct sock *sk, struct quic_frame *f
 	    !quic_get_var(&p, &len, &finalsz))
 		return -EINVAL;
 
-	stream = quic_stream_recv_get(streams, (s64)stream_id, quic_is_serv(sk));
+	stream = quic_stream_get(streams, (s64)stream_id, 0, quic_is_serv(sk), false);
 	if (IS_ERR(stream)) {
 		/* rfc9000#section-19.4:
 		 *
@@ -1380,7 +1380,7 @@ static int quic_frame_reset_stream_process(struct sock *sk, struct quic_frame *f
 	 */
 	quic_inq_list_purge(sk, &inq->stream_list, stream);
 	quic_inq_list_purge(sk, &inq->recv_list, stream);
-	quic_stream_recv_put(streams, stream, quic_is_serv(sk)); /* Release the receive stream. */
+	quic_stream_put(streams, stream, quic_is_serv(sk), false); /* Release the receive stream. */
 out:
 	return (int)(frame->len - len);
 }
@@ -1401,7 +1401,7 @@ static int quic_frame_stop_sending_process(struct sock *sk, struct quic_frame *f
 	    !quic_get_var(&p, &len, &errcode))
 		return -EINVAL;
 
-	stream = quic_stream_send_get(streams, (s64)stream_id, 0, quic_is_serv(sk));
+	stream = quic_stream_get(streams, (s64)stream_id, 0, quic_is_serv(sk), true);
 	if (IS_ERR(stream)) {
 		/* rfc9000#section-19.5:
 		 *
@@ -1476,7 +1476,7 @@ static int quic_frame_max_stream_data_process(struct sock *sk, struct quic_frame
 	    !quic_get_var(&p, &len, &max_bytes))
 		return -EINVAL;
 
-	stream = quic_stream_send_get(streams, (s64)stream_id, 0, quic_is_serv(sk));
+	stream = quic_stream_get(streams, (s64)stream_id, 0, quic_is_serv(sk), true);
 	if (IS_ERR(stream)) {
 		/* rfc9000#section-19.10:
 		 *
@@ -1662,7 +1662,7 @@ static int quic_frame_stream_data_blocked_process(struct sock *sk, struct quic_f
 	    !quic_get_var(&p, &len, &max_bytes))
 		return -EINVAL;
 
-	stream = quic_stream_recv_get(streams, (s64)stream_id, quic_is_serv(sk));
+	stream = quic_stream_get(streams, (s64)stream_id, 0, quic_is_serv(sk), false);
 	if (IS_ERR(stream)) {
 		/* rfc9000#section-19.13:
 		 *
@@ -1924,7 +1924,7 @@ static void quic_frame_reset_stream_ack(struct sock *sk, struct quic_frame *fram
 	 * the stream enters the "Reset Recvd" state, which is a terminal state.
 	 */
 	stream->send.state = update.state;
-	quic_stream_send_put(streams, stream, quic_is_serv(sk)); /* Release the send stream. */
+	quic_stream_put(streams, stream, quic_is_serv(sk), true); /* Release the send stream. */
 	sk->sk_write_space(sk); /* Wake up processes blocked while attempting to open a stream. */
 }
 
@@ -1964,7 +1964,7 @@ static void quic_frame_stream_ack(struct sock *sk, struct quic_frame *frame)
 	 * stream enters the "Data Recvd" state, which is a terminal state.
 	 */
 	stream->send.state = update.state;
-	quic_stream_send_put(streams, stream, quic_is_serv(sk)); /* Release the send stream. */
+	quic_stream_put(streams, stream, quic_is_serv(sk), true); /* Release the send stream. */
 	sk->sk_write_space(sk); /* Wake up processes blocked while attempting to open a stream. */
 }
 
