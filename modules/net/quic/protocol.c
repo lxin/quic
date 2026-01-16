@@ -29,10 +29,11 @@ struct kmem_cache *quic_frame_cachep __read_mostly;
 struct percpu_counter quic_sockets_allocated;
 struct workqueue_struct *quic_wq;
 
+DEFINE_STATIC_KEY_FALSE(quic_alpn_demux_key);
+
 long sysctl_quic_mem[3];
 int sysctl_quic_rmem[3];
 int sysctl_quic_wmem[3];
-int sysctl_quic_alpn_demux;
 
 #ifdef TLS_MIN_RECORD_SIZE_LIM
 static int quic_inet_connect(struct socket *sock, struct sockaddr_unsized *addr, int addr_len,
@@ -191,15 +192,6 @@ static struct ctl_table quic_table[] = {
 		.maxlen		= sizeof(sysctl_quic_wmem),
 		.mode		= 0644,
 		.proc_handler	= proc_dointvec,
-	},
-	{
-		.procname	= "alpn_demux",
-		.data		= &sysctl_quic_alpn_demux,
-		.maxlen		= sizeof(sysctl_quic_alpn_demux),
-		.mode		= 0644,
-		.proc_handler	= proc_dointvec_minmax,
-		.extra1		= SYSCTL_ZERO,
-		.extra2		= SYSCTL_ONE,
 	},
 #ifndef register_sysctl
 	{ /* sentinel */ }

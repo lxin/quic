@@ -477,14 +477,16 @@ static int quic_test_do_sample_server(void)
 	err = kernel_bind(sock, (void *)&la, sizeof(la));
 	if (err < 0)
 		goto free;
-	err = quic_do_setsockopt(sock->sk, QUIC_SOCKOPT_ALPN, KERNEL_SOCKPTR(alpn), strlen(alpn));
-	if (err)
-		goto free;
 	err = kernel_listen(sock, 1);
 	if (err < 0)
 		goto free;
 	err = kernel_accept(sock, &newsock, 0);
 	if (err < 0)
+		goto free;
+
+	err = quic_do_setsockopt(newsock->sk, QUIC_SOCKOPT_ALPN, KERNEL_SOCKPTR(alpn),
+				 strlen(alpn));
+	if (err)
 		goto free;
 
 	priv.filp = sock_alloc_file(newsock, 0, NULL);
@@ -551,15 +553,16 @@ static int quic_test_do_ticket_server(void)
 	err = kernel_bind(sock, (void *)&la, sizeof(la));
 	if (err < 0)
 		goto free;
-	err = quic_do_setsockopt(sock->sk, QUIC_SOCKOPT_ALPN, KERNEL_SOCKPTR(alpn), strlen(alpn));
-	if (err)
-		goto free;
 	err = kernel_listen(sock, 1);
 	if (err < 0)
 		goto free;
-
 	err = kernel_accept(sock, &newsock, 0);
 	if (err < 0)
+		goto free;
+
+	err = quic_do_setsockopt(newsock->sk, QUIC_SOCKOPT_ALPN, KERNEL_SOCKPTR(alpn),
+				 strlen(alpn));
+	if (err)
 		goto free;
 
 	priv.filp = sock_alloc_file(newsock, 0, NULL);

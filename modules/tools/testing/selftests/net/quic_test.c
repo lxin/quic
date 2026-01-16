@@ -846,7 +846,6 @@ static int test_handshake(int *connectfd_p, int *acceptfd_p)
 	uint32_t flags;
 
 	printf("=> Handshake Tests\n");
-	system("[ -f /proc/sys/net/quic/alpn_demux ] && sysctl -q net.quic.alpn_demux=0");
 
 	if (create_socket_pair(&listenfd, &connectfd))
 		return -1;
@@ -942,7 +941,6 @@ static int test_handshake(int *connectfd_p, int *acceptfd_p)
 	close_sockets(connectfd, acceptfd);
 	printf("[] Handshake with Preferred Address\n");
 
-	system("sysctl -q net.quic.alpn_demux=1");
 	sockfd[0] = create_listen_socket("quic");
 	if (sockfd[0] < 0)
 		return -1;
@@ -970,7 +968,6 @@ static int test_handshake(int *connectfd_p, int *acceptfd_p)
 	if (send_abnormal_client_hello(connectfd))
 		return -1;
 	close_sockets(sockfd[0], sockfd[2]);
-	system("sysctl -q net.quic.alpn_demux=0");
 	printf("[] Handshake with ALPN demux (abnormal Client Hello)\n");
 
 	if (create_socket_pair(&listenfd, &connectfd))

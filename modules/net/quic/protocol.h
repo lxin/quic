@@ -12,10 +12,11 @@ extern struct quic_transport_param quic_default_param __read_mostly;
 extern struct kmem_cache *quic_frame_cachep __read_mostly;
 extern struct percpu_counter quic_sockets_allocated;
 
+DECLARE_STATIC_KEY_FALSE(quic_alpn_demux_key);
+
 extern long sysctl_quic_mem[3];
 extern int sysctl_quic_rmem[3];
 extern int sysctl_quic_wmem[3];
-extern int sysctl_quic_alpn_demux;
 
 enum {
 	QUIC_MIB_NUM = 0,
