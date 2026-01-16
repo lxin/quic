@@ -435,7 +435,7 @@ static int quic_bind(struct sock *sk, struct sockaddr *addr, int addr_len)
 #endif
 {
 	struct quic_path_group *paths = quic_paths(sk);
-	union quic_addr a;
+	union quic_addr *sa, a;
 	int err = -EINVAL;
 
 	lock_sock(sk);
@@ -444,13 +444,15 @@ static int quic_bind(struct sock *sk, struct sockaddr *addr, int addr_len)
 	    quic_get_addr_from_user(sk, &a, (struct sockaddr *)addr, addr_len))
 		goto out;
 
+	sa = quic_path_saddr(paths, 0);
+
 	quic_path_set_saddr(paths, 0, &a);
 	err = quic_path_bind(sk, paths, 0);
 	if (err) {
-		memset(quic_path_saddr(paths, 0), 0, sizeof(a));
+		memset(sa, 0, sizeof(*sa));
 		goto out;
 	}
-	quic_set_sk_addr(sk, &a, true);
+	quic_set_sk_addr(sk, sa, true);
 
 out:
 	release_sock(sk);
