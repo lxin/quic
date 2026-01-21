@@ -553,6 +553,10 @@ static int quic_hash(struct sock *sk)
 		return 0;
 	}
 
+	if (quic_alpn(sk)->data)
+		static_branch_inc(&quic_alpn_demux_key);
+	INIT_LIST_HEAD(quic_reqs(sk));
+
 	/* Hash a listen socket with source port only. */
 	head = quic_listen_sock_head(quic_listen_sock_hash(net, ntohs(sa->v4.sin_port)));
 	spin_lock_bh(&head->lock);
@@ -574,7 +578,6 @@ static int quic_hash(struct sock *sk)
 					if (!err) {
 						sock_set_flag(sk, SOCK_RCU_FREE);
 						__sk_nulls_add_node_rcu(sk, &head->head);
-						INIT_LIST_HEAD(quic_reqs(sk));
 					}
 				}
 				goto out;
@@ -594,11 +597,12 @@ static int quic_hash(struct sock *sk)
 	}
 	sock_set_flag(sk, SOCK_RCU_FREE);
 	__sk_nulls_add_node_rcu(sk, &head->head);
-	if (quic_alpn(sk)->data)
-		static_branch_inc(&quic_alpn_demux_key);
-	INIT_LIST_HEAD(quic_reqs(sk));
+
 out:
 	spin_unlock_bh(&head->lock);
+
+	if (err && quic_alpn(sk)->data)
+		static_branch_dec(&quic_alpn_demux_key);
 	return err;
 }
 
