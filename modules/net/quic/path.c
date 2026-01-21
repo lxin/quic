@@ -107,6 +107,9 @@ static bool quic_udp_sock_get(struct quic_udp_sock *us)
 
 static void quic_udp_sock_put(struct quic_udp_sock *us)
 {
+	/* The UDP socket may be freed in atomic RX context during connection migration;
+	 * defer the release to a workqueue.
+	 */
 	if (refcount_dec_and_test(&us->refcnt))
 		queue_work(quic_wq, &us->work);
 }
