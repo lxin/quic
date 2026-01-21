@@ -634,7 +634,6 @@ static __init int quic_init(void)
 	sysctl_quic_wmem[1] = 16 * 1024;
 	sysctl_quic_wmem[2] = max(64 * 1024, max_share);
 
-	quic_path_init(quic_packet_rcv);
 	quic_transport_param_init();
 	quic_crypto_init();
 
