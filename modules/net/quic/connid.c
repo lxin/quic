@@ -155,7 +155,9 @@ int quic_conn_id_add(struct quic_conn_id_set *id_set,
 	return 0;
 }
 
-/* Remove connection IDs from the set with sequence numbers less than or equal to a number. */
+/* Remove connection IDs from the set with sequence numbers less than or equal to a number.
+ * The number must be smaller than the sequence number of the last ID in the set.
+ */
 void quic_conn_id_remove(struct quic_conn_id_set *id_set, u32 number)
 {
 	struct quic_common_conn_id *common, *tmp;
