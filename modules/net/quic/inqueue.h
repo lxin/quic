@@ -28,9 +28,9 @@ struct quic_inqueue {
 	u64 max_bytes;			/* Maximum data allowed to be received */
 	u64 bytes;			/* Data already read by the application */
 
+	u8 sack_flag:2;			/* SACK timer handling flag; See QUIC_SACK_FLAG_* */
+
 	/* Transport Parameters (local) */
-	u16 max_datagram_frame_size;	/* Transport parameter in and rfc9000#section-18.2 */
-	u16 max_udp_payload_size;	/* Transport parameter in rfc9000#section-18.2 */
 	/* Transport parameter Version Information related in rfc9368#section-3 */
 	u8 disable_compatible_version:1;
 	/* Transport parameter in draft-banks-quic-disable-encryption#section-2.1 */
@@ -38,14 +38,14 @@ struct quic_inqueue {
 	u8 grease_quic_bit:1;		/* Transport parameter in rfc9287.html#section-3 */
 	u8 stateless_reset:1;		/* Transport parameter in rfc9000#section-18.2 */
 	u8 ack_delay_exponent;		/* Transport parameter in rfc9000#section-18.2 */
+	u16 max_datagram_frame_size;	/* Transport parameter in rfc9000#section-18.2 */
+	u16 max_udp_payload_size;	/* Transport parameter in rfc9000#section-18.2 */
 	u32 max_idle_timeout;		/* Transport parameter in rfc9000#section-18.2 */
 	u32 max_ack_delay;		/* Transport parameter in rfc9000#section-18.2 */
 	u64 max_data;			/* Transport parameter in rfc9000#section-18.2 */
 	u64 highest;			/* Highest received offset across all streams */
 	u32 timeout;			/* Idle timeout duration*/
 	u32 events;			/* Event bitmask for notifications */
-
-	u8 sack_flag:2;			/* SACK timer handling flag; See QUIC_SACK_FLAG_* */
 };
 
 int quic_inq_handshake_recv(struct sock *sk, struct quic_frame *frame);
