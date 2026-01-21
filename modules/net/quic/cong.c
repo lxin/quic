@@ -461,6 +461,9 @@ static void quic_reno_on_packet_acked(struct quic_cong *cong, u64 time, u32 byte
 		}
 		break;
 	case QUIC_CONG_CONGESTION_AVOIDANCE:
+		/* cong->window is never zero; it is initialized by quic_packet_route()
+		 * during connect/accept.
+		 */
 		cong->window += cong->mss * bytes / cong->window;
 		break;
 	default:
