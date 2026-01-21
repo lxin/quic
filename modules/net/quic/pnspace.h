@@ -63,8 +63,8 @@ struct quic_pnspace {
 	u64 ecn_count[QUIC_ECN_DIR_MAX][QUIC_ECN_MAX];
 	unsigned long *pn_map;	/* Bit map tracking received packet numbers for ACK generation */
 	u16 pn_map_len;		/* Length of the packet number bit map (in bits) */
-	u8  need_sack:1;	/* Flag indicating a SACK frame should be sent for this space */
-	u8  sack_path:1;	/* Path used for sending the SACK frame */
+	u8  need_sack;		/* Flag indicating a SACK frame should be sent for this space */
+	u8  sack_path;		/* Path used for sending the SACK frame */
 
 	s64 last_max_pn_seen;	/* Highest packet number seen before pn_map advanced */
 	u64 last_max_pn_time;	/* Timestamp when last_max_pn_seen was received */
