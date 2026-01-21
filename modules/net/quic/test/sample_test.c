@@ -604,6 +604,11 @@ static int quic_test_do_ticket_server(void)
 	if (err < 0)
 		goto free;
 
+	err = quic_do_setsockopt(newsock->sk, QUIC_SOCKOPT_ALPN, KERNEL_SOCKPTR(alpn),
+				 strlen(alpn));
+	if (err)
+		goto free;
+
 	priv.filp = sock_alloc_file(newsock, 0, NULL);
 	if (IS_ERR(priv.filp)) {
 		err = PTR_ERR(priv.filp);
