@@ -42,8 +42,8 @@ struct quic_stream {
 		u32 frags;		/* Number of sent STREAM frames not yet acknowledged */
 		u8 state;		/* Send stream state, per rfc9000#section-3.1 */
 
-		u8 data_blocked:1;	/* True if flow control blocks sending more data */
-		u8 done:1;		/* True if application indicated end of stream (FIN sent) */
+		u8 data_blocked;	/* True if flow control blocks sending more data */
+		u8 done;		/* True if application indicated end of stream (FIN sent) */
 	} send;
 	struct {
 		/* Receiving-side stream level flow control */
@@ -58,8 +58,8 @@ struct quic_stream {
 		u32 frags;		/* Number of received STREAM frames pending reassembly */
 		u8 state;		/* Receive stream state, per rfc9000#section-3.2 */
 
-		u8 stop_sent:1;		/* True if STOP_SENDING has been sent */
-		u8 done:1;		/* True if FIN received and final size validated */
+		u8 stop_sent;		/* True if STOP_SENDING has been sent */
+		u8 done;		/* True if FIN received and final size validated */
 	} recv;
 };
 
@@ -77,10 +77,10 @@ struct quic_stream_limits {
 	s64 max_uni_stream_id;		/* Highest allowed uni stream ID */
 	s64 active_stream_id;		/* Most recently opened stream ID */
 
-	u8 bidi_blocked:1;	/* STREAMS_BLOCKED_BIDI sent, awaiting ACK */
-	u8 uni_blocked:1;	/* STREAMS_BLOCKED_UNI sent, awaiting ACK */
-	u8 bidi_pending:1;	/* MAX_STREAMS_BIDI needs to be sent */
-	u8 uni_pending:1;	/* MAX_STREAMS_UNI needs to be sent */
+	u8 bidi_blocked;	/* STREAMS_BLOCKED_BIDI sent, awaiting ACK */
+	u8 uni_blocked;		/* STREAMS_BLOCKED_UNI sent, awaiting ACK */
+	u8 bidi_pending;	/* MAX_STREAMS_BIDI needs to be sent */
+	u8 uni_pending;		/* MAX_STREAMS_UNI needs to be sent */
 
 	u16 streams_bidi;	/* Number of open bidi streams */
 	u16 streams_uni;	/* Number of open uni streams */
