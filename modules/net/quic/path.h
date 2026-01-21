@@ -90,17 +90,17 @@ struct quic_path_group {
 		u8 state;	/* Probe state machine (rfc8899#section-5.2) */
 	} pl;
 
+	u8 ecn_probes;		/* ECN probe counter */
+	u8 validated:1;		/* Path validated with PATH_RESPONSE */
+	u8 blocked:1;		/* Blocked by anti-amplification limit */
+	u8 retry:1;		/* Retry used in initial packet */
+
 	/* Connection Migration (rfc9000#section-9) */
 	u8 disable_saddr_alt:1;	/* Remote disable_active_migration (rfc9000#section-18.2) */
 	u8 disable_daddr_alt:1;	/* Local disable_active_migration (rfc9000#section-18.2) */
 	u8 pref_addr:1;		/* Preferred address offered (rfc9000#section-18.2) */
 	u8 alt_probes;		/* Number of PATH_CHALLENGE probes sent */
 	u8 alt_state;		/* State for alternate path migration logic (see above) */
-
-	u8 ecn_probes;		/* ECN probe counter */
-	u8 validated:1;		/* Path validated with PATH_RESPONSE */
-	u8 blocked:1;		/* Blocked by anti-amplification limit */
-	u8 retry:1;		/* Retry used in initial packet */
 };
 
 static inline union quic_addr *quic_path_saddr(struct quic_path_group *paths, u8 path)
