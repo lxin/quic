@@ -367,11 +367,16 @@ static int quic_crypto_get_number(struct sk_buff *skb)
 static int quic_crypto_header_decrypt(struct crypto_skcipher *tfm, struct sk_buff *skb, bool chacha)
 {
 	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
-	struct quichdr *hdr = quic_hdr(skb);
 	struct skcipher_request *req;
+	struct sk_buff *trailer;
 	struct scatterlist sg;
+	struct quichdr *hdr;
 	u8 *mask, *iv, *p;
 	int err, i;
+
+	err = skb_cow_data(skb, 0, &trailer);
+	if (err < 0)
+		return err;
 
 	mask = quic_crypto_skcipher_mem_alloc(tfm, QUIC_SAMPLE_LEN, &iv, &req);
 	if (!mask)
@@ -383,6 +388,7 @@ static int quic_crypto_header_decrypt(struct crypto_skcipher *tfm, struct sk_buf
 	}
 
 	/* Similar logic to quic_crypto_header_encrypt(). */
+	hdr = quic_hdr(skb);
 	p = (u8 *)hdr + cb->number_offset;
 	memcpy((chacha ? iv : mask), p + QUIC_PN_MAX_LEN, QUIC_SAMPLE_LEN);
 	sg_init_one(&sg, mask, QUIC_SAMPLE_LEN);
@@ -456,11 +462,11 @@ static int quic_crypto_payload_encrypt(struct crypto_aead *tfm, struct sk_buff *
 				       u8 *tx_iv, bool ccm)
 {
 	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
-	struct quichdr *hdr = quic_hdr(skb);
 	u8 *iv, i, nonce[QUIC_IV_LEN];
 	struct aead_request *req;
 	struct sk_buff *trailer;
 	struct scatterlist *sg;
+	struct quichdr *hdr;
 	u32 nsg, hlen, len;
 	void *ctx;
 	__be64 n;
@@ -472,6 +478,7 @@ static int quic_crypto_payload_encrypt(struct crypto_aead *tfm, struct sk_buff *
 		return err;
 	nsg = (u32)err;
 	pskb_put(skb, trailer, QUIC_TAG_LEN);
+	hdr = quic_hdr(skb);
 	hdr->key = cb->key_phase;
 
 	ctx = quic_crypto_aead_mem_alloc(tfm, 0, &iv, &req, &sg, nsg);
@@ -527,7 +534,6 @@ static int quic_crypto_payload_decrypt(struct crypto_aead *tfm, struct sk_buff *
 	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
 	u8 *iv, i, nonce[QUIC_IV_LEN];
 	struct aead_request *req;
-	struct sk_buff *trailer;
 	int nsg, hlen, len, err;
 	struct scatterlist *sg;
 	void *ctx;
@@ -537,9 +543,7 @@ static int quic_crypto_payload_decrypt(struct crypto_aead *tfm, struct sk_buff *
 	hlen = cb->number_offset + cb->number_len;
 	if (len - hlen < QUIC_TAG_LEN)
 		return -EINVAL;
-	nsg = skb_cow_data(skb, 0, &trailer);
-	if (nsg < 0)
-		return nsg;
+	nsg = 1; /* skb is already linearized in quic_packet_rcv(). */
 	ctx = quic_crypto_aead_mem_alloc(tfm, 0, &iv, &req, &sg, nsg);
 	if (!ctx)
 		return -ENOMEM;
