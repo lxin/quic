@@ -462,7 +462,7 @@ static int quic_packet_parse_alpn(struct sk_buff *skb, struct quic_data *alpn)
 	cb->resume = 1; /* Mark this packet as already decrypted. */
 
 	/* Find the QUIC CRYPTO frame. */
-	p += cb->number_len;
+	p = skb->data + cb->number_offset + cb->number_len;
 	len = cb->length - cb->number_len - QUIC_TAG_LEN;
 	for (; len && !(*p); p++, len--) /* Skip the padding frame. */
 		;
