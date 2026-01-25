@@ -412,10 +412,10 @@ static int quic_packet_parse_alpn(struct sk_buff *skb, struct quic_data *alpn)
 {
 	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
 	struct net *net = sock_net(skb->sk);
-	u8 *p = skb->data, *data, type;
 	struct quic_conn_id dcid, scid;
 	u32 len = skb->len, version;
 	struct quic_crypto *crypto;
+	u8 *p = skb->data, type;
 	struct quic_data token;
 	u64 offset, length;
 	int err = -EINVAL;
@@ -436,26 +436,20 @@ static int quic_packet_parse_alpn(struct sk_buff *skb, struct quic_data *alpn)
 		return err;
 	if (!cb->backlog) { /* skb_get() needed as caller will free skb on this path. */
 		quic_packet_backlog_schedule(net, skb_get(skb));
-		return err;
+		return -EINPROGRESS;
 	}
 	cb->length = (u16)length;
-	/* Copy skb data for restoring in case of decrypt failure. */
-	data = kmemdup(skb->data, skb->len, GFP_ATOMIC);
-	if (!data)
-		return -ENOMEM;
 
 	/* Install initial keys for packet decryption to crypto. */
 	crypto = &quic_net(net)->crypto;
 	err = quic_crypto_initial_keys_install(crypto, &dcid, version, 1);
 	if (err)
-		goto out;
+		return err;
 	cb->number_offset = (u16)(p - skb->data);
 	err = quic_crypto_decrypt(crypto, skb);
 	if (err) {
 		QUIC_INC_STATS(net, QUIC_MIB_PKT_DECDROP);
-		/* Restore original data on decrypt failure. */
-		memcpy(skb->data, data, skb->len);
-		goto out;
+		return err;
 	}
 
 	QUIC_INC_STATS(net, QUIC_MIB_PKT_DECFASTPATHS);
@@ -467,18 +461,14 @@ static int quic_packet_parse_alpn(struct sk_buff *skb, struct quic_data *alpn)
 	for (; len && !(*p); p++, len--) /* Skip the padding frame. */
 		;
 	if (!len-- || *p++ != QUIC_FRAME_CRYPTO)
-		goto out;
+		return 0;
 	if (!quic_get_var(&p, &len, &offset) || offset)
-		goto out;
+		return 0;
 	if (!quic_get_var(&p, &len, &length) || length > (u64)len)
-		goto out;
+		return 0;
 
 	/* Parse the TLS CLIENT_HELLO message. */
-	err = quic_packet_get_alpn(alpn, p, length);
-
-out:
-	kfree(data);
-	return err;
+	return quic_packet_get_alpn(alpn, p, length);
 }
 
 /* Extract the Destination Connection ID (DCID) from a QUIC Long header packet. */
