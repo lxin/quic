@@ -2284,8 +2284,8 @@ int quic_packet_config(struct sock *sk, u8 level, u8 path)
 			hlen += quic_var_len(quic_token(sk)->len) + quic_token(sk)->len;
 		hlen += QUIC_VERSION_LEN; /* Version length. */
 		hlen += QUIC_PACKET_LENGTH_LEN; /* Packet length field length. */
-		/* Allow fragmentation if PLPMTUD is enabled, as it no longer relies on ICMP
-		 * Toobig messages to discover the path MTU.
+		/* Allow fragmentation for handshake packets before PLPMTUD probing starts.
+		 * MTU discovery does not rely on ICMP Packet Too Big once PLPMTUD is enabled.
 		 */
 		packet->ipfragok = !!c->plpmtud_probe_interval;
 	}
