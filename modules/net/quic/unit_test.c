@@ -17,11 +17,11 @@
 #include <net/sock.h>
 #include <net/tls.h>
 
-#include "../common.h"
-#include "../pnspace.h"
-#include "../connid.h"
-#include "../crypto.h"
-#include "../cong.h"
+#include "common.h"
+#include "pnspace.h"
+#include "connid.h"
+#include "crypto.h"
+#include "cong.h"
 
 static void quic_pnspace_test1(struct kunit *test)
 {

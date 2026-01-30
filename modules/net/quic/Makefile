@@ -13,10 +13,10 @@ quic-y := common.o family.o protocol.o socket.o stream.o connid.o path.o \
 
 ifdef CONFIG_KUNIT
 	obj-$(CONFIG_IP_QUIC_TEST) += quic_unit_test.o
-	quic_unit_test-y := test/unit_test.o
+	quic_unit_test-y := unit_test.o
 endif
 
 ifdef CONFIG_NET_HANDSHAKE
 	obj-$(CONFIG_IP_QUIC_TEST) += quic_sample_test.o
-	quic_sample_test-y := test/sample_test.o
+	quic_sample_test-y := sample_test.o
 endif
