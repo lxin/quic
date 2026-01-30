@@ -29,7 +29,7 @@ static int quic_udp_rcv(struct sock *sk, struct sk_buff *skb)
 	skb_pull(skb, sizeof(struct udphdr));
 	skb_dst_force(skb);
 	quic_packet_rcv(sk, skb, 0);
-	return 0;
+	return 0; /* .encap_rcv must return 0 if skb was either consumed or dropped. */
 }
 
 static int quic_udp_err(struct sock *sk, struct sk_buff *skb)
