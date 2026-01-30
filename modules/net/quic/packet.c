@@ -495,18 +495,13 @@ static struct sock *quic_packet_get_listen_sock(struct sk_buff *skb)
 {
 	union quic_addr daddr, saddr;
 	struct quic_data alpns = {};
-	struct sock *sk;
 
 	quic_get_msg_addrs(skb, &daddr, &saddr);
 
 	if (quic_packet_parse_alpn(skb, &alpns))
 		return NULL;
 
-	local_bh_disable();
-	sk = quic_listen_sock_lookup(skb, &daddr, &saddr, &alpns);
-	local_bh_enable();
-
-	return sk;
+	return quic_listen_sock_lookup(skb, &daddr, &saddr, &alpns);
 }
 
 /* Determine the QUIC socket associated with an incoming packet. */
