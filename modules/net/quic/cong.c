@@ -270,7 +270,7 @@ static int quic_cong_check_persistent_congestion(struct quic_cong *cong, u64 tim
 	if (cong->time - time <= ssthresh)
 		return 0;
 
-	pr_debug("%s: permanent congestion, cwnd: %u, ssthresh: %u\n",
+	pr_debug("%s: persistent congestion, cwnd: %u, ssthresh: %u\n",
 		 __func__, cong->window, cong->ssthresh);
 	cong->min_rtt_valid = 0;
 	cong->window = cong->min_window;

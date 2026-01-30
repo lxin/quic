@@ -48,7 +48,7 @@ struct quic_stream {
 	struct {
 		/* Receiving-side stream level flow control */
 		u64 max_bytes;		/* Maximum offset peer is allowed to send to */
-		u64 window;		/* Remaining receive window before advertise a new limit */
+		u64 window;		/* Remaining receive window before advertising new limit */
 		u64 bytes;		/* Bytes consumed by application from the stream */
 
 		u64 highest;		/* Highest received offset */

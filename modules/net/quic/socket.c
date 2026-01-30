@@ -1168,7 +1168,7 @@ static int quic_recvmsg(struct sock *sk, struct msghdr *msg, size_t msg_len, int
 		if (copy) { /* Copy data from frame to user message iterator. */
 			copy = copy_to_iter(frame->data + frame->offset, copy, &msg->msg_iter);
 			if (!copy) {
-				if (!copied) { /* Return error only if nothing was coplied. */
+				if (!copied) { /* Return error only if nothing was copied. */
 					err = -EFAULT;
 					goto out;
 				}
