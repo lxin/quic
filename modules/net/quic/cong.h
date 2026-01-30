@@ -56,7 +56,7 @@ struct quic_cong {
 	u64 recovery_time;	/* Recovery period start timestamp */
 	u64 pacing_rate;	/* Packet sending speed Bytes/sec */
 	u64 pacing_time;	/* Next scheduled send timestamp (ns) */
-	u64 time;		/* Cachedached current timestamp */
+	u64 time;		/* Cached current timestamp */
 
 	/* Congestion window */
 	u32 max_window;		/* Max growth cap */
