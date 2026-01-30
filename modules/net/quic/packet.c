@@ -2364,18 +2364,13 @@ static int quic_packet_bundle(struct sock *sk, struct sk_buff *skb)
 	struct quic_packet *packet = quic_packet(sk);
 	struct sk_buff *p;
 
-	if (!packet->head) { /* First packet to bundle: initialize the head. */
-		packet->head = skb;
-		cb->last = skb;
-		goto out;
-	}
+	if (!packet->head) /* First packet to bundle: initialize the head. */
+		goto init;
 
 	/* If bundling would exceed MSS, flush the current bundle. */
 	if (packet->head->len + skb->len >= packet->mss[0]) {
 		quic_packet_flush(sk);
-		packet->head = skb;
-		cb->last = skb;
-		goto out;
+		goto init;
 	}
 	/* Bundle it and update metadata for the aggregate skb. */
 	p = packet->head;
@@ -2398,6 +2393,10 @@ out:
 	 * so Return 1 to flush if it is a Short header packet.
 	 */
 	return !cb->level;
+init:
+	packet->head = skb;
+	cb->last = skb;
+	goto out;
 }
 
 /* Transmit a QUIC packet, possibly encrypting and bundling it. */
