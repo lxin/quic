@@ -2292,6 +2292,7 @@ int quic_packet_config(struct sock *sk, u8 level, u8 path)
 	packet->level = level;
 	packet->len = (u16)hlen;
 	packet->overhead = (u8)hlen;
+	DEBUG_NET_WARN_ON_ONCE(hlen > 255);
 
 	if (packet->path != path) { /* If the path changed, update and reset routing cache. */
 		packet->path = path;
