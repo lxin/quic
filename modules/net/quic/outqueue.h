@@ -56,7 +56,6 @@ struct quic_outqueue {
 	u8  close_frame;	/* Frame type to use in CONNECTION_CLOSE */
 	u32 close_errcode;	/* Application or transport close error code */
 	u8  *close_phrase;	/* Optional phrase to send in CONNECTION_CLOSE frame */
-
 };
 
 void quic_outq_stream_tail(struct sock *sk, struct quic_frame *frame, bool cork);
