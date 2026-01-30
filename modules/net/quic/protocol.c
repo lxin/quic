@@ -616,6 +616,8 @@ static __init int quic_init(void)
 	int max_share, err = -ENOMEM;
 	unsigned long limit;
 
+	BUILD_BUG_ON(sizeof(struct quic_skb_cb) > sizeof_field(struct sk_buff, cb));
+
 	/* Set QUIC memory limits based on available system memory, similar to sctp_init(). */
 	limit = nr_free_buffer_pages() / 8;
 	limit = max(limit, 128UL);
