@@ -17,6 +17,34 @@
 #include "common.h"
 #include "family.h"
 
+static u32 quic_v4_encap_len(struct sock *sk)
+{
+	u32 len = sizeof(struct iphdr) + sizeof(struct udphdr);
+	struct ip_options_rcu *opt;
+
+	rcu_read_lock();
+	opt = rcu_dereference(inet_sk(sk)->inet_opt);
+	if (opt)
+		len += opt->opt.optlen;
+
+	rcu_read_unlock();
+	return len;
+}
+
+static u32 quic_v6_encap_len(struct sock *sk)
+{
+	u32 len = sizeof(struct ipv6hdr) + sizeof(struct udphdr);
+	struct ipv6_txoptions *opt;
+
+	rcu_read_lock();
+	opt = rcu_dereference(inet6_sk(sk)->opt);
+	if (opt)
+		len = opt->opt_flen + opt->opt_nflen;
+
+	rcu_read_unlock();
+	return len;
+}
+
 static int quic_v4_is_any_addr(union quic_addr *addr)
 {
 	return addr->v4.sin_addr.s_addr == htonl(INADDR_ANY);
@@ -494,10 +522,9 @@ static void quic_v6_set_sk_ecn(struct sock *sk, u8 ecn)
 
 #define quic_af_ipv4(a)		((a)->sa.sa_family == AF_INET)
 
-u32 quic_encap_len(union quic_addr *a)
+u32 quic_encap_len(struct sock *sk, union quic_addr *a)
 {
-	return (quic_af_ipv4(a) ? sizeof(struct iphdr) : sizeof(struct ipv6hdr)) +
-	       sizeof(struct udphdr);
+	return quic_af_ipv4(a) ? quic_v4_encap_len(sk) : quic_v6_encap_len(sk);
 }
 
 int quic_is_any_addr(union quic_addr *a)
