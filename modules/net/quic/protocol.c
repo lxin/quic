@@ -583,8 +583,8 @@ static void __net_exit quic_net_exit(struct net *net)
 #if IS_ENABLED(CONFIG_PROC_FS)
 	quic_net_proc_exit(net);
 #endif
-	skb_queue_purge(&qn->backlog_list);
 	cancel_work_sync(&qn->work);
+	skb_queue_purge(&qn->backlog_list);
 	quic_crypto_free(&qn->crypto);
 	free_percpu(qn->stat);
 	qn->stat = NULL;
