@@ -259,7 +259,7 @@ void quic_stream_put(struct quic_stream_table *streams, struct quic_stream *stre
 			streams->recv.uni_pending = 1;
 		}
 		/* Delete stream if fully read or reset. */
-		if (stream->recv.state != QUIC_STREAM_RECV_STATE_RECVD)
+		if (stream->recv.state > QUIC_STREAM_RECV_STATE_RECVD)
 			quic_stream_delete(stream);
 		return;
 	}
@@ -293,7 +293,7 @@ void quic_stream_put(struct quic_stream_table *streams, struct quic_stream *stre
 	}
 
 	/* Delete stream if fully read or reset. */
-	if (stream->recv.state != QUIC_STREAM_RECV_STATE_RECVD)
+	if (stream->recv.state > QUIC_STREAM_RECV_STATE_RECVD)
 		quic_stream_delete(stream);
 }
 
