@@ -2530,8 +2530,8 @@ void quic_packet_init(struct sock *sk)
 	INIT_LIST_HEAD(&packet->frame_list);
 	packet->taglen[0] = QUIC_TAG_LEN;
 	packet->taglen[1] = QUIC_TAG_LEN;
-	packet->mss[0] = QUIC_TAG_LEN;
-	packet->mss[1] = QUIC_TAG_LEN;
+	packet->mss[0] = QUIC_MIN_UDP_PAYLOAD;
+	packet->mss[1] = QUIC_MIN_UDP_PAYLOAD;
 
 	packet->version = QUIC_VERSION_V1;
 }
