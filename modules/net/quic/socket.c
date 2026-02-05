@@ -1858,8 +1858,6 @@ static int quic_sock_set_config(struct sock *sk, struct quic_config *c, u32 len)
 	return quic_sock_apply_config(sk, c);
 }
 
-#define QUIC_ALPN_MAX_LEN	128
-
 static int quic_sock_set_alpn(struct sock *sk, u8 *data, u32 len)
 {
 	struct quic_data *alpns = quic_alpn(sk);

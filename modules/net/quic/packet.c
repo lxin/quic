@@ -320,6 +320,7 @@ static int quic_packet_backlog_schedule(struct net *net, struct sk_buff *skb)
 
 #define TLS_CH_RANDOM_LEN	32
 #define TLS_CH_VERSION_LEN	2
+#define TLS_MAX_EXTENSIONS	128
 
 /* Extract ALPN data from a TLS ClientHello message.
  *
@@ -332,7 +333,7 @@ static int quic_packet_backlog_schedule(struct net *net, struct sk_buff *skb)
  */
 static int quic_packet_get_alpn(struct quic_data *alpn, u8 *p, u32 len)
 {
-	int err = -EINVAL, found = 0;
+	int err = -EINVAL, found = 0, exts = 0;
 	u64 length, type;
 
 	/* Verify handshake message type (ClientHello) and its length. */
@@ -374,6 +375,8 @@ static int quic_packet_get_alpn(struct quic_data *alpn, u8 *p, u32 len)
 		if (len < (u32)length) /* Incomplete TLS extensions. */
 			return 0;
 		if (type == TLS_EXT_alpn) { /* Found ALPN extension. */
+			if (length > QUIC_ALPN_MAX_LEN)
+				return err;
 			len = length;
 			found = 1;
 			break;
@@ -381,6 +384,8 @@ static int quic_packet_get_alpn(struct quic_data *alpn, u8 *p, u32 len)
 		/* Skip non-ALPN extensions. */
 		p += length;
 		len -= length;
+		if (exts++ >= TLS_MAX_EXTENSIONS)
+			return err;
 	}
 	if (!found) { /* no ALPN extension found: set alpn->len = 0 and alpn->data = p. */
 		quic_data(alpn, p, 0);

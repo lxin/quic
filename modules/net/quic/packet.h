@@ -70,6 +70,8 @@ struct quic_packet_sent {
 
 #define QUIC_VERSION_LEN		4
 
+#define QUIC_ALPN_MAX_LEN		128
+
 static inline u8 quic_packet_taglen(struct quic_packet *packet)
 {
 	return packet->taglen[!!packet->level];
