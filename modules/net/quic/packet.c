@@ -234,7 +234,9 @@ static int quic_packet_rcv_err(struct sock *sk, struct sk_buff *skb)
 	union quic_addr daddr, saddr;
 	u32 info;
 
-	/* All we can do is lookup the matching QUIC socket by addresses. */
+	/* ICMP embeds the original outgoing QUIC packet, so saddr/daddr are reversed when
+	 * parsed. Only address-based socket lookup is possible in this case.
+	 */
 	quic_get_msg_addrs(skb, &saddr, &daddr);
 	sk = quic_sock_lookup(skb, &daddr, &saddr, sk, NULL);
 	if (!sk)
