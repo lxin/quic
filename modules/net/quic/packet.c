@@ -1547,7 +1547,7 @@ static int quic_packet_app_process_done(struct sock *sk, struct sk_buff *skb)
 	struct quic_packet *packet = quic_packet(sk);
 	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
 	struct quic_inqueue *inq = quic_inq(sk);
-	s64 max_bidi = 0, max_uni = 0;
+	s64 max_bidi, max_uni;
 	u8 frame;
 
 	/* rfc9000#section-13.4.1:

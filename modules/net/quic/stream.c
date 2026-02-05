@@ -306,6 +306,8 @@ void quic_stream_put(struct quic_stream_table *streams, struct quic_stream *stre
  */
 bool quic_stream_max_streams_update(struct quic_stream_table *streams, s64 *max_uni, s64 *max_bidi)
 {
+	*max_uni = 0;
+	*max_bidi = 0;
 	if (streams->recv.uni_pending) {
 		streams->recv.max_uni_stream_id =
 			streams->recv.next_uni_stream_id - QUIC_STREAM_ID_STEP +
