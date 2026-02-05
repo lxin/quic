@@ -66,6 +66,8 @@ struct quic_packet_sent {
 #define QUIC_PACKET_HANDSHAKE		QUIC_PACKET_HANDSHAKE_V1
 #define QUIC_PACKET_RETRY		QUIC_PACKET_RETRY_V1
 
+#define QUIC_PACKET_INVALID		0xff
+
 #define QUIC_VERSION_LEN		4
 
 static inline u8 quic_packet_taglen(struct quic_packet *packet)

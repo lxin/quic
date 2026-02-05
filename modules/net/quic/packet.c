@@ -55,9 +55,8 @@ static u8 quic_packet_version_get_type(u32 version, u8 type)
 	case QUIC_PACKET_RETRY_V2:
 		return QUIC_PACKET_RETRY;
 	default:
-		return -1;
+		return QUIC_PACKET_INVALID;
 	}
-	return -1;
 }
 
 /* Convert internal standard packet type to version-specific type. */
