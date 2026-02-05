@@ -47,7 +47,7 @@ enum quic_msg_flags {
 	MSG_QUIC_STREAM_DONTWAIT	= MSG_WAITFORONE,
 	MSG_QUIC_STREAM_SNDBLOCK	= MSG_ERRQUEUE,
 
-	/* extented flags for msg_flags */
+	/* extended flags for msg_flags */
 	MSG_QUIC_DATAGRAM		= MSG_RST,
 	MSG_QUIC_NOTIFICATION		= MSG_MORE,
 };
