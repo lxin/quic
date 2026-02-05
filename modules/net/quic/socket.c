@@ -392,9 +392,6 @@ static int quic_init_sock(struct sock *sk)
 			return -ENOMEM;
 	}
 
-	WRITE_ONCE(sk->sk_sndbuf, READ_ONCE(sysctl_quic_wmem[1]));
-	WRITE_ONCE(sk->sk_rcvbuf, READ_ONCE(sysctl_quic_rmem[1]));
-
 	return 0;
 }
 
