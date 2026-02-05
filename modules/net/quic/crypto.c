@@ -877,7 +877,7 @@ int quic_crypto_key_update(struct quic_crypto *crypto)
 	 * a label of "quic ku". The corresponding key and IV are created from that
 	 * secret. The header protection key is not updated.
 	 *
-	 * For example,to update write keys with TLS 1.3, HKDF-Expand-Label is used as:
+	 * For example, to update write keys with TLS 1.3, HKDF-Expand-Label is used as:
 	 *   secret_<n+1> = HKDF-Expand-Label(secret_<n>, "quic ku",
 	 *                                    "", Hash.length)
 	 */
