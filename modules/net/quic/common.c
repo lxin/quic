@@ -389,7 +389,7 @@ u8 quic_get_param(u64 *pdest, u8 **pp, u32 *plen)
 	if (*plen < valuelen)
 		return 0;
 
-	if (!quic_get_var(pp, plen, pdest))
+	if (quic_get_var(pp, plen, pdest) != valuelen)
 		return 0;
 
 	return (u8)valuelen;
