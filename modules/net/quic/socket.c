@@ -77,8 +77,11 @@ int quic_request_sock_backlog_tail(struct sock *sk, struct quic_request_sock *re
 				   struct sk_buff *skb)
 {
 	/* Use listen sock sk_rcvbuf to limit the request sock's backlog len. */
-	if (req->blen + skb->len > sk->sk_rcvbuf)
-		return -ENOMEM;
+	if (req->blen + skb->len > sk->sk_rcvbuf) {
+		QUIC_INC_STATS(sock_net(sk), QUIC_MIB_PKT_RCVDROP);
+		kfree_skb(skb);
+		return -ENOBUFS;
+	}
 
 	__skb_queue_tail(&req->backlog_list, skb);
 	req->blen += skb->len;
