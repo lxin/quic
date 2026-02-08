@@ -574,6 +574,9 @@ void quic_outq_transmit_close(struct sock *sk, u8 type, u32 errcode, u8 level)
 	if (!errcode)
 		return;
 
+	/* Note: phrase[0] lies in the 3-byte padding after 'frame' and is zero-initialized
+	 * by '{}', indicating no phrase is set.
+	 */
 	close.errcode = errcode;
 	close.frame = type;
 	quic_inq_event_recv(sk, QUIC_EVENT_CONNECTION_CLOSE, &close);
