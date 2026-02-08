@@ -2408,7 +2408,7 @@ static u8 *quic_frame_put_address(u8 *p, u16 id, union quic_addr *addr,
 }
 
 #define USEC_TO_MSEC(usec)	DIV_ROUND_UP((usec), 1000)
-#define MSEC_TO_USEC(msec)	((msec) * 1000)
+#define MSEC_TO_USEC(msec)	((msec) > U32_MAX / 1000 ? U32_MAX : (msec) * 1000)
 
 /* Construct the full encoded transport parameters extension for a QUIC connection. */
 int quic_frame_build_transport_params_ext(struct sock *sk, struct quic_transport_param *params,
