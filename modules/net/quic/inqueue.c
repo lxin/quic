@@ -63,7 +63,7 @@ void quic_inq_flow_control(struct sock *sk, struct quic_stream *stream, u32 byte
 		/* Reduce window increment if memory pressure detected. */
 		if (sk_under_memory_pressure(sk))
 			window >>= 1;
-		/* Increase advertised max data to received data + window. */
+		/* Increase advertised max data to already read data + window. */
 		inq->max_bytes = inq->bytes + window;
 		if (!quic_outq_transmit_frame(sk, QUIC_FRAME_MAX_DATA, inq, 0, true))
 			frame = 1;
