@@ -1207,7 +1207,7 @@ static int quic_recvmsg(struct sock *sk, struct msghdr *msg, size_t msg_len, int
 		freed += frame->len;
 		list_del(&frame->list);
 		quic_frame_put(frame);
-		if (fin) {
+		if (fin) { /* fin implies a valid stream pointer. */
 			/* rfc9000#section-3.2:
 			 *
 			 * Once stream data has been delivered, the stream enters the "Data Read"
