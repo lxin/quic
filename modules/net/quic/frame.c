@@ -1046,7 +1046,7 @@ static int quic_frame_ack_process(struct sock *sk, struct quic_frame *frame, u8 
 	if (!quic_get_var(&p, &len, &largest) ||
 	    !quic_get_var(&p, &len, &delay) ||
 	    !quic_get_var(&p, &len, &count) || count > QUIC_PN_MAP_MAX_GABS ||
-	    !quic_get_var(&p, &len, &range))
+	    !quic_get_var(&p, &len, &range) || range > largest)
 		return -EINVAL;
 
 	space = quic_pnspace(sk, level);
@@ -1068,8 +1068,8 @@ static int quic_frame_ack_process(struct sock *sk, struct quic_frame *frame, u8 
 	quic_outq_transmitted_sack(sk, level, (s64)largest, (s64)smallest, (s64)largest, delay);
 
 	for (i = 0; i < count; i++) {
-		if (!quic_get_var(&p, &len, &gap) ||
-		    !quic_get_var(&p, &len, &range))
+		if (!quic_get_var(&p, &len, &gap) || gap + 2 > smallest ||
+		    !quic_get_var(&p, &len, &range) || range > smallest - gap - 2)
 			return -EINVAL;
 		/* rfc9000#section-19.3.1:
 		 *
