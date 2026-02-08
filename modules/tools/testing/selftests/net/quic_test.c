@@ -282,7 +282,7 @@ static int getopt_pass(int sockfd, int name, void *val, socklen_t *len)
 static int getopt_fail(int sockfd, int name, void *val, socklen_t *len)
 {
 	if (getsockopt(sockfd, SOL_QUIC, name, val, len) != -1) {
-		printf("%s: success optname=%d\n", __func__, errno);
+		printf("%s: success optname=%d\n", __func__, name);
 		return -1;
 	}
 	return 0;
@@ -630,6 +630,8 @@ static int recv_fake_handshake(int sockfd, uint8_t level, uint8_t serv)
 	len = ret;
 	if ((serv && level == QUIC_CRYPTO_INITIAL)) {
 		ext = &msg[sizeof(fake_client_hello)];
+		if (len < sizeof(fake_client_hello))
+			return -1;
 		len -= sizeof(fake_client_hello);
 		if (setopt_pass(sockfd, QUIC_SOCKOPT_TRANSPORT_PARAM_EXT, ext, len))
 			return -1;
@@ -638,6 +640,8 @@ static int recv_fake_handshake(int sockfd, uint8_t level, uint8_t serv)
 	}
 	if ((!serv && level == QUIC_CRYPTO_HANDSHAKE)) {
 		ext = &msg[sizeof(fake_encrypted_extensions)];
+		if (len < sizeof(fake_encrypted_extensions))
+			return -1;
 		len -= sizeof(fake_encrypted_extensions);
 		if (setopt_pass(sockfd, QUIC_SOCKOPT_TRANSPORT_PARAM_EXT, ext, len))
 			return -1;
@@ -831,8 +835,8 @@ static void change_fake_keys_type(uint32_t type)
 	int i;
 
 	for (i = 0; i < 3; i++) {
-		fake_keys[0][0].type = type;
-		fake_keys[0][1].type = type;
+		fake_keys[i][0].type = type;
+		fake_keys[i][1].type = type;
 	}
 }
 
@@ -1160,7 +1164,7 @@ static int test_stream(int connectfd, int acceptfd)
 	printf("[] Send after max_streams_bidi increased\n");
 
 	/* 2 6 10 14 402 (uni_closed=5) */
-	sid = 422; /* 2 + max_streams (100) * 4 +  uni_closed(4) * 5 */
+	sid = 422; /* 2 + max_streams (100) * 4 +  uni_closed(5) * 4 */
 	flags = MSG_QUIC_STREAM_NEW | MSG_QUIC_STREAM_FIN | MSG_QUIC_STREAM_DONTWAIT;
 	if (send_fail(connectfd, msg, sizeof(msg), sid, flags))
 		return -1;
@@ -1222,7 +1226,7 @@ static int test_stream(int connectfd, int acceptfd)
 	printf("[] Send after max_streams_bidi extended via STREAM_OPEN\n");
 
 	/* 2 6 10 14 402 406 410 422 (uni_closed=8) */
-	info.stream_id = 434; /* 2 + max_streams (100) * 4 +  bidi_closed (8) * 4 */
+	info.stream_id = 434; /* 2 + max_streams (100) * 4 +  uni_closed (8) * 4 */
 	info.stream_flags = MSG_QUIC_STREAM_DONTWAIT;
 	optlen = sizeof(info);
 	if (getopt_fail(connectfd, QUIC_SOCKOPT_STREAM_OPEN, &info, &optlen))
@@ -2101,7 +2105,7 @@ static int put_accept_fd(int fd, int family_id, int sockfd, int ret)
 	return 0;
 }
 
-static void handle_msg(struct nlmsghdr *nlh, int family_id)
+static int handle_msg(struct nlmsghdr *nlh, int family_id)
 {
 	int fd, sockfd, rem, ret, type = 0;
 	struct nlattr *na;
@@ -2111,19 +2115,21 @@ static void handle_msg(struct nlmsghdr *nlh, int family_id)
 		    nla_get_u32(na) == HANDSHAKE_HANDLER_CLASS_TLSHD) {
 			fd = get_new_fd();
 			if (fd < 0)
-				return;
+				return -1;
 			sockfd = get_accept_fd(fd, family_id, &type);
 			if (sockfd < 0)
-				return;
+				return -1;
 			if (type == HANDSHAKE_MSG_TYPE_SERVERHELLO)
 				ret = server_handshake(sockfd);
 			else
 				ret = client_handshake(sockfd);
 			if (put_accept_fd(fd, family_id, sockfd, ret))
-				return;
+				return -1;
 			close(fd);
+			return 0;
 		}
 	}
+	return -1;
 }
 
 static int fake_tlshd(char *argv[])
@@ -2152,9 +2158,10 @@ static int fake_tlshd(char *argv[])
 		len = recv(fd, buf, sizeof(buf), 0);
 		if (len < 0) {
 			printf("recv: errno=%d", errno);
-			break;
+			return -1;
 		}
-		handle_msg((struct nlmsghdr *)buf, family_id);
+		if (handle_msg((struct nlmsghdr *)buf, family_id))
+			return -1;
 	}
 	close(fd);
 	return 0;
@@ -2447,7 +2454,7 @@ static int perf_server(int size)
 	flags = MSG_QUIC_STREAM_NEW | MSG_QUIC_STREAM_FIN;
 	if (send_pass(sockfd, msg, sizeof(msg), sid, flags))
 		return -1;
-	printf("[] recv it on stream %d\n", (int)sid);
+	printf("[] send it on stream %d\n", (int)sid);
 
 	flags = 0;
 	if (recv_fail(sockfd, msg, sizeof(msg), &sid, &flags))
