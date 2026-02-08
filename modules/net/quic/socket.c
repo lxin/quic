@@ -1905,7 +1905,7 @@ static int quic_sock_set_session_ticket(struct sock *sk, u8 *data, u32 len)
 	return quic_data_dup(quic_ticket(sk), data, len);
 }
 
-#define QUIC_TP_EXT_MAX_LEN	256
+#define QUIC_TP_EXT_MAX_LEN	512
 
 static int quic_sock_set_transport_params_ext(struct sock *sk, u8 *p, u32 len)
 {
