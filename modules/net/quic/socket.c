@@ -2040,23 +2040,29 @@ done:
 		/* If a preferred address is set, bind to it to allow client use at any time. */
 		err = quic_path_bind(sk, paths, 1);
 		if (err)
-			return err;
+			goto err;
 	}
 
 	/* Send NEW_TOKEN and HANDSHAKE_DONE frames (server only). */
-	if (quic_outq_transmit_frame(sk, QUIC_FRAME_NEW_TOKEN, NULL, 0, true))
-		return -ENOMEM;
-	if (quic_outq_transmit_frame(sk, QUIC_FRAME_HANDSHAKE_DONE, NULL, 0, true))
-		return -ENOMEM;
+	err = quic_outq_transmit_frame(sk, QUIC_FRAME_NEW_TOKEN, NULL, 0, true);
+	if (err)
+		goto err;
+	err = quic_outq_transmit_frame(sk, QUIC_FRAME_HANDSHAKE_DONE, NULL, 0, true);
+	if (err)
+		goto err;
 out:
 	/* Send NEW_CONNECTION_ID frames to ensure maximum connection IDs are added. */
-	if (quic_outq_transmit_new_conn_id(sk, 0, 0, false))
-		return -ENOMEM;
+	err = quic_outq_transmit_new_conn_id(sk, 0, 0, false);
+	if (err)
+		goto err;
 	/* Enter established state, and start PLPMTUD timer and Path Challenge timer. */
 	quic_set_state(sk, QUIC_SS_ESTABLISHED);
 	quic_timer_start(sk, QUIC_TIMER_PMTU, c->plpmtud_probe_interval);
 	quic_timer_reset_path(sk);
 	return 0;
+err:
+	quic_outq_transmit_close(sk, 0, QUIC_TRANSPORT_ERROR_INTERNAL, QUIC_CRYPTO_APP);
+	return err;
 }
 
 /**
