@@ -216,7 +216,7 @@ static int quic_conns_seq_show(struct seq_file *seq, void *v)
 	uid_t uid;
 
 	if (hash >= quic_sock_hash_size())
-		return -ENOMEM;
+		return -EINVAL;
 
 	head = quic_sock_head(hash);
 	rcu_read_lock();
@@ -283,7 +283,7 @@ static int quic_eps_seq_show(struct seq_file *seq, void *v)
 	uid_t uid;
 
 	if (hash >= quic_listen_sock_hash_size())
-		return -ENOMEM;
+		return -EINVAL;
 
 	head = quic_listen_sock_head(hash);
 	rcu_read_lock();
