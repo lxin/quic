@@ -2734,7 +2734,7 @@ int quic_frame_parse_transport_params_ext(struct sock *sk, struct quic_transport
 			params->disable_active_migration = 1;
 			break;
 		case QUIC_TRANSPORT_PARAM_DISABLE_1RTT_ENCRYPTION:
-			if (!quic_get_var(&p, &len, &valuelen))
+			if (!quic_get_var(&p, &len, &valuelen) || (u64)len < valuelen)
 				return -1;
 			if (!quic_is_serv(sk) && valuelen)
 				return -1;
