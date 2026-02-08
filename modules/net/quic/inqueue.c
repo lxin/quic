@@ -366,9 +366,17 @@ static void quic_inq_handshake_tail(struct sock *sk, struct quic_frame *frame)
 	}
 
 	/* Special handling for New Session Ticket Message (level == 0). */
-	if (!crypto->ticket_ready && crypto->recv_offset <= QUIC_TICKET_MAX_LEN) {
-		/* Append received frame data to ticket buffer. */
-		quic_data_append(ticket, frame->data, frame->len);
+	if (!crypto->ticket_ready && crypto->recv_offset <= QUIC_TICKET_MAX_LEN &&
+	    crypto->recv_offset == ticket->len + frame->len) {
+		/* Append received frame data to ticket buffer. On failure, abandon ticket assembly
+		 * and suppress further processing to avoid using a partial or corrupted ticket.
+		 */
+		if (quic_data_append(ticket, frame->data, frame->len)) {
+			pr_debug("%s: offset: %llu, len: %u\n", __func__, crypto->recv_offset,
+				 frame->len);
+			quic_data_free(ticket);
+			goto out;
+		}
 		/* Attempt to parse the TLS message if we have at least the 4-byte header. */
 		if (ticket->len >= 4) {
 			p = ticket->data;
@@ -380,11 +388,12 @@ static void quic_inq_handshake_tail(struct sock *sk, struct quic_frame *frame)
 				/* Notify userspace with the full ticket message. Applications
 				 * can receive it via the NEW_SESSION_TICKET event or getsockopt().
 				 */
-				crypto->ticket_ready  = 1;
+				crypto->ticket_ready = 1;
 				quic_inq_event_recv(sk, QUIC_EVENT_NEW_SESSION_TICKET, ticket);
 			}
 		}
 	}
+out:
 	quic_inq_rfree((int)frame->len, sk);
 	quic_frame_put(frame); /* Data copied to ticket buffer; release the frame. */
 }
