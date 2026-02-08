@@ -2576,10 +2576,10 @@ static int quic_frame_get_version_info(u32 *versions, u8 *count, u8 **pp, u32 *p
 	u64 valuelen, v = 0;
 	u8 i;
 
-	if (!quic_get_var(pp, plen, &valuelen))
+	if (!quic_get_var(pp, plen, &valuelen) || !valuelen || (u64)*plen < valuelen)
 		return -1;
 
-	if ((u64)*plen < valuelen || valuelen > QUIC_VERSION_LEN * QUIC_MAX_VERSIONS)
+	if (valuelen % QUIC_VERSION_LEN || valuelen > QUIC_VERSION_LEN * QUIC_MAX_VERSIONS)
 		return -1;
 
 	*count = (u8)(valuelen / QUIC_VERSION_LEN);
