@@ -2653,12 +2653,12 @@ int quic_frame_parse_transport_params_ext(struct sock *sk, struct quic_transport
 				return -1;
 			break;
 		case QUIC_TRANSPORT_PARAM_RETRY_SOURCE_CONNECTION_ID:
-			if (quic_is_serv(sk))
+			if (quic_is_serv(sk) || !paths->retry)
 				return -1;
 			if (quic_frame_get_conn_id(&conn_id, &p, &len))
 				return -1;
 			/* Validate retry_source_connection_id sent by the server. */
-			if (paths->retry && quic_conn_id_cmp(&paths->retry_dcid, &conn_id))
+			if (quic_conn_id_cmp(&paths->retry_dcid, &conn_id))
 				return -1;
 			break;
 		case QUIC_TRANSPORT_PARAM_INITIAL_SOURCE_CONNECTION_ID:
