@@ -1109,19 +1109,19 @@ int quic_outq_probe_path_alt(struct sock *sk, u8 cork)
 	return 0;
 }
 
-/* Updates the path ID for all frames in control and transmitted lists.  Called after
+/* Resets the path ID of all frames in the control and transmitted lists. Called after
  * connection migration is completed.
  */
-void quic_outq_update_path(struct sock *sk, u8 path)
+void quic_outq_update_path(struct sock *sk)
 {
 	struct quic_outqueue *outq = quic_outq(sk);
 	struct quic_frame *pos;
 
 	list_for_each_entry(pos, &outq->control_list, list)
-		pos->path = path;
+		pos->path = 0;
 
 	list_for_each_entry(pos, &outq->transmitted_list, list)
-		pos->path = path;
+		pos->path = 0;
 }
 
 /* Create and queue a QUIC control frame for transmission.

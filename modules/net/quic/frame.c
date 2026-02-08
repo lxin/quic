@@ -1775,7 +1775,7 @@ static int quic_frame_path_response_process(struct sock *sk, struct quic_frame *
 	 */
 	frame->path = 0;
 	__sk_dst_reset(sk);
-	quic_outq_update_path(sk, 0);
+	quic_outq_update_path(sk);
 	quic_conn_id_swap_active(quic_dest(sk));
 
 out:
