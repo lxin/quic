@@ -194,7 +194,7 @@ static int quic_outq_delay_check(struct sock *sk, u8 level, u8 nodelay)
 		return 1;
 	}
 
-	if (nodelay) /* If this frame the frame is not the last of a sendmsg. */
+	if (nodelay) /* If the frame is not the last of a sendmsg. */
 		return 0;
 	/* If there’s already data queued in the packet, send immediately. */
 	if (!quic_packet_empty(packet))
