@@ -2599,7 +2599,7 @@ static int quic_frame_get_address(union quic_addr *addr, struct quic_conn_id *co
 	if (!quic_get_var(pp, plen, &valuelen))
 		return -1;
 
-	if ((u64)*plen < valuelen || valuelen < QUIC_PREF_ADDR_LEN)
+	if ((u64)*plen < valuelen || valuelen < QUIC_PREF_ADDR_LEN + 1)
 		return -1;
 
 	quic_get_pref_addr(sk, addr, pp, plen);
