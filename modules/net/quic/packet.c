@@ -75,9 +75,8 @@ static u8 quic_packet_version_put_type(u32 version, u8 type)
 	case QUIC_PACKET_RETRY:
 		return QUIC_PACKET_RETRY_V2;
 	default:
-		return -1;
+		return QUIC_PACKET_INVALID;
 	}
-	return -1;
 }
 
 /* Parse QUIC version and connection IDs (DCID and SCID) from a Long header packet buffer. */
