@@ -2407,8 +2407,15 @@ static u8 *quic_frame_put_address(u8 *p, u16 id, union quic_addr *addr,
 	return p;
 }
 
-#define USEC_TO_MSEC(usec)	DIV_ROUND_UP((usec), 1000)
-#define MSEC_TO_USEC(msec)	((msec) > U32_MAX / 1000 ? U32_MAX : (msec) * 1000)
+static inline u64 quic_usec_to_msec(u64 usec)
+{
+	return DIV_ROUND_UP(usec, 1000);
+}
+
+static inline u64 quic_msec_to_usec(u64 msec)
+{
+	return msec > U32_MAX / 1000 ? U32_MAX : msec * 1000;
+}
 
 /* Construct the full encoded transport parameters extension for a QUIC connection. */
 int quic_frame_build_transport_params_ext(struct sock *sk, struct quic_transport_param *params,
@@ -2530,11 +2537,11 @@ int quic_frame_build_transport_params_ext(struct sock *sk, struct quic_transport
 	}
 	if (params->max_ack_delay != QUIC_DEF_ACK_DELAY) {
 		p = quic_put_param(p, QUIC_TRANSPORT_PARAM_MAX_ACK_DELAY,
-				   USEC_TO_MSEC(params->max_ack_delay));
+				   quic_usec_to_msec(params->max_ack_delay));
 	}
 	if (params->max_idle_timeout) {
 		p = quic_put_param(p, QUIC_TRANSPORT_PARAM_MAX_IDLE_TIMEOUT,
-				   USEC_TO_MSEC(params->max_idle_timeout));
+				   quic_usec_to_msec(params->max_idle_timeout));
 	}
 	if (params->active_connection_id_limit &&
 	    params->active_connection_id_limit != QUIC_CONN_ID_LEAST) {
@@ -2707,7 +2714,7 @@ int quic_frame_parse_transport_params_ext(struct sock *sk, struct quic_transport
 		case QUIC_TRANSPORT_PARAM_MAX_IDLE_TIMEOUT:
 			if (!quic_get_param(&value, &p, &len))
 				return -1;
-			value = MSEC_TO_USEC(value);
+			value = quic_msec_to_usec(value);
 			if (value < QUIC_MIN_IDLE_TIMEOUT)
 				return -1;
 			params->max_idle_timeout = value;
@@ -2752,7 +2759,7 @@ int quic_frame_parse_transport_params_ext(struct sock *sk, struct quic_transport
 		case QUIC_TRANSPORT_PARAM_MAX_ACK_DELAY:
 			if (!quic_get_param(&value, &p, &len))
 				return -1;
-			value = MSEC_TO_USEC(value);
+			value = quic_msec_to_usec(value);
 			if (value >= QUIC_MAX_ACK_DELAY)
 				return -1;
 			params->max_ack_delay = value;
