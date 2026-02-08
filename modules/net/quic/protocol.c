@@ -111,6 +111,7 @@ out:
 	release_sock(sk);
 	return err;
 free:
+	sk->sk_prot->unhash(sk);
 	quic_set_state(sk, QUIC_SS_CLOSED);
 	sk->sk_max_ack_backlog = 0;
 
