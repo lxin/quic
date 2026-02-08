@@ -34,7 +34,7 @@ static void quic_v4_seq_dump_addr(struct seq_file *seq, union quic_addr *addr)
 
 static void quic_v6_seq_dump_addr(struct seq_file *seq, union quic_addr *addr)
 {
-	seq_printf(seq, "%pI6c:%d\t", &addr->v6.sin6_addr, ntohs(addr->v4.sin_port));
+	seq_printf(seq, "%pI6c:%d\t", &addr->v6.sin6_addr, ntohs(addr->v6.sin6_port));
 }
 
 static void quic_v4_udp_conf_init(struct sock *sk, struct udp_port_cfg *conf, union quic_addr *a)
