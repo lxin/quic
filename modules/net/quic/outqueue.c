@@ -142,7 +142,7 @@ int quic_outq_flow_control(struct sock *sk, struct quic_stream *stream, u16 byte
 	/* Check connection-level flow control. */
 	if (outq->bytes + bytes > outq->max_bytes) {
 		/* Send a DATA_BLOCKED frame only after the previous one is acknowledged,
-		 * and max_bytes has been updated via a received MAX_STREAM_DATA frame.
+		 * and max_bytes has been updated via a received MAX_DATA frame.
 		 */
 		if (!outq->data_blocked && outq->last_max_bytes < outq->max_bytes) {
 			frame = QUIC_FRAME_DATA_BLOCKED;
