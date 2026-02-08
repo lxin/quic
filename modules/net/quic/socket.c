@@ -122,10 +122,12 @@ bool quic_accept_sock_exists(struct sock *sk, struct sk_buff *skb)
 	bh_lock_sock(sk);
 	if (sock_owned_by_user(sk)) {
 		/* Socket is busy (owned by user context): queue to backlog. */
-		if (sk_add_backlog(sk, skb, READ_ONCE(sk->sk_rcvbuf)))
+		if (sk_add_backlog(sk, skb, READ_ONCE(sk->sk_rcvbuf))) {
+			QUIC_INC_STATS(sock_net(sk), QUIC_MIB_PKT_RCVDROP);
 			kfree_skb(skb);
-		else
+		} else {
 			cb->backlog = 1;
+		}
 	} else {
 		/* Socket not busy: process immediately. */
 		cb->backlog = 0;
