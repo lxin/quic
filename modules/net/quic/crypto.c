@@ -173,7 +173,7 @@ static int quic_crypto_keys_derive(struct crypto_shash *tfm, struct quic_data *s
 static int quic_crypto_tx_keys_derive_and_install(struct quic_crypto *crypto)
 {
 	struct quic_data srt = {}, k, iv, hp_k = {}, *hp = NULL;
-	u8 tx_key[QUIC_KEY_LEN], tx_hp_key[QUIC_KEY_LEN];
+	u8 tx_key[QUIC_KEY_LEN], tx_hp_key[QUIC_KEY_LEN] = {};
 	int err, phase = crypto->key_phase;
 	u32 keylen, ivlen = QUIC_IV_LEN;
 
@@ -198,7 +198,7 @@ static int quic_crypto_tx_keys_derive_and_install(struct quic_crypto *crypto)
 		if (err)
 			goto out;
 	}
-	pr_debug("%s: k: %16phN, iv: %12phN, hp_k:%16phN\n", __func__, k.data, iv.data, hp_k.data);
+	pr_debug("%s: k: %16phN, iv: %12phN, hp_k:%16phN\n", __func__, k.data, iv.data, tx_hp_key);
 out:
 	memzero_explicit(tx_key, sizeof(tx_key));
 	memzero_explicit(tx_hp_key, sizeof(tx_hp_key));
@@ -211,7 +211,7 @@ out:
 static int quic_crypto_rx_keys_derive_and_install(struct quic_crypto *crypto)
 {
 	struct quic_data srt = {}, k, iv, hp_k = {}, *hp = NULL;
-	u8 rx_key[QUIC_KEY_LEN], rx_hp_key[QUIC_KEY_LEN];
+	u8 rx_key[QUIC_KEY_LEN], rx_hp_key[QUIC_KEY_LEN] = {};
 	int err, phase = crypto->key_phase;
 	u32 keylen, ivlen = QUIC_IV_LEN;
 
@@ -236,7 +236,7 @@ static int quic_crypto_rx_keys_derive_and_install(struct quic_crypto *crypto)
 		if (err)
 			goto out;
 	}
-	pr_debug("%s: k: %16phN, iv: %12phN, hp_k:%16phN\n", __func__, k.data, iv.data, hp_k.data);
+	pr_debug("%s: k: %16phN, iv: %12phN, hp_k:%16phN\n", __func__, k.data, iv.data, rx_hp_key);
 out:
 	memzero_explicit(rx_key, sizeof(rx_key));
 	memzero_explicit(rx_hp_key, sizeof(rx_hp_key));
