@@ -170,8 +170,7 @@ static inline int quic_frame_level_check(u8 level, u8 type)
 	if (level == QUIC_CRYPTO_EARLY) {
 		if (type == QUIC_FRAME_ACK || type == QUIC_FRAME_ACK_ECN ||
 		    type == QUIC_FRAME_CRYPTO || type == QUIC_FRAME_HANDSHAKE_DONE ||
-		    type == QUIC_FRAME_NEW_TOKEN || type == QUIC_FRAME_PATH_RESPONSE ||
-		    type == QUIC_FRAME_RETIRE_CONNECTION_ID)
+		    type == QUIC_FRAME_NEW_TOKEN || type == QUIC_FRAME_PATH_RESPONSE)
 			return 1;
 		return 0;
 	}
