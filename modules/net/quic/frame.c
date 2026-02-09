@@ -1283,7 +1283,7 @@ static int quic_frame_padding_process(struct sock *sk, struct quic_frame *frame,
 	/* Some implementations put the PADDING frame ahead of other frames.  We need to skip over
 	 * zero bytes and find the first non-zero byte, which marks the start of the next frame.
 	 */
-	for (; !(*p) && p != frame->data + frame->len; p++)
+	for (; p != frame->data + frame->len && !(*p); p++)
 		;
 	return (int)(p - frame->data);
 }
