@@ -339,6 +339,7 @@ static int quic_packet_get_alpn(struct quic_data *alpn, u8 *p, u32 len)
 	if (!quic_get_int(&p, &len, &type, 1) || type != TLS_MT_CLIENT_HELLO)
 		return err;
 	if (!quic_get_int(&p, &len, &length, 3) ||
+	    len < TLS_CH_RANDOM_LEN + TLS_CH_VERSION_LEN ||
 	    length < TLS_CH_RANDOM_LEN + TLS_CH_VERSION_LEN)
 		return err;
 	if (len > (u32)length) /* Limit len to handshake message length if larger. */
