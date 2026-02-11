@@ -871,11 +871,11 @@ void quic_outq_sync_window(struct sock *sk, u32 window)
 
 	if (sk->sk_userlocks & SOCK_SNDBUF_LOCK)
 		return;
+
 	/* Dynamically adjust sk_sndbuf based on the congestion window. */
-	if (sk->sk_sndbuf > (int)window * 2)
-		if (sk_stream_wspace(sk) > 0)
-			sk->sk_write_space(sk); /* Wake up processes blocked on sending. */
 	sk->sk_sndbuf = (int)window * 2;
+	if (sk_stream_wspace(sk) > 0)
+		sk->sk_write_space(sk); /* Wake up processes blocked on sending. */
 }
 
 /* Put the timeout frame back to the corresponding outqueue for transmitting. */
