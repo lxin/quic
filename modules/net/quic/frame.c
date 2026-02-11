@@ -73,7 +73,7 @@ static struct quic_frame *quic_frame_ack_create(struct sock *sk, void *data, u8 
 
 	/* Estimate the maximum frame length: type + 4 * varints + ranges + ECN Counts. */
 	frame_len = 1 + quic_var_len(largest) + quic_var_len(delay) + quic_var_len(num_gabs) +
-		    quic_var_len(range) + sizeof(struct quic_gap_ack_block) * num_gabs +
+		    quic_var_len(range) + quic_var_len(QUIC_PN_MAP_SIZE) * 2 * num_gabs +
 		    sizeof(*ecn_count) * QUIC_ECN_MAX;
 	frame = quic_frame_alloc(frame_len, NULL, GFP_ATOMIC);
 	if (!frame)
