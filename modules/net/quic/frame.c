@@ -1510,6 +1510,8 @@ static int quic_frame_max_stream_data_process(struct sock *sk, struct quic_frame
 	return (int)(frame->len - len);
 }
 
+#define QUIC_MAX_STREAMS_LIMIT	BIT_ULL(60)
+
 static int quic_frame_max_streams_uni_process(struct sock *sk, struct quic_frame *frame, u8 type)
 {
 	struct quic_stream_table *streams = quic_streams(sk);
@@ -1520,6 +1522,17 @@ static int quic_frame_max_streams_uni_process(struct sock *sk, struct quic_frame
 
 	if (!quic_get_var(&p, &len, &max))
 		return -EINVAL;
+
+	if (max > QUIC_MAX_STREAMS_LIMIT) {
+		/* rfc9000#section-19.11:
+		 *
+		 * This value cannot exceed 2^60, as it is not possible to encode stream IDs larger
+		 * than 2^62-1. Receipt of a frame that permits opening of a stream larger than this
+		 * limit MUST be treated as a connection error of type FRAME_ENCODING_ERROR.
+		 */
+		frame->errcode = QUIC_TRANSPORT_ERROR_FRAME_ENCODING;
+		return -EINVAL;
+	}
 
 	/* rfc9000#section-19.11:
 	 *
@@ -1555,6 +1568,11 @@ static int quic_frame_max_streams_bidi_process(struct sock *sk, struct quic_fram
 		return -EINVAL;
 
 	/* Similar to quic_frame_max_streams_uni_process(), but applies to bidirectional streams. */
+	if (max > QUIC_MAX_STREAMS_LIMIT) {
+		frame->errcode = QUIC_TRANSPORT_ERROR_FRAME_ENCODING;
+		return -EINVAL;
+	}
+
 	stream_id = streams->send.max_bidi_stream_id;
 	if (max <= quic_stream_id_to_streams(stream_id))
 		goto out;
