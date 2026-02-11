@@ -1257,7 +1257,7 @@ out:
 /* Wait until a new connection request is available on the listen socket. */
 static int quic_wait_for_accept(struct sock *sk, u32 flags)
 {
-	long timeo = sock_sndtimeo(sk, flags & O_NONBLOCK);
+	long timeo = sock_rcvtimeo(sk, flags & O_NONBLOCK);
 	struct list_head *head = quic_reqs(sk);
 	DEFINE_WAIT(wait);
 	int err = 0;
