@@ -1153,7 +1153,7 @@ int quic_outq_transmit_frame(struct sock *sk, u8 type, void *data, u8 path, u8 c
 int quic_outq_transmit_new_conn_id(struct sock *sk, u64 prior, u8 path, u8 cork)
 {
 	struct quic_conn_id_set *id_set = quic_source(sk);
-	u32 max, seqno;
+	u64 max, seqno;
 
 	/* Compute the maximum sequence number to send. */
 	max = id_set->max_count + prior;

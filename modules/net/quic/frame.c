@@ -1107,7 +1107,7 @@ static int quic_frame_new_conn_id_process(struct sock *sk, struct quic_frame *fr
 	u32 len = frame->len;
 	int err;
 
-	if (!quic_get_var(&p, &len, &seqno) ||
+	if (!quic_get_var(&p, &len, &seqno) || seqno > U32_MAX ||
 	    !quic_get_var(&p, &len, &prior) ||
 	    !quic_get_var(&p, &len, &length) ||
 	    !length || length > QUIC_CONN_ID_MAX_LEN || length + QUIC_CONN_ID_TOKEN_LEN > len)
@@ -1182,7 +1182,7 @@ static int quic_frame_retire_conn_id_process(struct sock *sk, struct quic_frame 
 	u32 len = frame->len;
 	u8 *p = frame->data;
 
-	if (!quic_get_var(&p, &len, &seqno))
+	if (!quic_get_var(&p, &len, &seqno) || seqno + 1 + id_set->max_count > U32_MAX)
 		return -EINVAL;
 
 	first = quic_conn_id_first_number(id_set);

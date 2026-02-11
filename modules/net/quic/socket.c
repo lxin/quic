@@ -1643,7 +1643,7 @@ static int quic_sock_set_connection_id(struct sock *sk,
 	number = info->prior_to;
 	last = quic_conn_id_last_number(id_set);
 	first = quic_conn_id_first_number(id_set);
-	if (number > last || number <= first) {
+	if (number > last || number <= first || number + id_set->max_count > U32_MAX) {
 		/* Invalid retirement range: revert any active ID change. */
 		quic_conn_id_set_active(id_set, old);
 		return -EINVAL;
