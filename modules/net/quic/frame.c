@@ -1699,7 +1699,7 @@ static int quic_frame_streams_blocked_uni_process(struct sock *sk, struct quic_f
 						  u8 type)
 {
 	struct quic_stream_table *streams = quic_streams(sk);
-	s64 stream_id = streams->send.max_uni_stream_id;
+	s64 stream_id = streams->recv.max_uni_stream_id;
 	u32 len = frame->len;
 	u8 *p = frame->data;
 	u64 max;
