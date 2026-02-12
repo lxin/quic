@@ -962,6 +962,19 @@ static int quic_frame_crypto_process(struct sock *sk, struct quic_frame *frame, 
 	return (int)(frame->len - len);
 }
 
+static int quic_frame_stream_error(struct quic_stream *stream, struct quic_frame *frame)
+{
+	int err = PTR_ERR(stream);
+
+	if (err == -ENOSTR) /* If stream is already released, skip processing. */
+		return 0;
+	if (err == -EAGAIN)
+		frame->errcode = QUIC_TRANSPORT_ERROR_STREAM_LIMIT;
+	else
+		frame->errcode = QUIC_TRANSPORT_ERROR_STREAM_STATE;
+	return err;
+}
+
 static int quic_frame_stream_process(struct sock *sk, struct quic_frame *frame, u8 type)
 {
 	struct quic_stream_table *streams = quic_streams(sk);
@@ -999,12 +1012,10 @@ static int quic_frame_stream_process(struct sock *sk, struct quic_frame *frame, 
 		 * it receives a STREAM frame for a locally initiated stream that has not yet
 		 * been created, or for a send-only stream.
 		 */
-		err = PTR_ERR(stream);
-		if (err == -EAGAIN)
-			frame->errcode = QUIC_TRANSPORT_ERROR_STREAM_LIMIT;
-		else if (err != -ENOSTR)
-			frame->errcode = QUIC_TRANSPORT_ERROR_STREAM_STATE;
-		goto out; /* If stream is already released, skip processing. */
+		err = quic_frame_stream_error(stream, frame);
+		if (err)
+			return err;
+		goto out;
 	}
 
 	/* Skip if stream already finished receiving, was reset, or stop-sending requested. */
@@ -1335,12 +1346,10 @@ static int quic_frame_reset_stream_process(struct sock *sk, struct quic_frame *f
 		 * An endpoint that receives a RESET_STREAM frame for a send-only stream MUST
 		 * terminate the connection with error STREAM_STATE_ERROR.
 		 */
-		err = PTR_ERR(stream);
-		if (err == -EAGAIN)
-			frame->errcode = QUIC_TRANSPORT_ERROR_STREAM_LIMIT;
-		else if (err != -ENOSTR)
-			frame->errcode = QUIC_TRANSPORT_ERROR_STREAM_STATE;
-		return err;
+		err = quic_frame_stream_error(stream, frame);
+		if (err)
+			return err;
+		goto out;
 	}
 
 	if (stream->recv.state >= QUIC_STREAM_RECV_STATE_RECVD)
@@ -1409,12 +1418,10 @@ static int quic_frame_stop_sending_process(struct sock *sk, struct quic_frame *f
 		 * An endpoint that receives a STOP_SENDING frame for a receive-only stream MUST
 		 * terminate the connection with error STREAM_STATE_ERROR.
 		 */
-		err = PTR_ERR(stream);
-		if (err == -EAGAIN)
-			frame->errcode = QUIC_TRANSPORT_ERROR_STREAM_LIMIT;
-		else if (err != -ENOSTR)
-			frame->errcode = QUIC_TRANSPORT_ERROR_STREAM_STATE;
-		return err;
+		err = quic_frame_stream_error(stream, frame);
+		if (err)
+			return err;
+		goto out;
 	}
 
 	/* rfc9000#section-3.1:
@@ -1437,6 +1444,7 @@ static int quic_frame_stop_sending_process(struct sock *sk, struct quic_frame *f
 	stream->send.state = update.state;
 	quic_outq_list_purge(sk, &outq->transmitted_list, stream);
 	quic_outq_list_purge(sk, &outq->stream_list, stream);
+out:
 	return (int)(frame->len - len);
 }
 
@@ -1484,12 +1492,10 @@ static int quic_frame_max_stream_data_process(struct sock *sk, struct quic_frame
 		 * endpoint that receives a MAX_STREAM_DATA frame for a receive-only stream MUST
 		 * terminate the connection with error STREAM_STATE_ERROR.
 		 */
-		err = PTR_ERR(stream);
-		if (err == -EAGAIN)
-			frame->errcode = QUIC_TRANSPORT_ERROR_STREAM_LIMIT;
-		else if (err != -ENOSTR)
-			frame->errcode = QUIC_TRANSPORT_ERROR_STREAM_STATE;
-		return err;
+		err = quic_frame_stream_error(stream, frame);
+		if (err)
+			return err;
+		goto out;
 	}
 
 	if (max_bytes > stream->send.max_bytes) {
@@ -1505,7 +1511,7 @@ static int quic_frame_max_stream_data_process(struct sock *sk, struct quic_frame
 		data.max_data = max_bytes;
 		quic_inq_event_recv(sk, QUIC_EVENT_STREAM_MAX_DATA, &data);
 	}
-
+out:
 	return (int)(frame->len - len);
 }
 
@@ -1686,11 +1692,9 @@ static int quic_frame_stream_data_blocked_process(struct sock *sk, struct quic_f
 		 * An endpoint that receives a STREAM_DATA_BLOCKED frame for a send-only stream
 		 * MUST terminate the connection with error STREAM_STATE_ERROR.
 		 */
-		err = PTR_ERR(stream);
-		if (err == -EAGAIN)
-			frame->errcode = QUIC_TRANSPORT_ERROR_STREAM_LIMIT;
-		else if (err != -ENOSTR)
-			frame->errcode = QUIC_TRANSPORT_ERROR_STREAM_STATE;
+		err = quic_frame_stream_error(stream, frame);
+		if (err)
+			return err;
 		goto out;
 	}
 
