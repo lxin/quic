@@ -15,7 +15,7 @@
 #ifdef __KERNEL__
 #include <linux/socket.h>
 #else
-#include <sys/socket.h>
+#include <sys/socket.h> /* for MSG_* flags */
 #endif
 
 enum {
