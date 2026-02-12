@@ -1146,21 +1146,20 @@ static int quic_frame_new_conn_id_process(struct sock *sk, struct quic_frame *fr
 		return -EINVAL;
 	}
 
-	err = quic_conn_id_add(id_set, &dcid, seqno, token);
-	if (err)
-		return err;
-
+	/* rfc9000#section-5.1.2:
+	 *
+	 * Upon receipt of an increased Retire Prior To field, the peer MUST stop using the
+	 * corresponding connection IDs and retire them with RETIRE_CONNECTION_ID frames before
+	 * adding the newly provided connection ID to the set of active connection IDs.
+	 */
 	if (prior > first) {
-		/* rfc9000#section-19.15:
-		 *
-		 * An endpoint that receives a NEW_CONNECTION_ID frame with a sequence number
-		 * smaller than the Retire Prior To field of a previously received NEW_CONNECTION_ID
-		 * frame MUST send a corresponding RETIRE_CONNECTION_ID frame that retires the newly
-		 * received connection ID, unless it has already done so for that sequence number.
-		 */
 		if (quic_outq_transmit_retire_conn_id(sk, prior, frame->path, true))
 			return -ENOMEM;
 	}
+
+	err = quic_conn_id_add(id_set, &dcid, seqno, token);
+	if (err)
+		return err;
 
 	/* If path migration is pending due to missing connection IDs, trigger probing on the
 	 * alternate path to continue the migration.
