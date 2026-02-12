@@ -136,7 +136,7 @@ static struct quic_stream *quic_stream_create(struct quic_stream_table *streams,
 
 	/* Streams must be opened sequentially. Update the next stream ID so the correct
 	 * starting point is known if an out-of-order open is requested.  Note overflow
-	 * of next_uni/bidi_stream_id and streams_uni/bidi is impossible with u64.
+	 * of next_uni/bidi_stream_id is impossible with s64.
 	 */
 	if (quic_stream_id_uni(stream_id)) {
 		limits->next_uni_stream_id = stream_id;
