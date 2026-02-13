@@ -11,21 +11,28 @@
  */
 
 #include <net/netns/hash.h>
+#include <linux/version.h>
 #include <linux/vmalloc.h>
 #include <linux/jhash.h>
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 12, 0)
+#include <linux/unaligned.h>
+#else
+#include <asm/unaligned.h>
+#endif
 
 #include "common.h"
 
 #define QUIC_VARINT_1BYTE_MAX		0x3fULL
 #define QUIC_VARINT_2BYTE_MAX		0x3fffULL
 #define QUIC_VARINT_4BYTE_MAX		0x3fffffffULL
+#define QUIC_VARINT_8BYTE_MAX		0x3fffffffffffffffULL
 
 #define QUIC_VARINT_2BYTE_PREFIX	0x40
 #define QUIC_VARINT_4BYTE_PREFIX	0x80
 #define QUIC_VARINT_8BYTE_PREFIX	0xc0
 
 #define QUIC_VARINT_LENGTH(p)		BIT((*(p)) >> 6)
-#define QUIC_VARINT_VALUE_MASK		0x3f
 
 struct quic_hashinfo {
 	struct quic_shash_table		shash; /* Source connection ID hashtable */
@@ -170,13 +177,6 @@ err:
 	return err;
 }
 
-union quic_var {
-	u8	u8;
-	__be16	be16;
-	__be32	be32;
-	__be64	be64;
-};
-
 /* Returns the number of bytes required to encode a QUIC variable-length integer. */
 u8 quic_var_len(u64 n)
 {
@@ -192,7 +192,6 @@ u8 quic_var_len(u64 n)
 /* Decodes a QUIC variable-length integer from a buffer. */
 u8 quic_get_var(u8 **pp, u32 *plen, u64 *val)
 {
-	union quic_var n = {};
 	u8 *p = *pp, len;
 	u64 v = 0;
 
@@ -208,19 +207,13 @@ u8 quic_get_var(u8 **pp, u32 *plen, u64 *val)
 		v = *p;
 		break;
 	case 2:
-		memcpy(&n.be16, p, 2);
-		n.u8 &= QUIC_VARINT_VALUE_MASK;
-		v = be16_to_cpu(n.be16);
+		v = get_unaligned_be16(p) & QUIC_VARINT_2BYTE_MAX;
 		break;
 	case 4:
-		memcpy(&n.be32, p, 4);
-		n.u8 &= QUIC_VARINT_VALUE_MASK;
-		v = be32_to_cpu(n.be32);
+		v = get_unaligned_be32(p) & QUIC_VARINT_4BYTE_MAX;
 		break;
 	case 8:
-		memcpy(&n.be64, p, 8);
-		n.u8 &= QUIC_VARINT_VALUE_MASK;
-		v = be64_to_cpu(n.be64);
+		v = get_unaligned_be64(p) & QUIC_VARINT_8BYTE_MAX;
 		break;
 	default:
 		return 0;
@@ -235,7 +228,6 @@ u8 quic_get_var(u8 **pp, u32 *plen, u64 *val)
 /* Reads a fixed-length integer from the buffer. */
 u32 quic_get_int(u8 **pp, u32 *plen, u64 *val, u32 len)
 {
-	union quic_var n;
 	u8 *p = *pp;
 	u64 v = 0;
 
@@ -248,21 +240,16 @@ u32 quic_get_int(u8 **pp, u32 *plen, u64 *val, u32 len)
 		v = *p;
 		break;
 	case 2:
-		memcpy(&n.be16, p, 2);
-		v = be16_to_cpu(n.be16);
+		v = get_unaligned_be16(p);
 		break;
 	case 3:
-		n.be32 = 0;
-		memcpy(((u8 *)&n.be32) + 1, p, 3);
-		v = be32_to_cpu(n.be32);
+		v = get_unaligned_be24(p);
 		break;
 	case 4:
-		memcpy(&n.be32, p, 4);
-		v = be32_to_cpu(n.be32);
+		v = get_unaligned_be32(p);
 		break;
 	case 8:
-		memcpy(&n.be64, p, 8);
-		v = be64_to_cpu(n.be64);
+		v = get_unaligned_be64(p);
 		break;
 	default:
 		return 0;
@@ -287,26 +274,21 @@ u32 quic_get_data(u8 **pp, u32 *plen, u8 *data, u32 len)
 /* Encodes a value into the QUIC variable-length integer format. */
 u8 *quic_put_var(u8 *p, u64 num)
 {
-	union quic_var n;
-
 	if (num <= QUIC_VARINT_1BYTE_MAX) {
-		*p++ = (u8)(num & 0xff);
+		*p++ = (u8)num;
 		return p;
 	}
 	if (num <= QUIC_VARINT_2BYTE_MAX) {
-		n.be16 = cpu_to_be16((u16)num);
-		*((__be16 *)p) = n.be16;
+		put_unaligned_be16((u16)num, p);
 		*p |= QUIC_VARINT_2BYTE_PREFIX;
 		return p + 2;
 	}
 	if (num <= QUIC_VARINT_4BYTE_MAX) {
-		n.be32 = cpu_to_be32((u32)num);
-		*((__be32 *)p) = n.be32;
+		put_unaligned_be32((u32)num, p);
 		*p |= QUIC_VARINT_4BYTE_PREFIX;
 		return p + 4;
 	}
-	n.be64 = cpu_to_be64(num);
-	*((__be64 *)p) = n.be64;
+	put_unaligned_be64(num, p);
 	*p |= QUIC_VARINT_8BYTE_PREFIX;
 	return p + 8;
 }
@@ -314,23 +296,18 @@ u8 *quic_put_var(u8 *p, u64 num)
 /* Writes a fixed-length integer to the buffer in network byte order. */
 u8 *quic_put_int(u8 *p, u64 num, u8 len)
 {
-	union quic_var n;
-
 	switch (len) {
 	case 1:
-		*p++ = (u8)(num & 0xff);
+		*p++ = (u8)num;
 		return p;
 	case 2:
-		n.be16 = cpu_to_be16((u16)(num & 0xffff));
-		*((__be16 *)p) = n.be16;
+		put_unaligned_be16((u16)num, p);
 		return p + 2;
 	case 4:
-		n.be32 = cpu_to_be32((u32)num);
-		*((__be32 *)p) = n.be32;
+		put_unaligned_be32((u32)num, p);
 		return p + 4;
 	case 8:
-		n.be64 = cpu_to_be64(num);
-		*((__be64 *)p) = n.be64;
+		put_unaligned_be64(num, p);
 		return p + 8;
 	default:
 		return NULL;
@@ -340,20 +317,16 @@ u8 *quic_put_int(u8 *p, u64 num, u8 len)
 /* Encodes a value as a variable-length integer with explicit length. */
 u8 *quic_put_varint(u8 *p, u64 num, u8 len)
 {
-	union quic_var n;
-
 	switch (len) {
 	case 1:
-		*p++ = (u8)(num & 0xff);
+		*p++ = (u8)num;
 		return p;
 	case 2:
-		n.be16 = cpu_to_be16((u16)(num & 0xffff));
-		*((__be16 *)p) = n.be16;
+		put_unaligned_be16((u16)num, p);
 		*p |= QUIC_VARINT_2BYTE_PREFIX;
 		return p + 2;
 	case 4:
-		n.be32 = cpu_to_be32((u32)num);
-		*((__be32 *)p) = n.be32;
+		put_unaligned_be32((u32)num, p);
 		*p |= QUIC_VARINT_4BYTE_PREFIX;
 		return p + 4;
 	default:
