@@ -658,7 +658,12 @@ void quic_cong_rtt_update(struct quic_cong *cong, u64 time, u32 ack_delay)
 		adjusted_rtt = cong->latest_rtt - ack_delay;
 
 	cong->smoothed_rtt = (cong->smoothed_rtt * 7 + adjusted_rtt) / 8;
+#ifdef abs_diff
 	rttvar_sample = abs_diff(cong->smoothed_rtt, adjusted_rtt);
+#else
+	rttvar_sample = cong->smoothed_rtt > adjusted_rtt ?
+		cong->smoothed_rtt - adjusted_rtt : adjusted_rtt - cong->smoothed_rtt;
+#endif
 	cong->rttvar = (cong->rttvar * 3 + rttvar_sample) / 4;
 	quic_cong_pto_update(cong);
 
