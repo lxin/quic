@@ -1724,18 +1724,25 @@ static int quic_sock_connection_migrate(struct sock *sk, struct sockaddr *addr, 
 	if (!quic_path_alt_state(paths, QUIC_PATH_ALT_NONE) || paths->pref_addr)
 		return -EAGAIN;
 
-	/* Setup path 1 with the new source address and existing destination address. */
+	/* Setup the source address on path 1 and bind to it. */
 	quic_path_set_saddr(paths, 1, &a);
+	err = quic_path_bind(sk, paths, 1);
+	if (err) {
+		memset(quic_path_saddr(paths, 1), 0, sizeof(a));
+		return err;
+	}
+	/* Setup the destination address on path 1 with the one on path 0 and configure routing. */
 	quic_path_set_daddr(paths, 1, quic_path_daddr(paths, 0));
-
-	/* Configure routing and bind to the new source address. */
-	if (quic_packet_config(sk, 0, 1))
-		return -EINVAL;
-	if (quic_path_bind(sk, paths, 1))
-		return -EINVAL;
+	if (quic_packet_config(sk, 0, 1)) {
+		err = -EINVAL;
+		goto err;
+	}
 	err = quic_outq_probe_path_alt(sk, false); /* Start connection migration using new path. */
 	if (err)
-		quic_path_unbind(sk, paths, 1); /* Cleanup path 1 on failure. */
+		goto err;
+	return 0;
+err:
+	quic_path_unbind(sk, paths, 1); /* Cleanup path 1 on failure. */
 	return err;
 }
 
