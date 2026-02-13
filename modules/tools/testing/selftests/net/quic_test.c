@@ -26,7 +26,7 @@ static int port = 1234;
 static char *dev[2];
 
 static char buf[65536];
-static char msg[256];
+static char msg[512];
 
 #define QUIC_MSG_STREAM_FLAGS \
 	(MSG_QUIC_STREAM_NEW | MSG_QUIC_STREAM_FIN | MSG_QUIC_STREAM_UNI | MSG_QUIC_STREAM_DONTWAIT)
@@ -577,7 +577,7 @@ static int early_data;
 static int send_fake_handshake(int sockfd, uint8_t level, uint8_t serv)
 {
 	unsigned int len;
-	char ext[128];
+	char ext[256];
 
 	len = sizeof(msg);
 	if ((!serv && level == QUIC_CRYPTO_INITIAL)) {
