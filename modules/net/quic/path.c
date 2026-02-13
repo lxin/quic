@@ -190,11 +190,13 @@ int quic_path_bind(struct sock *sk, struct quic_path_group *paths, u8 path)
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
 	inet_sk_get_local_port_range(sk, &low, &high);
+	remaining = (high - low) + 1;
+	rover = get_random_u32_below(remaining) + low;
 #else
 	inet_get_local_port_range(net, &low, &high);
-#endif
 	remaining = (high - low) + 1;
 	rover = (int)(((u64)get_random_u32() * remaining) >> 32) + low;
+#endif
 	do {
 		rover++;
 		if (rover < low || rover > high)
