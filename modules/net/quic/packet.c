@@ -1039,7 +1039,7 @@ static int quic_packet_stateless_reset_process(struct sock *sk, struct sk_buff *
 	 * end the connection.
 	 */
 	close.errcode = QUIC_TRANSPORT_ERROR_CRYPTO;
-	quic_inq_event_recv(sk, QUIC_EVENT_CONNECTION_CLOSE, &close);
+	quic_inq_event_recv(sk, QUIC_EVENT_CONNECTION_CLOSE, &close, sizeof(close));
 	quic_set_state(sk, QUIC_SS_CLOSED);
 	consume_skb(skb);
 	pr_debug("%s: peer reset\n", __func__);
@@ -1702,7 +1702,8 @@ static int quic_packet_app_process(struct sock *sk, struct sk_buff *skb)
 			 * decryption failed, as the new key has been installed.
 			 */
 			key_phase = cb->key_phase;
-			quic_inq_event_recv(sk, QUIC_EVENT_KEY_UPDATE, &key_phase);
+			quic_inq_event_recv(sk, QUIC_EVENT_KEY_UPDATE, &key_phase,
+					    sizeof(key_phase));
 			goto err;
 		}
 		/* If this is not a result of a key update, propagate error to close connection. */
@@ -1711,7 +1712,7 @@ static int quic_packet_app_process(struct sock *sk, struct sk_buff *skb)
 	}
 	if (cb->key_update) { /* Notify application of the key update with new key phase. */
 		key_phase = cb->key_phase;
-		quic_inq_event_recv(sk, QUIC_EVENT_KEY_UPDATE, &key_phase);
+		quic_inq_event_recv(sk, QUIC_EVENT_KEY_UPDATE, &key_phase, sizeof(key_phase));
 	}
 	if (!cb->resume) /* No decryption (e.g., via disable_1rtt_encryption or async complete). */
 		QUIC_INC_STATS(net, QUIC_MIB_PKT_DECFASTPATHS);
@@ -2145,7 +2146,7 @@ static int quic_packet_number_check(struct sock *sk)
 		struct quic_connection_close close = {};
 
 		/* Notify application that the connection is being closed. */
-		quic_inq_event_recv(sk, QUIC_EVENT_CONNECTION_CLOSE, &close);
+		quic_inq_event_recv(sk, QUIC_EVENT_CONNECTION_CLOSE, &close, sizeof(close));
 		quic_set_state(sk, QUIC_SS_CLOSED);
 	}
 	return -EPIPE;

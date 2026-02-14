@@ -24,7 +24,7 @@ void quic_timer_sack_handler(struct sock *sk)
 		return;
 
 	if (inq->sack_flag == QUIC_SACK_FLAG_NONE) { /* Idle timer expired, close the connection. */
-		quic_inq_event_recv(sk, QUIC_EVENT_CONNECTION_CLOSE, &close);
+		quic_inq_event_recv(sk, QUIC_EVENT_CONNECTION_CLOSE, &close, sizeof(close));
 		quic_set_state(sk, QUIC_SS_CLOSED);
 
 		pr_debug("%s: idle timeout\n", __func__);

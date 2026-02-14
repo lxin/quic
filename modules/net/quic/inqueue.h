@@ -51,7 +51,7 @@ struct quic_inqueue {
 int quic_inq_handshake_recv(struct sock *sk, struct quic_frame *frame);
 int quic_inq_stream_recv(struct sock *sk, struct quic_frame *frame);
 int quic_inq_dgram_recv(struct sock *sk, struct quic_frame *frame);
-int quic_inq_event_recv(struct sock *sk, u8 event, void *args);
+int quic_inq_event_recv(struct sock *sk, u8 event, void *data, u32 len);
 
 void quic_inq_list_purge(struct sock *sk, struct list_head *head, struct quic_stream *stream);
 void quic_inq_backlog_tail(struct sock *sk, struct sk_buff *skb);

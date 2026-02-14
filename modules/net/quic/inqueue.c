@@ -111,7 +111,7 @@ static void quic_inq_stream_tail(struct sock *sk, struct quic_stream *stream,
 		update.id = stream->id;
 		update.state = QUIC_STREAM_RECV_STATE_RECVD;
 		update.finalsz = frame->offset + frame->len;
-		quic_inq_event_recv(sk, QUIC_EVENT_STREAM_UPDATE, &update);
+		quic_inq_event_recv(sk, QUIC_EVENT_STREAM_UPDATE, &update, sizeof(update));
 
 		/* rfc9000#section-3.2:
 		 *
@@ -213,7 +213,7 @@ int quic_inq_stream_recv(struct sock *sk, struct quic_frame *frame)
 	if (!stream->recv.highest) { /* Notify if first data received on stream. */
 		update.id = stream->id;
 		update.state = QUIC_STREAM_RECV_STATE_RECV;
-		quic_inq_event_recv(sk, QUIC_EVENT_STREAM_UPDATE, &update);
+		quic_inq_event_recv(sk, QUIC_EVENT_STREAM_UPDATE, &update, sizeof(update));
 	}
 	head = &inq->stream_list;
 	if (stream->recv.offset < offset) { /* Out-of-order: insert in frame list in order. */
@@ -256,7 +256,7 @@ int quic_inq_stream_recv(struct sock *sk, struct quic_frame *frame)
 			update.id = stream->id;
 			update.state = QUIC_STREAM_RECV_STATE_SIZE_KNOWN;
 			update.finalsz = off;
-			quic_inq_event_recv(sk, QUIC_EVENT_STREAM_UPDATE, &update);
+			quic_inq_event_recv(sk, QUIC_EVENT_STREAM_UPDATE, &update, sizeof(update));
 
 			/* rfc9000#section-3.2:
 			 *
@@ -389,7 +389,8 @@ static void quic_inq_handshake_tail(struct sock *sk, struct quic_frame *frame)
 				 * can receive it via the NEW_SESSION_TICKET event or getsockopt().
 				 */
 				crypto->ticket_ready = 1;
-				quic_inq_event_recv(sk, QUIC_EVENT_NEW_SESSION_TICKET, ticket);
+				quic_inq_event_recv(sk, QUIC_EVENT_NEW_SESSION_TICKET, ticket,
+						    ticket->len);
 			}
 		}
 	}
@@ -535,11 +536,10 @@ void quic_inq_set_param(struct sock *sk, struct quic_transport_param *p)
 }
 
 /* Process an incoming QUIC event and handle it for delivery. */
-int quic_inq_event_recv(struct sock *sk, u8 event, void *args)
+int quic_inq_event_recv(struct sock *sk, u8 event, void *data, u32 len)
 {
 	struct list_head *head = &quic_inq(sk)->recv_list;
 	struct quic_frame *frame, *pos;
-	u32 args_len = 0;
 	u8 *p;
 
 	if (!event || event >= QUIC_EVENT_MAX)
@@ -548,45 +548,13 @@ int quic_inq_event_recv(struct sock *sk, u8 event, void *args)
 	if (!(quic_inq(sk)->events & BIT(event)))
 		return 0;  /* Event type not subscribed by user. */
 
-	switch (event) { /* Determine size of the argument payload based on event type. */
-	case QUIC_EVENT_STREAM_UPDATE:
-		args_len = sizeof(struct quic_stream_update);
-		break;
-	case QUIC_EVENT_STREAM_MAX_DATA:
-		args_len = sizeof(struct quic_stream_max_data);
-		break;
-	case QUIC_EVENT_STREAM_MAX_STREAM:
-		args_len = sizeof(u64);
-		break;
-	case QUIC_EVENT_CONNECTION_ID:
-		args_len = sizeof(struct quic_connection_id_info);
-		break;
-	case QUIC_EVENT_CONNECTION_CLOSE:
-		args_len = sizeof(struct quic_connection_close);
-		p = ((struct quic_connection_close *)args)->phrase;
-		if (*p)
-			args_len += strlen(p) + 1;
-		break;
-	case QUIC_EVENT_CONNECTION_MIGRATION:
-	case QUIC_EVENT_KEY_UPDATE:
-		args_len = sizeof(u8);
-		break;
-	case QUIC_EVENT_NEW_SESSION_TICKET:
-	case QUIC_EVENT_NEW_TOKEN:
-		args_len = ((struct quic_data *)args)->len;
-		args = ((struct quic_data *)args)->data;
-		break;
-	default:
-		return -EINVAL;
-	}
-
-	frame = quic_frame_alloc(1 + args_len, NULL, GFP_ATOMIC);
+	frame = quic_frame_alloc(1 + len, NULL, GFP_ATOMIC);
 	if (!frame) {
-		pr_debug("%s: event: %u, args_len: %u\n", __func__, event, args_len);
+		pr_debug("%s: event: %u, len: %u\n", __func__, event, len);
 		return -ENOMEM;
 	}
 	p = quic_put_data(frame->data, &event, 1);
-	quic_put_data(p, args, args_len);
+	quic_put_data(p, data, len);
 	frame->event = 1; /* Mark this frame as an event. */
 	frame->offset = 0;
 

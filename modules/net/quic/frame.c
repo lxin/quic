@@ -442,7 +442,7 @@ static struct quic_frame *quic_frame_retire_conn_id_create(struct sock *sk, void
 	info.prior_to =  quic_conn_id_first_number(id_set);
 	active = quic_conn_id_active(id_set);
 	info.active = quic_conn_id_number(active);
-	quic_inq_event_recv(sk, QUIC_EVENT_CONNECTION_ID, &info);
+	quic_inq_event_recv(sk, QUIC_EVENT_CONNECTION_ID, &info, sizeof(info));
 
 	return frame;
 }
@@ -1215,7 +1215,7 @@ static int quic_frame_retire_conn_id_process(struct sock *sk, struct quic_frame 
 		info.prior_to = first;
 		active = quic_conn_id_active(id_set);
 		info.active = quic_conn_id_number(active);
-		quic_inq_event_recv(sk, QUIC_EVENT_CONNECTION_ID, &info);
+		quic_inq_event_recv(sk, QUIC_EVENT_CONNECTION_ID, &info, sizeof(info));
 	}
 
 	/* rfc9000#section-5.1.2:
@@ -1253,7 +1253,7 @@ static int quic_frame_new_token_process(struct sock *sk, struct quic_frame *fram
 	if (quic_data_dup(token, p, length))
 		return -ENOMEM;
 	/* Notify upper layers that a valid NEW_TOKEN was received. */
-	quic_inq_event_recv(sk, QUIC_EVENT_NEW_TOKEN, token);
+	quic_inq_event_recv(sk, QUIC_EVENT_NEW_TOKEN, token, token->len);
 
 	len -= length;
 	return (int)(frame->len - len);
@@ -1372,7 +1372,7 @@ static int quic_frame_reset_stream_process(struct sock *sk, struct quic_frame *f
 	update.state = QUIC_STREAM_RECV_STATE_RESET_RECVD;
 	update.errcode = errcode;
 	update.finalsz = finalsz;
-	quic_inq_event_recv(sk, QUIC_EVENT_STREAM_UPDATE, &update);
+	quic_inq_event_recv(sk, QUIC_EVENT_STREAM_UPDATE, &update, sizeof(update));
 
 	/* rfc9000#section-3.2:
 	 *
@@ -1439,7 +1439,7 @@ static int quic_frame_stop_sending_process(struct sock *sk, struct quic_frame *f
 	update.id = (s64)stream_id;
 	update.state = QUIC_STREAM_SEND_STATE_RESET_SENT;
 	update.errcode = errcode;
-	quic_inq_event_recv(sk, QUIC_EVENT_STREAM_UPDATE, &update);
+	quic_inq_event_recv(sk, QUIC_EVENT_STREAM_UPDATE, &update, sizeof(update));
 
 	stream->send.state = update.state;
 	quic_outq_list_purge(sk, &outq->transmitted_list, stream);
@@ -1509,7 +1509,7 @@ static int quic_frame_max_stream_data_process(struct sock *sk, struct quic_frame
 		 */
 		data.id = stream->id;
 		data.max_data = max_bytes;
-		quic_inq_event_recv(sk, QUIC_EVENT_STREAM_MAX_DATA, &data);
+		quic_inq_event_recv(sk, QUIC_EVENT_STREAM_MAX_DATA, &data, sizeof(data));
 	}
 out:
 	return (int)(frame->len - len);
@@ -1553,7 +1553,7 @@ static int quic_frame_max_streams_uni_process(struct sock *sk, struct quic_frame
 		type = QUIC_STREAM_TYPE_SERVER_UNI;
 	/* Notify the application of updated maximum uni-directional stream ID allowed to open. */
 	stream_id = quic_stream_streams_to_id(max, type);
-	quic_inq_event_recv(sk, QUIC_EVENT_STREAM_MAX_STREAM, &stream_id);
+	quic_inq_event_recv(sk, QUIC_EVENT_STREAM_MAX_STREAM, &stream_id, sizeof(stream_id));
 
 	streams->send.max_uni_stream_id = stream_id;
 	sk->sk_write_space(sk); /* Wake up processes blocked while attempting to open a stream. */
@@ -1586,7 +1586,7 @@ static int quic_frame_max_streams_bidi_process(struct sock *sk, struct quic_fram
 	if (quic_is_serv(sk))
 		type = QUIC_STREAM_TYPE_SERVER_BIDI;
 	stream_id = quic_stream_streams_to_id(max, type);
-	quic_inq_event_recv(sk, QUIC_EVENT_STREAM_MAX_STREAM, &stream_id);
+	quic_inq_event_recv(sk, QUIC_EVENT_STREAM_MAX_STREAM, &stream_id, sizeof(stream_id));
 
 	streams->send.max_bidi_stream_id = stream_id;
 	sk->sk_write_space(sk);
@@ -1623,7 +1623,8 @@ static int quic_frame_connection_close_process(struct sock *sk, struct quic_fram
 		QUIC_INC_STATS(sock_net(sk), QUIC_MIB_FRM_INCLOSES);
 	close->errcode = err_code;
 	close->frame = (u8)ftype;
-	quic_inq_event_recv(sk, QUIC_EVENT_CONNECTION_CLOSE, close);
+	quic_inq_event_recv(sk, QUIC_EVENT_CONNECTION_CLOSE, close,
+			    offsetof(struct quic_connection_close, phrase) + phrase_len + 1);
 
 	/* Save close frame info so that user space can retrieve it via getsockopt(). */
 	data = kzalloc(phrase_len + 1, GFP_ATOMIC);
@@ -1789,7 +1790,7 @@ static int quic_frame_path_response_process(struct sock *sk, struct quic_frame *
 	quic_set_sk_addr(sk, quic_path_daddr(paths, 0), 0);
 	/* Notify application of updated path; indicate whether it is a local address change. */
 	local = !quic_cmp_sk_addr(sk, quic_path_saddr(paths, 1), quic_path_saddr(paths, 0));
-	quic_inq_event_recv(sk, QUIC_EVENT_CONNECTION_MIGRATION, &local);
+	quic_inq_event_recv(sk, QUIC_EVENT_CONNECTION_MIGRATION, &local, sizeof(local));
 
 	/* Update path ID for all control and transmitted frames, reset route, and use the
 	 * active connection ID for the new path.
@@ -1937,7 +1938,7 @@ static void quic_frame_reset_stream_ack(struct sock *sk, struct quic_frame *fram
 	update.id = stream->id;
 	update.state = QUIC_STREAM_SEND_STATE_RESET_RECVD;
 	update.errcode = stream->send.errcode;
-	quic_inq_event_recv(sk, QUIC_EVENT_STREAM_UPDATE, &update);
+	quic_inq_event_recv(sk, QUIC_EVENT_STREAM_UPDATE, &update, sizeof(update));
 
 	/* rfc9000#section-3.1:
 	 *
@@ -1977,7 +1978,7 @@ static void quic_frame_stream_ack(struct sock *sk, struct quic_frame *frame)
 	/* Notify that stream received all data by peer. */
 	update.id = stream->id;
 	update.state = QUIC_STREAM_SEND_STATE_RECVD;
-	quic_inq_event_recv(sk, QUIC_EVENT_STREAM_UPDATE, &update);
+	quic_inq_event_recv(sk, QUIC_EVENT_STREAM_UPDATE, &update, sizeof(update));
 
 	/* rfc9000#section-3.1:
 	 *
