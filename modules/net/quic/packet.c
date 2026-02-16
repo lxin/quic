@@ -667,7 +667,7 @@ static int quic_packet_retry_create(struct sock *sk)
 
 	quic_conn_id_generate(&conn_id); /* Generate new SCID for the Retry packet. */
 	/* Compute total packet length: header + token + integrity tag. */
-	len = QUIC_LONG_HLEN(&conn_id, &packet->scid) + tlen + QUIC_TAG_LEN;
+	len = QUIC_LONG_HLEN(&packet->scid, &conn_id) + tlen + QUIC_TAG_LEN;
 	hlen = quic_encap_len(da) + MAX_HEADER;
 	skb = alloc_skb(hlen + len, GFP_ATOMIC);
 	if (!skb)
