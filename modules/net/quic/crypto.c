@@ -614,7 +614,7 @@ static bool quic_crypto_is_cipher_chacha(struct quic_crypto *crypto)
 
 /* Encrypts a QUIC packet before transmission.  This function performs AEAD encryption of
  * the packet payload and applies header protection. It handles key phase tracking and key
- * update timing..
+ * update timing.
  *
  * Return: 0 on success, or a negative error code.
  */
