@@ -1452,7 +1452,7 @@ next:
 				 * Destination Connection ID field in subsequent packets it sends to
 				 * the value of the Source Connection ID field that it received.
 				 *
-				 * (Sever sets it when creating the accept socket in accept()).
+				 * (Server sets it when creating the accept socket in accept()).
 				 */
 				conn_id = quic_conn_id_active(quic_dest(sk));
 				quic_conn_id_update(conn_id, packet->scid.data, packet->scid.len);
