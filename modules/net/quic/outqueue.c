@@ -18,7 +18,7 @@ static int quic_outq_limit_check(struct sock *sk, struct quic_frame *frame)
 	struct quic_path_group *paths = quic_paths(sk);
 	struct quic_packet *packet = quic_packet(sk);
 	struct quic_outqueue *outq = quic_outq(sk);
-	u16 len;
+	u32 len;
 
 	/* If in single-packet mode, allow only one packet to transmit. */
 	if (outq->single && outq->count)
