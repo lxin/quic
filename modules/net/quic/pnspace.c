@@ -79,7 +79,7 @@ static int quic_pnspace_grow(struct quic_pnspace *space, u16 size)
  */
 int quic_pnspace_check(struct quic_pnspace *space, s64 pn)
 {
-	if (space->base_pn == -1) /* No any packet number received yet. */
+	if (space->base_pn == -1) /* No packet number received yet. */
 		return 0;
 
 	if (pn < space->min_pn_seen || pn >= space->base_pn + QUIC_PN_MAP_SIZE)
