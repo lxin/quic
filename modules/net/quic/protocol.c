@@ -150,7 +150,7 @@ static __poll_t quic_inet_poll(struct file *file, struct socket *sock, poll_tabl
 
 	if (quic_is_closed(sk)) {
 		/* A broken connection should report almost everything in order to let
-		 * applications to detect it reliable.
+		 * applications to detect it reliably.
 		 */
 		mask |= EPOLLHUP;
 		mask |= EPOLLERR;
