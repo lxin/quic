@@ -2139,7 +2139,7 @@ static int quic_packet_number_check(struct sock *sk)
 
 	/* rfc9000#section-12.3:
 	 *
-	 * If the packet number for sending reaches 262-1, the sender MUST close the
+	 * If the packet number for sending reaches 2^62-1, the sender MUST close the
 	 * connection without sending a CONNECTION_CLOSE frame or any further packets.
 	 */
 	if (!quic_is_closed(sk)) {
