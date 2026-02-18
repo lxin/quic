@@ -109,7 +109,7 @@ struct quic_transport_param {
 	__u64	max_stream_data_bidi_local;
 	__u64	max_stream_data_bidi_remote;
 	__u64	max_stream_data_uni;
-	__u64	reserved;
+	__u64	reserved[4];
 };
 
 struct quic_config {
@@ -122,7 +122,7 @@ struct quic_config {
 	__u8	stream_data_nodelay;
 	__u8	receive_session_ticket;
 	__u8	certificate_request;
-	__u8	reserved[3];
+	__u8	reserved[43];
 };
 
 struct quic_crypto_secret {
