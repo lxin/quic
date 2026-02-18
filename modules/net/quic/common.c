@@ -114,7 +114,7 @@ static int quic_shash_table_init(struct quic_shash_table *ht, u32 size)
 {
 	int i;
 
-	ht->hash = vmalloc(size * sizeof(struct quic_shash_head));
+	ht->hash = vmalloc_array(size, sizeof(struct quic_shash_head));
 	if (!ht->hash)
 		return -ENOMEM;
 
@@ -130,7 +130,7 @@ static int quic_uhash_table_init(struct quic_uhash_table *ht, u32 size)
 {
 	int i;
 
-	ht->hash = vmalloc(size * sizeof(struct quic_uhash_head));
+	ht->hash = vmalloc_array(size, sizeof(struct quic_uhash_head));
 	if (!ht->hash)
 		return -ENOMEM;
 
