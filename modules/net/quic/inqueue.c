@@ -181,13 +181,13 @@ int quic_inq_stream_recv(struct sock *sk, struct quic_frame *frame)
 	}
 
 	/* Check receive buffer size and system limits. */
-	quic_inq_set_owner_r((int)frame->len, sk);
-	if (sk_rmem_alloc_get(sk) > sk->sk_rcvbuf || !quic_sk_rmem_schedule(sk, frame->len)) {
+	if (sk_rmem_alloc_get(sk) + frame->len > sk->sk_rcvbuf ||
+	    !quic_sk_rmem_schedule(sk, frame->len)) {
 		QUIC_INC_STATS(net, QUIC_MIB_FRM_RCVBUFDROP);
-		quic_inq_rfree((int)frame->len, sk);
 		return -ENOBUFS;
 	}
 
+	quic_inq_set_owner_r((int)frame->len, sk);
 	off = offset + frame->len;
 	if (off > stream->recv.highest) { /* New data beyond current highest seen. */
 		/* rfc9000#section-4.1:
@@ -425,8 +425,8 @@ int quic_inq_handshake_recv(struct sock *sk, struct quic_frame *frame)
 		return 0;
 	}
 
-	quic_inq_set_owner_r((int)frame->len, sk);
-	if (sk_rmem_alloc_get(sk) > sk->sk_rcvbuf || !quic_sk_rmem_schedule(sk, frame->len)) {
+	if (sk_rmem_alloc_get(sk) + frame->len > sk->sk_rcvbuf ||
+	    !quic_sk_rmem_schedule(sk, frame->len)) {
 		/* rfc9000#section-7.5:
 		 *
 		 * If an endpoint's buffer is exceeded during the handshake, it can expand its
@@ -436,10 +436,10 @@ int quic_inq_handshake_recv(struct sock *sk, struct quic_frame *frame)
 		 */
 		QUIC_INC_STATS(sock_net(sk), QUIC_MIB_FRM_RCVBUFDROP);
 		frame->errcode = QUIC_TRANSPORT_ERROR_CRYPTO_BUF_EXCEEDED;
-		quic_inq_rfree((int)frame->len, sk);
 		return -ENOBUFS;
 	}
 
+	quic_inq_set_owner_r((int)frame->len, sk);
 	head = &inq->handshake_list;
 	if (offset > crypto_offset) {
 		list_for_each_entry(pos, head, list) {
@@ -574,13 +574,13 @@ int quic_inq_event_recv(struct sock *sk, u8 event, void *data, u32 len)
 /* Process an incoming QUIC datagram frame. */
 int quic_inq_dgram_recv(struct sock *sk, struct quic_frame *frame)
 {
-	quic_inq_set_owner_r((int)frame->len, sk);
-	if (sk_rmem_alloc_get(sk) > sk->sk_rcvbuf || !quic_sk_rmem_schedule(sk, frame->len)) {
+	if (sk_rmem_alloc_get(sk) + frame->len > sk->sk_rcvbuf ||
+	    !quic_sk_rmem_schedule(sk, frame->len)) {
 		QUIC_INC_STATS(sock_net(sk), QUIC_MIB_FRM_RCVBUFDROP);
-		quic_inq_rfree((int)frame->len, sk);
 		return -ENOBUFS;
 	}
 
+	quic_inq_set_owner_r((int)frame->len, sk);
 	frame->dgram = 1; /* Mark the frame as a datagram and prepare for delivery. */
 	frame->offset = 0;
 	list_add_tail(&frame->list, &quic_inq(sk)->recv_list);
