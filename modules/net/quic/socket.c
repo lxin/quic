@@ -1869,21 +1869,26 @@ static int quic_sock_set_config(struct sock *sk, struct quic_config *c, u32 len)
 
 static int quic_sock_set_alpn(struct sock *sk, u8 *data, u32 len)
 {
-	struct quic_data *alpns = quic_alpn(sk);
-	u8 *p;
+	struct quic_data tmp, *alpns = quic_alpn(sk);
+	int err;
 
 	if (!len || len > QUIC_ALPN_MAX_LEN || quic_is_listen(sk))
 		return -EINVAL;
 
-	p = kzalloc(len + 1, GFP_KERNEL);
-	if (!p)
+	tmp.len  = len + 1;
+	tmp.data = kzalloc(tmp.len, GFP_KERNEL);
+	if (!tmp.data)
 		return -ENOMEM;
 
-	kfree(alpns->data);
-	alpns->data = p;
-	alpns->len  = len + 1;
+	err = quic_data_from_string(&tmp, data, len);
+	if (err) {
+		quic_data_free(&tmp);
+		return err;
+	}
 
-	return quic_data_from_string(alpns, data, len);
+	kfree(alpns->data);
+	*alpns = tmp;
+	return 0;
 }
 
 static int quic_sock_set_token(struct sock *sk, void *data, u32 len)
