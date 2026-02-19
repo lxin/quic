@@ -1596,7 +1596,7 @@ out:
 
 static int quic_frame_connection_close_process(struct sock *sk, struct quic_frame *frame, u8 type)
 {
-	u8 *p = frame->data, buf[QUIC_FRAME_BUF_LARGE] = {}, *data;
+	u8 *p = frame->data, buf[QUIC_FRAME_BUF_LARGE] = {}, *data = NULL;
 	struct quic_outqueue *outq = quic_outq(sk);
 	struct quic_connection_close *close;
 	u64 err_code, phrase_len, ftype = 0;
@@ -1618,27 +1618,28 @@ static int quic_frame_connection_close_process(struct sock *sk, struct quic_fram
 		if (phrase_len > QUIC_CLOSE_PHRASE_MAX_LEN)
 			return -EINVAL;
 		memcpy(close->phrase, p, phrase_len);
+		len -= phrase_len;
+
+		phrase_len++; /* Include '\0' at the end. */
+		data = kmemdup(close->phrase, phrase_len, GFP_ATOMIC);
+		if (!data)
+			return -ENOMEM;
 	}
 	if (type == QUIC_FRAME_CONNECTION_CLOSE)
 		QUIC_INC_STATS(sock_net(sk), QUIC_MIB_FRM_INCLOSES);
 	close->errcode = err_code;
 	close->frame = (u8)ftype;
-	quic_inq_event_recv(sk, QUIC_EVENT_CONNECTION_CLOSE, close,
-			    offsetof(struct quic_connection_close, phrase) + phrase_len + 1);
+	quic_inq_event_recv(sk, QUIC_EVENT_CONNECTION_CLOSE, close, sizeof(*close) + phrase_len);
 
 	/* Save close frame info so that user space can retrieve it via getsockopt(). */
-	data = kzalloc(phrase_len + 1, GFP_ATOMIC);
-	if (data) {
-		outq->close_errcode = err_code;
-		outq->close_frame = (u8)ftype;
-		kfree(outq->close_phrase);
-		outq->close_phrase = memcpy(data, p, phrase_len);
-	}
+	outq->close_errcode = err_code;
+	outq->close_frame = (u8)ftype;
+	kfree(outq->close_phrase);
+	outq->close_phrase = data;
 
 	quic_set_state(sk, QUIC_SS_CLOSED);
 	pr_debug("%s: errcode: %d, frame: %d\n", __func__, close->errcode, close->frame);
 
-	len -= phrase_len;
 	return (int)(frame->len - len);
 }
 
