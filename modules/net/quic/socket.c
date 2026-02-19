@@ -1861,7 +1861,7 @@ static int quic_sock_set_transport_param(struct sock *sk, struct quic_transport_
 {
 	struct quic_transport_param param = {};
 
-	if (len < sizeof(param) || quic_is_established(sk))
+	if (len < offsetof(struct quic_transport_param, reserved) || quic_is_established(sk))
 		return -EINVAL;
 
 	/* Manually setting remote transport parameters is required only to enable 0-RTT data
@@ -1882,7 +1882,7 @@ static int quic_sock_set_transport_param(struct sock *sk, struct quic_transport_
 
 static int quic_sock_set_config(struct sock *sk, struct quic_config *config, u32 len)
 {
-	if (len < sizeof(*config) || quic_is_established(sk))
+	if (len < offsetof(struct quic_config, reserved) || quic_is_established(sk))
 		return -EINVAL;
 
 	return quic_sock_apply_config(sk, config);
@@ -2300,9 +2300,9 @@ static int quic_sock_get_transport_param(struct sock *sk, u32 len,
 {
 	struct quic_transport_param param = {};
 
-	if (len < sizeof(param))
+	if (len < offsetof(struct quic_transport_param, reserved))
 		return -EINVAL;
-	len = sizeof(param);
+	len = offsetof(struct quic_transport_param, reserved);
 	if (copy_from_sockptr(&param, optval, len))
 		return -EFAULT;
 
@@ -2317,9 +2317,9 @@ static int quic_sock_get_config(struct sock *sk, u32 len, sockptr_t optval, sock
 {
 	struct quic_config config = {};
 
-	if (len < sizeof(config))
+	if (len < offsetof(struct quic_config, reserved))
 		return -EINVAL;
-	len = sizeof(config);
+	len = offsetof(struct quic_config, reserved);
 
 	quic_sock_fetch_config(sk, &config);
 	if (copy_to_sockptr(optlen, &len, sizeof(len)) || copy_to_sockptr(optval, &config, len))
