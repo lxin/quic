@@ -511,6 +511,8 @@ u32 quic_path_pl_toobig(struct quic_path_group *paths, u32 pmtu, bool *reset_tim
 void quic_path_pl_reset(struct quic_path_group *paths)
 {
 	paths->pl.number = 0;
+	paths->pl.probe_high = 0;
+	paths->pl.probe_count = 0;
 	paths->pl.state = QUIC_PL_BASE;
 	paths->pl.pmtu = QUIC_BASE_PLPMTU;
 	paths->pl.probe_size = QUIC_BASE_PLPMTU;
