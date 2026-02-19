@@ -1670,7 +1670,7 @@ static int quic_sock_set_connection_close(struct sock *sk, struct quic_connectio
 					  u32 len)
 {
 	struct quic_outqueue *outq = quic_outq(sk);
-	u8 *data;
+	u8 *data = NULL;
 
 	if (len < sizeof(*close))
 		return -EINVAL;
@@ -1686,10 +1686,10 @@ static int quic_sock_set_connection_close(struct sock *sk, struct quic_connectio
 		data = kmemdup(close->phrase, len, GFP_KERNEL);
 		if (!data)
 			return -ENOMEM;
-		kfree(outq->close_phrase);
-		outq->close_phrase = data;
 	}
 
+	kfree(outq->close_phrase);
+	outq->close_phrase = data;
 	outq->close_errcode = close->errcode;
 	return 0;
 }
