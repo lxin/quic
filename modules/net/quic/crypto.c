@@ -738,8 +738,8 @@ EXPORT_SYMBOL_GPL(quic_crypto_decrypt);
 int quic_crypto_set_cipher(struct quic_crypto *crypto, u32 type, u8 flag)
 {
 	struct quic_cipher *cipher;
-	int err = -EINVAL;
 	void *tfm;
+	int err;
 
 	if (type < QUIC_CIPHER_MIN || type > QUIC_CIPHER_MAX)
 		return -EINVAL;
