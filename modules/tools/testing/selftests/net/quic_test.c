@@ -240,6 +240,7 @@ static int recv_event_connection_close(int sockfd, uint32_t errcode, uint8_t fra
 {
 	union quic_event *ev;
 
+	memset(msg, 0, sizeof(msg));
 	if (recv_event(sockfd, msg, sizeof(msg), QUIC_EVENT_CONNECTION_CLOSE))
 		return -1;
 	ev = (union quic_event *)&msg[1];
@@ -356,6 +357,7 @@ static int getopt_connection_close(int sockfd, uint32_t errcode, uint8_t frame, 
 
 	info = (struct quic_connection_close *)msg;
 	optlen = sizeof(msg);
+	memset(msg, 0, optlen);
 	if (getopt_pass(sockfd, QUIC_SOCKOPT_CONNECTION_CLOSE, msg, &optlen))
 		return -1;
 	if (info->errcode != errcode || info->frame != frame ||
