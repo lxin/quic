@@ -133,11 +133,10 @@ static int quic_packet_version_change(struct sock *sk, struct quic_conn_id *dcid
 int quic_packet_select_version(struct sock *sk, u32 *versions, u8 count)
 {
 	struct quic_packet *packet = quic_packet(sk);
-	struct quic_config *c = quic_config(sk);
 	u8 i, pref_found = 0, ch_found = 0;
 	u32 preferred, chosen, best = 0;
 
-	preferred = c->version ?: QUIC_VERSION_V1;
+	preferred = quic_outq(sk)->version ?: QUIC_VERSION_V1;
 	chosen = packet->version;
 
 	for (i = 0; i < count; i++) {
@@ -191,7 +190,6 @@ void quic_packet_rcv_err_pmtu(struct sock *sk)
 {
 	struct quic_path_group *paths = quic_paths(sk);
 	struct quic_packet *packet = quic_packet(sk);
-	struct quic_config *c = quic_config(sk);
 	u32 pathmtu, info, taglen;
 	struct dst_entry *dst;
 	bool reset_timer;
@@ -201,7 +199,7 @@ void quic_packet_rcv_err_pmtu(struct sock *sk)
 
 	info = clamp(paths->mtu_info, QUIC_PATH_MIN_PMTU, QUIC_PATH_MAX_PMTU);
 	/* If PLPMTUD is not enabled, update MSS using the route and ICMP info. */
-	if (!c->plpmtud_probe_interval) {
+	if (!paths->plpmtud_interval) {
 		if (quic_packet_route(sk) < 0)
 			return;
 
@@ -222,7 +220,7 @@ void quic_packet_rcv_err_pmtu(struct sock *sk)
 	info = info - packet->hlen - taglen;
 	pathmtu = quic_path_pl_toobig(paths, info, &reset_timer);
 	if (reset_timer)
-		quic_timer_reset(sk, QUIC_TIMER_PMTU, c->plpmtud_probe_interval);
+		quic_timer_reset(sk, QUIC_TIMER_PMTU, paths->plpmtud_interval);
 	if (pathmtu)
 		quic_packet_mss_update(sk, pathmtu + taglen);
 }
@@ -952,7 +950,7 @@ static int quic_packet_listen_process(struct sock *sk, struct sk_buff *skb)
 	/* Save original DCID for future token validation or Retry logic. */
 	quic_conn_id_update(&odcid, packet->dcid.data, packet->dcid.len);
 	/* If configured to validate client addresses, handle token logic. */
-	if (quic_config(sk)->validate_peer_address) {
+	if (quic_outq(sk)->validate_peer_address) {
 		if (quic_packet_backlog_schedule(net, skb))
 			return 0;
 		if (!token.len) {
@@ -2250,7 +2248,6 @@ int quic_packet_route(struct sock *sk)
 {
 	struct quic_path_group *paths = quic_paths(sk);
 	struct quic_packet *packet = quic_packet(sk);
-	struct quic_config *c = quic_config(sk);
 	union quic_addr *sa, *da;
 	u32 pmtu;
 	int err;
@@ -2266,7 +2263,7 @@ int quic_packet_route(struct sock *sk)
 	quic_packet_mss_update(sk, pmtu - packet->hlen);
 
 	quic_path_pl_reset(paths);
-	quic_timer_reset(sk, QUIC_TIMER_PMTU, c->plpmtud_probe_interval);
+	quic_timer_reset(sk, QUIC_TIMER_PMTU, paths->plpmtud_interval);
 	return 0;
 }
 
@@ -2275,7 +2272,6 @@ int quic_packet_config(struct sock *sk, u8 level, u8 path)
 {
 	struct quic_conn_id_set *dest = quic_dest(sk), *source = quic_source(sk);
 	struct quic_packet *packet = quic_packet(sk);
-	struct quic_config *c = quic_config(sk);
 	u32 hlen = QUIC_HLEN;
 
 	/* If packet already has data, no need to reconfigure. */
@@ -2299,7 +2295,7 @@ int quic_packet_config(struct sock *sk, u8 level, u8 path)
 		/* Allow fragmentation for handshake packets before PLPMTUD probing starts.
 		 * MTU discovery does not rely on ICMP Packet Too Big once PLPMTUD is enabled.
 		 */
-		packet->ipfragok = !!c->plpmtud_probe_interval;
+		packet->ipfragok = !!quic_paths(sk)->plpmtud_interval;
 	}
 	packet->level = level;
 	packet->len = (u16)hlen;

@@ -52,6 +52,15 @@ struct quic_outqueue {
 	u32 window;			/* Congestion-controlled send window size */
 	u16 count;			/* Packets sent in current transmit round */
 
+	/* Kernel consumers: nofity userspace handshake */
+	u8 receive_session_ticket;	/* Notify userspace to expect session ticket */
+	u8 certificate_request;		/* Notify userspace to request certificate */
+	u32 payload_cipher_type;	/* Notify userspace for preferred cipher type */
+
+	u32 version;			/* Preferred QUIC version */
+	u8 validate_peer_address:1;	/* Server: enable address validation (Retry) */
+	u8 stream_data_nodelay:1;	/* Disable Nagle-like coalescing for STREAM data */
+
 	/* Close Information */
 	u8  close_frame;	/* Frame type to use in CONNECTION_CLOSE */
 	u32 close_errcode;	/* Application or transport close error code */

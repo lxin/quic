@@ -674,9 +674,8 @@ EXPORT_SYMBOL_GPL(quic_cong_rtt_update);
 
 void quic_cong_set_algo(struct quic_cong *cong, u8 algo)
 {
-	if (algo >= QUIC_CONG_ALG_MAX)
-		algo = QUIC_CONG_ALG_RENO;
-
+	/* The caller must ensure algo < QUIC_CONG_ALG_MAX. */
+	cong->algo = algo;
 	cong->state = QUIC_CONG_SLOW_START;
 	cong->ssthresh = U32_MAX;
 	cong->ops = &quic_congs[algo];
@@ -690,6 +689,7 @@ void quic_cong_set_srtt(struct quic_cong *cong, u32 srtt)
 	 *   smoothed_rtt = kInitialRtt
 	 *   rttvar = kInitialRtt / 2
 	 */
+	cong->initial_srtt = srtt;
 	cong->latest_rtt = srtt;
 	cong->smoothed_rtt = cong->latest_rtt;
 	cong->rttvar = cong->smoothed_rtt / 2;

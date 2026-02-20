@@ -89,7 +89,6 @@ struct quic_sock {
 	struct inet_sock		inet;
 	struct list_head		reqs;
 
-	struct quic_config		config;
 	struct quic_data		ticket;
 	struct quic_data		token;
 	struct quic_data		alpn;
@@ -121,11 +120,6 @@ static inline struct quic_sock *quic_sk(const struct sock *sk)
 static inline struct list_head *quic_reqs(const struct sock *sk)
 {
 	return &quic_sk(sk)->reqs;
-}
-
-static inline struct quic_config *quic_config(const struct sock *sk)
-{
-	return &quic_sk(sk)->config;
 }
 
 static inline struct quic_data *quic_token(const struct sock *sk)

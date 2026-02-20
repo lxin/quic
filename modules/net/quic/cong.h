@@ -70,6 +70,9 @@ struct quic_cong {
 	struct quic_cong_ops *ops;
 	u64 priv[8];		/* Algo private data */
 
+	u32 initial_srtt;	/* Initial smoothed RTT */
+	u8 algo;		/* Congestion control algorithm */
+
 	/* Flags & state */
 	u8 min_rtt_valid;	/* min_rtt initialized */
 	u8 is_rtt_set;		/* RTT samples exist */

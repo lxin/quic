@@ -202,8 +202,7 @@ static int quic_outq_delay_check(struct sock *sk, u8 level, u8 nodelay)
 	/* If Nagle is disabled via config or no data is in flight, and MSG_MORE isn't set,
 	 * allow immediate send.
 	 */
-	if ((quic_config(sk)->stream_data_nodelay || !outq->inflight) &&
-	    !outq->force_delay)
+	if ((outq->stream_data_nodelay || !outq->inflight) && !outq->force_delay)
 		return 0;
 	/* If enough stream data is available to build a full-sized packet, send immediately. */
 	if (outq->stream_list_len > quic_packet_mss(packet))
@@ -539,7 +538,6 @@ void quic_outq_transmit_probe(struct sock *sk)
 	struct quic_pnspace *space = quic_pnspace(sk, QUIC_CRYPTO_APP);
 	u32 taglen = quic_packet_taglen(quic_packet(sk));
 	struct quic_path_group *paths = quic_paths(sk);
-	struct quic_config *c = quic_config(sk);
 	struct quic_probeinfo info;
 	u32 pathmtu;
 	s64 number;
@@ -562,7 +560,7 @@ void quic_outq_transmit_probe(struct sock *sk)
 	}
 
 	/* Restart the PLPMTUD timer for future probes if this one fails. */
-	quic_timer_reset(sk, QUIC_TIMER_PMTU, c->plpmtud_probe_interval);
+	quic_timer_reset(sk, QUIC_TIMER_PMTU, paths->plpmtud_interval);
 }
 
 /* Queue and send a CONNECTION_CLOSE frame to terminate the connection. */
@@ -640,7 +638,6 @@ static void quic_outq_path_confirm(struct sock *sk, u8 level, s64 largest, s64 s
 {
 	struct quic_path_group *paths = quic_paths(sk);
 	struct quic_outqueue *outq = quic_outq(sk);
-	struct quic_config *c = quic_config(sk);
 	bool raise_timer, complete;
 	u32 pathmtu;
 
@@ -662,7 +659,7 @@ static void quic_outq_path_confirm(struct sock *sk, u8 level, s64 largest, s64 s
 		quic_outq_transmit_probe(sk);
 	if (raise_timer) /* Reset the probe timer as raise timer if needed. */
 		quic_timer_reset(sk, QUIC_TIMER_PMTU,
-				 (u64)c->plpmtud_probe_interval * QUIC_PMTUD_RAISE_TIMER_FACTOR);
+				 (u64)paths->plpmtud_interval * QUIC_PMTUD_RAISE_TIMER_FACTOR);
 }
 
 /* rfc9002#section-a.7: OnAckReceived()
