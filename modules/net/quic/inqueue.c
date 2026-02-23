@@ -593,9 +593,18 @@ void quic_inq_data_read(struct sock *sk, u32 bytes)
 	quic_inq_rfree((int)bytes, sk);
 }
 
+#define QUIC_INQ_BACKLOG_MAX	128
+
 void quic_inq_backlog_tail(struct sock *sk, struct sk_buff *skb)
 {
-	__skb_queue_tail(&quic_inq(sk)->backlog_list, skb);
+	struct sk_buff_head *head = &quic_inq(sk)->backlog_list;
+
+	if (head->qlen >= QUIC_INQ_BACKLOG_MAX) {
+		QUIC_INC_STATS(sock_net(sk), QUIC_MIB_PKT_RCVDROP);
+		kfree_skb(skb);
+		return;
+	}
+	__skb_queue_tail(head, skb);
 }
 
 void quic_inq_init(struct sock *sk)
