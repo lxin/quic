@@ -1172,7 +1172,7 @@ static void quic_packet_decrypt_done(struct sk_buff *skb, int err)
 	struct sock *sk = skb->sk;
 
 	if (err) {
-		QUIC_INC_STATS(sock_net(skb->sk), QUIC_MIB_PKT_DECDROP);
+		QUIC_INC_STATS(sock_net(sk), QUIC_MIB_PKT_DECDROP);
 		kfree_skb(skb);
 		pr_debug("%s: err: %d\n", __func__, err);
 		return;
