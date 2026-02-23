@@ -1528,10 +1528,11 @@ static int http09_client(char *urls, const char *sess_file, const char *tp_file,
 		}
 		if (buf_len) {
 			param_len = sizeof(param);
-			if (param_len != buf_len) {
+			if (param_len < buf_len) {
 				ret = -EINVAL;
 				goto free;
 			}
+			param_len = buf_len;
 			memcpy(&param, ctx->buf, param_len);
 			ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_TRANSPORT_PARAM,
 					 &param, param_len);
