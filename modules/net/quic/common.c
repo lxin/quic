@@ -233,7 +233,6 @@ u32 quic_get_int(u8 **pp, u32 *plen, u64 *val, u32 len)
 
 	if (*plen < len)
 		return 0;
-	*plen -= len;
 
 	switch (len) {
 	case 1:
@@ -254,6 +253,7 @@ u32 quic_get_int(u8 **pp, u32 *plen, u64 *val, u32 len)
 	default:
 		return 0;
 	}
+	*plen -= len;
 	*pp = p + len;
 	*val = v;
 	return len;
