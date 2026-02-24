@@ -266,9 +266,7 @@ void quic_stream_put(struct quic_stream_table *streams, struct quic_stream *stre
 
 	if (send) {
 		/* For bidi streams, only proceed if receive side is in a final state. */
-		if (stream->recv.state != QUIC_STREAM_RECV_STATE_RECVD &&
-		    stream->recv.state != QUIC_STREAM_RECV_STATE_READ &&
-		    stream->recv.state != QUIC_STREAM_RECV_STATE_RESET_RECVD)
+		if (stream->recv.state < QUIC_STREAM_RECV_STATE_RECVD)
 			return;
 	} else {
 		/* For bidi streams, only proceed if send side is in a final state. */
