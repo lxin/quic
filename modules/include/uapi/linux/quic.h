@@ -62,6 +62,7 @@ enum quic_crypto_level {
 
 struct quic_handshake_info {
 	__u8	crypto_level;
+	__u8	reserved[7];
 };
 
 struct quic_stream_info {
