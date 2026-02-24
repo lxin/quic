@@ -674,13 +674,15 @@ static int quic_msghdr_parse(struct sock *sk, struct msghdr *msg, struct quic_ha
 
 		switch (cmsg->cmsg_type) {
 		case QUIC_HANDSHAKE_INFO:
-			if (cmsg->cmsg_len != CMSG_LEN(sizeof(*h)))
+			if (cmsg->cmsg_len <
+			    CMSG_LEN(offsetof(struct quic_handshake_info, reserved)))
 				return -EINVAL;
 			h = CMSG_DATA(cmsg);
 			hinfo->crypto_level = h->crypto_level;
 			break;
 		case QUIC_STREAM_INFO:
-			if (cmsg->cmsg_len != CMSG_LEN(sizeof(*s)))
+			if (cmsg->cmsg_len <
+			    CMSG_LEN(offsetof(struct quic_stream_info, reserved)))
 				return -EINVAL;
 			s = CMSG_DATA(cmsg);
 			if (s->stream_flags & ~QUIC_MSG_STREAM_FLAGS)
@@ -1185,7 +1187,8 @@ static int quic_recvmsg(struct sock *sk, struct msghdr *msg, size_t msg_len, int
 		} else if (frame->level) {
 			/* Attach handshake info control message if crypto level present. */
 			hinfo.crypto_level = frame->level;
-			put_cmsg(msg, SOL_QUIC, QUIC_HANDSHAKE_INFO, sizeof(hinfo), &hinfo);
+			put_cmsg(msg, SOL_QUIC, QUIC_HANDSHAKE_INFO,
+				 offsetof(struct quic_handshake_info, reserved), &hinfo);
 			if (msg->msg_flags & MSG_CTRUNC) {
 				err = -EINVAL;
 				goto out;
@@ -1233,7 +1236,8 @@ static int quic_recvmsg(struct sock *sk, struct msghdr *msg, size_t msg_len, int
 	if (stream) {
 		/* Attach stream info control message if stream data was processed. */
 		sinfo.stream_id = stream->id;
-		put_cmsg(msg, SOL_QUIC, QUIC_STREAM_INFO, sizeof(sinfo), &sinfo);
+		put_cmsg(msg, SOL_QUIC, QUIC_STREAM_INFO,
+			 offsetof(struct quic_stream_info, reserved), &sinfo);
 		if (msg->msg_flags & MSG_CTRUNC)
 			msg->msg_flags |= sinfo.stream_flags;
 
