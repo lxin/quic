@@ -429,7 +429,6 @@ static void quic_destroy_sock(struct sock *sk)
 	sock_prot_inuse_add(sock_net(sk), sk->sk_prot, -1);
 }
 
-
 #ifdef TLS_MIN_RECORD_SIZE_LIM
 static int quic_bind(struct sock *sk, struct sockaddr_unsized *addr, int addr_len)
 #else
