@@ -414,6 +414,7 @@ static int do_client_notification_test(int sockfd)
 	}
 	printf("test17: PASS (QUIC_EVENT_CONNECTION_MIGRATION event for local migration)\n");
 
+	sleep(1);
 	flags = MSG_QUIC_STREAM_NEW | MSG_QUIC_STREAM_FIN;
 	sid  = 110;
 	strcpy(msg, "client migration");
@@ -422,7 +423,6 @@ static int do_client_notification_test(int sockfd)
 		printf("send error %d\n", errno);
 		return -1;
 	}
-	sleep(4);
 	memset(msg, 0, sizeof(msg));
 	ret = quic_recvmsg(sockfd, msg, sizeof(msg), &sid, &flags);
 	if (ret == -1) {
@@ -1097,6 +1097,7 @@ static int do_client_connection_test(int sockfd)
 		return -1;
 	}
 	port = get_port(&addr);
+	sleep(1);
 	strcpy(msg, "client migration");
 	ret = send(sockfd, msg, strlen(msg), MSG_SYN | MSG_FIN); /* 13-19 */
 	if (ret == -1) {
