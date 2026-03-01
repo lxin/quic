@@ -1500,13 +1500,37 @@ err:
 	return err;
 }
 
+/* Check if the packet arrived on an alternate path. If so and no alternate connection ID
+ * is available, sends a RETIRE_CONNECTION_ID frame to request a new one.
+ */
+static int quic_packet_path_alt_detect(struct sock *sk, struct sk_buff *skb)
+{
+	struct quic_conn_id_set *dest = quic_dest(sk), *source = quic_source(sk);
+	struct quic_packet *packet = quic_packet(sk);
+	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
+	u64 seqno;
+
+	/* Read Destination address (packet->saddr) and Source address (packet->daddr). */
+	quic_get_msg_addrs(skb, &packet->saddr, &packet->daddr);
+	/* Detect alternate path if migration occurred. */
+	cb->path = quic_path_detect_alt(quic_paths(sk), &packet->saddr, &packet->daddr, sk);
+	if (!cb->path || quic_conn_id_select_alt(dest, cb->seqno == source->active->number))
+		return 0;
+
+	/* Send RETIRE_CONNECTION_ID frame to request a new dest connection ID if no
+	 * alternative one.
+	 */
+	seqno = quic_conn_id_first_number(dest);
+	quic_outq_transmit_frame(sk, QUIC_FRAME_RETIRE_CONNECTION_ID, &seqno, 0, false);
+	return -EAGAIN;
+}
+
 /* Process detected connection migration. Either initiate probing on a newly discovered
  * alternate path or finalize migration if the new path is now active.
  */
-static void quic_packet_path_alt_process(struct sock *sk, struct sk_buff *skb, s64 number_max)
+static void quic_packet_path_alt_process(struct sock *sk, struct sk_buff *skb)
 {
 	struct quic_path_group *paths = quic_paths(sk);
-	struct quic_packet *packet = quic_packet(sk);
 	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
 
 	if (cb->path) {
@@ -1518,8 +1542,7 @@ static void quic_packet_path_alt_process(struct sock *sk, struct sk_buff *skb, s
 		return;
 	}
 
-	if (!packet->non_probing || cb->number != number_max ||
-	    !quic_path_alt_state(paths, QUIC_PATH_ALT_SWAPPED))
+	if (!quic_packet(sk)->non_probing || !quic_path_alt_state(paths, QUIC_PATH_ALT_SWAPPED))
 		return;
 
 	/* Connection migration is complete: free old path resources if this is a non-probing,
@@ -1556,7 +1579,8 @@ static int quic_packet_app_process_done(struct sock *sk, struct sk_buff *skb)
 	 */
 	quic_pnspace_inc_ecn_count(space, quic_get_msg_ecn(skb));
 
-	quic_packet_path_alt_process(sk, skb, space->max_pn_seen); /* Check connection migration. */
+	if (cb->number == space->max_pn_seen) /* Only process migration on the latest PN seen. */
+		quic_packet_path_alt_process(sk, skb);
 
 	if (!paths->validated) /* Increase anti-amplification credit if path isn't validated. */
 		paths->ampl_rcvlen += skb->len;
@@ -1621,7 +1645,6 @@ out:
 /* Process an incoming 1-RTT packet. */
 static int quic_packet_app_process(struct sock *sk, struct sk_buff *skb)
 {
-	struct quic_conn_id_set *dest = quic_dest(sk), *source = quic_source(sk);
 	struct quic_pnspace *space = quic_pnspace(sk, QUIC_CRYPTO_APP);
 	struct quic_crypto *crypto = quic_crypto(sk, QUIC_CRYPTO_APP);
 	struct quic_packet *packet = quic_packet(sk);
@@ -1744,18 +1767,10 @@ static int quic_packet_app_process(struct sock *sk, struct sk_buff *skb)
 		goto err;
 	}
 
-	/* Read Destination address (packet->saddr) and Source address (packet->daddr). */
-	quic_get_msg_addrs(skb, &packet->saddr, &packet->daddr);
-	/* Detect alternate path if migration occurred. */
-	cb->path = quic_path_detect_alt(quic_paths(sk), &packet->saddr, &packet->daddr, sk);
-	if (cb->path && !quic_conn_id_select_alt(dest, cb->seqno == source->active->number)) {
-		/* Send RETIRE_CONNECTION_ID frame to request a new dest connection ID if no
-		 * alternative one.
-		 */
-		u64 seqno = quic_conn_id_first_number(dest);
-
-		quic_outq_transmit_frame(sk, QUIC_FRAME_RETIRE_CONNECTION_ID, &seqno, 0, false);
-		goto err;
+	if (cb->number >= space->max_pn_seen) { /* Only detect migration on the latest PN seen. */
+		err = quic_packet_path_alt_detect(sk, skb);
+		if (err)
+			goto err;
 	}
 
 	/* Prepare a 'coalesced' frame for parsing and processing. */
