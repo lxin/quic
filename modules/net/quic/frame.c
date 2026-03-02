@@ -1157,17 +1157,6 @@ static int quic_frame_new_conn_id_process(struct sock *sk, struct quic_frame *fr
 		return -EINVAL;
 	}
 
-	/* rfc9000#section-5.1.2:
-	 *
-	 * Upon receipt of an increased Retire Prior To field, the peer MUST stop using the
-	 * corresponding connection IDs and retire them with RETIRE_CONNECTION_ID frames before
-	 * adding the newly provided connection ID to the set of active connection IDs.
-	 */
-	if (prior > first) {
-		if (quic_outq_transmit_retire_conn_id(sk, prior, frame->path, true))
-			return -ENOMEM;
-	}
-
 	err = quic_conn_id_add(id_set, &dcid, seqno, token);
 	if (err)
 		return err;
@@ -1179,6 +1168,18 @@ static int quic_frame_new_conn_id_process(struct sock *sk, struct quic_frame *fr
 		quic_outq_probe_path_alt(sk, true);
 
 out:
+	/* rfc9000#section-5.1.2:
+	 *
+	 * Upon receipt of an increased Retire Prior To field, the peer MUST stop using the
+	 * corresponding connection IDs and retire them with RETIRE_CONNECTION_ID frames before
+	 * adding the newly provided connection ID to the set of active connection IDs.
+	 */
+	if (prior > first) {
+		if (quic_outq_transmit_retire_conn_id(sk, prior, frame->path, true))
+			return -ENOMEM;
+	}
+
+
 	len -= (length + QUIC_CONN_ID_TOKEN_LEN);
 	return (int)(frame->len - len);
 }
