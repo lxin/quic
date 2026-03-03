@@ -2056,7 +2056,7 @@ static struct sk_buff *quic_packet_handshake_create(struct sock *sk)
 	}
 
 	len = packet->len;
-	if (packet->ack_eliciting) {
+	if (packet->ack_eliciting || !quic_is_serv(sk)) {
 		/* rfc9000#section-14.1:
 		 *
 		 * A client MUST expand the payload of all UDP datagrams carrying Initial packets
