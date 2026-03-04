@@ -167,79 +167,55 @@ static int quic_crypto_keys_derive(struct crypto_shash *tfm, struct quic_data *s
 	return quic_crypto_hkdf_expand(tfm, s, &hp_k_l, &z, hp_k);
 }
 
-/* Derive and install transmission (TX) packet protection keys for the current key phase.
- * This involves generating AEAD encryption key, IV, and optionally header protection key.
+/* Derive and install reception (RX) or transmission (TX) packet protection keys for the current
+ * key phase.  This installs AEAD protection key, IV, and optionally header protection key.
  */
-static int quic_crypto_tx_keys_derive_and_install(struct quic_crypto *crypto)
+static int quic_crypto_keys_derive_and_install(struct quic_crypto *crypto, bool rx)
 {
 	struct quic_data srt = {}, k, iv, hp_k = {}, *hp = NULL;
-	u8 tx_key[QUIC_KEY_LEN], tx_hp_key[QUIC_KEY_LEN] = {};
+	u8 key[QUIC_KEY_LEN], hp_key[QUIC_KEY_LEN] = {};
 	int err, phase = crypto->key_phase;
 	u32 keylen, ivlen = QUIC_IV_LEN;
+	struct crypto_skcipher *hp_tfm;
+	struct crypto_aead *tfm;
 
 	keylen = crypto->cipher->keylen;
-	quic_data(&srt, crypto->tx_secret, crypto->cipher->secretlen);
-	quic_data(&k, tx_key, keylen);
-	quic_data(&iv, crypto->tx_iv[phase], ivlen);
+	quic_data(&k, key, keylen);
+
+	if (rx) {
+		quic_data(&srt, crypto->rx_secret, crypto->cipher->secretlen);
+		quic_data(&iv, crypto->rx_iv[phase], ivlen);
+		tfm = crypto->rx_tfm[phase];
+		hp_tfm = crypto->rx_hp_tfm;
+	} else {
+		quic_data(&srt, crypto->tx_secret, crypto->cipher->secretlen);
+		quic_data(&iv, crypto->tx_iv[phase], ivlen);
+		tfm = crypto->tx_tfm[phase];
+		hp_tfm = crypto->tx_hp_tfm;
+	}
+
 	/* Only derive header protection key when not in key update. */
 	if (!crypto->key_pending)
-		hp = quic_data(&hp_k, tx_hp_key, keylen);
+		hp = quic_data(&hp_k, hp_key, keylen);
 	err = quic_crypto_keys_derive(crypto->secret_tfm, &srt, &k, &iv, hp, crypto->version);
 	if (err)
 		goto out;
-	err = crypto_aead_setauthsize(crypto->tx_tfm[phase], QUIC_TAG_LEN);
+	err = crypto_aead_setauthsize(tfm, QUIC_TAG_LEN);
 	if (err)
 		goto out;
-	err = crypto_aead_setkey(crypto->tx_tfm[phase], tx_key, keylen);
-	if (err)
-		goto out;
-	if (hp) {
-		err = crypto_skcipher_setkey(crypto->tx_hp_tfm, tx_hp_key, keylen);
-		if (err)
-			goto out;
-	}
-	pr_debug("%s: k: %16phN, iv: %12phN, hp_k:%16phN\n", __func__, k.data, iv.data, tx_hp_key);
-out:
-	memzero_explicit(tx_key, sizeof(tx_key));
-	memzero_explicit(tx_hp_key, sizeof(tx_hp_key));
-	return err;
-}
-
-/* Derive and install reception (RX) packet protection keys for the current key phase.
- * This installs AEAD decryption key, IV, and optionally header protection key.
- */
-static int quic_crypto_rx_keys_derive_and_install(struct quic_crypto *crypto)
-{
-	struct quic_data srt = {}, k, iv, hp_k = {}, *hp = NULL;
-	u8 rx_key[QUIC_KEY_LEN], rx_hp_key[QUIC_KEY_LEN] = {};
-	int err, phase = crypto->key_phase;
-	u32 keylen, ivlen = QUIC_IV_LEN;
-
-	keylen = crypto->cipher->keylen;
-	quic_data(&srt, crypto->rx_secret, crypto->cipher->secretlen);
-	quic_data(&k, rx_key, keylen);
-	quic_data(&iv, crypto->rx_iv[phase], ivlen);
-	/* Only derive header protection key when not in key update. */
-	if (!crypto->key_pending)
-		hp = quic_data(&hp_k, rx_hp_key, keylen);
-	err = quic_crypto_keys_derive(crypto->secret_tfm, &srt, &k, &iv, hp, crypto->version);
-	if (err)
-		goto out;
-	err = crypto_aead_setauthsize(crypto->rx_tfm[phase], QUIC_TAG_LEN);
-	if (err)
-		goto out;
-	err = crypto_aead_setkey(crypto->rx_tfm[phase], rx_key, keylen);
+	err = crypto_aead_setkey(tfm, key, keylen);
 	if (err)
 		goto out;
 	if (hp) {
-		err = crypto_skcipher_setkey(crypto->rx_hp_tfm, rx_hp_key, keylen);
+		err = crypto_skcipher_setkey(hp_tfm, hp_key, keylen);
 		if (err)
 			goto out;
 	}
-	pr_debug("%s: k: %16phN, iv: %12phN, hp_k:%16phN\n", __func__, k.data, iv.data, rx_hp_key);
+	pr_debug("%s: rx: %d k: %16phN, iv: %12phN, hp_k:%16phN\n", __func__,
+		 rx, k.data, iv.data, hp_key);
 out:
-	memzero_explicit(rx_key, sizeof(rx_key));
-	memzero_explicit(rx_hp_key, sizeof(rx_hp_key));
+	memzero_explicit(key, sizeof(key));
+	memzero_explicit(hp_key, sizeof(hp_key));
 	return err;
 }
 
@@ -826,7 +802,7 @@ int quic_crypto_set_secret(struct quic_crypto *crypto, struct quic_crypto_secret
 	if (!srt->send) {
 		crypto->version = version;
 		memcpy(crypto->rx_secret, srt->secret, cipher->secretlen);
-		err = quic_crypto_rx_keys_derive_and_install(crypto);
+		err = quic_crypto_keys_derive_and_install(crypto, true);
 		if (err)
 			return err;
 		crypto->recv_ready = 1;
@@ -836,7 +812,7 @@ int quic_crypto_set_secret(struct quic_crypto *crypto, struct quic_crypto_secret
 	/* Handle TX path setup. */
 	crypto->version = version;
 	memcpy(crypto->tx_secret, srt->secret, cipher->secretlen);
-	err = quic_crypto_tx_keys_derive_and_install(crypto);
+	err = quic_crypto_keys_derive_and_install(crypto, false);
 	if (err)
 		return err;
 	crypto->send_ready = 1;
@@ -895,7 +871,7 @@ int quic_crypto_key_update(struct quic_crypto *crypto)
 	err = quic_crypto_hkdf_expand(crypto->secret_tfm, &srt, &l, &z, &k);
 	if (err)
 		goto err;
-	err = quic_crypto_tx_keys_derive_and_install(crypto);
+	err = quic_crypto_keys_derive_and_install(crypto, false);
 	if (err)
 		goto err;
 
@@ -904,7 +880,7 @@ int quic_crypto_key_update(struct quic_crypto *crypto)
 	err = quic_crypto_hkdf_expand(crypto->secret_tfm, &srt, &l, &z, &k);
 	if (err)
 		goto err;
-	err = quic_crypto_rx_keys_derive_and_install(crypto);
+	err = quic_crypto_keys_derive_and_install(crypto, true);
 	if (err)
 		goto err;
 out:
