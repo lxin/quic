@@ -47,7 +47,8 @@ struct quic_smsg {
 	struct iovec iov;
 	struct msghdr msg;
 	unsigned flags;
-	uint8_t level;
+	int level; /* sockopt level or crypto level */
+	int optname;
 	uint8_t data[];
 };
 
@@ -62,7 +63,8 @@ struct quic_handshake_step_internal {
 
 struct quic_handshake_ctx {
 	gnutls_session_t session;
-	struct quic_smsg *send_list;
+	struct quic_smsg *smsg_head;
+	struct quic_smsg *smsg_tail;
 	struct quic_smsg *send_last;
 	struct quic_rmsg rmsg;
 	uint8_t completed:1;
@@ -214,6 +216,76 @@ quic_set_log_func_t quic_set_log_func(quic_set_log_func_t func)
 	return old;
 }
 
+static struct quic_smsg *quic_smsg_create(int level, int optname,
+					  const void *data,
+					  size_t datalen)
+{
+	struct quic_handshake_info *info;
+	struct quic_smsg *smsg;
+	struct cmsghdr *cmsg;
+
+	smsg = malloc(sizeof(*smsg) + datalen);
+	if (!smsg)
+		return NULL;
+
+	memset(smsg, 0, sizeof(*smsg));
+	memcpy(smsg->data, data, datalen);
+
+	smsg->iov.iov_base = smsg->data;
+	smsg->iov.iov_len = datalen;
+	smsg->level = level;
+
+	if (optname) { /* Create a smsg for setsockopt. */
+		smsg->optname = optname;
+		return smsg;
+	}
+
+	/* Create a smsg for sendmsg. */
+	smsg->msg.msg_iov = &smsg->iov;
+	smsg->msg.msg_iovlen = 1;
+	smsg->msg.msg_control = smsg->cmsg;
+	smsg->msg.msg_controllen = sizeof(smsg->cmsg);
+
+	cmsg = CMSG_FIRSTHDR(&smsg->msg);
+	cmsg->cmsg_level = SOL_QUIC;
+	cmsg->cmsg_type = QUIC_HANDSHAKE_INFO;
+	cmsg->cmsg_len = CMSG_LEN(offsetof(struct quic_handshake_info, reserved));
+
+	info = (struct quic_handshake_info *)CMSG_DATA(cmsg);
+	info->crypto_level = level;
+
+	smsg->flags = MSG_NOSIGNAL;
+
+	return smsg;
+}
+
+static void quic_smsg_append_list(struct quic_handshake_ctx *ctx,
+				  struct quic_smsg *smsg, uint8_t more_data)
+{
+	if (!ctx->smsg_head) {
+		ctx->smsg_head = smsg;
+		ctx->send_last = NULL;
+	} else {
+		ctx->smsg_tail->next = smsg;
+	}
+	ctx->smsg_tail = smsg;
+
+	if (more_data) {
+		/* This smsg has more data to send. Mark the last smsg with MSG_MORE
+		 * if it is for sendmsg to allow bundling.
+		 */
+		if (ctx->send_last && !ctx->send_last->optname)
+			ctx->send_last->flags |= MSG_MORE;
+		ctx->send_last = smsg;
+	}
+}
+
+static void quic_smsg_destroy(struct quic_smsg *smsg)
+{
+	gnutls_memset(smsg, 0, sizeof(*smsg) + smsg->iov.iov_len);
+	free(smsg);
+}
+
 static void quic_prepare_sendmsg_step(struct quic_handshake_ctx *ctx,
 				      quic_handshake_step_process_fn_t process_fn,
 				      const struct msghdr *msg,
@@ -243,6 +315,24 @@ static void quic_prepare_recvmsg_step(struct quic_handshake_ctx *ctx,
 		.msg = msg,
 		.flags = flags,
 		.retval = -EUCLEAN,
+	};
+
+	ctx->next_step.process_fn = process_fn;
+}
+
+static void quic_prepare_setsockopt_step(struct quic_handshake_ctx *ctx,
+					 quic_handshake_step_process_fn_t process_fn,
+					 int level, int optname, void *optval,
+					 socklen_t optlen)
+{
+	struct quic_handshake_step_setsockopt *s = &ctx->next_step.step.s_setsockopt;
+
+	ctx->next_step.step.op = QUIC_HANDSHAKE_STEP_OP_SETSOCKOPT;
+	*s = (struct quic_handshake_step_setsockopt) {
+		.level = level,
+		.optname = optname,
+		.optval = optval,
+		.optlen = optlen
 	};
 
 	ctx->next_step.process_fn = process_fn;
@@ -398,10 +488,8 @@ static int quic_set_secret(gnutls_session_t session, gnutls_record_encryption_le
 	gnutls_cipher_algorithm_t type  = gnutls_cipher_get(session);
 	struct quic_handshake_ctx *ctx = quic_handshake_ctx_get(session);
 	struct quic_crypto_secret secret = {};
-	int sockfd, ret, len = sizeof(secret);
-
-	if (!ctx || ctx->completed)
-		return 0;
+	struct quic_smsg *smsg;
+	int ret;
 
 	if (secretlen > QUIC_CRYPTO_SECRET_BUFFER_SIZE) {
 		quic_log_error("secretlen[%zu] > %u",
@@ -412,26 +500,28 @@ static int quic_set_secret(gnutls_session_t session, gnutls_record_encryption_le
 	if (level == GNUTLS_ENCRYPTION_LEVEL_EARLY)
 		type = gnutls_early_cipher_get(session);
 
-	sockfd = gnutls_transport_get_int(session);
 	secret.level = quic_crypto_level(level);
 	secret.type = quic_tls_cipher_type(type);
 	if (tx_secret) {
 		secret.send = 1;
 		memcpy(secret.secret, tx_secret, secretlen);
-		ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_CRYPTO_SECRET, &secret, len);
+		smsg = quic_smsg_create(SOL_QUIC, QUIC_SOCKOPT_CRYPTO_SECRET, &secret,
+					sizeof(secret));
 		gnutls_memset(secret.secret, 0, secretlen);
-		if (ret) {
-			quic_log_error("socket setsockopt tx secret error %d %u", errno, level);
+		if (!smsg) {
+			quic_log_error("msg create error for tx secret");
 			return -1;
 		}
+		quic_smsg_append_list(ctx, smsg, 0);
 	}
 	if (rx_secret) {
 		secret.send = 0;
 		memcpy(secret.secret, rx_secret, secretlen);
-		ret = setsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_CRYPTO_SECRET, &secret, len);
+		smsg = quic_smsg_create(SOL_QUIC, QUIC_SOCKOPT_CRYPTO_SECRET, &secret,
+					sizeof(secret));
 		gnutls_memset(secret.secret, 0, secretlen);
-		if (ret) {
-			quic_log_error("socket setsockopt rx secret error %d %u", errno, level);
+		if (!smsg) {
+			quic_log_error("msg create error for rx secret");
 			return -1;
 		}
 		if (secret.level == QUIC_CRYPTO_APP) {
@@ -444,6 +534,10 @@ static int quic_set_secret(gnutls_session_t session, gnutls_record_encryption_le
 			}
 			ctx->completed = 1;
 		}
+		/* ctx->completed is set above for APP RX secret setsockopt, which will
+		 * send more data (NCI frames) in the kernel. Reuse it for more_data = 1.
+		 */
+		quic_smsg_append_list(ctx, smsg, ctx->completed);
 	}
 	quic_log_debug("  Secret func: %u %u %u", secret.level, !!tx_secret, !!rx_secret);
 	return 0;
@@ -491,61 +585,6 @@ static int quic_tp_send(gnutls_session_t session, gnutls_buffer_t extdata)
 	return 0;
 }
 
-static struct quic_smsg *quic_smsg_create(uint8_t level,
-					  const void *data,
-					  size_t datalen)
-{
-	struct quic_handshake_info *info;
-	struct quic_smsg *smsg;
-	struct cmsghdr *cmsg;
-
-	smsg = malloc(sizeof(*smsg) + datalen);
-	if (!smsg)
-		return NULL;
-
-	memset(smsg, 0, sizeof(*smsg));
-	memcpy(smsg->data, data, datalen);
-
-	smsg->iov.iov_base = smsg->data;
-	smsg->iov.iov_len = datalen;
-
-	smsg->msg.msg_iov = &smsg->iov;
-	smsg->msg.msg_iovlen = 1;
-	smsg->msg.msg_control = smsg->cmsg;
-	smsg->msg.msg_controllen = sizeof(smsg->cmsg);
-
-	cmsg = CMSG_FIRSTHDR(&smsg->msg);
-	cmsg->cmsg_level = SOL_QUIC;
-	cmsg->cmsg_type = QUIC_HANDSHAKE_INFO;
-	cmsg->cmsg_len = CMSG_LEN(offsetof(struct quic_handshake_info, reserved));
-
-	info = (struct quic_handshake_info *)CMSG_DATA(cmsg);
-	info->crypto_level = level;
-
-	smsg->flags = MSG_NOSIGNAL;
-	smsg->level = level;
-
-	return smsg;
-}
-
-static void quic_smsg_append_list(struct quic_handshake_ctx *ctx,
-				  struct quic_smsg *smsg)
-{
-	if (!ctx->send_list)
-		ctx->send_list = smsg;
-	else {
-		ctx->send_last->flags |= MSG_MORE;
-		ctx->send_last->next = smsg;
-	}
-	ctx->send_last = smsg;
-}
-
-static void quic_smsg_destroy(struct quic_smsg *smsg)
-{
-	gnutls_memset(smsg, 0, sizeof(*smsg) + smsg->iov.iov_len);
-	free(smsg);
-}
-
 static int quic_msg_read(gnutls_session_t session, gnutls_record_encryption_level_t level,
 			 gnutls_handshake_description_t htype, const void *data, size_t datalen)
 {
@@ -556,13 +595,13 @@ static int quic_msg_read(gnutls_session_t session, gnutls_record_encryption_leve
 	if (!ctx || htype == GNUTLS_HANDSHAKE_KEY_UPDATE)
 		return 0;
 
-	smsg = quic_smsg_create(qlevel, data, datalen);
+	smsg = quic_smsg_create(qlevel, 0, data, datalen);
 	if (!smsg) {
-		quic_log_error("msg create error %d", ENOMEM);
+		quic_log_error("msg create error for handshake msg");
 		return -1;
 	}
 
-	quic_smsg_append_list(ctx, smsg);
+	quic_smsg_append_list(ctx, smsg, 1);
 
 	quic_log_debug("  Read func: %u %u %u", level, htype, datalen);
 	return 0;
@@ -726,19 +765,27 @@ deinit:
 
 static int quic_handshake_sendmsg_process(struct quic_handshake_ctx *ctx);
 static int quic_handshake_recvmsg_process(struct quic_handshake_ctx *ctx);
+static int quic_handshake_setsockopt_process(struct quic_handshake_ctx *ctx);
 
 static int quic_handshake_next_step(struct quic_handshake_ctx *ctx,
 				    struct quic_handshake_step **pstep)
 {
 	gnutls_memset(&ctx->next_step, 0, sizeof(ctx->next_step));
 
-	if (ctx->send_list != NULL) {
-		struct quic_smsg *smsg = ctx->send_list;
+	if (ctx->smsg_head != NULL) {
+		struct quic_smsg *smsg = ctx->smsg_head;
 
-		quic_prepare_sendmsg_step(ctx,
-					  quic_handshake_sendmsg_process,
-					  &smsg->msg,
-					  smsg->flags);
+		if (!smsg->optname)
+			quic_prepare_sendmsg_step(ctx,
+						  quic_handshake_sendmsg_process,
+						  &smsg->msg,
+						  smsg->flags);
+		else
+			quic_prepare_setsockopt_step(ctx,
+						     quic_handshake_setsockopt_process,
+						     smsg->level, smsg->optname,
+						     smsg->iov.iov_base,
+						     (socklen_t)smsg->iov.iov_len);
 		goto prepared;
 	}
 
@@ -765,7 +812,7 @@ prepared:
 static int quic_handshake_sendmsg_process(struct quic_handshake_ctx *ctx)
 {
 	struct quic_handshake_step_sendmsg *s = &ctx->next_step.step.s_sendmsg;
-	struct quic_smsg *smsg = ctx->send_list;
+	struct quic_smsg *smsg = ctx->smsg_head;
 	ssize_t slen = s->retval;
 
 	if (slen < 0) {
@@ -782,7 +829,24 @@ static int quic_handshake_sendmsg_process(struct quic_handshake_ctx *ctx)
 	}
 
 	quic_log_debug("> Handshake SENT: %zu %u", slen, smsg->level);
-	ctx->send_list = smsg->next;
+	ctx->smsg_head = smsg->next;
+	quic_smsg_destroy(smsg);
+
+	return 0;
+}
+
+static int quic_handshake_setsockopt_process(struct quic_handshake_ctx *ctx)
+{
+	struct quic_handshake_step_setsockopt *s = &ctx->next_step.step.s_setsockopt;
+	struct quic_smsg *smsg = ctx->smsg_head;
+
+	if (s->retval) {
+		quic_log_error("socket option %d", s->retval);
+		return s->retval;
+	}
+
+	quic_log_debug("* Socket Option: %d %u", s->optname, smsg->iov.iov_len);
+	ctx->smsg_head = smsg->next;
 	quic_smsg_destroy(smsg);
 
 	return 0;
@@ -871,11 +935,11 @@ void quic_handshake_deinit(gnutls_session_t session)
 
 	gnutls_ext_set_data(session, QUIC_TLSEXT_TP_PARAM, NULL);
 
-	smsg = ctx->send_list;
+	smsg = ctx->smsg_head;
 	while (smsg) {
-		ctx->send_list = smsg->next;
+		ctx->smsg_head = smsg->next;
 		quic_smsg_destroy(smsg);
-		smsg = ctx->send_list;
+		smsg = ctx->smsg_head;
 	}
 
 	gnutls_memset(ctx, 0, sizeof(*ctx));
@@ -961,6 +1025,20 @@ int quic_handshake(gnutls_session_t session)
 				slen = -errno;
 
 			s->retval = slen;
+			ret = quic_handshake_step(session, &step);
+			if (ret)
+				goto out;
+
+			continue;
+			}
+		case QUIC_HANDSHAKE_STEP_OP_SETSOCKOPT: {
+			struct quic_handshake_step_setsockopt *s = &step->s_setsockopt;
+
+			ret = setsockopt(sockfd, s->level, s->optname, s->optval, s->optlen);
+			if (ret == -1)
+				ret = -errno;
+
+			s->retval = ret;
 			ret = quic_handshake_step(session, &step);
 			if (ret)
 				goto out;

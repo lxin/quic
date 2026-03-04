@@ -529,10 +529,10 @@ The function returns `0` on success and an error code on failure.
 and quic_handshake_deinit()
 This group of APIs provide greater control over the configuration of the
 handshake session, allowing more detailed management of the TLS session
-and also the sendmsg(2) and recvmsg(2) scheduling.
+and also the sendmsg(2), recvmsg(2) and setsockopt(2) scheduling.
 
-Without the need to integrate sendmsg(2) and recvmsg(3) calls into an
-existing event loop `quic_handshake()` can be used instead.
+Without the need to integrate sendmsg(2), recvmsg(2) and setsockopt(2) calls
+into an existing event loop `quic_handshake()` can be used instead.
 
 .PP
 .B Step work to be done by the caller
@@ -546,6 +546,7 @@ in the handshake processing:
 enum quic_handshake_step_op {
   QUIC_HANDSHAKE_STEP_OP_SENDMSG = 1,
   QUIC_HANDSHAKE_STEP_OP_RECVMSG,
+  QUIC_HANDSHAKE_STEP_OP_SETSOCKOPT,
 };
 
 struct quic_handshake_step_sendmsg {
@@ -560,18 +561,27 @@ struct quic_handshake_step_recvmsg {
   ssize_t retval;
 };
 
+struct quic_handshake_step_setsockopt {
+  int level;
+  int optname;
+  void *optval;
+  socklen_t optlen;
+  ssize_t retval;
+};
+
 struct quic_handshake_step {
   enum quic_handshake_step_op op;
 
   union {
     struct quic_handshake_step_sendmsg s_sendmsg;
     struct quic_handshake_step_recvmsg s_recvmsg;
+    struct quic_handshake_step_setsockopt s_setsockopt;
   };
 };
 .fi
 
 The callers needs to do the work described by the step
-(sendmsg(2) or recvmsg(2)) and set the `retval` to the
+(sendmsg(2), recvmsg(2) or setsockopt(2)) and set the `retval` to the
 return value of the syscall if it's greater or equal to zero,
 or set it to -errno on failure. Note `EINTR`, `EAGAIN` and `EWOULDBLOCK`
 should never be set, instead the operation should be retried by the caller.
@@ -670,8 +680,8 @@ handshake session, allowing more detailed management of the TLS session.
 
 It is a simplified helper arround `quic_handshake_init()`,
 `quic_handshake_step()` and `quic_handshake_deinit()` for callers
-without the need to integrate sendmsg(2) and recvmsg(3) calls into an
-existing event loop.
+without the need to integrate sendmsg(2), recvmsg(2) and setsockopt(2) calls
+into an existing event loop.
 
 .PP
 .B quic_handshake()
