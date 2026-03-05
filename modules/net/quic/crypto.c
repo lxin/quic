@@ -434,35 +434,43 @@ static void quic_crypto_done(void *data, int err)
 }
 
 /* AEAD Usage. */
-static int quic_crypto_payload_encrypt(struct crypto_aead *tfm, struct sk_buff *skb,
-				       u8 *tx_iv, bool ccm)
+static int quic_crypto_payload_protect(struct crypto_aead *tfm, struct sk_buff *skb,
+				       u8 *base_iv, bool ccm, bool enc)
 {
 	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
 	u8 *iv, i, nonce[QUIC_IV_LEN];
+	u32 len, hlen, sglen, nsg;
 	struct aead_request *req;
 	struct sk_buff *trailer;
 	struct scatterlist *sg;
-	struct quichdr *hdr;
-	u32 nsg, hlen, len;
 	void *ctx;
 	__be64 n;
 	int err;
 
-	len = skb->len;
-	err = skb_cow_data(skb, QUIC_TAG_LEN, &trailer);
-	if (err < 0)
-		return err;
-	nsg = (u32)err;
-	pskb_put(skb, trailer, QUIC_TAG_LEN);
-	hdr = quic_hdr(skb);
-	hdr->key = cb->key_phase;
+	hlen = cb->number_offset + cb->number_len;
+	if (enc) {
+		len = skb->len;
+		err = skb_cow_data(skb, QUIC_TAG_LEN, &trailer);
+		if (err < 0)
+			return err;
+		pskb_put(skb, trailer, QUIC_TAG_LEN);
+		quic_hdr(skb)->key = cb->key_phase;
+		sglen = skb->len;
+		nsg = (u32)err;
+	} else {
+		len = cb->length + cb->number_offset;
+		if (len - hlen < QUIC_TAG_LEN)
+			return -EINVAL;
+		sglen = len;
+		nsg = 1;
+	}
 
 	ctx = quic_crypto_aead_mem_alloc(tfm, 0, &iv, &req, &sg, nsg);
 	if (!ctx)
 		return -ENOMEM;
 
 	sg_init_table(sg, nsg);
-	err = skb_to_sgvec(skb, sg, 0, (int)skb->len);
+	err = skb_to_sgvec(skb, sg, 0, sglen);
 	if (err < 0)
 		goto err;
 
@@ -477,8 +485,7 @@ static int quic_crypto_payload_encrypt(struct crypto_aead *tfm, struct sk_buff *
 	 * order are left-padded with zeros to the size of the IV. The exclusive OR of the
 	 * padded packet number and the IV forms the AEAD nonce.
 	 */
-	hlen = cb->number_offset + cb->number_len;
-	memcpy(nonce, tx_iv, QUIC_IV_LEN);
+	memcpy(nonce, base_iv, QUIC_IV_LEN);
 	n = cpu_to_be64(cb->number);
 	for (i = 0; i < sizeof(n); i++)
 		nonce[QUIC_IV_LEN - sizeof(n) + i] ^= ((u8 *)&n)[i];
@@ -492,62 +499,12 @@ static int quic_crypto_payload_encrypt(struct crypto_aead *tfm, struct sk_buff *
 	aead_request_set_callback(req, CRYPTO_TFM_REQ_MAY_BACKLOG, (void *)quic_crypto_done, skb);
 
 	cb->crypto_ctx = ctx; /* Set crypto_ctx for async free in quic_crypto_done(). */
-	err = crypto_aead_encrypt(req);
+	err = enc ? crypto_aead_encrypt(req) : crypto_aead_decrypt(req);
 	if (err == -EINPROGRESS) {
 		memzero_explicit(nonce, sizeof(nonce));
 		return err;
 	}
 
-err:
-	kfree_sensitive(ctx);
-	memzero_explicit(nonce, sizeof(nonce));
-	return err;
-}
-
-static int quic_crypto_payload_decrypt(struct crypto_aead *tfm, struct sk_buff *skb,
-				       u8 *rx_iv, bool ccm)
-{
-	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
-	u8 *iv, i, nonce[QUIC_IV_LEN];
-	struct aead_request *req;
-	int nsg, hlen, len, err;
-	struct scatterlist *sg;
-	void *ctx;
-	__be64 n;
-
-	len = cb->length + cb->number_offset;
-	hlen = cb->number_offset + cb->number_len;
-	if (len - hlen < QUIC_TAG_LEN)
-		return -EINVAL;
-	nsg = 1; /* skb is already linearized in quic_packet_rcv(). */
-	ctx = quic_crypto_aead_mem_alloc(tfm, 0, &iv, &req, &sg, nsg);
-	if (!ctx)
-		return -ENOMEM;
-
-	sg_init_table(sg, nsg);
-	err = skb_to_sgvec(skb, sg, 0, len);
-	if (err < 0)
-		goto err;
-
-	/* Similar logic to quic_crypto_payload_encrypt(). */
-	memcpy(nonce, rx_iv, QUIC_IV_LEN);
-	n = cpu_to_be64(cb->number);
-	for (i = 0; i < sizeof(n); i++)
-		nonce[QUIC_IV_LEN - sizeof(n) + i] ^= ((u8 *)&n)[i];
-
-	iv[0] = TLS_AES_CCM_IV_B0_BYTE;
-	memcpy(&iv[ccm], nonce, QUIC_IV_LEN);
-	aead_request_set_tfm(req, tfm);
-	aead_request_set_ad(req, hlen);
-	aead_request_set_crypt(req, sg, sg, len - hlen, iv);
-	aead_request_set_callback(req, CRYPTO_TFM_REQ_MAY_BACKLOG, (void *)quic_crypto_done, skb);
-
-	cb->crypto_ctx = ctx;
-	err = crypto_aead_decrypt(req);
-	if (err == -EINPROGRESS) {
-		memzero_explicit(nonce, sizeof(nonce));
-		return err;
-	}
 err:
 	kfree_sensitive(ctx);
 	memzero_explicit(nonce, sizeof(nonce));
@@ -616,7 +573,7 @@ int quic_crypto_encrypt(struct quic_crypto *crypto, struct sk_buff *skb)
 		crypto->key_update_send_time = quic_ktime_get_us();
 
 	ccm = quic_crypto_is_cipher_ccm(crypto);
-	err = quic_crypto_payload_encrypt(crypto->tx_tfm[phase], skb, iv, ccm);
+	err = quic_crypto_payload_protect(crypto->tx_tfm[phase], skb, iv, ccm, true);
 	if (err)
 		return err;
 out:
@@ -678,7 +635,7 @@ int quic_crypto_decrypt(struct quic_crypto *crypto, struct sk_buff *skb)
 	phase = cb->key_phase;
 	iv = crypto->rx_iv[phase];
 	ccm = quic_crypto_is_cipher_ccm(crypto);
-	err = quic_crypto_payload_decrypt(crypto->rx_tfm[phase], skb, iv, ccm);
+	err = quic_crypto_payload_protect(crypto->rx_tfm[phase], skb, iv, ccm, false);
 	if (err) {
 		if (err == -EINPROGRESS)
 			return err;
