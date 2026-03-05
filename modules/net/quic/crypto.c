@@ -246,6 +246,27 @@ static void *quic_crypto_skcipher_mem_alloc(struct crypto_skcipher *tfm, u32 mas
 	return (void *)mem;
 }
 
+/* Extracts and reconstructs the packet number from an incoming QUIC packet. */
+static int quic_crypto_get_number(struct sk_buff *skb)
+{
+	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
+	s64 number_max = cb->number;
+	u32 len = cb->length;
+	u8 *p;
+
+	/* rfc9000#section-17.1:
+	 *
+	 * Once header protection is removed, the packet number is decoded by finding the packet
+	 * number value that is closest to the next expected packet. The next expected packet is
+	 * the highest received packet number plus one.
+	 */
+	p = (u8 *)quic_hdr(skb) + cb->number_offset;
+	if (!quic_get_int(&p, &len, &cb->number, cb->number_len))
+		return -EINVAL;
+	cb->number = quic_get_num(number_max, cb->number, cb->number_len);
+	return 0;
+}
+
 #define QUIC_SAMPLE_LEN		16
 
 #define QUIC_HEADER_FORM_BIT	0x80
@@ -253,13 +274,24 @@ static void *quic_crypto_skcipher_mem_alloc(struct crypto_skcipher *tfm, u32 mas
 #define QUIC_SHORT_HEADER_MASK	0x1f
 
 /* Header Protection. */
-static int quic_crypto_header_encrypt(struct crypto_skcipher *tfm, struct sk_buff *skb, bool chacha)
+static int quic_crypto_header_protect(struct crypto_skcipher *tfm, struct sk_buff *skb,
+				      bool chacha, bool enc)
 {
 	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
 	struct skcipher_request *req;
+	struct sk_buff *trailer;
 	struct scatterlist sg;
 	u8 *mask, *iv, *p;
 	int err, i;
+
+	if (!enc) {
+		if (cb->length < QUIC_PN_MAX_LEN + QUIC_SAMPLE_LEN)
+			return -EINVAL;
+
+		err = skb_cow_data(skb, 0, &trailer);
+		if (err < 0)
+			return err;
+	}
 
 	mask = quic_crypto_skcipher_mem_alloc(tfm, QUIC_SAMPLE_LEN, &iv, &req);
 	if (!mask)
@@ -311,79 +343,16 @@ static int quic_crypto_header_encrypt(struct crypto_skcipher *tfm, struct sk_buf
 	p = skb->data;
 	*p = (u8)(*p ^ (mask[0] & (((*p & QUIC_HEADER_FORM_BIT) == QUIC_HEADER_FORM_BIT) ?
 				   QUIC_LONG_HEADER_MASK : QUIC_SHORT_HEADER_MASK)));
-	p = skb->data + cb->number_offset;
+	if (!enc) {
+		cb->key_phase = quic_hdr(skb)->key;
+		cb->number_len = quic_hdr(skb)->pnl + 1;
+	}
+	p += cb->number_offset;
 	for (i = 1; i <= cb->number_len; i++)
 		*p++ ^= mask[i];
-err:
-	kfree_sensitive(mask);
-	return err;
-}
 
-/* Extracts and reconstructs the packet number from an incoming QUIC packet. */
-static int quic_crypto_get_number(struct sk_buff *skb)
-{
-	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
-	s64 number_max = cb->number;
-	u32 len = cb->length;
-	u8 *p;
-
-	/* rfc9000#section-17.1:
-	 *
-	 * Once header protection is removed, the packet number is decoded by finding the packet
-	 * number value that is closest to the next expected packet. The next expected packet is
-	 * the highest received packet number plus one.
-	 */
-	p = (u8 *)quic_hdr(skb) + cb->number_offset;
-	if (!quic_get_int(&p, &len, &cb->number, cb->number_len))
-		return -EINVAL;
-	cb->number = quic_get_num(number_max, cb->number, cb->number_len);
-	return 0;
-}
-
-static int quic_crypto_header_decrypt(struct crypto_skcipher *tfm, struct sk_buff *skb, bool chacha)
-{
-	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
-	struct skcipher_request *req;
-	struct sk_buff *trailer;
-	struct scatterlist sg;
-	struct quichdr *hdr;
-	u8 *mask, *iv, *p;
-	int err, i;
-
-	err = skb_cow_data(skb, 0, &trailer);
-	if (err < 0)
-		return err;
-
-	mask = quic_crypto_skcipher_mem_alloc(tfm, QUIC_SAMPLE_LEN, &iv, &req);
-	if (!mask)
-		return -ENOMEM;
-
-	if (cb->length < QUIC_PN_MAX_LEN + QUIC_SAMPLE_LEN) {
-		err = -EINVAL;
-		goto err;
-	}
-
-	/* Similar logic to quic_crypto_header_encrypt(). */
-	hdr = quic_hdr(skb);
-	p = (u8 *)hdr + cb->number_offset;
-	memcpy((chacha ? iv : mask), p + QUIC_PN_MAX_LEN, QUIC_SAMPLE_LEN);
-	sg_init_one(&sg, mask, QUIC_SAMPLE_LEN);
-	skcipher_request_set_tfm(req, tfm);
-	skcipher_request_set_crypt(req, &sg, &sg, QUIC_SAMPLE_LEN, iv);
-	err = crypto_skcipher_encrypt(req);
-	if (err)
-		goto err;
-
-	p = (u8 *)hdr;
-	*p = (u8)(*p ^ (mask[0] & (((*p & QUIC_HEADER_FORM_BIT) == QUIC_HEADER_FORM_BIT) ?
-				   QUIC_LONG_HEADER_MASK : QUIC_SHORT_HEADER_MASK)));
-	cb->number_len = hdr->pnl + 1;
-	cb->key_phase = hdr->key;
-	p += cb->number_offset;
-	for (i = 0; i < cb->number_len; ++i)
-		*(p + i) = *((u8 *)hdr + cb->number_offset + i) ^ mask[i + 1];
-	err = quic_crypto_get_number(skb);
-
+	if (!enc)
+		err = quic_crypto_get_number(skb);
 err:
 	kfree_sensitive(mask);
 	return err;
@@ -578,7 +547,7 @@ int quic_crypto_encrypt(struct quic_crypto *crypto, struct sk_buff *skb)
 		return err;
 out:
 	cha = quic_crypto_is_cipher_chacha(crypto);
-	return quic_crypto_header_encrypt(crypto->tx_hp_tfm, skb, cha);
+	return quic_crypto_header_protect(crypto->tx_hp_tfm, skb, cha, true);
 }
 EXPORT_SYMBOL_GPL(quic_crypto_encrypt);
 
@@ -605,7 +574,7 @@ int quic_crypto_decrypt(struct quic_crypto *crypto, struct sk_buff *skb)
 	}
 	if (!cb->number_len) { /* Packet header not yet decrypted. */
 		cha = quic_crypto_is_cipher_chacha(crypto);
-		err = quic_crypto_header_decrypt(crypto->rx_hp_tfm, skb, cha);
+		err = quic_crypto_header_protect(crypto->rx_hp_tfm, skb, cha, false);
 		if (err) {
 			pr_debug("%s: hd decrypt err %d\n", __func__, err);
 			return err;
