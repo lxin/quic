@@ -14,6 +14,25 @@
 
 #include "socket.h"
 
+static void quic_timer_timeout(struct quic_timer *t, int type, int defer_bit,
+			       void (*handler)(struct sock *sk))
+{
+	struct quic_sock *qs = container_of(t, struct quic_sock, timers[type]);
+	struct sock *sk = &qs->inet.sk;
+
+	bh_lock_sock(sk);
+	if (sock_owned_by_user(sk)) {
+		if (!test_and_set_bit(defer_bit, &sk->sk_tsq_flags))
+			sock_hold(sk);
+		goto out;
+	}
+
+	handler(sk);
+out:
+	bh_unlock_sock(sk);
+	sock_put(sk);
+}
+
 void quic_timer_sack_handler(struct sock *sk)
 {
 	struct quic_pnspace *space = quic_pnspace(sk, QUIC_CRYPTO_APP);
@@ -43,20 +62,8 @@ void quic_timer_sack_handler(struct sock *sk)
 
 static void quic_timer_sack_timeout(struct timer_list *t)
 {
-	struct quic_sock *qs = container_of(t, struct quic_sock, timers[QUIC_TIMER_SACK].t);
-	struct sock *sk = &qs->inet.sk;
-
-	bh_lock_sock(sk);
-	if (sock_owned_by_user(sk)) {
-		if (!test_and_set_bit(QUIC_SACK_DEFERRED, &sk->sk_tsq_flags))
-			sock_hold(sk);
-		goto out;
-	}
-
-	quic_timer_sack_handler(sk);
-out:
-	bh_unlock_sock(sk);
-	sock_put(sk);
+	quic_timer_timeout((struct quic_timer *)t, QUIC_TIMER_SACK, QUIC_SACK_DEFERRED,
+			   quic_timer_sack_handler);
 }
 
 void quic_timer_loss_handler(struct sock *sk)
@@ -69,20 +76,8 @@ void quic_timer_loss_handler(struct sock *sk)
 
 static void quic_timer_loss_timeout(struct timer_list *t)
 {
-	struct quic_sock *qs = container_of(t, struct quic_sock, timers[QUIC_TIMER_LOSS].t);
-	struct sock *sk = &qs->inet.sk;
-
-	bh_lock_sock(sk);
-	if (sock_owned_by_user(sk)) {
-		if (!test_and_set_bit(QUIC_LOSS_DEFERRED, &sk->sk_tsq_flags))
-			sock_hold(sk);
-		goto out;
-	}
-
-	quic_timer_loss_handler(sk);
-out:
-	bh_unlock_sock(sk);
-	sock_put(sk);
+	quic_timer_timeout((struct quic_timer *)t, QUIC_TIMER_LOSS, QUIC_LOSS_DEFERRED,
+			   quic_timer_loss_handler);
 }
 
 #define QUIC_MAX_ALT_PROBES	3
@@ -117,20 +112,8 @@ out:
 
 static void quic_timer_path_timeout(struct timer_list *t)
 {
-	struct quic_sock *qs = container_of(t, struct quic_sock, timers[QUIC_TIMER_PATH].t);
-	struct sock *sk = &qs->inet.sk;
-
-	bh_lock_sock(sk);
-	if (sock_owned_by_user(sk)) {
-		if (!test_and_set_bit(QUIC_PATH_DEFERRED, &sk->sk_tsq_flags))
-			sock_hold(sk);
-		goto out;
-	}
-
-	quic_timer_path_handler(sk);
-out:
-	bh_unlock_sock(sk);
-	sock_put(sk);
+	quic_timer_timeout((struct quic_timer *)t, QUIC_TIMER_PATH, QUIC_PATH_DEFERRED,
+			   quic_timer_path_handler);
 }
 
 void quic_timer_reset_path(struct sock *sk)
@@ -154,20 +137,8 @@ void quic_timer_pmtu_handler(struct sock *sk)
 
 static void quic_timer_pmtu_timeout(struct timer_list *t)
 {
-	struct quic_sock *qs = container_of(t, struct quic_sock, timers[QUIC_TIMER_PMTU].t);
-	struct sock *sk = &qs->inet.sk;
-
-	bh_lock_sock(sk);
-	if (sock_owned_by_user(sk)) {
-		if (!test_and_set_bit(QUIC_PMTU_DEFERRED, &sk->sk_tsq_flags))
-			sock_hold(sk);
-		goto out;
-	}
-
-	quic_timer_pmtu_handler(sk);
-out:
-	bh_unlock_sock(sk);
-	sock_put(sk);
+	quic_timer_timeout((struct quic_timer *)t, QUIC_TIMER_PMTU, QUIC_PMTU_DEFERRED,
+			   quic_timer_pmtu_handler);
 }
 
 void quic_timer_pace_handler(struct sock *sk)
@@ -180,20 +151,8 @@ void quic_timer_pace_handler(struct sock *sk)
 
 static enum hrtimer_restart quic_timer_pace_timeout(struct hrtimer *hr)
 {
-	struct quic_sock *qs = container_of(hr, struct quic_sock, timers[QUIC_TIMER_PACE].hr);
-	struct sock *sk = &qs->inet.sk;
-
-	bh_lock_sock(sk);
-	if (sock_owned_by_user(sk)) {
-		if (!test_and_set_bit(QUIC_PACE_DEFERRED, &sk->sk_tsq_flags))
-			sock_hold(sk);
-		goto out;
-	}
-
-	quic_timer_pace_handler(sk);
-out:
-	bh_unlock_sock(sk);
-	sock_put(sk);
+	quic_timer_timeout((struct quic_timer *)hr, QUIC_TIMER_PACE, QUIC_PACE_DEFERRED,
+			   quic_timer_pace_handler);
 	return HRTIMER_NORESTART;
 }
 
