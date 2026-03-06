@@ -1078,6 +1078,7 @@ int quic_outq_probe_path_alt(struct sock *sk, u8 cork)
 	struct quic_conn_id_set *id_set = quic_dest(sk);
 	struct quic_path_group *paths = quic_paths(sk);
 	u64 number;
+	int err;
 
 	/* Try to select an alternate connection ID for the new path. */
 	if (!quic_conn_id_select_alt(id_set, false)) {
@@ -1089,8 +1090,10 @@ int quic_outq_probe_path_alt(struct sock *sk, u8 cork)
 		 * connection ID to prepare for migration.
 		 */
 		number = quic_conn_id_first_number(id_set);
-		if (quic_outq_transmit_frame(sk, QUIC_FRAME_RETIRE_CONNECTION_ID, &number, 0, cork))
-			return -ENOMEM;
+		err = quic_outq_transmit_frame(sk, QUIC_FRAME_RETIRE_CONNECTION_ID,
+					       &number, 0, cork);
+		if (err)
+			return err;
 
 		/* Mark path migration as pending. */
 		quic_path_set_alt_state(paths, QUIC_PATH_ALT_PENDING);
@@ -1131,8 +1134,8 @@ int quic_outq_transmit_frame(struct sock *sk, u8 type, void *data, u8 path, u8 c
 	struct quic_frame *frame;
 
 	frame = quic_frame_create(sk, type, data);
-	if (!frame)
-		return -ENOMEM;
+	if (IS_ERR(frame))
+		return PTR_ERR(frame);
 
 	frame->path = path;
 	quic_outq_ctrl_tail(sk, frame, cork);
@@ -1148,13 +1151,15 @@ int quic_outq_transmit_new_conn_id(struct sock *sk, u64 prior, u8 path, u8 cork)
 {
 	struct quic_conn_id_set *id_set = quic_source(sk);
 	u64 max, seqno;
+	int err;
 
 	/* Compute the maximum sequence number to send. */
 	max = id_set->max_count + prior;
 	for (seqno = quic_conn_id_last_number(id_set) + 1; seqno < max; seqno++) {
-		if (quic_outq_transmit_frame(sk, QUIC_FRAME_NEW_CONNECTION_ID, &prior,
-					     path, true))
-			return -ENOMEM;
+		err = quic_outq_transmit_frame(sk, QUIC_FRAME_NEW_CONNECTION_ID, &prior,
+					       path, true);
+		if (err)
+			return err;
 	}
 	if (!cork)
 		quic_outq_transmit(sk);
@@ -1170,11 +1175,13 @@ int quic_outq_transmit_retire_conn_id(struct sock *sk, u64 prior, u8 path, u8 co
 {
 	struct quic_conn_id_set *id_set = quic_dest(sk);
 	u64 seqno;
+	int err;
 
 	for (seqno = quic_conn_id_first_number(id_set); seqno < prior; seqno++) {
-		if (quic_outq_transmit_frame(sk, QUIC_FRAME_RETIRE_CONNECTION_ID, &seqno,
-					     path, cork))
-			return -ENOMEM;
+		err = quic_outq_transmit_frame(sk, QUIC_FRAME_RETIRE_CONNECTION_ID, &seqno,
+					       path, cork);
+		if (err)
+			return err;
 	}
 	if (!cork)
 		quic_outq_transmit(sk);

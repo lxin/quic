@@ -985,9 +985,9 @@ static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 				}
 			}
 			frame = quic_frame_create(sk, QUIC_FRAME_CRYPTO, &msginfo);
-			if (!frame) {
+			if (IS_ERR(frame)) {
 				if (!bytes) { /* Return error only if nothing was sent. */
-					err = -ENOMEM;
+					err = PTR_ERR(frame);
 					goto err;
 				}
 				goto out;
@@ -1026,8 +1026,8 @@ static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 		}
 		/* Only sending Datagram frames with a length field is supported for now. */
 		frame = quic_frame_create(sk, QUIC_FRAME_DATAGRAM_LEN, &msg->msg_iter);
-		if (!frame) {
-			err = -EINVAL;
+		if (IS_ERR(frame)) {
+			err = PTR_ERR(frame);
 			goto err;
 		}
 		bytes += frame->bytes;
@@ -1076,9 +1076,9 @@ static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 		}
 
 		frame = quic_frame_create(sk, QUIC_FRAME_STREAM, &msginfo);
-		if (!frame) {
+		if (IS_ERR(frame)) {
 			if (!bytes) {
-				err = -ENOMEM;
+				err = PTR_ERR(frame);
 				goto err;
 			}
 			goto out;
@@ -1586,8 +1586,8 @@ static int quic_sock_stream_reset(struct sock *sk, struct quic_errinfo *info, u3
 		return -EINVAL;
 
 	frame = quic_frame_create(sk, QUIC_FRAME_RESET_STREAM, info);
-	if (!frame)
-		return -ENOMEM;
+	if (IS_ERR(frame))
+		return PTR_ERR(frame);
 
 	stream->send.state = QUIC_STREAM_SEND_STATE_RESET_SENT;
 	quic_outq_list_purge(sk, &outq->transmitted_list, stream);
@@ -1926,9 +1926,7 @@ static int quic_sock_set_token(struct sock *sk, void *data, u32 len)
 		/* Defer sending; a NEW_TOKEN frame is already in flight. */
 		if (quic_outq(sk)->token_pending)
 			return -EAGAIN;
-		if (quic_outq_transmit_frame(sk, QUIC_FRAME_NEW_TOKEN, NULL, 0, false))
-			return -ENOMEM;
-		return 0;
+		return quic_outq_transmit_frame(sk, QUIC_FRAME_NEW_TOKEN, NULL, 0, false);
 	}
 
 	/* For clients, use the regular token next time before handshake. */
