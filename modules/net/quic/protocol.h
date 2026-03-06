@@ -11,6 +11,7 @@
 extern struct quic_transport_param quic_default_param __read_mostly;
 extern struct kmem_cache *quic_frame_cachep __read_mostly;
 extern struct percpu_counter quic_sockets_allocated;
+extern struct workqueue_struct *quic_wq;
 
 DECLARE_STATIC_KEY_FALSE(quic_alpn_demux_key);
 

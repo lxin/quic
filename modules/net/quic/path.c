@@ -111,7 +111,7 @@ static void quic_udp_sock_put(struct quic_udp_sock *us)
 	 * defer the release to a workqueue.
 	 */
 	if (refcount_dec_and_test(&us->refcnt))
-		queue_work(quic_wq, &us->work);
+		queue_work(system_wq, &us->work);
 }
 
 /* Lookup a quic_udp_sock in the global hash table by port or address.  If 'a' is provided, it

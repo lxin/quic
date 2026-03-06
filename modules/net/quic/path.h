@@ -16,8 +16,6 @@
 
 #define QUIC_PATH_ENTROPY_LEN	8
 
-extern struct workqueue_struct *quic_wq;
-
 /* Connection Migration State Machine:
  *
  * +--------+      recv non-probing, free old path    +----------+
