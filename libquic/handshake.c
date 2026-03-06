@@ -517,7 +517,7 @@ static struct quic_smsg *quic_smsg_create(uint8_t level,
 	cmsg = CMSG_FIRSTHDR(&smsg->msg);
 	cmsg->cmsg_level = SOL_QUIC;
 	cmsg->cmsg_type = QUIC_HANDSHAKE_INFO;
-	cmsg->cmsg_len = CMSG_LEN(sizeof(*info));
+	cmsg->cmsg_len = CMSG_LEN(offsetof(struct quic_handshake_info, reserved));
 
 	info = (struct quic_handshake_info *)CMSG_DATA(cmsg);
 	info->crypto_level = level;
