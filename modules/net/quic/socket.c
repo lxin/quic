@@ -482,7 +482,7 @@ static int quic_connect(struct sock *sk, struct sockaddr *addr, int addr_len)
 	/* Set destination address and resolve route (may also auto-set source address). */
 	quic_path_set_daddr(paths, 0, &a);
 	err = quic_packet_route(sk);
-	if (err < 0)
+	if (err)
 		goto out;
 	quic_set_sk_addr(sk, &a, false);
 
@@ -1427,7 +1427,7 @@ static int quic_accept_sock_setup(struct sock *sk, struct quic_request_sock *req
 	/* Set destination address and resolve route (may also auto-set source address). */
 	quic_path_set_daddr(paths, 0, &req->daddr);
 	err = quic_packet_route(sk);
-	if (err < 0)
+	if (err)
 		goto out;
 	quic_set_sk_addr(sk, &req->daddr, false);
 

@@ -1207,7 +1207,7 @@ void quic_outq_set_param(struct sock *sk, struct quic_transport_param *p)
 	cong->max_window = min_t(u64, outq->max_data, S32_MAX / 2);
 	cong->max_ack_delay = outq->max_ack_delay;
 
-	if (quic_packet_route(sk) < 0)
+	if (quic_packet_route(sk))
 		return;
 	pmtu = min_t(u32, dst_mtu(__sk_dst_get(sk)), QUIC_PATH_MAX_PMTU);
 	quic_packet_mss_update(sk, pmtu - packet->hlen);

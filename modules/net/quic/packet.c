@@ -200,7 +200,7 @@ void quic_packet_rcv_err_pmtu(struct sock *sk)
 	info = clamp(paths->mtu_info, QUIC_PATH_MIN_PMTU, QUIC_PATH_MAX_PMTU);
 	/* If PLPMTUD is not enabled, update MSS using the route and ICMP info. */
 	if (!paths->plpmtud_interval) {
-		if (quic_packet_route(sk) < 0)
+		if (quic_packet_route(sk))
 			return;
 
 		dst = __sk_dst_get(sk);
@@ -2271,7 +2271,7 @@ int quic_packet_route(struct sock *sk)
 	sa = quic_path_saddr(paths, packet->path);
 	err = quic_flow_route(sk, da, sa, &paths->fl);
 	if (err)
-		return err;
+		return err < 0 ? err : 0;
 
 	packet->hlen = quic_encap_len(da);
 	pmtu = min_t(u32, dst_mtu(__sk_dst_get(sk)), QUIC_PATH_MAX_PMTU);
@@ -2323,9 +2323,7 @@ int quic_packet_config(struct sock *sk, u8 level, u8 path)
 	}
 
 	/* Perform routing and MSS update for the configured packet. */
-	if (quic_packet_route(sk) < 0)
-		return -1;
-	return 0;
+	return quic_packet_route(sk);
 }
 
 static int quic_packet_xmit(struct sock *sk, struct sk_buff *skb);
