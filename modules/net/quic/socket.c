@@ -644,7 +644,7 @@ out:
 
 #define QUIC_MSG_FLAGS \
 	(QUIC_MSG_STREAM_FLAGS | MSG_BATCH | MSG_MORE | MSG_DONTWAIT | MSG_NOSIGNAL | \
-	 MSG_QUIC_DATAGRAM)
+	 MSG_WAITALL | MSG_QUIC_DATAGRAM)
 
 /* Parse control messages and extract stream or handshake metadata from msghdr. */
 static int quic_msghdr_parse(struct sock *sk, struct msghdr *msg, struct quic_handshake_info *hinfo,
@@ -700,7 +700,7 @@ static int quic_msghdr_parse(struct sock *sk, struct msghdr *msg, struct quic_ha
 	}
 
 	if (!s) /* If no stream info was provided, inherit stream_flags from msg_flags. */
-		sinfo->stream_flags |= msg->msg_flags;
+		sinfo->stream_flags |= (msg->msg_flags & QUIC_MSG_STREAM_FLAGS);
 
 	if (sinfo->stream_id != -1)
 		return 0;
