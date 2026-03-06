@@ -1955,15 +1955,17 @@ static int quic_sock_set_transport_params_ext(struct sock *sk, u8 *p, u32 len)
 {
 	struct quic_transport_param param = {};
 	u32 errcode;
+	int err;
 
 	if (!quic_is_establishing(sk) || len > QUIC_TP_EXT_MAX_LEN)
 		return -EINVAL;
 
 	param.remote = 1;
-	if (quic_frame_parse_transport_params_ext(sk, &param, p, len)) {
+	err = quic_frame_parse_transport_params_ext(sk, &param, p, len);
+	if (err) {
 		errcode = QUIC_TRANSPORT_ERROR_TRANSPORT_PARAM;
 		quic_outq_transmit_close(sk, 0, errcode, QUIC_CRYPTO_INITIAL);
-		return -EINVAL;
+		return err;
 	}
 
 	quic_sock_apply_transport_param(sk, &param);
@@ -2421,14 +2423,16 @@ static int quic_sock_get_transport_params_ext(struct sock *sk, u32 len,
 	struct quic_transport_param param = {};
 	u8 data[QUIC_TP_EXT_MAX_LEN];
 	u32 datalen = 0;
+	int err;
 
 	if (!quic_is_establishing(sk))
 		return -EINVAL;
 
 	quic_sock_fetch_transport_param(sk, &param);
 
-	if (quic_frame_build_transport_params_ext(sk, &param, data, &datalen))
-		return -EINVAL;
+	err = quic_frame_build_transport_params_ext(sk, &param, data, &datalen);
+	if (err)
+		return err;
 	if (len < datalen)
 		return -EINVAL;
 	len = datalen;
