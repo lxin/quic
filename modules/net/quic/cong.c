@@ -415,11 +415,8 @@ static void quic_cubic_on_rtt_update(struct quic_cong *cong)
 }
 
 /* NEW RENO APIs */
-static void quic_reno_on_packet_lost(struct quic_cong *cong, u64 time, u32 bytes, s64 number)
+static void quic_reno_handle_packet_lost(struct quic_cong *cong)
 {
-	if (quic_cong_check_persistent_congestion(cong, time))
-		return;
-
 	switch (cong->state) {
 	case QUIC_CONG_SLOW_START:
 		pr_debug("%s: slow_start -> recovery, cwnd: %u, ssthresh: %u\n",
@@ -440,6 +437,14 @@ static void quic_reno_on_packet_lost(struct quic_cong *cong, u64 time, u32 bytes
 	cong->state = QUIC_CONG_RECOVERY_PERIOD;
 	cong->ssthresh = max(cong->window >> 1U, cong->min_window);
 	cong->window = cong->ssthresh;
+}
+
+static void quic_reno_on_packet_lost(struct quic_cong *cong, u64 time, u32 bytes, s64 number)
+{
+	if (quic_cong_check_persistent_congestion(cong, time))
+		return;
+
+	quic_reno_handle_packet_lost(cong);
 }
 
 static void quic_reno_on_packet_acked(struct quic_cong *cong, u64 time, u32 bytes, s64 number)
@@ -474,26 +479,7 @@ static void quic_reno_on_packet_acked(struct quic_cong *cong, u64 time, u32 byte
 
 static void quic_reno_on_process_ecn(struct quic_cong *cong)
 {
-	switch (cong->state) {
-	case QUIC_CONG_SLOW_START:
-		pr_debug("%s: slow_start -> recovery, cwnd: %u, ssthresh: %u\n",
-			 __func__, cong->window, cong->ssthresh);
-		break;
-	case QUIC_CONG_RECOVERY_PERIOD:
-		return;
-	case QUIC_CONG_CONGESTION_AVOIDANCE:
-		pr_debug("%s: cong_avoid -> recovery, cwnd: %u, ssthresh: %u\n",
-			 __func__, cong->window, cong->ssthresh);
-		break;
-	default:
-		pr_debug("%s: wrong congestion state: %d\n", __func__, cong->state);
-		return;
-	}
-
-	cong->recovery_time = cong->time;
-	cong->state = QUIC_CONG_RECOVERY_PERIOD;
-	cong->ssthresh = max(cong->window >> 1U, cong->min_window);
-	cong->window = cong->ssthresh;
+	quic_reno_handle_packet_lost(cong);
 }
 
 static void quic_reno_on_init(struct quic_cong *cong)
