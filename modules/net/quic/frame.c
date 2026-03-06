@@ -2316,7 +2316,7 @@ int quic_frame_stream_append(struct sock *sk, struct quic_frame *frame,
 	max_frame_len = quic_packet_max_payload(quic_packet(sk)); /* MSS. */
 	hlen += quic_var_len(max_frame_len);
 	if (max_frame_len - hlen <= frame->bytes)
-		return -1; /* Not enough space for any additional payload. */
+		return -EMSGSIZE; /* Not enough space for any additional payload. */
 
 	/* Trim msg_len to respect flow control and MSS constraints, similar to
 	 * quic_frame_stream_create().
@@ -2344,10 +2344,10 @@ int quic_frame_stream_append(struct sock *sk, struct quic_frame *frame,
 	if (msg_len) { /* Attach data to frame as fragment. */
 		frag = quic_frame_frag_alloc(msg_len);
 		if (!frag)
-			return -1;
+			return -ENOMEM;
 		if (!copy_from_iter_full(frag->data, msg_len, info->msg)) {
 			kfree(frag);
-			return -1;
+			return -EFAULT;
 		}
 		if (frame->flist) {
 			pos = frame->flist;

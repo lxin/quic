@@ -235,7 +235,7 @@ static int quic_v4_get_mtu_info(struct sk_buff *skb, u32 *info)
 	}
 
 	/* Defer other types' processing to UDP error handler. */
-	return 1;
+	return -EINVAL;
 }
 
 static int quic_v6_get_mtu_info(struct sk_buff *skb, u32 *info)
@@ -249,7 +249,7 @@ static int quic_v6_get_mtu_info(struct sk_buff *skb, u32 *info)
 	}
 
 	/* Defer other types' processing to UDP error handler. */
-	return 1;
+	return -EINVAL;
 }
 
 static u8 quic_v4_get_msg_ecn(struct sk_buff *skb)

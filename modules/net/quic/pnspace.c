@@ -72,9 +72,8 @@ static int quic_pnspace_grow(struct quic_pnspace *space, u16 size)
 
 /* Check if a packet number has been received.
  *
- * Returns: 0 if the packet number has not been received.  1 if it has already
- * been received.  -1 if the packet number is too old or too far in the future
- * to track.
+ * Returns: 0 if the packet number has not been received.  1 if it has already been
+ * received. -EINVAL if the packet number is too old or too far in the future to track.
  */
 int quic_pnspace_check(struct quic_pnspace *space, s64 pn)
 {
@@ -82,7 +81,7 @@ int quic_pnspace_check(struct quic_pnspace *space, s64 pn)
 		return 0;
 
 	if (pn < space->min_pn_seen || pn >= space->base_pn + QUIC_PN_MAP_SIZE)
-		return -1;
+		return -EINVAL;
 
 	if (pn < space->base_pn || (pn - space->base_pn < space->pn_map_len &&
 				    test_bit(pn - space->base_pn, space->pn_map)))

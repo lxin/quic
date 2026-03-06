@@ -283,7 +283,7 @@ static int quic_packet_backlog_schedule(struct net *net, struct sk_buff *skb)
 		spin_unlock(&head->lock);
 		QUIC_INC_STATS(net, QUIC_MIB_PKT_RCVDROP);
 		kfree_skb(skb);
-		return -1;
+		return -ENOBUFS;
 	}
 	cb->backlog = 1;
 	__skb_queue_tail(head, skb);
@@ -1380,7 +1380,6 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb)
 				goto next;
 			}
 			QUIC_INC_STATS(net, QUIC_MIB_PKT_INVNUMDROP);
-			err = -EINVAL;
 			goto err;
 		}
 
@@ -1767,7 +1766,6 @@ static int quic_packet_app_process(struct sock *sk, struct sk_buff *skb)
 		}
 		/* Drop if packet number is outside ACK tracking range. */
 		QUIC_INC_STATS(net, QUIC_MIB_PKT_INVNUMDROP);
-		err = -EINVAL;
 		goto err;
 	}
 

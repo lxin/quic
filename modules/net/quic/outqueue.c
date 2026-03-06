@@ -340,13 +340,13 @@ int quic_outq_stream_append(struct sock *sk, struct quic_msginfo *info, bool pac
 
 	head = &outq->stream_list;
 	if (list_empty(head))
-		return -1;
+		return -ENOENT;
 	/* Append only if it's the same stream, the frame is the last of a sendmsg (i.e.,
 	 * !nodelay) and it hasn't been transmitted yet (number < 0).
 	 */
 	frame = list_last_entry(head, struct quic_frame, list);
 	if (frame->stream != stream || frame->nodelay || frame->number >= 0)
-		return -1;
+		return -EINVAL;
 
 	len = frame->len;
 	bytes = quic_frame_stream_append(sk, frame, info, pack);
