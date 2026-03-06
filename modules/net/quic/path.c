@@ -71,16 +71,18 @@ static struct quic_udp_sock *quic_udp_sock_create(struct sock *sk, union quic_ad
 	struct quic_uhash_head *head;
 	struct quic_udp_sock *us;
 	struct socket *sock;
+	int err;
 
 	us = kzalloc(sizeof(*us), GFP_KERNEL);
 	if (!us)
-		return NULL;
+		return ERR_PTR(-ENOMEM);
 
 	quic_udp_conf_init(sk, &udp_conf, a);
-	if (udp_sock_create(net, &udp_conf, &sock)) {
+	err = udp_sock_create(net, &udp_conf, &sock);
+	if (err) {
 		pr_debug("%s: failed to create udp sock\n", __func__);
 		kfree(us);
-		return NULL;
+		return ERR_PTR(err);
 	}
 
 	tuncfg.encap_type = 1;
@@ -182,9 +184,9 @@ int quic_path_bind(struct sock *sk, struct quic_path_group *paths, u8 path)
 			}
 		} else {
 			us = quic_udp_sock_create(sk, a);
-			if (!us) {
+			if (IS_ERR(us)) {
 				mutex_unlock(&head->lock);
-				return -EINVAL;
+				return PTR_ERR(us);
 			}
 		}
 		mutex_unlock(&head->lock);
@@ -218,10 +220,10 @@ int quic_path_bind(struct sock *sk, struct quic_path_group *paths, u8 path)
 		}
 		a->v4.sin_port = htons(port);
 		us = quic_udp_sock_create(sk, a);
-		if (!us) {
+		if (IS_ERR(us)) {
 			a->v4.sin_port = 0;
 			mutex_unlock(&head->lock);
-			return -EINVAL;
+			return PTR_ERR(us);
 		}
 		mutex_unlock(&head->lock);
 
