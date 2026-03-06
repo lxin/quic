@@ -116,9 +116,11 @@ static int quic_packet_get_version_and_connid(struct quic_conn_id *dcid, struct 
 static int quic_packet_version_change(struct sock *sk, struct quic_conn_id *dcid, u32 version)
 {
 	struct quic_crypto *crypto = quic_crypto(sk, QUIC_CRYPTO_INITIAL);
+	int err;
 
-	if (quic_crypto_initial_keys_install(crypto, dcid, version, quic_is_serv(sk)))
-		return -1;
+	err = quic_crypto_initial_keys_install(crypto, dcid, version, quic_is_serv(sk));
+	if (err)
+		return err;
 
 	quic_packet(sk)->version = version;
 	return 0;
@@ -151,7 +153,7 @@ int quic_packet_select_version(struct sock *sk, u32 *versions, u8 count)
 	}
 
 	if (!pref_found && !ch_found && !best)
-		return -1;
+		return -EPROTONOSUPPORT;
 
 	if (quic_is_serv(sk)) { /* Server prefers preferred version if offered, else chosen. */
 		if (pref_found)
@@ -845,6 +847,7 @@ static int quic_packet_refuse_close_create(struct sock *sk, u32 errcode)
 	struct quic_packet *packet = quic_packet(sk);
 	u8 level = QUIC_CRYPTO_INITIAL;
 	struct quic_conn_id *active;
+	int err;
 
 	/* Use the client's DCID as our SCID when responding. */
 	active = quic_conn_id_active(id_set);
@@ -854,8 +857,9 @@ static int quic_packet_refuse_close_create(struct sock *sk, u32 errcode)
 	quic_path_set_daddr(paths, 1, &packet->daddr);
 
 	/* Reinstall Initial keys for encryption with the client's version. */
-	if (quic_packet_version_change(sk, active, packet->version))
-		return -EINVAL;
+	err = quic_packet_version_change(sk, active, packet->version);
+	if (err)
+		return err;
 	/* Set the errcode used in CLOSE frame and Transmit it at Initial level. */
 	quic_outq(sk)->close_errcode = errcode;
 	quic_outq_transmit_frame(sk, QUIC_FRAME_CONNECTION_CLOSE, &level, 1, false);
@@ -1050,6 +1054,7 @@ static int quic_packet_retry_process(struct sock *sk, struct sk_buff *skb)
 	struct quic_conn_id *active;
 	u8 *p, tag[QUIC_TAG_LEN];
 	u32 hlen, len, version;
+	int err = -EINVAL;
 
 	hlen = QUIC_LONG_HLEN(&packet->dcid, &packet->scid);
 	len = skb->len - hlen;
@@ -1069,7 +1074,8 @@ static int quic_packet_retry_process(struct sock *sk, struct sk_buff *skb)
 	if (quic_data_dup(quic_token(sk), p, len - QUIC_TAG_LEN))
 		goto err;
 	/* Update crypto keys using the new DCID (similar to version negotiation). */
-	if (quic_packet_version_change(sk, &packet->scid, version))
+	err = quic_packet_version_change(sk, &packet->scid, version);
+	if (err)
 		goto err;
 	/* rfc9000#section-17.2.5.2:
 	 *
@@ -1102,13 +1108,14 @@ static int quic_packet_retry_process(struct sock *sk, struct sk_buff *skb)
 	return 0;
 err:
 	kfree_skb(skb);
-	return -EINVAL;
+	return err;
 }
 
 static int quic_packet_version_process(struct sock *sk, struct sk_buff *skb)
 {
 	struct quic_packet *packet = quic_packet(sk);
 	u64 version, best = 0;
+	int err = -EINVAL;
 	u32 hlen, len;
 	u8 *p;
 
@@ -1131,7 +1138,8 @@ static int quic_packet_version_process(struct sock *sk, struct sk_buff *skb)
 	}
 	if (best) {
 		/* Found one and update crypto keys using the new version. */
-		if (quic_packet_version_change(sk, &packet->scid, best))
+		err = quic_packet_version_change(sk, &packet->scid, best);
+		if (err)
 			goto err;
 		/* Retransmit the CRYPTO frame in an initial packet with new version. */
 		quic_outq_retransmit_mark(sk, QUIC_CRYPTO_INITIAL, 1);
@@ -1143,7 +1151,7 @@ static int quic_packet_version_process(struct sock *sk, struct sk_buff *skb)
 	return 0;
 err:
 	kfree_skb(skb);
-	return -EINVAL;
+	return err;
 }
 
 void quic_packet_flush_rxq(struct sock *sk)
@@ -1202,6 +1210,7 @@ static int quic_packet_handshake_header_process(struct sock *sk, struct sk_buff 
 	u32 len = skb->len, version;
 	struct quic_data token;
 	u64 length;
+	int err;
 
 	quic_packet_reset(packet); /* Reset packet state to prepare for new packet parsing. */
 	/* Read VERSION, Destination Connection ID and Source Connection ID. */
@@ -1225,8 +1234,9 @@ static int quic_packet_handshake_header_process(struct sock *sk, struct sk_buff 
 			return 0;
 		}
 		/* Update crypto keys for the new negotiated version. */
-		if (quic_packet_version_change(sk, &quic_paths(sk)->orig_dcid, version))
-			return -EINVAL;
+		err = quic_packet_version_change(sk, &quic_paths(sk)->orig_dcid, version);
+		if (err)
+			return err;
 	}
 	switch (type) {
 	case QUIC_PACKET_INITIAL:
@@ -1318,9 +1328,9 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb)
 			break;
 		}
 		/* Parse long-header and handle Retry or Version Negotiation if present. */
-		if (quic_packet_handshake_header_process(sk, skb)) {
+		err = quic_packet_handshake_header_process(sk, skb);
+		if (err) {
 			QUIC_INC_STATS(net, QUIC_MIB_PKT_INVHDRDROP);
-			err = -EINVAL;
 			goto err;
 		}
 		if (!packet->level) /* If already consumed (e.g., Retry), stop processing. */
