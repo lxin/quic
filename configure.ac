@@ -14,9 +14,7 @@ AC_ARG_WITH([modules], AS_HELP_STRING([--without-modules], [skip building kernel
 if test "x$with_modules" != "xno"; then
 	kernel="/lib/modules/`uname -r`"
 	if test -d "$kernel/kernel/net/quic" && test "x$with_modules" != "xyes" ; then
-		BUILTIN_MODULES=yes
 		AC_MSG_NOTICE([quic module found in kernel, skipping build])
-		test -f /usr/include/linux/quic.h || AC_MSG_ERROR([no kernel-headers found])
 	else
 		AC_SUBST([MODULES], [modules])
 		AC_SUBST([KERNEL_BUILD], [$kernel/build])
@@ -27,8 +25,6 @@ if test "x$with_modules" != "xno"; then
 else
 	AC_MSG_NOTICE([--without-modules specified, skipping kernel module build])
 fi
-
-AM_CONDITIONAL([BUILTIN_MODULES], [test "x$BUILTIN_MODULES" = "xyes"])
 
 AC_CONFIG_HEADERS([config.h])
 AC_CONFIG_FILES([Makefile libquic/Makefile libquic/libquic.pc tests/Makefile])

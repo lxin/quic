@@ -11,12 +11,10 @@ libquic_la_LDFLAGS	= -version-info 1:0:0
 libcnetinetdir		= $(includedir)/netinet
 libcnetinet_HEADERS	= netinet/quic.h
 
-if !BUILTIN_MODULES
 libquic_la_CPPFLAGS	+= -I$(top_builddir)/modules/include/uapi/
 
 libclinuxdir		= $(includedir)/linux
 libclinux_HEADERS	= $(top_builddir)/modules/include/uapi/linux/quic.h
-endif
 
 pkgconfigdir		= $(libdir)/pkgconfig
 pkgconfig_DATA		= libquic.pc
