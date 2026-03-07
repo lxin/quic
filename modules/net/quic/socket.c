@@ -639,6 +639,11 @@ out:
 	spin_unlock_bh(&head->lock);
 }
 
+static inline void quic_copy_common(void *dst, size_t dlen, const void *src, size_t slen)
+{
+	memcpy(dst, src, min_t(size_t, dlen, slen));
+}
+
 #define QUIC_MSG_STREAM_FLAGS \
 	(MSG_QUIC_STREAM_NEW | MSG_QUIC_STREAM_FIN | MSG_QUIC_STREAM_UNI | MSG_QUIC_STREAM_DONTWAIT)
 
@@ -650,9 +655,8 @@ out:
 static int quic_msghdr_parse(struct sock *sk, struct msghdr *msg, struct quic_handshake_info *hinfo,
 			     struct quic_stream_info *sinfo, bool *has_hinfo)
 {
-	struct quic_handshake_info *h = NULL;
-	struct quic_stream_info *s = NULL;
 	struct quic_stream_table *streams;
+	bool has_sinfo = false;
 	struct cmsghdr *cmsg;
 	s64 active;
 
@@ -673,33 +677,24 @@ static int quic_msghdr_parse(struct sock *sk, struct msghdr *msg, struct quic_ha
 
 		switch (cmsg->cmsg_type) {
 		case QUIC_HANDSHAKE_INFO:
-			if (cmsg->cmsg_len <
-			    CMSG_LEN(offsetof(struct quic_handshake_info, reserved)))
-				return -EINVAL;
-			h = CMSG_DATA(cmsg);
-			hinfo->crypto_level = h->crypto_level;
+			quic_copy_common(hinfo, sizeof(*hinfo), CMSG_DATA(cmsg), cmsg->cmsg_len);
+			*has_hinfo = true;
 			break;
 		case QUIC_STREAM_INFO:
-			if (cmsg->cmsg_len <
-			    CMSG_LEN(offsetof(struct quic_stream_info, reserved)))
+			quic_copy_common(sinfo, sizeof(*sinfo), CMSG_DATA(cmsg), cmsg->cmsg_len);
+			if (sinfo->stream_flags & ~QUIC_MSG_STREAM_FLAGS)
 				return -EINVAL;
-			s = CMSG_DATA(cmsg);
-			if (s->stream_flags & ~QUIC_MSG_STREAM_FLAGS)
-				return -EINVAL;
-			sinfo->stream_id = s->stream_id;
-			sinfo->stream_flags = s->stream_flags;
+			has_sinfo = true;
 			break;
 		default:
 			return -EINVAL;
 		}
 	}
 
-	if (h) { /* If handshake metadata was provided, skip stream handling. */
-		*has_hinfo = true;
+	if (*has_hinfo) /* If handshake metadata was provided, skip stream handling. */
 		return 0;
-	}
 
-	if (!s) /* If no stream info was provided, inherit stream_flags from msg_flags. */
+	if (!has_sinfo) /* If no stream info was provided, inherit stream_flags from msg_flags. */
 		sinfo->stream_flags |= (msg->msg_flags & QUIC_MSG_STREAM_FLAGS);
 
 	if (sinfo->stream_id != -1)
@@ -1186,8 +1181,7 @@ static int quic_recvmsg(struct sock *sk, struct msghdr *msg, size_t msg_len, int
 		} else if (frame->level) {
 			/* Attach handshake info control message if crypto level present. */
 			hinfo.crypto_level = frame->level;
-			put_cmsg(msg, SOL_QUIC, QUIC_HANDSHAKE_INFO,
-				 offsetof(struct quic_handshake_info, reserved), &hinfo);
+			put_cmsg(msg, SOL_QUIC, QUIC_HANDSHAKE_INFO, sizeof(hinfo), &hinfo);
 			if (msg->msg_flags & MSG_CTRUNC) {
 				err = -EINVAL;
 				goto out;
@@ -1235,8 +1229,7 @@ static int quic_recvmsg(struct sock *sk, struct msghdr *msg, size_t msg_len, int
 	if (stream) {
 		/* Attach stream info control message if stream data was processed. */
 		sinfo.stream_id = stream->id;
-		put_cmsg(msg, SOL_QUIC, QUIC_STREAM_INFO,
-			 offsetof(struct quic_stream_info, reserved), &sinfo);
+		put_cmsg(msg, SOL_QUIC, QUIC_STREAM_INFO, sizeof(sinfo), &sinfo);
 		if (msg->msg_flags & MSG_CTRUNC)
 			msg->msg_flags |= sinfo.stream_flags;
 
@@ -1863,24 +1856,26 @@ static int quic_param_check_and_copy(struct quic_transport_param *p,
 	return 0;
 }
 
-static int quic_sock_set_transport_param(struct sock *sk, struct quic_transport_param *p, u32 len)
+static int quic_sock_set_transport_param(struct sock *sk, void *kopt, u32 len)
 {
-	struct quic_transport_param param = {};
+	struct quic_transport_param param = {}, p = {};
 	int err;
 
-	if (len < offsetof(struct quic_transport_param, reserved) || quic_is_established(sk))
+	if (quic_is_established(sk))
 		return -EINVAL;
+
+	quic_copy_common(&p, sizeof(p), kopt, len);
 
 	/* Manually setting remote transport parameters is required only to enable 0-RTT data
 	 * transmission during handshake initiation.
 	 */
-	if (p->remote && !quic_is_establishing(sk))
+	if (p.remote && !quic_is_establishing(sk))
 		return -EINVAL;
 
-	param.remote = p->remote;
+	param.remote = p.remote;
 	quic_sock_fetch_transport_param(sk, &param);
 
-	err = quic_param_check_and_copy(p, &param);
+	err = quic_param_check_and_copy(&p, &param);
 	if (err)
 		return err;
 
@@ -1888,12 +1883,16 @@ static int quic_sock_set_transport_param(struct sock *sk, struct quic_transport_
 	return 0;
 }
 
-static int quic_sock_set_config(struct sock *sk, struct quic_config *config, u32 len)
+static int quic_sock_set_config(struct sock *sk, void *kopt, u32 len)
 {
-	if (len < offsetof(struct quic_config, reserved) || quic_is_established(sk))
+	struct quic_config c = {};
+
+	if (quic_is_established(sk))
 		return -EINVAL;
 
-	return quic_sock_apply_config(sk, config);
+	quic_copy_common(&c, sizeof(c), kopt, len);
+
+	return quic_sock_apply_config(sk, &c);
 }
 
 static int quic_sock_set_alpn(struct sock *sk, u8 *data, u32 len)
@@ -2308,9 +2307,9 @@ static int quic_sock_get_transport_param(struct sock *sk, u32 len,
 {
 	struct quic_transport_param param = {};
 
-	if (len < offsetof(struct quic_transport_param, reserved))
-		return -EINVAL;
-	len = offsetof(struct quic_transport_param, reserved);
+	if (len > sizeof(param))
+		len = sizeof(param);
+
 	if (copy_from_sockptr(&param, optval, len))
 		return -EFAULT;
 
@@ -2325,9 +2324,8 @@ static int quic_sock_get_config(struct sock *sk, u32 len, sockptr_t optval, sock
 {
 	struct quic_config config = {};
 
-	if (len < offsetof(struct quic_config, reserved))
-		return -EINVAL;
-	len = offsetof(struct quic_config, reserved);
+	if (len > sizeof(config))
+		len = sizeof(config);
 
 	quic_sock_fetch_config(sk, &config);
 	if (copy_to_sockptr(optlen, &len, sizeof(len)) || copy_to_sockptr(optval, &config, len))

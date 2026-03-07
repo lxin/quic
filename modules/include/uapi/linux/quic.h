@@ -62,13 +62,11 @@ enum quic_crypto_level {
 
 struct quic_handshake_info {
 	__u8	crypto_level;
-	__u8	reserved[7];
 };
 
 struct quic_stream_info {
 	__s64	stream_id;
 	__u32	stream_flags;
-	__u32	reserved;
 };
 
 /* Socket Options APIs */
@@ -110,7 +108,6 @@ struct quic_transport_param {
 	__u64	max_stream_data_bidi_local;
 	__u64	max_stream_data_bidi_remote;
 	__u64	max_stream_data_uni;
-	__u64	reserved[4];
 };
 
 struct quic_config {
@@ -123,7 +120,6 @@ struct quic_config {
 	__u8	stream_data_nodelay;
 	__u8	receive_session_ticket;
 	__u8	certificate_request;
-	__u8	reserved[43];
 };
 
 struct quic_crypto_secret {
@@ -144,7 +140,6 @@ enum quic_cong_algo {
 struct quic_errinfo {
 	__s64	stream_id;
 	__u32	errcode;
-	__u32	reserved;
 };
 
 struct quic_connection_id_info {
