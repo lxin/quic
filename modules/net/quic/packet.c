@@ -447,10 +447,8 @@ static int quic_packet_parse_alpn(struct sk_buff *skb, struct quic_data *alpn)
 		return err;
 	if (!quic_get_var(&p, &len, &length) || length > (u64)len)
 		return -EINVAL;
-	if (!cb->backlog) { /* skb_get() needed as caller will free skb on this path. */
-		quic_packet_backlog_schedule(net, skb_get(skb));
+	if (quic_packet_backlog_schedule(net, skb))
 		return -EINPROGRESS;
-	}
 	cb->length = (u16)length;
 
 	/* Install initial keys for packet decryption to crypto. */
@@ -508,13 +506,19 @@ static struct sock *quic_packet_get_listen_sock(struct sk_buff *skb)
 {
 	union quic_addr daddr, saddr;
 	struct quic_data alpns = {};
+	struct sock *sk;
+	int err;
 
 	quic_get_msg_addrs(skb, &daddr, &saddr);
 
-	if (quic_packet_parse_alpn(skb, &alpns))
-		return NULL;
+	err = quic_packet_parse_alpn(skb, &alpns);
+	if (err)
+		return ERR_PTR(err);
 
-	return quic_listen_sock_lookup(skb, &daddr, &saddr, &alpns);
+	sk = quic_listen_sock_lookup(skb, &daddr, &saddr, &alpns);
+	if (!sk)
+		return ERR_PTR(-ENOENT);
+	return sk;
 }
 
 /* Determine the QUIC socket associated with an incoming packet. */
@@ -526,13 +530,14 @@ static struct sock *quic_packet_get_sock(struct sk_buff *skb)
 	union quic_addr daddr, saddr;
 	struct quic_data alpns = {};
 	struct sock *sk = NULL;
+	int err;
 
 	if (skb->len < QUIC_HLEN)
-		return NULL;
+		return ERR_PTR(-EINVAL);
 
 	if (!quic_hdr(skb)->form) { /* Short header path. */
 		if (skb->len < QUIC_HLEN + QUIC_CONN_ID_DEF_LEN)
-			return NULL;
+			return ERR_PTR(-EINVAL);
 		/* Fast path: look up QUIC connection by fixed-length DCID
 		 * (Currently, only source CIDs of size QUIC_CONN_ID_DEF_LEN are used).
 		 */
@@ -553,12 +558,16 @@ static struct sock *quic_packet_get_sock(struct sk_buff *skb)
 		/* Final fallback: address-based connection lookup
 		 * (May be used to receive a stateless reset).
 		 */
-		return quic_sock_lookup(skb, &daddr, &saddr, skb->sk, NULL);
+		sk = quic_sock_lookup(skb, &daddr, &saddr, skb->sk, NULL);
+		if (!sk)
+			return ERR_PTR(-ENOENT);
+		return sk;
 	}
 
 	/* Long header path. */
-	if (quic_packet_get_dcid(&dcid, skb))
-		return NULL;
+	err = quic_packet_get_dcid(&dcid, skb);
+	if (err)
+		return ERR_PTR(err);
 	/* Fast path: look up QUIC connection by parsed DCID. */
 	conn_id = quic_conn_id_lookup(net, dcid.data, dcid.len);
 	if (conn_id) {
@@ -576,36 +585,45 @@ static struct sock *quic_packet_get_sock(struct sk_buff *skb)
 	/* Final fallback: listener socket lookup
 	 * (Used for receiving the first Client Initial packet).
 	 */
-	if (quic_packet_parse_alpn(skb, &alpns))
-		return NULL;
-	return quic_listen_sock_lookup(skb, &daddr, &saddr, &alpns);
+	err = quic_packet_parse_alpn(skb, &alpns);
+	if (err)
+		return ERR_PTR(err);
+	sk = quic_listen_sock_lookup(skb, &daddr, &saddr, &alpns);
+	if (!sk)
+		return ERR_PTR(-ENOENT);
+	return sk;
 }
 
 /* Entry point for processing received QUIC packets. */
-int quic_packet_rcv(struct sock *sk, struct sk_buff *skb, bool err)
+int quic_packet_rcv(struct sock *sk, struct sk_buff *skb, bool icmp)
 {
 	struct net *net = sock_net(sk);
+	int err;
 
-	if (unlikely(err))
+	if (unlikely(icmp))
 		return quic_packet_rcv_err(sk, skb);
 
 	/* Save the UDP socket to skb->sk for later QUIC socket lookup. */
 	if (skb_linearize(skb) || !skb_set_owner_sk_safe(skb, sk)) {
-		QUIC_INC_STATS(net, QUIC_MIB_PKT_RCVDROP);
+		err = -EINVAL;
 		goto err;
 	}
 
 	/* Look up socket from socket or connection IDs hash tables. */
 	sk = quic_packet_get_sock(skb);
-	if (!sk)
+	if (IS_ERR(sk)) {
+		err = PTR_ERR(sk);
+		if (err == -EINPROGRESS)
+			return 0;
 		goto err;
+	}
 
 	bh_lock_sock(sk);
 	if (sock_owned_by_user(sk)) {
 		/* Socket is busy (owned by user context): queue to backlog. */
 		QUIC_SKB_CB(skb)->backlog = 1;
-		if (sk_add_backlog(sk, skb, READ_ONCE(sk->sk_rcvbuf))) {
-			QUIC_INC_STATS(net, QUIC_MIB_PKT_RCVDROP);
+		err = sk_add_backlog(sk, skb, READ_ONCE(sk->sk_rcvbuf));
+		if (err) {
 			bh_unlock_sock(sk);
 			sock_put(sk);
 			goto err;
@@ -619,10 +637,11 @@ int quic_packet_rcv(struct sock *sk, struct sk_buff *skb, bool err)
 	bh_unlock_sock(sk);
 	sock_put(sk);
 	return 0;
-
 err:
+	pr_debug("%s: failed, len: %d, err: %d\n", __func__, skb->len, err);
+	QUIC_INC_STATS(net, QUIC_MIB_PKT_RCVDROP);
 	kfree_skb(skb);
-	return -EINVAL;
+	return err;
 }
 
 /* rfc9000#section-17.2.5:
@@ -1001,7 +1020,7 @@ static int quic_packet_listen_process(struct sock *sk, struct sk_buff *skb)
 
 	/* Add request sock for this new QUIC connection. */
 	req = quic_request_sock_create(sk, &odcid, retry);
-	if (!req) {
+	if (IS_ERR(req)) {
 		if (quic_packet_backlog_schedule(net, skb))
 			return 0;
 		/* rfc9000#section-5.2.2:
@@ -1861,7 +1880,8 @@ void quic_packet_backlog_work(struct work_struct *work)
 			sock_hold(sk);
 		} else {
 			sk = quic_packet_get_listen_sock(skb);
-			if (!sk) {
+			if (IS_ERR(sk)) {
+				QUIC_INC_STATS(sock_net(skb->sk), QUIC_MIB_PKT_RCVDROP);
 				kfree_skb(skb);
 				continue;
 			}

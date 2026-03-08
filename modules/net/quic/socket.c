@@ -51,11 +51,11 @@ struct quic_request_sock *quic_request_sock_create(struct sock *sk, struct quic_
 	struct quic_request_sock *req;
 
 	if (sk_acceptq_is_full(sk)) /* Refuse new request if the accept queue is full. */
-		return NULL;
+		return ERR_PTR(-ENOBUFS);
 
 	req = kzalloc(sizeof(*req), GFP_ATOMIC);
 	if (!req)
-		return NULL;
+		return ERR_PTR(-ENOMEM);
 
 	req->version = packet->version;
 	req->daddr = packet->daddr;
