@@ -944,8 +944,6 @@ static int quic_packet_listen_process(struct sock *sk, struct sk_buff *skb)
 		return -EINVAL;
 	}
 
-	/* Associate skb with sk to ensure sk is valid if skb is delayed to process in workqueue. */
-	WARN_ON(!skb_set_owner_sk_safe(skb, sk));
 	packet->version = version;
 	/* Save original DCID for future token validation or Retry logic. */
 	quic_conn_id_update(&odcid, packet->dcid.data, packet->dcid.len);
@@ -1298,8 +1296,6 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb)
 	struct udphdr *uh;
 	int err;
 
-	/* Associate skb with sk to ensure sk is valid during async decryption completion. */
-	WARN_ON(!skb_set_owner_sk_safe(skb, sk));
 	sock_rps_save_rxhash(sk, skb);
 
 	/* Loop to handle each QUIC packet in this coalesced packet. */
@@ -1705,8 +1701,6 @@ static int quic_packet_app_process(struct sock *sk, struct sk_buff *skb)
 		cb->number_len = quic_hdr(skb)->pnl + 1;
 		cb->resume = 1;
 	}
-	/* Associate skb with sk to ensure sk is valid during async decryption completion. */
-	WARN_ON(!skb_set_owner_sk_safe(skb, sk));
 	err = quic_crypto_decrypt(crypto, skb); /* Do packet decryption. */
 	if (err) {
 		if (err == -EINPROGRESS) {
@@ -1806,6 +1800,11 @@ int quic_packet_process(struct sock *sk, struct sk_buff *skb)
 		kfree_skb(skb);
 		return 0;
 	}
+
+	/* Associate skb with sk so it remains valid if the skb is processed later in a
+	 * workqueue or async decryption completion.
+	 */
+	WARN_ON_ONCE(!skb_set_owner_sk_safe(skb, sk));
 
 	if (quic_is_listen(sk))
 		return quic_packet_listen_process(sk, skb);
@@ -2436,7 +2435,7 @@ static int quic_packet_xmit(struct sock *sk, struct sk_buff *skb)
 
 	cb->crypto_done = quic_packet_encrypt_done;
 	/* Associate skb with sk to ensure sk is valid during async encryption completion. */
-	WARN_ON(!skb_set_owner_sk_safe(skb, sk));
+	WARN_ON_ONCE(!skb_set_owner_sk_safe(skb, sk));
 	err = quic_crypto_encrypt(quic_crypto(sk, packet->level), skb);
 	if (err) {
 		if (err != -EINPROGRESS) {
