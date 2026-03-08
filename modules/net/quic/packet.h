@@ -72,29 +72,35 @@ struct quic_packet_sent {
 
 #define QUIC_ALPN_MAX_LEN		128
 
+#define QUIC_PACKET_MSS_NORMAL		0
+#define QUIC_PACKET_MSS_DGRAM		1
+
+#define QUIC_PACKET_FORM_SHORT		0
+#define QUIC_PACKET_FORM_LONG		1
+
 static inline u8 quic_packet_taglen(struct quic_packet *packet)
 {
-	return packet->taglen[!!packet->level];
+	return packet->taglen[packet->level != QUIC_CRYPTO_APP];
 }
 
 static inline void quic_packet_set_taglen(struct quic_packet *packet, u8 taglen)
 {
-	packet->taglen[0] = taglen;
+	packet->taglen[QUIC_PACKET_FORM_SHORT] = taglen;
 }
 
 static inline u32 quic_packet_mss(struct quic_packet *packet)
 {
-	return packet->mss[0] - packet->taglen[!!packet->level];
+	return packet->mss[QUIC_PACKET_MSS_NORMAL] - quic_packet_taglen(packet);
 }
 
 static inline u32 quic_packet_max_payload(struct quic_packet *packet)
 {
-	return packet->mss[0] - packet->overhead - packet->taglen[!!packet->level];
+	return packet->mss[QUIC_PACKET_MSS_NORMAL] - packet->overhead - quic_packet_taglen(packet);
 }
 
 static inline u32 quic_packet_max_payload_dgram(struct quic_packet *packet)
 {
-	return packet->mss[1] - packet->overhead - packet->taglen[!!packet->level];
+	return packet->mss[QUIC_PACKET_MSS_DGRAM] - packet->overhead - quic_packet_taglen(packet);
 }
 
 static inline int quic_packet_empty(struct quic_packet *packet)

@@ -1376,7 +1376,7 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb)
 
 		/* Prepare a 'coalesced' frame for parsing and processing. */
 		frame.data = skb->data + cb->number_offset + cb->number_len;
-		frame.len = cb->length - cb->number_len - packet->taglen[1];
+		frame.len = cb->length - cb->number_len - packet->taglen[QUIC_PACKET_FORM_LONG];
 		frame.level = packet->level;
 		frame.skb = skb;
 		err = quic_frame_process(sk, &frame); /* Process this 'coalesced' frame. */
@@ -2065,7 +2065,7 @@ static struct sk_buff *quic_packet_handshake_create(struct sock *sk)
 		 * ack-eliciting Initial packets to at least the smallest allowed maximum datagram
 		 * size of 1200 bytes.
 		 */
-		hlen = QUIC_MIN_UDP_PAYLOAD - packet->taglen[1];
+		hlen = QUIC_MIN_UDP_PAYLOAD - packet->taglen[QUIC_PACKET_FORM_LONG];
 		if (level == QUIC_CRYPTO_INITIAL && len < hlen) {
 			len = hlen;
 			plen = len - packet->len;
@@ -2084,7 +2084,7 @@ static struct sk_buff *quic_packet_handshake_create(struct sock *sk)
 
 	/* Allocate skb with space for header + payload + AEAD taglen of Long Packet. */
 	hlen = packet->hlen + MAX_HEADER;
-	skb = alloc_skb(hlen + len + packet->taglen[1], GFP_ATOMIC);
+	skb = alloc_skb(hlen + len + packet->taglen[QUIC_PACKET_FORM_LONG], GFP_ATOMIC);
 	if (!skb) {
 		kfree(sent);
 		quic_outq_retransmit_list(sk, &packet->frame_list);
@@ -2095,7 +2095,7 @@ static struct sk_buff *quic_packet_handshake_create(struct sock *sk)
 
 	/* Build Long Packet header. */
 	hdr = skb_push(skb, len);
-	hdr->form = 1;
+	hdr->form = QUIC_PACKET_FORM_LONG;
 	hdr->fixed = fixed;
 	hdr->type = quic_packet_version_put_type(packet->version, type);
 	hdr->reserved = 0;
@@ -2206,7 +2206,7 @@ static struct sk_buff *quic_packet_app_create(struct sock *sk)
 	/* Allocate skb with space for header + payload + AEAD taglen of Short Packet. */
 	len = packet->len;
 	hlen = packet->hlen + MAX_HEADER;
-	skb = alloc_skb(hlen + len + packet->taglen[0], GFP_ATOMIC);
+	skb = alloc_skb(hlen + len + packet->taglen[QUIC_PACKET_FORM_SHORT], GFP_ATOMIC);
 	if (!skb) { /* Move pending frames back to the outqueue. */
 		kfree(sent);
 		quic_outq_retransmit_list(sk, &packet->frame_list);
@@ -2217,7 +2217,7 @@ static struct sk_buff *quic_packet_app_create(struct sock *sk)
 
 	/* Build Short Packet header. */
 	hdr = skb_push(skb, len);
-	hdr->form = 0;
+	hdr->form = QUIC_PACKET_FORM_SHORT;
 	hdr->fixed = !quic_outq(sk)->grease_quic_bit;
 	hdr->spin = 0;
 	hdr->reserved = 0;
@@ -2243,16 +2243,17 @@ void quic_packet_mss_update(struct sock *sk, u32 mss)
 	/* Limit MSS for regular QUIC packets to the max UDP payload size. */
 	if (outq->max_udp_payload_size && mss > outq->max_udp_payload_size)
 		mss = outq->max_udp_payload_size;
-	packet->mss[0] = (u16)mss;
+	packet->mss[QUIC_PACKET_MSS_NORMAL] = (u16)mss;
 
 	/* Update congestion control with new payload space (excluding tag). */
-	quic_cong_set_mss(cong, packet->mss[0] - packet->taglen[0]);
+	quic_cong_set_mss(cong, packet->mss[QUIC_PACKET_MSS_NORMAL] -
+				packet->taglen[QUIC_PACKET_FORM_SHORT]);
 	quic_outq_sync_window(sk, cong->window);
 
 	/* Limit MSS for DATAGRAM frame packets to the max datagram frame size. */
 	if (outq->max_datagram_frame_size && mss > outq->max_datagram_frame_size)
 		mss = outq->max_datagram_frame_size;
-	packet->mss[1] = (u16)mss;
+	packet->mss[QUIC_PACKET_MSS_DGRAM] = (u16)mss;
 }
 
 /* Perform routing for the QUIC packet on the specified path, update header length and MSS
@@ -2390,7 +2391,7 @@ static int quic_packet_bundle(struct sock *sk, struct sk_buff *skb)
 		goto init;
 
 	/* If bundling would exceed MSS, flush the current bundle. */
-	if (packet->head->len + skb->len >= packet->mss[0]) {
+	if (packet->head->len + skb->len >= packet->mss[QUIC_PACKET_MSS_NORMAL]) {
 		quic_packet_flush(sk);
 		goto init;
 	}
@@ -2544,10 +2545,10 @@ void quic_packet_init(struct sock *sk)
 	struct quic_packet *packet = quic_packet(sk);
 
 	INIT_LIST_HEAD(&packet->frame_list);
-	packet->taglen[0] = QUIC_TAG_LEN;
-	packet->taglen[1] = QUIC_TAG_LEN;
-	packet->mss[0] = QUIC_MIN_UDP_PAYLOAD;
-	packet->mss[1] = QUIC_MIN_UDP_PAYLOAD;
+	packet->taglen[QUIC_PACKET_FORM_SHORT] = QUIC_TAG_LEN;
+	packet->taglen[QUIC_PACKET_FORM_LONG] = QUIC_TAG_LEN;
+	packet->mss[QUIC_PACKET_MSS_NORMAL] = QUIC_MIN_UDP_PAYLOAD;
+	packet->mss[QUIC_PACKET_MSS_DGRAM] = QUIC_MIN_UDP_PAYLOAD;
 
 	packet->version = QUIC_VERSION_V1;
 }
