@@ -44,8 +44,7 @@ EXPORT_SYMBOL_GPL(quic_pnspace_free);
  * cover at least @size packet numbers.  Allocates a larger bitmap, copies existing
  * data, and updates metadata.
  *
- * Returns: 1 if the bitmap was successfully grown, 0 on failure or if the requested
- * size exceeds QUIC_PN_MAP_SIZE.
+ * Return: 0 on success, or a negative errno value on failure.
  */
 static int quic_pnspace_grow(struct quic_pnspace *space, u16 size)
 {
@@ -53,14 +52,14 @@ static int quic_pnspace_grow(struct quic_pnspace *space, u16 size)
 	unsigned long *new;
 
 	if (size > QUIC_PN_MAP_SIZE)
-		return 0;
+		return -EINVAL;
 
 	inc = ALIGN((size - space->pn_map_len), BITS_PER_LONG) + QUIC_PN_MAP_INCREMENT;
 	len = (u16)min(space->pn_map_len + inc, QUIC_PN_MAP_SIZE);
 
 	new = kzalloc(BITS_TO_BYTES(len), GFP_ATOMIC);
 	if (!new)
-		return 0;
+		return -ENOMEM;
 
 	offset = (u16)(space->max_pn_seen + 1 - space->base_pn);
 	bitmap_copy(new, space->pn_map, offset);
@@ -68,7 +67,7 @@ static int quic_pnspace_grow(struct quic_pnspace *space, u16 size)
 	space->pn_map = new;
 	space->pn_map_len = len;
 
-	return 1;
+	return 0;
 }
 
 /* Check if a packet number has been received.
@@ -118,6 +117,7 @@ int quic_pnspace_mark(struct quic_pnspace *space, s64 pn)
 {
 	s64 last_max_pn_seen;
 	u16 gap;
+	int err;
 
 	if (space->base_pn == -1) {
 		/* Initialize base_pn based on the peer's first packet number since peer's
@@ -133,8 +133,11 @@ int quic_pnspace_mark(struct quic_pnspace *space, s64 pn)
 
 	/* If gap is beyond current map length, try to grow the bitmap to accommodate. */
 	gap = (u16)(pn - space->base_pn);
-	if (gap >= space->pn_map_len && !quic_pnspace_grow(space, gap + 1))
-		return -ENOMEM;
+	if (gap >= space->pn_map_len) {
+		err = quic_pnspace_grow(space, gap + 1);
+		if (err)
+			return err;
+	}
 
 	if (space->max_pn_seen < pn) {
 		space->max_pn_seen = pn;
