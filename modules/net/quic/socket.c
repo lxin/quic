@@ -1634,6 +1634,7 @@ static int quic_sock_set_connection_id(struct sock *sk,
 	struct quic_conn_id_set *id_set = quic_source(sk);
 	struct quic_conn_id *active, *old;
 	u64 number, first, last;
+	int err;
 
 	if (len < sizeof(*info) || !quic_is_established(sk))
 		return -EINVAL;
@@ -1674,17 +1675,19 @@ static int quic_sock_set_connection_id(struct sock *sk,
 	}
 
 	if (!info->dest) { /* Retire source connection IDs by sending NEW_CONNECTION_ID frames. */
-		if (quic_outq_transmit_new_conn_id(sk, number, 0, false)) {
+		err = quic_outq_transmit_new_conn_id(sk, number, 0, false);
+		if (err) {
 			quic_conn_id_set_active(id_set, old);
-			return -ENOMEM;
+			return err;
 		}
 		return 0;
 	}
 
 	/* Retire destination connection IDs by sending RETIRE_CONNECTION_ID frames. */
-	if (quic_outq_transmit_retire_conn_id(sk, number, 0, false)) {
+	err = quic_outq_transmit_retire_conn_id(sk, number, 0, false);
+	if (err) {
 		quic_conn_id_set_active(id_set, old);
-		return -ENOMEM;
+		return err;
 	}
 
 	return 0;
@@ -1863,6 +1866,7 @@ static int quic_param_check_and_copy(struct quic_transport_param *p,
 static int quic_sock_set_transport_param(struct sock *sk, struct quic_transport_param *p, u32 len)
 {
 	struct quic_transport_param param = {};
+	int err;
 
 	if (len < offsetof(struct quic_transport_param, reserved) || quic_is_established(sk))
 		return -EINVAL;
@@ -1876,8 +1880,9 @@ static int quic_sock_set_transport_param(struct sock *sk, struct quic_transport_
 	param.remote = p->remote;
 	quic_sock_fetch_transport_param(sk, &param);
 
-	if (quic_param_check_and_copy(p, &param))
-		return -EINVAL;
+	err = quic_param_check_and_copy(p, &param);
+	if (err)
+		return err;
 
 	quic_sock_apply_transport_param(sk, &param);
 	return 0;

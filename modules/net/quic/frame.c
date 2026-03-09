@@ -1178,10 +1178,10 @@ out:
 	 * adding the newly provided connection ID to the set of active connection IDs.
 	 */
 	if (prior > first) {
-		if (quic_outq_transmit_retire_conn_id(sk, prior, frame->path, true))
-			return -ENOMEM;
+		err = quic_outq_transmit_retire_conn_id(sk, prior, frame->path, true);
+		if (err)
+			return err;
 	}
-
 
 	len -= (length + QUIC_CONN_ID_TOKEN_LEN);
 	return (int)(frame->len - len);
@@ -1195,6 +1195,7 @@ static int quic_frame_retire_conn_id_process(struct sock *sk, struct quic_frame 
 	u64 seqno, last, first;
 	u32 len = frame->len;
 	u8 *p = frame->data;
+	int err;
 
 	if (!quic_get_var(&p, &len, &seqno) || seqno + 1 + id_set->max_count > U32_MAX)
 		return -EINVAL;
@@ -1228,8 +1229,9 @@ static int quic_frame_retire_conn_id_process(struct sock *sk, struct quic_frame 
 	 * used again and requests that the peer replace it with a new connection ID using a
 	 * NEW_CONNECTION_ID frame.
 	 */
-	if (quic_outq_transmit_new_conn_id(sk, first, frame->path, true))
-		return -ENOMEM;
+	err = quic_outq_transmit_new_conn_id(sk, first, frame->path, true);
+	if (err)
+		return err;
 	return (int)(frame->len - len);
 }
 
