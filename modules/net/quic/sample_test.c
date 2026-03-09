@@ -196,7 +196,7 @@ static int quic_test_build_address(struct sockaddr_storage *a)
 		a6->sin6_port = htons((u16)port);
 		return PF_INET6;
 	}
-	return -1;
+	return 0;
 }
 
 static int quic_test_bind_device(struct sock *sk, char *name)
@@ -230,7 +230,7 @@ static int quic_test_do_sample_client(void)
 	s64 sid;
 
 	family = quic_test_build_address(&ra);
-	if (family < 0)
+	if (!family)
 		return -EINVAL;
 	err = __sock_create(&init_net, family, SOCK_DGRAM, IPPROTO_QUIC, &sock, 1);
 	if (err < 0)
@@ -312,7 +312,7 @@ static int quic_test_do_ticket_client(void)
 	s64 sid;
 
 	family = quic_test_build_address(&ra);
-	if (family < 0)
+	if (!family)
 		return -EINVAL;
 	err = __sock_create(&init_net, family, SOCK_DGRAM, IPPROTO_QUIC, &sock, 1);
 	if (err < 0)
@@ -465,7 +465,7 @@ static int quic_test_do_sample_server(void)
 	s64 sid;
 
 	family = quic_test_build_address(&la);
-	if (family < 0)
+	if (!family)
 		return -EINVAL;
 	err = __sock_create(&init_net, family, SOCK_DGRAM, IPPROTO_QUIC, &sock, 1);
 	if (err < 0)
@@ -541,7 +541,7 @@ static int quic_test_do_ticket_server(void)
 	s64 sid;
 
 	family = quic_test_build_address(&la);
-	if (family < 0)
+	if (!family)
 		return -EINVAL;
 	err = __sock_create(&init_net, family, SOCK_DGRAM, IPPROTO_QUIC, &sock, 1);
 	if (err < 0)
