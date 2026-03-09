@@ -160,26 +160,26 @@ static inline bool quic_frame_ping(u8 type)
 /* Check if a given frame type is valid for the specified encryption level,
  * based on the Frame Types table from rfc9000#section-12.4.
  *
- * Returns 0 if valid, 1 otherwise.
+ * Returns true if valid, false otherwise.
  */
-static inline int quic_frame_level_check(u8 level, u8 type)
+static inline bool quic_frame_level_valid(u8 level, u8 type)
 {
 	if (level == QUIC_CRYPTO_APP)
-		return 0;
+		return true;
 
 	if (level == QUIC_CRYPTO_EARLY) {
 		if (type == QUIC_FRAME_ACK || type == QUIC_FRAME_ACK_ECN ||
 		    type == QUIC_FRAME_CRYPTO || type == QUIC_FRAME_HANDSHAKE_DONE ||
 		    type == QUIC_FRAME_NEW_TOKEN || type == QUIC_FRAME_PATH_RESPONSE)
-			return 1;
-		return 0;
+			return false;
+		return true;
 	}
 
 	if (type != QUIC_FRAME_ACK && type != QUIC_FRAME_ACK_ECN &&
 	    type != QUIC_FRAME_PADDING && type != QUIC_FRAME_PING &&
 	    type != QUIC_FRAME_CRYPTO && type != QUIC_FRAME_CONNECTION_CLOSE)
-		return 1;
-	return 0;
+		return false;
+	return true;
 }
 
 int quic_frame_build_transport_params_ext(struct sock *sk, struct quic_transport_param *params,

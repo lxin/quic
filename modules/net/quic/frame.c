@@ -2185,7 +2185,7 @@ int quic_frame_process(struct sock *sk, struct quic_frame *frame)
 			 */
 			packet->errcode = QUIC_TRANSPORT_ERROR_FRAME_ENCODING;
 			return -EPROTONOSUPPORT;
-		} else if (quic_frame_level_check(level, type)) {
+		} else if (!quic_frame_level_valid(level, type)) {
 			pr_debug("%s: invalid frame, type: %x, level: %d\n",
 				 __func__, type, level);
 			return -EINVAL;
