@@ -285,10 +285,10 @@ void quic_path_unbind(struct sock *sk, struct quic_path_group *paths, u8 path)
  * This is typically called on packet receive to detect new possible network paths (e.g., NAT
  * rebinding, mobility).
  *
- * Returns 1 if a new alternate path was detected and updated, 0 otherwise.
+ * Returns true if a new alternate path was detected and updated, false otherwise.
  */
-int quic_path_detect_alt(struct quic_path_group *paths, union quic_addr *sa, union quic_addr *da,
-			 struct sock *sk)
+bool quic_path_detect_alt(struct quic_path_group *paths, union quic_addr *sa,
+			  union quic_addr *da, struct sock *sk)
 {
 	if ((!quic_cmp_sk_addr(sk, quic_path_saddr(paths, 0), sa) && !paths->disable_saddr_alt) ||
 	    (!quic_cmp_sk_addr(sk, quic_path_daddr(paths, 0), da) && !paths->disable_daddr_alt)) {
@@ -296,14 +296,14 @@ int quic_path_detect_alt(struct quic_path_group *paths, union quic_addr *sa, uni
 			quic_path_set_saddr(paths, 1, sa);
 
 		if (!quic_cmp_sk_addr(sk, quic_path_saddr(paths, 1), sa))
-			return 0;
+			return false;
 
 		if (!quic_path_daddr(paths, 1)->v4.sin_port)
 			quic_path_set_daddr(paths, 1, da);
 
 		return quic_cmp_sk_addr(sk, quic_path_daddr(paths, 1), da);
 	}
-	return 0;
+	return false;
 }
 
 void quic_path_get_param(struct quic_path_group *paths, struct quic_transport_param *p)

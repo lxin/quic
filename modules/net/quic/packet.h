@@ -103,7 +103,7 @@ static inline u32 quic_packet_max_payload_dgram(struct quic_packet *packet)
 	return packet->mss[QUIC_PACKET_MSS_DGRAM] - packet->overhead - quic_packet_taglen(packet);
 }
 
-static inline int quic_packet_empty(struct quic_packet *packet)
+static inline bool quic_packet_empty(struct quic_packet *packet)
 {
 	return list_empty(&packet->frame_list);
 }

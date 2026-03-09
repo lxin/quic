@@ -17,12 +17,12 @@
 #include "common.h"
 #include "family.h"
 
-static int quic_v4_is_any_addr(union quic_addr *addr)
+static bool quic_v4_is_any_addr(union quic_addr *addr)
 {
 	return addr->v4.sin_addr.s_addr == htonl(INADDR_ANY);
 }
 
-static int quic_v6_is_any_addr(union quic_addr *addr)
+static bool quic_v6_is_any_addr(union quic_addr *addr)
 {
 	return ipv6_addr_any(&addr->v6.sin6_addr);
 }
@@ -500,7 +500,7 @@ u32 quic_encap_len(union quic_addr *a)
 	       sizeof(struct udphdr);
 }
 
-int quic_is_any_addr(union quic_addr *a)
+bool quic_is_any_addr(union quic_addr *a)
 {
 	return quic_af_ipv4(a) ? quic_v4_is_any_addr(a) : quic_v6_is_any_addr(a);
 }

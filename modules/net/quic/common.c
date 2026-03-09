@@ -427,9 +427,9 @@ int quic_data_append(struct quic_data *to, u8 *data, u32 len)
  * 'd1' is assumed to be a sequence of length-prefixed elements. Each element
  * is compared to 'd2' using 'quic_data_cmp()'.
  *
- * Returns 1 if a match is found, 0 otherwise.
+ * Returns true if a match is found, false otherwise.
  */
-int quic_data_has(struct quic_data *d1, struct quic_data *d2)
+bool quic_data_has(struct quic_data *d1, struct quic_data *d2)
 {
 	struct quic_data d;
 	u64 length;
@@ -438,12 +438,12 @@ int quic_data_has(struct quic_data *d1, struct quic_data *d2)
 
 	for (p = d1->data, len = d1->len; len; len -= length, p += length) {
 		if (!quic_get_int(&p, &len, &length, 1) || len < length)
-			return 0;
+			return false;
 		quic_data(&d, p, length);
 		if (!quic_data_cmp(&d, d2))
-			return 1;
+			return true;
 	}
-	return 0;
+	return false;
 }
 
 /* Check if any element of 'd1' is present in the list 'd2'.
@@ -451,9 +451,9 @@ int quic_data_has(struct quic_data *d1, struct quic_data *d2)
  * Iterates through each element in 'd1', and uses 'quic_data_has()' to check
  * for its presence in 'd2'.
  *
- * Returns 1 if any match is found, 0 otherwise.
+ * Returns true if any match is found, false otherwise.
  */
-int quic_data_match(struct quic_data *d1, struct quic_data *d2)
+bool quic_data_match(struct quic_data *d1, struct quic_data *d2)
 {
 	struct quic_data d;
 	u64 length;
@@ -462,12 +462,12 @@ int quic_data_match(struct quic_data *d1, struct quic_data *d2)
 
 	for (p = d1->data, len = d1->len; len; len -= length, p += length) {
 		if (!quic_get_int(&p, &len, &length, 1) || len < length)
-			return 0;
+			return false;
 		quic_data(&d, p, length);
 		if (quic_data_has(d2, &d))
-			return 1;
+			return true;
 	}
-	return 0;
+	return false;
 }
 
 /* Serialize a list of 'quic_data' elements into a comma-separated string.

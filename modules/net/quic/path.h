@@ -154,8 +154,8 @@ static inline struct quic_conn_id *quic_path_orig_dcid(struct quic_path_group *p
 	return paths->retry ? &paths->retry_dcid : &paths->orig_dcid;
 }
 
-int quic_path_detect_alt(struct quic_path_group *paths, union quic_addr *sa, union quic_addr *da,
-			 struct sock *sk);
+bool quic_path_detect_alt(struct quic_path_group *paths, union quic_addr *sa,
+			  union quic_addr *da, struct sock *sk);
 int quic_path_bind(struct sock *sk, struct quic_path_group *paths, u8 path);
 void quic_path_unbind(struct sock *sk, struct quic_path_group *paths, u8 path);
 void quic_path_swap(struct quic_path_group *paths);

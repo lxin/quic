@@ -719,19 +719,19 @@ static int quic_msghdr_parse(struct sock *sk, struct msghdr *msg, struct quic_ha
 	return 0;
 }
 
-/* Returns 1 if stream_id is within allowed limits or 0 otherwise.  If MSG_QUIC_STREAM_SNDBLOCK is
- * set, may send a STREAMS_BLOCKED frame.
+/* Returns true if stream_id is within allowed limits or false otherwise.
+ * If MSG_QUIC_STREAM_SNDBLOCK is set, may send a STREAMS_BLOCKED frame.
  */
-static int quic_sock_stream_available(struct sock *sk, s64 stream_id, u32 flags)
+static bool quic_sock_stream_available(struct sock *sk, s64 stream_id, u32 flags)
 {
 	struct quic_stream_table *streams = quic_streams(sk);
 	u8 type, blocked;
 
 	if (!quic_stream_id_exceeds(streams, stream_id, true))
-		return 1;
+		return true;
 
 	if (!(flags & MSG_QUIC_STREAM_SNDBLOCK))
-		return 0;
+		return false;
 
 	blocked = streams->send.bidi_blocked;
 	type = QUIC_FRAME_STREAMS_BLOCKED_BIDI;
@@ -742,7 +742,7 @@ static int quic_sock_stream_available(struct sock *sk, s64 stream_id, u32 flags)
 
 	if (!blocked)
 		quic_outq_transmit_frame(sk, type, &stream_id, 0, false);
-	return 0;
+	return false;
 }
 
 /* Wait until the given stream ID becomes available for sending. */
@@ -861,16 +861,16 @@ static int quic_wait_for_send(struct sock *sk, u32 flags, u32 len)
 }
 
 /* Check if a QUIC stream is writable. */
-static int quic_sock_stream_writable(struct sock *sk, struct quic_stream *stream,
-				     u32 flags, u32 len)
+static bool quic_sock_stream_writable(struct sock *sk, struct quic_stream *stream,
+				      u32 flags, u32 len)
 {
 	/* Check if flow control limits allow sending 'len' bytes. */
 	if (quic_outq_flow_control(sk, stream, len, flags & MSG_QUIC_STREAM_SNDBLOCK))
-		return 0;
+		return false;
 	/* Check socket send buffer space and memory scheduling capacity. */
 	if (sk_stream_wspace(sk) < len || !sk_wmem_schedule(sk, len))
-		return 0;
-	return 1;
+		return false;
+	return true;
 }
 
 /* Wait until a QUIC stream is writable for sending data. */

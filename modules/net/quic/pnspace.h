@@ -127,9 +127,9 @@ static inline bool quic_pnspace_has_ecn_count(struct quic_pnspace *space)
 /* Updates the stored ECN counters based on values received in the peer's ACK
  * frame. Each counter is updated only if the new value is higher.
  *
- * Returns: 1 if CE count was increased (congestion indicated), 0 otherwise.
+ * Returns: true if CE count was increased (congestion indicated), false otherwise.
  */
-static inline int quic_pnspace_set_ecn_count(struct quic_pnspace *space, u64 *ecn_count)
+static inline bool quic_pnspace_set_ecn_count(struct quic_pnspace *space, u64 *ecn_count)
 {
 	if (space->ecn_count[QUIC_ECN_PEER][QUIC_ECN_ECT0] < ecn_count[QUIC_ECN_ECT0])
 		space->ecn_count[QUIC_ECN_PEER][QUIC_ECN_ECT0] = ecn_count[QUIC_ECN_ECT0];
@@ -137,9 +137,9 @@ static inline int quic_pnspace_set_ecn_count(struct quic_pnspace *space, u64 *ec
 		space->ecn_count[QUIC_ECN_PEER][QUIC_ECN_ECT1] = ecn_count[QUIC_ECN_ECT1];
 	if (space->ecn_count[QUIC_ECN_PEER][QUIC_ECN_CE] < ecn_count[QUIC_ECN_CE]) {
 		space->ecn_count[QUIC_ECN_PEER][QUIC_ECN_CE] = ecn_count[QUIC_ECN_CE];
-		return 1;
+		return true;
 	}
-	return 0;
+	return false;
 }
 
 u16 quic_pnspace_num_gabs(struct quic_pnspace *space, struct quic_gap_ack_block *gabs);

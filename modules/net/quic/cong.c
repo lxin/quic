@@ -257,7 +257,7 @@ static void cubic_recovery(struct quic_cong *cong)
 	cong->window = cong->ssthresh;
 }
 
-static int quic_cong_check_persistent_congestion(struct quic_cong *cong, u64 time)
+static bool quic_cong_check_persistent_congestion(struct quic_cong *cong, u64 time)
 {
 	u32 ssthresh;
 
@@ -268,14 +268,14 @@ static int quic_cong_check_persistent_congestion(struct quic_cong *cong, u64 tim
 	ssthresh = cong->smoothed_rtt + max(4 * cong->rttvar, QUIC_KGRANULARITY);
 	ssthresh = (ssthresh + cong->max_ack_delay) * QUIC_KPERSISTENT_CONGESTION_THRESHOLD;
 	if (cong->time - time <= ssthresh)
-		return 0;
+		return false;
 
 	pr_debug("%s: persistent congestion, cwnd: %u, ssthresh: %u\n",
 		 __func__, cong->window, cong->ssthresh);
 	cong->min_rtt_valid = 0;
 	cong->window = cong->min_window;
 	cong->state = QUIC_CONG_SLOW_START;
-	return 1;
+	return true;
 }
 
 static void quic_cubic_on_packet_lost(struct quic_cong *cong, u64 time, u32 bytes, s64 number)

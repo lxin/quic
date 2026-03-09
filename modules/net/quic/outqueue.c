@@ -12,8 +12,8 @@
 
 #include "socket.h"
 
-/* Checks whether a frame can be transmitted based on congestion control and Anti-Amplification. */
-static int quic_outq_limit_check(struct sock *sk, struct quic_frame *frame)
+/* Return true a frame can not be transmitted based on congestion control and Anti-Amplification. */
+static bool quic_outq_limit_check(struct sock *sk, struct quic_frame *frame)
 {
 	struct quic_path_group *paths = quic_paths(sk);
 	struct quic_packet *packet = quic_packet(sk);
@@ -22,13 +22,13 @@ static int quic_outq_limit_check(struct sock *sk, struct quic_frame *frame)
 
 	/* If in single-packet mode, allow only one packet to transmit. */
 	if (outq->single && outq->count)
-		return -1;
+		return true;
 
 	/* Enforce congestion control for ack-eliciting frames except PING. */
 	if (!outq->single && frame->ack_eliciting && !quic_frame_ping(frame->type)) {
 		len = packet->frame_len + frame->len;
 		if (outq->inflight + len > outq->window)
-			return -1;
+			return true;
 	}
 
 	/* rfc9000#section-21.1.1.1: Anti-amplification limit for server before path validation. */
@@ -36,11 +36,11 @@ static int quic_outq_limit_check(struct sock *sk, struct quic_frame *frame)
 		len = packet->len + frame->len + quic_packet_taglen(packet);
 		if (paths->ampl_sndlen + len > paths->ampl_rcvlen * 3) {
 			paths->blocked = 1;
-			return -1;
+			return true;
 		}
 	}
 
-	return 0;
+	return false;
 }
 
 /* Flush any appended frames or coalesced/bundled packets. */
@@ -176,38 +176,38 @@ u64 quic_outq_wspace(struct sock *sk, struct quic_stream *stream)
 	return len;
 }
 
-/* Applies pacing and Nagle’s algorithm. Returns 1 if sending should be delayed, 0 if
+/* Applies pacing and Nagle’s algorithm. Returns true if sending should be delayed, false if
  * immediate send.
  */
-static int quic_outq_delay_check(struct sock *sk, u8 level, u8 nodelay)
+static bool quic_outq_delay_check(struct sock *sk, u8 level, u8 nodelay)
 {
 	struct quic_packet *packet = quic_packet(sk);
 	struct quic_outqueue *outq = quic_outq(sk);
 	u64 pacing_time;
 
 	if (level || outq->close_frame) /* No delay for early data or if connection is closing. */
-		return 0;
+		return false;
 
 	pacing_time = quic_cong(sk)->pacing_time;
 	if (pacing_time > ktime_get_ns()) { /* Delay data transmission in PACE timer. */
 		quic_timer_start(sk, QUIC_TIMER_PACE, pacing_time);
-		return 1;
+		return true;
 	}
 
 	if (nodelay) /* If the frame is not the last of a sendmsg. */
-		return 0;
+		return false;
 	/* If there’s already data queued in the packet, send immediately. */
 	if (!quic_packet_empty(packet))
-		return 0;
+		return false;
 	/* If Nagle is disabled via config or no data is in flight, and MSG_MORE isn't set,
 	 * allow immediate send.
 	 */
 	if ((outq->stream_data_nodelay || !outq->inflight) && !outq->force_delay)
-		return 0;
+		return false;
 	/* If enough stream data is available to build a full-sized packet, send immediately. */
 	if (outq->stream_list_len > quic_packet_mss(packet))
-		return 0;
-	return 1; /* Otherwise, delay sending to coalesce more data. */
+		return false;
+	return true; /* Otherwise, delay sending to coalesce more data. */
 }
 
 /* Sends stream data frames. */

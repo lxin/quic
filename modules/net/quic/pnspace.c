@@ -182,25 +182,25 @@ EXPORT_SYMBOL_GPL(quic_pnspace_mark);
 /* Find the next gap in received packet numbers. Scans pn_map for a gap starting from
  * *@iter. A gap is a contiguous block of unreceived packets between received ones.
  *
- * Returns: 1 if a gap was found, 0 if no more gaps exist or are relevant.
+ * Returns: true if a gap was found, false if no more gaps exist or are relevant.
  */
-static int quic_pnspace_next_gap_ack(const struct quic_pnspace *space,
-				     s64 *iter, u16 *start, u16 *end)
+static bool quic_pnspace_next_gap_ack(const struct quic_pnspace *space,
+				      s64 *iter, u16 *start, u16 *end)
 {
 	u16 start_ = 0, end_ = 0, offset = (u16)(*iter - space->base_pn);
 
 	start_ = (u16)find_next_zero_bit(space->pn_map, space->pn_map_len, offset);
 	if (space->max_pn_seen <= space->base_pn + start_)
-		return 0;
+		return false;
 
 	end_ = (u16)find_next_bit(space->pn_map, space->pn_map_len, start_);
 	if (space->max_pn_seen <= space->base_pn + end_ - 1)
-		return 0;
+		return false;
 
 	*start = start_ + 1;
 	*end = end_;
 	*iter = space->base_pn + *end;
-	return 1;
+	return true;
 }
 
 /* Generate gap acknowledgment blocks (GABs).  GABs describe ranges of unacknowledged
