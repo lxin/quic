@@ -210,7 +210,7 @@ void quic_packet_rcv_err_pmtu(struct sock *sk)
 			dst->ops->update_pmtu(dst, sk, NULL, info, true);
 		quic_packet_mss_update(sk, info - packet->hlen);
 		/* Retransmit all outstanding data as MTU may have changed. */
-		quic_outq_retransmit_mark(sk, QUIC_CRYPTO_APP, 1);
+		quic_outq_retransmit_mark(sk, QUIC_CRYPTO_APP, true);
 		quic_outq_update_loss_timer(sk);
 		quic_outq_transmit(sk);
 		return;
@@ -580,7 +580,7 @@ static struct sock *quic_packet_get_sock(struct sk_buff *skb)
 }
 
 /* Entry point for processing received QUIC packets. */
-int quic_packet_rcv(struct sock *sk, struct sk_buff *skb, u8 err)
+int quic_packet_rcv(struct sock *sk, struct sk_buff *skb, bool err)
 {
 	struct net *net = sock_net(sk);
 
@@ -1100,7 +1100,7 @@ static int quic_packet_retry_process(struct sock *sk, struct sk_buff *skb)
 	 *
 	 * (Retransmit the CRYPTO frame in an initial packet with token save in quic_token()).
 	 */
-	quic_outq_retransmit_mark(sk, QUIC_CRYPTO_INITIAL, 1);
+	quic_outq_retransmit_mark(sk, QUIC_CRYPTO_INITIAL, true);
 	quic_outq_update_loss_timer(sk);
 	quic_outq_transmit(sk);
 
@@ -1142,7 +1142,7 @@ static int quic_packet_version_process(struct sock *sk, struct sk_buff *skb)
 		if (err)
 			goto err;
 		/* Retransmit the CRYPTO frame in an initial packet with new version. */
-		quic_outq_retransmit_mark(sk, QUIC_CRYPTO_INITIAL, 1);
+		quic_outq_retransmit_mark(sk, QUIC_CRYPTO_INITIAL, true);
 		quic_outq_update_loss_timer(sk);
 		quic_outq_transmit(sk);
 	}
@@ -1297,8 +1297,8 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb)
 	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
 	struct quic_inqueue *inq = quic_inq(sk);
 	struct quic_cong *cong = quic_cong(sk);
+	bool is_serv = quic_is_serv(sk);
 	struct net *net = sock_net(sk);
-	u8 is_serv = quic_is_serv(sk);
 	struct quic_conn_id *conn_id;
 	struct quic_frame frame = {};
 	struct quic_crypto *crypto;
@@ -1414,7 +1414,7 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb)
 			 * QUIC senders use acknowledgments to detect lost packets and a PTO to
 			 * ensure acknowledgments are received.
 			 */
-			quic_outq_retransmit_mark(sk, packet->level, 0);
+			quic_outq_retransmit_mark(sk, packet->level, false);
 			quic_outq_update_loss_timer(sk);
 		}
 
@@ -1597,7 +1597,7 @@ static int quic_packet_app_process_done(struct sock *sk, struct sk_buff *skb)
 		 * QUIC senders use acknowledgments to detect lost packets and a PTO to ensure
 		 * acknowledgments are received.
 		 */
-		quic_outq_retransmit_mark(sk, 0, 0);
+		quic_outq_retransmit_mark(sk, 0, false);
 		quic_outq_update_loss_timer(sk);
 	}
 

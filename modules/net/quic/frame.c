@@ -2300,7 +2300,7 @@ void quic_frame_put(struct quic_frame *frame)
 
 /* Appends stream data to a QUIC frame. */
 int quic_frame_stream_append(struct sock *sk, struct quic_frame *frame,
-			     struct quic_msginfo *info, u8 pack)
+			     struct quic_msginfo *info, bool pack)
 {
 	struct quic_stream *stream = info->stream;
 	u8 *p, type = frame->type, nodelay = 0;

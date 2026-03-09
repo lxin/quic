@@ -117,9 +117,9 @@ static void quic_outq_transmit_dgram(struct sock *sk)
 }
 
 /* Applies stream and connection-level flow control. Returns 1 if blocked, 0 otherwise.
- * Send a STREAM_DATA_BLOCKED or DATA_BLOCKED frame if blocked and sndblock is set.
+ * Send a STREAM_DATA_BLOCKED or DATA_BLOCKED frame if blocked and sndblock is true.
  */
-int quic_outq_flow_control(struct sock *sk, struct quic_stream *stream, u16 bytes, u8 sndblock)
+int quic_outq_flow_control(struct sock *sk, struct quic_stream *stream, u16 bytes, bool sndblock)
 {
 	struct quic_outqueue *outq = quic_outq(sk);
 	u8 frame, blocked = 0, transmit = 0;
@@ -179,7 +179,7 @@ u64 quic_outq_wspace(struct sock *sk, struct quic_stream *stream)
 /* Applies pacing and Nagle’s algorithm. Returns true if sending should be delayed, false if
  * immediate send.
  */
-static bool quic_outq_delay_check(struct sock *sk, u8 level, u8 nodelay)
+static bool quic_outq_delay_check(struct sock *sk, u8 level, bool nodelay)
 {
 	struct quic_packet *packet = quic_packet(sk);
 	struct quic_outqueue *outq = quic_outq(sk);
@@ -329,7 +329,7 @@ static void quic_outq_set_owner_w(int len, struct sock *sk)
 }
 
 /* Appends data to an existing stream frame at the tail of the stream_list if possible. */
-int quic_outq_stream_append(struct sock *sk, struct quic_msginfo *info, u8 pack)
+int quic_outq_stream_append(struct sock *sk, struct quic_msginfo *info, bool pack)
 {
 	struct quic_stream_table *streams = quic_streams(sk);
 	struct quic_outqueue *outq = quic_outq(sk);
@@ -955,7 +955,7 @@ static void quic_outq_psent_retransmit_frames(struct sock *sk, struct quic_packe
  * sent packets and moves those considered lost back to the send queue. It updates loss time,
  * congestion control state, inflight bytes, and the send window accordingly.
  */
-void quic_outq_retransmit_mark(struct sock *sk, u8 level, u8 immediate)
+void quic_outq_retransmit_mark(struct sock *sk, u8 level, bool immediate)
 {
 	struct quic_pnspace *space = quic_pnspace(sk, level);
 	struct quic_outqueue *outq = quic_outq(sk);
@@ -1043,7 +1043,7 @@ void quic_outq_transmit_pto(struct sock *sk)
 		/* Move frames from lost packets back to the send queue, update the loss
 		 * detection timer, and retransmit the frames.
 		 */
-		quic_outq_retransmit_mark(sk, level, 0);
+		quic_outq_retransmit_mark(sk, level, false);
 		quic_outq_update_loss_timer(sk);
 		quic_outq_transmit(sk);
 		return;
@@ -1073,7 +1073,7 @@ out:
 }
 
 /* Initiate probing of an alternative QUIC path to support path migration. */
-int quic_outq_probe_path_alt(struct sock *sk, u8 cork)
+int quic_outq_probe_path_alt(struct sock *sk, bool cork)
 {
 	struct quic_conn_id_set *id_set = quic_dest(sk);
 	struct quic_path_group *paths = quic_paths(sk);
@@ -1129,7 +1129,7 @@ void quic_outq_update_path(struct sock *sk)
  * This function creates a new quic_frame with the given type and data, sets the path for
  * the frame, and appends it to the control frame queue.
  */
-int quic_outq_transmit_frame(struct sock *sk, u8 type, void *data, u8 path, u8 cork)
+int quic_outq_transmit_frame(struct sock *sk, u8 type, void *data, u8 path, bool cork)
 {
 	struct quic_frame *frame;
 
@@ -1147,7 +1147,7 @@ int quic_outq_transmit_frame(struct sock *sk, u8 type, void *data, u8 path, u8 c
  * This function sends multiple NEW_CONNECTION_ID frames for any connection IDs with
  * sequence numbers between (last known + 1) and (max_count + prior - 1).
  */
-int quic_outq_transmit_new_conn_id(struct sock *sk, u64 prior, u8 path, u8 cork)
+int quic_outq_transmit_new_conn_id(struct sock *sk, u64 prior, u8 path, bool cork)
 {
 	struct quic_conn_id_set *id_set = quic_source(sk);
 	u64 max, seqno;
@@ -1171,7 +1171,7 @@ int quic_outq_transmit_new_conn_id(struct sock *sk, u64 prior, u8 path, u8 cork)
  * This function queues RETIRE_CONNECTION_ID frames for all sequence numbers from the first
  * known ID up to the specified prior sequence number.
  */
-int quic_outq_transmit_retire_conn_id(struct sock *sk, u64 prior, u8 path, u8 cork)
+int quic_outq_transmit_retire_conn_id(struct sock *sk, u64 prior, u8 path, bool cork)
 {
 	struct quic_conn_id_set *id_set = quic_dest(sk);
 	u64 seqno;

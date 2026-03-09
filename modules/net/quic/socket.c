@@ -790,7 +790,7 @@ static struct quic_stream *quic_sock_send_stream(struct sock *sk, struct quic_st
 {
 	struct quic_crypto *crypto = quic_crypto(sk, QUIC_CRYPTO_APP);
 	struct quic_stream_table *streams = quic_streams(sk);
-	u8 is_serv = quic_is_serv(sk);
+	bool is_serv = quic_is_serv(sk);
 	struct quic_stream *stream;
 	int err;
 
@@ -1063,11 +1063,11 @@ static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 			}
 		}
 
-		len = quic_outq_stream_append(sk, &msginfo, 0); /* Probe appendable size. */
+		len = quic_outq_stream_append(sk, &msginfo, false); /* Probe appendable size. */
 		if (len >= 0) {
 			if (!sk_wmem_schedule(sk, len))
 				continue; /* Memory pressure: Retry with new len. */
-			len = quic_outq_stream_append(sk, &msginfo, 1); /* Appended. */
+			len = quic_outq_stream_append(sk, &msginfo, true); /* Appended. */
 			if (len >= 0) {
 				bytes += len;
 				len = 1; /* Reset minimal length guess for next frame check. */

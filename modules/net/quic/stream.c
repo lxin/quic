@@ -31,7 +31,7 @@ static bool quic_stream_id_valid(s64 stream_id, bool is_serv, bool send)
 }
 
 /* Check if a stream ID was initiated locally. */
-static bool quic_stream_id_local(s64 stream_id, u8 is_serv)
+static bool quic_stream_id_local(s64 stream_id, bool is_serv)
 {
 	return is_serv ^ !(stream_id & QUIC_STREAM_TYPE_SERVER_MASK);
 }

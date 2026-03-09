@@ -18,7 +18,7 @@
 #include "family.h"
 #include "path.h"
 
-extern int quic_packet_rcv(struct sock *sk, struct sk_buff *skb, u8 err);
+extern int quic_packet_rcv(struct sock *sk, struct sk_buff *skb, bool err);
 
 static int quic_udp_rcv(struct sock *sk, struct sk_buff *skb)
 {
@@ -28,13 +28,13 @@ static int quic_udp_rcv(struct sock *sk, struct sk_buff *skb)
 
 	skb_pull(skb, sizeof(struct udphdr));
 	skb_dst_force(skb);
-	quic_packet_rcv(sk, skb, 0);
+	quic_packet_rcv(sk, skb, false);
 	return 0; /* .encap_rcv must return 0 if skb was either consumed or dropped. */
 }
 
 static int quic_udp_err(struct sock *sk, struct sk_buff *skb)
 {
-	return quic_packet_rcv(sk, skb, 1);
+	return quic_packet_rcv(sk, skb, true);
 }
 
 static void quic_udp_sock_put_work(struct work_struct *work)
