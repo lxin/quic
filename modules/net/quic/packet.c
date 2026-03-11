@@ -429,11 +429,12 @@ static int quic_packet_parse_alpn(struct sk_buff *skb, struct quic_data *alpn)
 	u8 *p = skb->data, type;
 	struct quic_data token;
 	u64 offset, length;
-	int err = -EINVAL;
+	int err;
 
 	if (!static_branch_unlikely(&quic_alpn_demux_key))
 		return 0;
-	if (quic_packet_get_version_and_connid(&dcid, &scid, &version, &p, &len))
+	err = quic_packet_get_version_and_connid(&dcid, &scid, &version, &p, &len);
+	if (err)
 		return err;
 	if (!quic_packet_compatible_versions(version))
 		return 0;
@@ -441,10 +442,11 @@ static int quic_packet_parse_alpn(struct sk_buff *skb, struct quic_data *alpn)
 	type = quic_packet_version_get_type(version, quic_hshdr(skb)->type);
 	if (type != QUIC_PACKET_INITIAL)
 		return 0;
-	if (quic_packet_get_token(&token, &p, &len))
+	err = quic_packet_get_token(&token, &p, &len);
+	if (err)
 		return err;
 	if (!quic_get_var(&p, &len, &length) || length > (u64)len)
-		return err;
+		return -EINVAL;
 	if (!cb->backlog) { /* skb_get() needed as caller will free skb on this path. */
 		quic_packet_backlog_schedule(net, skb_get(skb));
 		return -EINPROGRESS;
@@ -653,17 +655,20 @@ static int quic_packet_retry_create(struct sock *sk)
 	struct sk_buff *skb;
 	u32 len, tlen, hlen;
 	struct flowi fl;
+	int err;
 
 	/* Clear routing cache and compute flow route. */
 	__sk_dst_reset(sk);
-	if (quic_flow_route(sk, da, &packet->saddr, &fl))
-		return -EINVAL;
+	err = quic_flow_route(sk, da, &packet->saddr, &fl);
+	if (err < 0)
+		return err;
 
 	/* Write token flags into buffer: QUIC_TOKEN_FLAG_RETRY means retry token. */
 	quic_put_int(buf, QUIC_TOKEN_FLAG_RETRY, 1);
 	/* Generate retry token using client's address and DCID from client initial packet. */
-	if (quic_crypto_generate_token(crypto, da, sizeof(*da), &packet->dcid, buf, &tlen))
-		return -EINVAL;
+	err = quic_crypto_generate_token(crypto, da, sizeof(*da), &packet->dcid, buf, &tlen);
+	if (err)
+		return err;
 
 	quic_conn_id_generate(&conn_id); /* Generate new SCID for the Retry packet. */
 	/* Compute total packet length: header + token + integrity tag. */
@@ -694,9 +699,10 @@ static int quic_packet_retry_create(struct sock *sk)
 	/* Write Retry Token. */
 	p = quic_put_data(p, buf, tlen);
 	/* Generate and write Retry Integrity Tag.*/
-	if (quic_crypto_get_retry_tag(crypto, skb, &packet->dcid, packet->version, tag)) {
+	err = quic_crypto_get_retry_tag(crypto, skb, &packet->dcid, packet->version, tag);
+	if (err) {
 		kfree_skb(skb);
-		return -EINVAL;
+		return err;
 	}
 	quic_put_data(p, tag, QUIC_TAG_LEN);
 
@@ -733,12 +739,14 @@ static int quic_packet_version_create(struct sock *sk)
 	struct sk_buff *skb;
 	u32 len, hlen, i;
 	struct flowi fl;
+	int err;
 	u8 *p;
 
 	/* Clear routing cache and compute flow route. */
 	__sk_dst_reset(sk);
-	if (quic_flow_route(sk, da, &packet->saddr, &fl))
-		return -EINVAL;
+	err = quic_flow_route(sk, da, &packet->saddr, &fl);
+	if (err < 0)
+		return err;
 
 	/* Compute packet length: header + supported version list. */
 	len = QUIC_LONG_HLEN(&packet->dcid, &packet->scid) + QUIC_VERSION_LEN * QUIC_VERSION_NUM;
@@ -801,17 +809,20 @@ static int quic_packet_stateless_reset_create(struct sock *sk)
 	struct sk_buff *skb;
 	struct flowi fl;
 	u32 len, hlen;
+	int err;
 
 	/* Clear routing cache and compute flow route. */
 	__sk_dst_reset(sk);
-	if (quic_flow_route(sk, da, &packet->saddr, &fl))
-		return -EINVAL;
+	err = quic_flow_route(sk, da, &packet->saddr, &fl);
+	if (err < 0)
+		return err;
 
 	/* Generate stateless reset token from DCID in the packet received. */
-	if (quic_crypto_generate_stateless_reset_token(crypto, packet->dcid.data,
-						       packet->dcid.len, token,
-						       QUIC_CONN_ID_TOKEN_LEN))
-		return -EINVAL;
+	err = quic_crypto_generate_stateless_reset_token(crypto, packet->dcid.data,
+							 packet->dcid.len, token,
+							 QUIC_CONN_ID_TOKEN_LEN);
+	if (err)
+		return err;
 
 	len = QUIC_STATELESS_RESET_DEF_LEN;
 	hlen = quic_encap_len(da) + MAX_HEADER;
@@ -1056,12 +1067,14 @@ static int quic_packet_retry_process(struct sock *sk, struct sk_buff *skb)
 	struct quic_conn_id *active;
 	u8 *p, tag[QUIC_TAG_LEN];
 	u32 hlen, len, version;
-	int err = -EINVAL;
+	int err;
 
 	hlen = QUIC_LONG_HLEN(&packet->dcid, &packet->scid);
 	len = skb->len - hlen;
-	if (len < QUIC_TAG_LEN)
+	if (len < QUIC_TAG_LEN) {
+		err = -EINVAL;
 		goto err;
+	}
 	p = skb->data + hlen;
 	version = packet->version;
 	/* rfc9000#section-17.2.5.2:
@@ -1069,11 +1082,16 @@ static int quic_packet_retry_process(struct sock *sk, struct sk_buff *skb)
 	 * Clients MUST discard Retry packets that have a Retry Integrity Tag that cannot be
 	 * validated.
 	 */
-	if (quic_crypto_get_retry_tag(crypto, skb, &paths->orig_dcid, version, tag) ||
-	    memcmp(tag, p + len - QUIC_TAG_LEN, QUIC_TAG_LEN))
+	err = quic_crypto_get_retry_tag(crypto, skb, &paths->orig_dcid, version, tag);
+	if (err)
 		goto err;
+	if (memcmp(tag, p + len - QUIC_TAG_LEN, QUIC_TAG_LEN)) {
+		err = -EINVAL;
+		goto err;
+	}
 	/* Save the Retry token into quic_token(). */
-	if (quic_data_dup(quic_token(sk), p, len - QUIC_TAG_LEN))
+	err = quic_data_dup(quic_token(sk), p, len - QUIC_TAG_LEN);
+	if (err)
 		goto err;
 	/* Update crypto keys using the new DCID (similar to version negotiation). */
 	err = quic_packet_version_change(sk, &packet->scid, version);
@@ -1117,14 +1135,16 @@ static int quic_packet_version_process(struct sock *sk, struct sk_buff *skb)
 {
 	struct quic_packet *packet = quic_packet(sk);
 	u64 version, best = 0;
-	int err = -EINVAL;
 	u32 hlen, len;
+	int err;
 	u8 *p;
 
 	hlen = QUIC_LONG_HLEN(&packet->dcid, &packet->scid);
 	len = skb->len - hlen;
-	if (len < QUIC_VERSION_LEN)
+	if (len < QUIC_VERSION_LEN) {
+		err = -EINVAL;
 		goto err;
+	}
 
 	/* rfc9368#section-2.1:
 	 *
@@ -1216,8 +1236,9 @@ static int quic_packet_handshake_header_process(struct sock *sk, struct sk_buff 
 
 	quic_packet_reset(packet); /* Reset packet state to prepare for new packet parsing. */
 	/* Read VERSION, Destination Connection ID and Source Connection ID. */
-	if (quic_packet_get_version_and_connid(&packet->dcid, &packet->scid, &version, &p, &len))
-		return -EINVAL;
+	err = quic_packet_get_version_and_connid(&packet->dcid, &packet->scid, &version, &p, &len);
+	if (err)
+		return err;
 	if (!version) { /* version == 0 indicates this is a version negotiation packet. */
 		if (!quic_packet_backlog_schedule(net, skb))
 			quic_packet_version_process(sk, skb);
@@ -1242,8 +1263,9 @@ static int quic_packet_handshake_header_process(struct sock *sk, struct sk_buff 
 	}
 	switch (type) {
 	case QUIC_PACKET_INITIAL:
-		if (quic_packet_get_token(&token, &p, &len)) /* Read Token. */
-			return -EINVAL;
+		err = quic_packet_get_token(&token, &p, &len); /* Read Token. */
+		if (err)
+			return err;
 		packet->level = QUIC_CRYPTO_INITIAL;
 		if (!quic_is_serv(sk) && token.len) {
 			/* rfc9000#section-17.2.2:
@@ -1690,9 +1712,10 @@ static int quic_packet_app_process(struct sock *sk, struct sk_buff *skb)
 		/* No valid matched connection ID was found, so treat this as a potential
 		 * stateless reset packet.
 		 */
-		if (!quic_packet_stateless_reset_process(sk, skb))
-			return 0;
-		goto err;
+		err = quic_packet_stateless_reset_process(sk, skb);
+		if (err)
+			goto err;
+		return 0;
 	}
 	/* Calculate Payload Length. */
 	cb->number_offset = QUIC_CONN_ID_DEF_LEN + QUIC_HLEN;
