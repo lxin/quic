@@ -913,7 +913,7 @@ static int quic_packet_listen_process(struct sock *sk, struct sk_buff *skb)
 	struct quic_crypto *crypto;
 	struct quic_conn_id odcid;
 	struct quic_data token;
-	int err = 0;
+	int err;
 
 	if (!quic_hshdr(skb)->form) {
 		/* rfc9000#section-10.3:
@@ -938,10 +938,11 @@ static int quic_packet_listen_process(struct sock *sk, struct sk_buff *skb)
 	}
 
 	/* Read VERSION, Destination Connection ID and Source Connection ID. */
-	if (quic_packet_get_version_and_connid(&packet->dcid, &packet->scid, &version, &p, &len)) {
+	err = quic_packet_get_version_and_connid(&packet->dcid, &packet->scid, &version, &p, &len);
+	if (err) {
 		QUIC_INC_STATS(net, QUIC_MIB_PKT_INVHDRDROP);
 		kfree_skb(skb);
-		return -EINVAL;
+		return err;
 	}
 
 	/* Read Destination address (packet->saddr) and Source address (packet->daddr). */
@@ -972,10 +973,11 @@ static int quic_packet_listen_process(struct sock *sk, struct sk_buff *skb)
 		return err;
 	}
 
-	if (quic_packet_get_token(&token, &p, &len)) { /* Read Token from this Initial packet. */
+	err = quic_packet_get_token(&token, &p, &len); /* Read Token from this Initial packet. */
+	if (err) {
 		QUIC_INC_STATS(net, QUIC_MIB_PKT_INVHDRDROP);
 		kfree_skb(skb);
-		return -EINVAL;
+		return err;
 	}
 
 	/* Associate skb with sk to ensure sk is valid if skb is delayed to process in workqueue. */
@@ -1010,7 +1012,7 @@ static int quic_packet_listen_process(struct sock *sk, struct sk_buff *skb)
 			 * connection with an INVALID_TOKEN error.
 			 */
 			errcode = QUIC_TRANSPORT_ERROR_INVALID_TOKEN;
-			err = quic_packet_refuse_close_create(sk, errcode);
+			quic_packet_refuse_close_create(sk, errcode);
 			consume_skb(skb);
 			return err;
 		}
@@ -1029,9 +1031,9 @@ static int quic_packet_listen_process(struct sock *sk, struct sk_buff *skb)
 		 * packet containing a CONNECTION_CLOSE frame with error code CONNECTION_REFUSED.
 		 */
 		errcode = QUIC_TRANSPORT_ERROR_CONNECTION_REFUSED;
-		err = quic_packet_refuse_close_create(sk, errcode);
+		quic_packet_refuse_close_create(sk, errcode);
 		consume_skb(skb);
-		return err;
+		return PTR_ERR(req);
 	}
 out:
 	/* Append to backlog list of request sock and notify any blocked accept() calls. */
