@@ -663,7 +663,7 @@ err:
  * A Retry packet uses a long packet header with a type value of 0x03. It carries an address
  * validation token created by the server. It is used by a server that wishes to perform a retry.
  */
-static int quic_packet_retry_create(struct sock *sk)
+static int quic_packet_retry_create_and_xmit(struct sock *sk)
 {
 	struct quic_crypto *crypto = quic_crypto(sk, QUIC_CRYPTO_INITIAL);
 	u8 *p, buf[QUIC_FRAME_BUF_LARGE], tag[QUIC_TAG_LEN];
@@ -750,7 +750,7 @@ static int quic_packet_retry_create(struct sock *sk)
  * The Version Negotiation packet is a response to a client packet that contains a version that
  * is not supported by the server. It is only sent by servers.
  */
-static int quic_packet_version_create(struct sock *sk)
+static int quic_packet_version_create_and_xmit(struct sock *sk)
 {
 	struct quic_packet *packet = quic_packet(sk);
 	union quic_addr *da = &packet->daddr;
@@ -819,7 +819,7 @@ static int quic_packet_version_create(struct sock *sk)
  * send a Stateless Reset in response to receiving a packet that it cannot associate with an
  * active connection.
  */
-static int quic_packet_stateless_reset_create(struct sock *sk)
+static int quic_packet_stateless_reset_create_and_xmit(struct sock *sk)
 {
 	struct quic_crypto *crypto = quic_crypto(sk, QUIC_CRYPTO_INITIAL);
 	struct quic_packet *packet = quic_packet(sk);
@@ -870,7 +870,7 @@ static int quic_packet_stateless_reset_create(struct sock *sk)
 /* Generate and send a CONNECTION_CLOSE frame on a listening socket in response to an invalid
  * client Initial packet. No accept socket exists yet to handle it.
  */
-static int quic_packet_refuse_close_create(struct sock *sk, u32 errcode)
+static int quic_packet_refuse_close_create_and_xmit(struct sock *sk, u32 errcode)
 {
 	struct quic_conn_id_set *id_set = quic_source(sk);
 	struct quic_path_group *paths = quic_paths(sk);
@@ -932,7 +932,7 @@ static int quic_packet_listen_process(struct sock *sk, struct sk_buff *skb)
 		quic_conn_id_update(&packet->dcid, (u8 *)quic_hdr(skb) + QUIC_HLEN,
 				    QUIC_CONN_ID_DEF_LEN);
 		/* Send a Stateless Reset for this 1-RTT packet. */
-		err = quic_packet_stateless_reset_create(sk);
+		err = quic_packet_stateless_reset_create_and_xmit(sk);
 		consume_skb(skb);
 		return err;
 	}
@@ -961,14 +961,14 @@ static int quic_packet_listen_process(struct sock *sk, struct sk_buff *skb)
 		 * server responds with a Version Negotiation packet. This includes a list of
 		 * versions that the server will accept.
 		 */
-		err = quic_packet_version_create(sk);
+		err = quic_packet_version_create_and_xmit(sk);
 		consume_skb(skb);
 		return err;
 	}
 
 	type = quic_packet_version_get_type(version, quic_hshdr(skb)->type); /* Read Packet Type. */
 	if (type != QUIC_PACKET_INITIAL) { /* Send a Stateless Reset for this Handshake packet. */
-		err = quic_packet_stateless_reset_create(sk);
+		err = quic_packet_stateless_reset_create_and_xmit(sk);
 		consume_skb(skb);
 		return err;
 	}
@@ -995,7 +995,7 @@ static int quic_packet_listen_process(struct sock *sk, struct sk_buff *skb)
 			 * Upon receiving the client's Initial packet, the server can request
 			 * address validation by sending a Retry packet containing a token.
 			 */
-			err = quic_packet_retry_create(sk);
+			err = quic_packet_retry_create_and_xmit(sk);
 			consume_skb(skb);
 			return err;
 		}
@@ -1012,7 +1012,7 @@ static int quic_packet_listen_process(struct sock *sk, struct sk_buff *skb)
 			 * connection with an INVALID_TOKEN error.
 			 */
 			errcode = QUIC_TRANSPORT_ERROR_INVALID_TOKEN;
-			quic_packet_refuse_close_create(sk, errcode);
+			quic_packet_refuse_close_create_and_xmit(sk, errcode);
 			consume_skb(skb);
 			return err;
 		}
@@ -1031,7 +1031,7 @@ static int quic_packet_listen_process(struct sock *sk, struct sk_buff *skb)
 		 * packet containing a CONNECTION_CLOSE frame with error code CONNECTION_REFUSED.
 		 */
 		errcode = QUIC_TRANSPORT_ERROR_CONNECTION_REFUSED;
-		quic_packet_refuse_close_create(sk, errcode);
+		quic_packet_refuse_close_create_and_xmit(sk, errcode);
 		consume_skb(skb);
 		return PTR_ERR(req);
 	}
