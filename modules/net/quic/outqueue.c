@@ -309,7 +309,7 @@ static void quic_outq_wfree(int len, struct sock *sk)
 	if (!len)
 		return;
 
-	WARN_ON(refcount_sub_and_test(len, &sk->sk_wmem_alloc));
+	WARN_ON_ONCE(refcount_sub_and_test(len, &sk->sk_wmem_alloc));
 	sk_wmem_queued_add(sk, -len);
 	sk_mem_uncharge(sk, len);
 

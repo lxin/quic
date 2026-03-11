@@ -592,7 +592,7 @@ static struct quic_frame *quic_frame_reset_stream_create(struct sock *sk, void *
 	u32 frame_len;
 
 	stream = quic_stream_find(streams, info->stream_id);
-	WARN_ON(!stream);
+	WARN_ON_ONCE(!stream);
 
 	p = quic_put_var(buf, type);
 	p = quic_put_var(p, info->stream_id);
@@ -636,7 +636,7 @@ static struct quic_frame *quic_frame_stop_sending_create(struct sock *sk, void *
 	u32 frame_len;
 
 	stream = quic_stream_find(streams, info->stream_id);
-	WARN_ON(!stream);
+	WARN_ON_ONCE(!stream);
 
 	p = quic_put_var(buf, type);
 	p = quic_put_var(p, info->stream_id);
