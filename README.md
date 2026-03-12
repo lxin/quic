@@ -268,10 +268,10 @@ The test can be done with curl:
     # cd quic-interop-runner/
     # pip3 install -r requirements.txt
 
-You can change implementations.json file to run test cases between different implementations. Here
-displays the testing result between linuxquic ngtcp2 quiche and msquic:
+You can change implementations_quic.json file to run test cases between different implementations.
+Here displays the testing result between linuxquic ngtcp2 quiche and msquic:
 
-    # cat implementations.json
+    # cat implementations_quic.json
       {
         "linuxquic": {
           "image": "quay.io/lxin/linuxquic-interop:latest",
