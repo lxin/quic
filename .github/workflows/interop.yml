@@ -9,15 +9,16 @@ on:
       impls:
         description: "QUIC Implementations"
         required: true
-        default: '["linuxquic", "msquic", "neqo", "ngtcp2"]'
+        default: '["linuxquic", "msquic", "neqo", "ngtcp2", "picoquic", "quiche"]'
 
 jobs:
   interop:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     strategy:
+      fail-fast: false
       matrix:
-        impl: ${{ fromJSON(github.event.inputs.impls || '["linuxquic", "msquic", "neqo", "ngtcp2"]') }}
+        impl: ${{ fromJSON(github.event.inputs.impls || '["linuxquic", "msquic", "neqo", "ngtcp2", "picoquic", "quiche"]') }}
 
     steps:
       - name: Install tshark
