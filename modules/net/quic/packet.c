@@ -1337,12 +1337,12 @@ static int quic_packet_handshake_header_process(struct sock *sk, struct sk_buff 
  */
 static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb)
 {
+	bool start_ack_timer = false, is_serv = quic_is_serv(sk);
 	struct quic_path_group *paths = quic_paths(sk);
 	struct quic_packet *packet = quic_packet(sk);
 	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
 	struct quic_inqueue *inq = quic_inq(sk);
 	struct quic_cong *cong = quic_cong(sk);
-	bool is_serv = quic_is_serv(sk);
 	struct net *net = sock_net(sk);
 	struct quic_conn_id *conn_id;
 	struct quic_frame frame = {};
@@ -1493,38 +1493,44 @@ next:
 			continue;
 
 		space->need_sack = 1; /* Mark that an ACK needs to be sent for this packet space. */
+		if (packet->level != QUIC_CRYPTO_INITIAL) {
+			start_ack_timer = true;
+			continue;
+		}
 
-		if (packet->level == QUIC_CRYPTO_INITIAL) {
-			if (!is_serv) {
-				/* rfc9000#section-7.2
-				 *
-				 * After processing the first Initial packet, each endpoint sets the
-				 * Destination Connection ID field in subsequent packets it sends to
-				 * the value of the Source Connection ID field that it received.
-				 *
-				 * (Server sets it when creating the accept socket in accept()).
-				 */
-				conn_id = quic_conn_id_active(quic_dest(sk));
-				quic_conn_id_update(conn_id, packet->scid.data, packet->scid.len);
-				continue;
-			}
-			/* rfc9000#section-14.1:
+		/* If the Initial packet has only CRYPTO/ACK frames (ack_immediate not set), don't
+		 * start ack_timer, as upcoming TLS handshake packets can bundle the ACK on server.
+		 */
+		start_ack_timer |= (!is_serv || packet->ack_immediate);
+		if (!is_serv) {
+			/* rfc9000#section-7.2
 			 *
-			 * A server MUST discard an Initial packet that is carried in a UDP
-			 * datagram with a payload that is smaller than the smallest allowed
-			 * maximum datagram size of 1200 bytes. A server MAY also immediately
-			 * close the connection by sending a CONNECTION_CLOSE frame with an
-			 * error code of PROTOCOL_VIOLATION.
+			 * After processing the first Initial packet, each endpoint sets the
+			 * Destination Connection ID field in subsequent packets it sends to
+			 * the value of the Source Connection ID field that it received.
+			 *
+			 * (Server sets it when creating the accept socket in accept()).
 			 */
-			uh = udp_hdr(skb);
-			if (ntohs(uh->len) - sizeof(*uh) < QUIC_MIN_UDP_PAYLOAD) {
-				packet->errcode = QUIC_TRANSPORT_ERROR_PROTOCOL_VIOLATION;
-				err = -EINVAL;
-				goto err;
-			}
+			conn_id = quic_conn_id_active(quic_dest(sk));
+			quic_conn_id_update(conn_id, packet->scid.data, packet->scid.len);
+			continue;
+		}
+		/* rfc9000#section-14.1:
+		 *
+		 * A server MUST discard an Initial packet that is carried in a UDP
+		 * datagram with a payload that is smaller than the smallest allowed
+		 * maximum datagram size of 1200 bytes. A server MAY also immediately
+		 * close the connection by sending a CONNECTION_CLOSE frame with an
+		 * error code of PROTOCOL_VIOLATION.
+		 */
+		uh = udp_hdr(skb);
+		if (ntohs(uh->len) - sizeof(*uh) < QUIC_MIN_UDP_PAYLOAD) {
+			packet->errcode = QUIC_TRANSPORT_ERROR_PROTOCOL_VIOLATION;
+			err = -EINVAL;
+			goto err;
 		}
 	}
-	if (inq->sack_flag == QUIC_SACK_FLAG_NONE) {
+	if (inq->sack_flag == QUIC_SACK_FLAG_NONE && start_ack_timer) {
 		/* ACKs are not sent immediately, as they are typically bundled with other TLS
 		 * messages from userspace. If userspace doesn't send anything, start the
 		 * ack_delay timer to ensure ACKs are eventually transmitted.

@@ -2204,7 +2204,8 @@ int quic_frame_process(struct sock *sk, struct quic_frame *frame)
 		if (quic_frame_ops[type].ack_eliciting) {
 			packet->ack_requested = 1;
 			/* Require immediate ACKs for non-stream or stream-FIN frames. */
-			if (!quic_frame_stream(type) || (type & QUIC_STREAM_BIT_FIN))
+			if (!quic_frame_crypto(type) &&
+			    (!quic_frame_stream(type) || (type & QUIC_STREAM_BIT_FIN)))
 				packet->ack_immediate = 1;
 			/* rfc9000#section-9.1:
 			 *
