@@ -124,7 +124,7 @@ static void quic_inq_stream_tail(struct sock *sk, struct quic_stream *stream,
 	}
 
 	frame->offset = 0; /* Reset offset as it will be reused as read offset in recvmsg(). */
-	if (frame->level) {
+	if (frame->level && !quic_crypto(sk, QUIC_CRYPTO_APP)->recv_ready) {
 		/* Stream frame was received at encryption level 0-RTT (early data).  Queue it
 		 * into early_list. After the handshake completes and 1-RTT keys are installed,
 		 * these frames will be moved to recv_list for delivery to the application.
@@ -134,6 +134,7 @@ static void quic_inq_stream_tail(struct sock *sk, struct quic_stream *stream,
 		return;
 	}
 	/* Frame is ready for application delivery: queue in recv_list. */
+	frame->level = 0;
 	list_add_tail(&frame->list, &inq->recv_list);
 	sk->sk_data_ready(sk); /* Notify socket that data is available. */
 }
