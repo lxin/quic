@@ -109,8 +109,8 @@ static void quic_pnspace_move(struct quic_pnspace *space, s64 pn)
  * reception of @pn.  Advances base_pn if possible, and updates max/min/last seen
  * fields as needed.
  *
- * Returns: 0 on success or if the packet was already marked.  -ENOMEM if bitmap
- * allocation failed during growth.
+ * Returns: 0 on success or if the packet was already marked, or a negative error
+ * returned by bitmap growth when expanding the map.
  */
 int quic_pnspace_mark(struct quic_pnspace *space, s64 pn)
 {
