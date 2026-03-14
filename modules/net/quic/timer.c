@@ -160,7 +160,7 @@ void quic_timer_reset(struct sock *sk, u8 type, u64 timeout)
 {
 	struct timer_list *t = quic_timer(sk, type);
 
-	/* Note that timeout is never QUIC_TIMER_PACE for this helper. */
+	/* Note that type is never QUIC_TIMER_PACE for this helper. */
 	if (timeout && !mod_timer(t, jiffies + usecs_to_jiffies(timeout)))
 		sock_hold(sk);
 }
