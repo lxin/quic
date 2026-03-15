@@ -535,7 +535,7 @@ static struct sock *quic_packet_get_sock(struct sk_buff *skb)
 	if (skb->len < QUIC_HLEN)
 		return ERR_PTR(-EINVAL);
 
-	if (!quic_hdr(skb)->form) { /* Short header path. */
+	if (quic_hdr(skb)->form == QUIC_PACKET_FORM_SHORT) { /* Short header path. */
 		if (skb->len < QUIC_HLEN + QUIC_CONN_ID_DEF_LEN)
 			return ERR_PTR(-EINVAL);
 		/* Fast path: look up QUIC connection by fixed-length DCID
@@ -700,7 +700,7 @@ static int quic_packet_retry_create_and_xmit(struct sock *sk)
 
 	/* Build Long Packet header. */
 	hdr = skb_push(skb, len);
-	hdr->form = 1;
+	hdr->form = QUIC_PACKET_FORM_LONG;
 	hdr->fixed = !quic_outq(sk)->grease_quic_bit;
 	hdr->type = quic_packet_version_put_type(packet->version, QUIC_PACKET_RETRY);
 	hdr->reserved = 0;
@@ -777,7 +777,7 @@ static int quic_packet_version_create_and_xmit(struct sock *sk)
 
 	/* Build Long Packet header. */
 	hdr = skb_push(skb, len);
-	hdr->form = 1;
+	hdr->form = QUIC_PACKET_FORM_LONG;
 	hdr->fixed = !quic_outq(sk)->grease_quic_bit;
 	hdr->type = 0;
 	hdr->reserved = 0;
@@ -855,7 +855,7 @@ static int quic_packet_stateless_reset_create_and_xmit(struct sock *sk)
 	get_random_bytes(p, len);
 
 	/* Build Short Packet header. */
-	quic_hdr(skb)->form = 0;
+	quic_hdr(skb)->form = QUIC_PACKET_FORM_SHORT;
 	quic_hdr(skb)->fixed = 1;
 
 	/* Write end of packet with stateless reset token. */
@@ -915,7 +915,7 @@ static int quic_packet_listen_process(struct sock *sk, struct sk_buff *skb)
 	struct quic_data token;
 	int err;
 
-	if (!quic_hshdr(skb)->form) {
+	if (quic_hshdr(skb)->form == QUIC_PACKET_FORM_SHORT) {
 		/* rfc9000#section-10.3:
 		 *
 		 * An endpoint MAY send a Stateless Reset in response to receiving a packet
@@ -1357,7 +1357,7 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb)
 
 	/* Loop to handle each QUIC packet in this coalesced packet. */
 	while (skb->len > 0) {
-		if (!quic_hshdr(skb)->form) { /* Short-header packet. */
+		if (quic_hshdr(skb)->form == QUIC_PACKET_FORM_SHORT) { /* Short-header packet. */
 			/* If DCID doesn't match treat as padding, and increase anti-amplification
 			 * credit if path isn't validated.
 			 */
@@ -1868,7 +1868,7 @@ int quic_packet_process(struct sock *sk, struct sk_buff *skb)
 	if (quic_is_listen(sk))
 		return quic_packet_listen_process(sk, skb);
 
-	if (quic_hdr(skb)->form)
+	if (quic_hdr(skb)->form == QUIC_PACKET_FORM_LONG)
 		return quic_packet_handshake_process(sk, skb);
 
 	return quic_packet_app_process(sk, skb);
