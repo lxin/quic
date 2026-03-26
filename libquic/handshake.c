@@ -564,7 +564,7 @@ static int quic_msg_read(gnutls_session_t session, gnutls_record_encryption_leve
 
 	quic_smsg_append_list(ctx, smsg);
 
-	quic_log_debug("  Read func: %u %u %u", level, htype, datalen);
+	quic_log_debug("  Read func: %u %u %zu", level, htype, datalen);
 	return 0;
 }
 
