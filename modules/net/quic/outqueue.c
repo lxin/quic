@@ -457,6 +457,12 @@ void quic_outq_dgram_tail(struct sock *sk, struct quic_frame *frame, bool cork)
 		quic_outq_transmit(sk);
 }
 
+/* Map level 0 (QUIC_CRYPTO_APP) to lowest priority. */
+static u8 quic_level_prio(u8 level)
+{
+	return level ?: QUIC_CRYPTO_MAX;
+}
+
 /* Queues a control frame in control_list in correct order and optionally
  * transmits.
  */
@@ -465,31 +471,28 @@ void quic_outq_ctrl_tail(struct sock *sk, struct quic_frame *frame, bool cork)
 	struct quic_outqueue *outq = quic_outq(sk);
 	struct list_head *head;
 	struct quic_frame *pos;
+	u8 f_prio, p_prio;
 
 	head = &quic_outq(sk)->control_list;
-	/* Insert control frame in priority order:
+	/* Insert frame in priority order:
 	 *
-	 *   Handshake levels (level > 0) > Non-ack-eliciting > Other frames.
+	 *   Initial (level == 1) > Handshake (level == 2) > Application
+	 *   (level == 0); At same level: Non-ack-eliciting > Ack-eliciting.
 	 */
+	f_prio = quic_level_prio(frame->level);
 	list_for_each_entry(pos, head, list) {
-		if (frame->level) {
-			if (!pos->level) {
-				head = &pos->list;
-				break;
-			}
-			if (frame->level > pos->level)
-				continue;
-			if (frame->level < pos->level) {
-				head = &pos->list;
-				break;
-			}
-		}
-		if (!frame->ack_eliciting) {
+		p_prio = quic_level_prio(pos->level);
+
+		if (f_prio > p_prio)
+			continue;
+		if (f_prio < p_prio) {
 			head = &pos->list;
 			break;
 		}
-		if (!frame->level)
+		if (frame->ack_eliciting < pos->ack_eliciting) {
+			head = &pos->list;
 			break;
+		}
 	}
 
 	outq->unsent_bytes += frame->bytes;
@@ -506,6 +509,7 @@ void quic_outq_transmitted_tail(struct sock *sk, struct quic_frame *frame)
 {
 	struct list_head *head = &quic_outq(sk)->transmitted_list;
 	struct quic_frame *pos;
+	u8 f_prio, p_prio;
 
 	/* Insert frame in priority order:
 	 *
@@ -513,23 +517,16 @@ void quic_outq_transmitted_tail(struct sock *sk, struct quic_frame *frame)
 	 *   (level == 0); At same level: first packet number used less >
 	 *   first packet number used greater.
 	 */
+	f_prio = quic_level_prio(frame->level);
 	list_for_each_entry(pos, head, list) {
-		if (!frame->level) {
-			if (pos->level)
-				continue;
-			goto number;
-		}
-		if (!pos->level) {
-			head = &pos->list;
-			break;
-		}
-		if (frame->level > pos->level)
+		p_prio = quic_level_prio(pos->level);
+
+		if (f_prio > p_prio)
 			continue;
-		if (frame->level < pos->level) {
+		if (f_prio < p_prio) {
 			head = &pos->list;
 			break;
 		}
-number:
 		if (frame->number < pos->number) {
 			head = &pos->list;
 			break;
@@ -544,20 +541,21 @@ void quic_outq_packet_sent_tail(struct sock *sk, struct quic_packet_sent *sent)
 {
 	struct list_head *head = &quic_outq(sk)->packet_sent_list;
 	struct quic_packet_sent *pos;
+	u8 s_prio, p_prio;
 
 	/* Insert sent packet in priority order:
 	 *
-	 *   Handshake levels (level > 0) > Application level (level == 0).
+	 *   Initial (level == 1) > Handshake (level == 2) > Application
+	 *   (level == 0).
 	 */
 	if (sent->level) {
+		s_prio = quic_level_prio(sent->level);
 		list_for_each_entry(pos, head, list) {
-			if (!pos->level) {
-				head = &pos->list;
-				break;
-			}
-			if (sent->level > pos->level)
+			p_prio = quic_level_prio(pos->level);
+
+			if (s_prio > p_prio)
 				continue;
-			if (sent->level < pos->level) {
+			if (s_prio < p_prio) {
 				head = &pos->list;
 				break;
 			}
@@ -932,6 +930,7 @@ static void quic_outq_retransmit_frame(struct sock *sk,
 	struct quic_outqueue *outq = quic_outq(sk);
 	struct quic_frame *pos;
 	struct list_head *head;
+	u8 f_prio, p_prio;
 
 	head = &outq->control_list;
 	if (quic_frame_stream(frame->type)) {
@@ -946,23 +945,16 @@ static void quic_outq_retransmit_frame(struct sock *sk,
 	 *   (level == 0); At same level: first packet number used less > first
 	 *   packet number used greater > first packet number used negative.
 	 */
+	f_prio = quic_level_prio(frame->level);
 	list_for_each_entry(pos, head, list) {
-		if (!frame->level) {
-			if (pos->level)
-				continue;
-			goto number;
-		}
-		if (!pos->level) {
-			head = &pos->list;
-			break;
-		}
-		if (frame->level > pos->level)
+		p_prio = quic_level_prio(pos->level);
+
+		if (f_prio > p_prio)
 			continue;
-		if (frame->level < pos->level) {
+		if (f_prio < p_prio) {
 			head = &pos->list;
 			break;
 		}
-number:
 		if (pos->number < 0 || frame->number < pos->number) {
 			head = &pos->list;
 			break;
