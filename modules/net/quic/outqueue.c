@@ -225,7 +225,7 @@ static bool quic_outq_delay_check(struct sock *sk, u8 level, bool nodelay)
 	/* If enough stream data is available to build a full-sized packet,
 	 * send immediately.
 	 */
-	if (outq->stream_list_len > quic_packet_mss(packet))
+	if (outq->stream_list_len >= quic_packet_max_payload(packet))
 		return false;
 	return true; /* Otherwise, delay sending to coalesce more data. */
 }
