@@ -435,8 +435,8 @@ static void quic_inq_handshake_tail(struct sock *sk, struct quic_frame *frame)
 		/* Notify userspace with the full ticket message. Applications
 		 * can receive it via NEW_SESSION_TICKET event or getsockopt().
 		 */
-		quic_inq_event_recv(sk, QUIC_EVENT_NEW_SESSION_TICKET, ticket,
-				    ticket->len);
+		quic_inq_event_recv(sk, QUIC_EVENT_NEW_SESSION_TICKET,
+				    ticket->data, ticket->len);
 	}
 out:
 	quic_inq_rfree((int)frame->len, sk);
