@@ -725,10 +725,10 @@ static inline void quic_copy_common(void *dst, size_t dlen, const void *src,
 /* Parse control messages for stream or handshake metadata from msghdr. */
 static int quic_msghdr_parse(struct sock *sk, struct msghdr *msg,
 			     struct quic_handshake_info *hinfo,
-			     struct quic_stream_info *sinfo, bool *has_hinfo)
+			     struct quic_stream_info *sinfo,
+			     bool *has_hinfo, bool *has_sinfo)
 {
 	struct quic_stream_table *streams;
-	bool has_sinfo = false;
 	struct cmsghdr *cmsg;
 	s64 active;
 
@@ -758,7 +758,7 @@ static int quic_msghdr_parse(struct sock *sk, struct msghdr *msg,
 					 cmsg->cmsg_len - CMSG_LEN(0));
 			if (sinfo->stream_flags & ~QUIC_MSG_STREAM_FLAGS)
 				return -EINVAL;
-			has_sinfo = true;
+			*has_sinfo = true;
 			break;
 		default:
 			return -EINVAL;
@@ -768,7 +768,7 @@ static int quic_msghdr_parse(struct sock *sk, struct msghdr *msg,
 	if (*has_hinfo) /* Handshake metadata present; skip stream handling. */
 		return 0;
 
-	if (!has_sinfo)  /* No stream info; inherit flags from msg_flags. */
+	if (!*has_sinfo) /* No stream info; inherit flags from msg_flags. */
 		sinfo->stream_flags |= (msg->msg_flags & QUIC_MSG_STREAM_FLAGS);
 
 	if (sinfo->stream_id != -1)
@@ -1018,11 +1018,11 @@ static int quic_wait_for_stream_send(struct sock *sk,
 
 static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 {
+	bool delay, has_hinfo = false, has_sinfo = false;
 	struct quic_outqueue *outq = quic_outq(sk);
 	struct quic_handshake_info hinfo = {};
 	struct quic_stream_info sinfo = {};
 	int err = 0, bytes = 0, len = 1;
-	bool delay, has_hinfo = false;
 	struct quic_msginfo msginfo;
 	struct quic_crypto *crypto;
 	struct quic_stream *stream;
@@ -1030,7 +1030,8 @@ static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 	struct quic_frame *frame;
 
 	lock_sock(sk);
-	err = quic_msghdr_parse(sk, msg, &hinfo, &sinfo, &has_hinfo);
+	err = quic_msghdr_parse(sk, msg, &hinfo, &sinfo, &has_hinfo,
+				&has_sinfo);
 	if (err)
 		goto err;
 
@@ -1173,6 +1174,12 @@ static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 			}
 			err = quic_wait_for_stream_send(sk, stream, flags, len);
 			if (err) {
+				/* Return -ENOSPC (flow control limit hit) only
+				 * if stream info cmsg was set; otherwise treat
+				 * it as -EAGAIN.
+				 */
+				if (err == -ENOSPC && !has_sinfo)
+					err = -EAGAIN;
 				if (err == -EPIPE || !bytes)
 					goto err;
 				goto out;
