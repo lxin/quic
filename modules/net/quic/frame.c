@@ -134,16 +134,16 @@ quic_frame_ack_create(struct sock *sk, void *data, u8 type)
 static struct quic_frame *
 quic_frame_ping_create(struct sock *sk, void *data, u8 type)
 {
-	struct quic_packet *packet = quic_packet(sk);
 	struct quic_probeinfo *info = data;
+	u32 overhead, frame_len = 1;
 	struct quic_frame *frame;
-	u32 frame_len = 1;
 
 	/* If a probe size is specified and larger than the overhead, request
 	 * padding to reach that total size.
 	 */
-	if (info->size > packet->overhead)
-		frame_len = info->size - packet->overhead;
+	overhead = quic_packet_overhead(sk, info->level, 0);
+	if (info->size > overhead)
+		frame_len = info->size - overhead;
 
 	frame = quic_frame_alloc(frame_len, NULL, GFP_ATOMIC);
 	if (!frame)

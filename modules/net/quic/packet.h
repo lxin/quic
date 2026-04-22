@@ -121,6 +121,7 @@ static inline void quic_packet_reset(struct quic_packet *packet)
 
 int quic_packet_tail(struct sock *sk, struct quic_frame *frame);
 int quic_packet_process(struct sock *sk, struct sk_buff *skb);
+u16 quic_packet_overhead(struct sock *sk, u8 level, u8 path);
 int quic_packet_config(struct sock *sk, u8 level, u8 path);
 
 int quic_packet_create_and_xmit(struct sock *sk);

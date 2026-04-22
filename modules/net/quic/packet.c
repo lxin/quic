@@ -2518,15 +2518,39 @@ int quic_packet_route(struct sock *sk)
 	return 0;
 }
 
+/* Return QUIC packet header overhead for the given level and path. Includes
+ * packet number, connection IDs, and for long headers also version, length,
+ * and Initial token (if present). Excludes payload.
+ */
+u16 quic_packet_overhead(struct sock *sk, u8 level, u8 path)
+{
+	struct quic_conn_id_set *source = quic_source(sk);
+	struct quic_conn_id_set *dest = quic_dest(sk);
+	u16 len = QUIC_HLEN;
+
+	len += QUIC_PACKET_NUMBER_LEN; /* Packet number length. */
+	len += quic_conn_id_choose(dest, path)->len; /* DCID length. */
+	if (level == QUIC_CRYPTO_APP)
+		return len;
+
+	len += 1; /* Length byte for DCID. */
+	/* Length byte + SCID length. */
+	len += 1 + quic_conn_id_active(source)->len;
+	/* Include token for Initial packets. */
+	if (level == QUIC_CRYPTO_INITIAL)
+		len += quic_var_len(quic_token(sk)->len) + quic_token(sk)->len;
+	len += QUIC_VERSION_LEN; /* Version length. */
+	len += QUIC_PACKET_LENGTH_LEN; /* Packet length field. */
+
+	return len;
+}
+
 /* Configure the QUIC packet header and routing based on encryption level and
  * path.
  */
 int quic_packet_config(struct sock *sk, u8 level, u8 path)
 {
-	struct quic_conn_id_set *source = quic_source(sk);
-	struct quic_conn_id_set *dest = quic_dest(sk);
 	struct quic_packet *packet = quic_packet(sk);
-	u32 hlen = QUIC_HLEN;
 
 	/* If packet already has data, no need to reconfigure. */
 	if (!quic_packet_empty(packet))
@@ -2537,27 +2561,16 @@ int quic_packet_config(struct sock *sk, u8 level, u8 path)
 	packet->ipfragok = 0;
 	packet->padding = 0;
 	packet->frames = 0;
-	hlen += QUIC_PACKET_NUMBER_LEN; /* Packet number length. */
-	hlen += quic_conn_id_choose(dest, path)->len; /* DCID length. */
-	if (level) {
-		hlen += 1; /* Length byte for DCID. */
-		/* Length byte + SCID length. */
-		hlen += 1 + quic_conn_id_active(source)->len;
-		/* Include token for Initial packets. */
-		if (level == QUIC_CRYPTO_INITIAL)
-			hlen += quic_var_len(quic_token(sk)->len) +
-				quic_token(sk)->len;
-		hlen += QUIC_VERSION_LEN; /* Version length. */
-		hlen += QUIC_PACKET_LENGTH_LEN; /* Packet length field. */
-		/* Allow fragmentation for handshake packets before PLPMTUD
-		 * probing starts.  MTU discovery does not rely on ICMP Packet
-		 * Too Big once PLPMTUD is enabled.
-		 */
-		packet->ipfragok = !!quic_paths(sk)->plpmtud_interval;
-	}
+
 	packet->level = level;
-	packet->len = (u16)hlen;
-	packet->overhead = (u16)hlen;
+	packet->overhead = quic_packet_overhead(sk, level, path);
+	packet->len = packet->overhead;
+
+	/* Allow fragmentation for handshake packets before PLPMTUD probing
+	 * starts. MTU discovery does not rely on ICMP Packet Too Big once
+	 * PLPMTUD is enabled.
+	 */
+	packet->ipfragok = level && !!quic_paths(sk)->plpmtud_interval;
 
 	if (packet->path != path) {
 		/* Path changed; update and reset routing cache */

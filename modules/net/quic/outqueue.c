@@ -579,9 +579,6 @@ void quic_outq_transmit_probe(struct sock *sk)
 	if (!quic_is_established(sk))
 		return;
 
-	if (quic_packet_config(sk, QUIC_CRYPTO_APP, 0))
-		return;
-
 	/* Set probe packet size and encryption level. */
 	info.size = paths->pl.probe_size;
 	info.level = QUIC_CRYPTO_APP;
@@ -1150,9 +1147,6 @@ void quic_outq_transmit_pto(struct sock *sk)
 
 	/* Attempt to send one ACK-eliciting probe packets for PTO. */
 	if (quic_outq_transmit_single(sk, level))
-		goto out;
-
-	if (quic_packet_config(sk, level, 0))
 		goto out;
 
 	/* If still no packet can be sent, send a PING frame to elicit ACK. */
