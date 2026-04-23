@@ -1802,7 +1802,6 @@ static int quic_frame_data_blocked_process(struct sock *sk,
 
 	if (!quic_get_var(&p, &len, &max_bytes))
 		return -EINVAL;
-	recv_max_bytes = inq->max_bytes;
 
 	/* rfc9000#section-19.12:
 	 *
@@ -1815,6 +1814,9 @@ static int quic_frame_data_blocked_process(struct sock *sk,
 	window = inq->max_data;
 	if (sk_under_memory_pressure(sk))
 		window >>= 1;
+	recv_max_bytes = inq->max_bytes;
+	if (recv_max_bytes >= inq->bytes + window)
+		goto out;
 
 	inq->max_bytes = inq->bytes + window;
 	err = quic_outq_transmit_frame(sk, QUIC_FRAME_MAX_DATA, inq, 0, true);
@@ -1823,6 +1825,7 @@ static int quic_frame_data_blocked_process(struct sock *sk,
 		inq->max_bytes = recv_max_bytes;
 		return err;
 	}
+out:
 	return (int)(frame->len - len);
 }
 
@@ -1865,8 +1868,10 @@ static int quic_frame_stream_data_blocked_process(struct sock *sk,
 	window = stream->recv.window;
 	if (sk_under_memory_pressure(sk))
 		window >>= 1;
-
 	recv_max_bytes = stream->recv.max_bytes;
+	if (recv_max_bytes >= stream->recv.bytes + window)
+		goto out;
+
 	stream->recv.max_bytes = stream->recv.bytes + window;
 	err = quic_outq_transmit_frame(sk, QUIC_FRAME_MAX_STREAM_DATA, stream,
 				       0, true);

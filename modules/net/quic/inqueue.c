@@ -64,6 +64,8 @@ void quic_inq_flow_control(struct sock *sk, struct quic_stream *stream,
 		/* Reduce window increment if memory pressure detected. */
 		if (sk_under_memory_pressure(sk))
 			window >>= 1;
+		if (inq->max_bytes >= inq->bytes + window)
+			goto stream_out;
 		/* Increase max data to already read + window. */
 		inq->max_bytes = inq->bytes + window;
 		if (!quic_outq_transmit_frame(sk, QUIC_FRAME_MAX_DATA, inq, 0,
@@ -71,6 +73,7 @@ void quic_inq_flow_control(struct sock *sk, struct quic_stream *stream,
 			frame = 1;
 	}
 
+stream_out:
 	if (!stream)
 		goto out;
 
@@ -83,6 +86,8 @@ void quic_inq_flow_control(struct sock *sk, struct quic_stream *stream,
 	    max(mss, (window >> QUIC_INQ_RWND_SHIFT))) {
 		if (sk_under_memory_pressure(sk))
 			window >>= 1;
+		if (stream->recv.max_bytes >= stream->recv.bytes + window)
+			goto out;
 		stream->recv.max_bytes = stream->recv.bytes + window;
 		if (!quic_outq_transmit_frame(sk, QUIC_FRAME_MAX_STREAM_DATA,
 					      stream, 0, true))
