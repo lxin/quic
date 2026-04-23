@@ -1502,6 +1502,7 @@ static int quic_frame_reset_stream_process(struct sock *sk,
 	 * received on that stream.
 	 */
 	quic_inq_list_purge(sk, &inq->stream_list, stream);
+	quic_inq_list_purge(sk, &inq->early_list, stream);
 	quic_inq_list_purge(sk, &inq->recv_list, stream);
 	/* Release the receive stream. */
 	quic_stream_put(streams, stream, quic_is_serv(sk), false);
