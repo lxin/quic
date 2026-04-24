@@ -91,7 +91,7 @@ struct quic_frame_ops {
 	int (*frame_process)(struct sock *sk, struct quic_frame *frame,
 			     u8 type);
 	void (*frame_ack)(struct sock *sk, struct quic_frame *frame);
-	u8 ack_eliciting;
+	u8 frame_attr;
 };
 
 /* Fragment of data appended to a STREAM frame */
@@ -136,11 +136,6 @@ struct quic_frame {
 	u8  path:1;          /* Path index used to send this frame */
 };
 
-static inline bool quic_frame_new_conn_id(u8 type)
-{
-	return type == QUIC_FRAME_NEW_CONNECTION_ID;
-}
-
 static inline bool quic_frame_dgram(u8 type)
 {
 	return type == QUIC_FRAME_DATAGRAM || type == QUIC_FRAME_DATAGRAM_LEN;
@@ -172,33 +167,6 @@ static inline bool quic_frame_close(u8 type)
 	       type == QUIC_FRAME_CONNECTION_CLOSE_APP;
 }
 
-/* Check if a given frame type is valid for the specified encryption level,
- * based on the Frame Types table from rfc9000#section-12.4.
- *
- * Returns true if valid, false otherwise.
- */
-static inline bool quic_frame_level_valid(u8 level, u8 type)
-{
-	if (level == QUIC_CRYPTO_APP)
-		return true;
-
-	if (level == QUIC_CRYPTO_EARLY) {
-		if (type == QUIC_FRAME_ACK || type == QUIC_FRAME_ACK_ECN ||
-		    type == QUIC_FRAME_CRYPTO || type == QUIC_FRAME_NEW_TOKEN ||
-		    type == QUIC_FRAME_HANDSHAKE_DONE ||
-		    type == QUIC_FRAME_PATH_RESPONSE ||
-		    type == QUIC_FRAME_RETIRE_CONNECTION_ID)
-			return false;
-		return true;
-	}
-
-	if (type != QUIC_FRAME_ACK && type != QUIC_FRAME_ACK_ECN &&
-	    type != QUIC_FRAME_PADDING && type != QUIC_FRAME_PING &&
-	    type != QUIC_FRAME_CRYPTO && type != QUIC_FRAME_CONNECTION_CLOSE)
-		return false;
-	return true;
-}
-
 int quic_frame_build_transport_params_ext(struct sock *sk,
 					  struct quic_transport_param *params,
 					  u8 *data, u32 *len);
@@ -215,3 +183,6 @@ void quic_frame_put(struct quic_frame *frame);
 struct quic_frame *quic_frame_create(struct sock *sk, u8 type, void *data);
 int quic_frame_process(struct sock *sk, struct quic_frame *frame);
 void quic_frame_ack(struct sock *sk, struct quic_frame *frame);
+
+bool quic_frame_retransmittable(u8 type);
+bool quic_frame_ack_eliciting(u8 type);

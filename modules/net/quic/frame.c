@@ -2286,66 +2286,117 @@ static void quic_frame_datagram_ack(struct sock *sk, struct quic_frame *frame)
 {
 }
 
-#define quic_frame_create_and_process_and_ack(type, eliciting) \
+#define quic_frame_create_and_process_and_ack(type, attr) \
 	{ \
 		.frame_create	= quic_frame_##type##_create, \
 		.frame_process	= quic_frame_##type##_process, \
 		.frame_ack	= quic_frame_##type##_ack, \
-		.ack_eliciting	= eliciting \
+		.frame_attr	= attr, \
 	}
 
-static struct quic_frame_ops quic_frame_ops[QUIC_FRAME_MAX + 1] = {
-	quic_frame_create_and_process_and_ack(padding, 0), /* 0x00 */
-	quic_frame_create_and_process_and_ack(ping, 1),
-	quic_frame_create_and_process_and_ack(ack, 0),
-	quic_frame_create_and_process_and_ack(ack, 0), /* ack_ecn */
-	quic_frame_create_and_process_and_ack(reset_stream, 1),
-	quic_frame_create_and_process_and_ack(stop_sending, 1),
-	quic_frame_create_and_process_and_ack(crypto, 1),
-	quic_frame_create_and_process_and_ack(new_token, 1),
-	quic_frame_create_and_process_and_ack(stream, 1),
-	quic_frame_create_and_process_and_ack(stream, 1),
-	quic_frame_create_and_process_and_ack(stream, 1),
-	quic_frame_create_and_process_and_ack(stream, 1),
-	quic_frame_create_and_process_and_ack(stream, 1),
-	quic_frame_create_and_process_and_ack(stream, 1),
-	quic_frame_create_and_process_and_ack(stream, 1),
-	quic_frame_create_and_process_and_ack(stream, 1),
-	quic_frame_create_and_process_and_ack(max_data, 1), /* 0x10 */
-	quic_frame_create_and_process_and_ack(max_stream_data, 1),
-	quic_frame_create_and_process_and_ack(max_streams_bidi, 1),
-	quic_frame_create_and_process_and_ack(max_streams_uni, 1),
-	quic_frame_create_and_process_and_ack(data_blocked, 1),
-	quic_frame_create_and_process_and_ack(stream_data_blocked, 1),
-	quic_frame_create_and_process_and_ack(streams_blocked_bidi, 1),
-	quic_frame_create_and_process_and_ack(streams_blocked_uni, 1),
-	quic_frame_create_and_process_and_ack(new_conn_id, 1),
-	quic_frame_create_and_process_and_ack(retire_conn_id, 1),
-	quic_frame_create_and_process_and_ack(path_challenge, 0),
-	quic_frame_create_and_process_and_ack(path_response, 0),
-	quic_frame_create_and_process_and_ack(connection_close, 0),
-	quic_frame_create_and_process_and_ack(connection_close, 0),
-	quic_frame_create_and_process_and_ack(handshake_done, 1),
-	quic_frame_create_and_process_and_ack(invalid, 0),
-	quic_frame_create_and_process_and_ack(invalid, 0), /* 0x20 */
-	quic_frame_create_and_process_and_ack(invalid, 0),
-	quic_frame_create_and_process_and_ack(invalid, 0),
-	quic_frame_create_and_process_and_ack(invalid, 0),
-	quic_frame_create_and_process_and_ack(invalid, 0),
-	quic_frame_create_and_process_and_ack(invalid, 0),
-	quic_frame_create_and_process_and_ack(invalid, 0),
-	quic_frame_create_and_process_and_ack(invalid, 0),
-	quic_frame_create_and_process_and_ack(invalid, 0),
-	quic_frame_create_and_process_and_ack(invalid, 0),
-	quic_frame_create_and_process_and_ack(invalid, 0),
-	quic_frame_create_and_process_and_ack(invalid, 0),
-	quic_frame_create_and_process_and_ack(invalid, 0),
-	quic_frame_create_and_process_and_ack(invalid, 0),
-	quic_frame_create_and_process_and_ack(invalid, 0),
-	quic_frame_create_and_process_and_ack(invalid, 0),
-	quic_frame_create_and_process_and_ack(datagram, 1), /* 0x30 */
-	quic_frame_create_and_process_and_ack(datagram, 1),
+enum quic_frame_attr {
+	QUIC_A_1	= BIT(QUIC_CRYPTO_APP),       /* Valid at App */
+	QUIC_A_I	= BIT(QUIC_CRYPTO_INITIAL),   /* Valid at Initial */
+	QUIC_A_H	= BIT(QUIC_CRYPTO_HANDSHAKE), /* Valid at Handshake */
+	QUIC_A_0	= BIT(QUIC_CRYPTO_EARLY),     /* Valid at Early */
+	QUIC_A_R	= BIT(QUIC_CRYPTO_MAX),       /* Retransmittable */
+	QUIC_A_P	= BIT(QUIC_CRYPTO_MAX + 1),   /* Probing */
+	QUIC_A_N	= BIT(QUIC_CRYPTO_MAX + 2),   /* Non-ack-eliciting */
 };
+
+/* 12.4. Frames and Frame Types. */
+#define QUIC_A_NP_IH01 (QUIC_A_N | QUIC_A_P | QUIC_A_0 | QUIC_A_H | QUIC_A_I | \
+			QUIC_A_1)
+#define QUIC_A_N__IH01 (QUIC_A_N | QUIC_A_0 | QUIC_A_H | QUIC_A_I | QUIC_A_1)
+#define QUIC_A_N____01 (QUIC_A_N | QUIC_A_0 | QUIC_A_1)
+#define QUIC_A_N__IH_1 (QUIC_A_N | QUIC_A_H | QUIC_A_I | QUIC_A_1)
+#define QUIC_A__PR__01 (QUIC_A_P | QUIC_A_R | QUIC_A_0 | QUIC_A_1)
+#define QUIC_A__P___01 (QUIC_A_P | QUIC_A_0 | QUIC_A_1)
+#define QUIC_A__P____1 (QUIC_A_P | QUIC_A_1)
+#define QUIC_A___RIH_1 (QUIC_A_R | QUIC_A_I | QUIC_A_H | QUIC_A_1)
+#define QUIC_A___R__01 (QUIC_A_R | QUIC_A_0 | QUIC_A_1)
+#define QUIC_A___R___1 (QUIC_A_R | QUIC_A_1)
+#define QUIC_A____IH01 (QUIC_A_0 | QUIC_A_H | QUIC_A_I | QUIC_A_1)
+
+static struct quic_frame_ops quic_frame_ops[QUIC_FRAME_MAX + 1] = {
+	/* 0x00 */
+	quic_frame_create_and_process_and_ack(padding, QUIC_A_NP_IH01),
+	quic_frame_create_and_process_and_ack(ping, QUIC_A____IH01),
+	quic_frame_create_and_process_and_ack(ack, QUIC_A_N__IH_1),
+	quic_frame_create_and_process_and_ack(ack, QUIC_A_N__IH_1),
+	quic_frame_create_and_process_and_ack(reset_stream, QUIC_A___R__01),
+	quic_frame_create_and_process_and_ack(stop_sending, QUIC_A___R__01),
+	quic_frame_create_and_process_and_ack(crypto, QUIC_A___RIH_1),
+	quic_frame_create_and_process_and_ack(new_token, QUIC_A___R___1),
+	quic_frame_create_and_process_and_ack(stream, QUIC_A___R__01),
+	quic_frame_create_and_process_and_ack(stream, QUIC_A___R__01),
+	quic_frame_create_and_process_and_ack(stream, QUIC_A___R__01),
+	quic_frame_create_and_process_and_ack(stream, QUIC_A___R__01),
+	quic_frame_create_and_process_and_ack(stream, QUIC_A___R__01),
+	quic_frame_create_and_process_and_ack(stream, QUIC_A___R__01),
+	quic_frame_create_and_process_and_ack(stream, QUIC_A___R__01),
+	quic_frame_create_and_process_and_ack(stream, QUIC_A___R__01),
+	/* 0x10 */
+	quic_frame_create_and_process_and_ack(max_data, QUIC_A___R__01),
+	quic_frame_create_and_process_and_ack(max_stream_data, QUIC_A___R__01),
+	quic_frame_create_and_process_and_ack(max_streams_bidi, QUIC_A___R__01),
+	quic_frame_create_and_process_and_ack(max_streams_uni, QUIC_A___R__01),
+	quic_frame_create_and_process_and_ack(data_blocked, QUIC_A___R__01),
+	quic_frame_create_and_process_and_ack(stream_data_blocked,
+					      QUIC_A___R__01),
+	quic_frame_create_and_process_and_ack(streams_blocked_bidi,
+					      QUIC_A___R__01),
+	quic_frame_create_and_process_and_ack(streams_blocked_uni,
+					      QUIC_A___R__01),
+	quic_frame_create_and_process_and_ack(new_conn_id, QUIC_A__PR__01),
+	quic_frame_create_and_process_and_ack(retire_conn_id, QUIC_A___R__01),
+	quic_frame_create_and_process_and_ack(path_challenge, QUIC_A__P___01),
+	quic_frame_create_and_process_and_ack(path_response, QUIC_A__P____1),
+	quic_frame_create_and_process_and_ack(connection_close, QUIC_A_N__IH01),
+	quic_frame_create_and_process_and_ack(connection_close, QUIC_A_N____01),
+	quic_frame_create_and_process_and_ack(handshake_done, QUIC_A___R___1),
+	quic_frame_create_and_process_and_ack(invalid, 0),
+	quic_frame_create_and_process_and_ack(invalid, 0),
+	/* 0x20 */
+	quic_frame_create_and_process_and_ack(invalid, 0),
+	quic_frame_create_and_process_and_ack(invalid, 0),
+	quic_frame_create_and_process_and_ack(invalid, 0),
+	quic_frame_create_and_process_and_ack(invalid, 0),
+	quic_frame_create_and_process_and_ack(invalid, 0),
+	quic_frame_create_and_process_and_ack(invalid, 0),
+	quic_frame_create_and_process_and_ack(invalid, 0),
+	quic_frame_create_and_process_and_ack(invalid, 0),
+	quic_frame_create_and_process_and_ack(invalid, 0),
+	quic_frame_create_and_process_and_ack(invalid, 0),
+	quic_frame_create_and_process_and_ack(invalid, 0),
+	quic_frame_create_and_process_and_ack(invalid, 0),
+	quic_frame_create_and_process_and_ack(invalid, 0),
+	quic_frame_create_and_process_and_ack(invalid, 0),
+	quic_frame_create_and_process_and_ack(invalid, 0),
+	/* 0x30 */
+	quic_frame_create_and_process_and_ack(datagram, QUIC_A___R___1),
+	quic_frame_create_and_process_and_ack(datagram, QUIC_A___R___1),
+};
+
+static bool quic_frame_level_valid(u8 level, u8 type)
+{
+	return !!(quic_frame_ops[type].frame_attr & BIT(level));
+}
+
+static bool quic_frame_non_probe(u8 type)
+{
+	return !(quic_frame_ops[type].frame_attr & QUIC_A_P);
+}
+
+bool quic_frame_retransmittable(u8 type)
+{
+	return !!(quic_frame_ops[type].frame_attr & QUIC_A_R);
+}
+
+bool quic_frame_ack_eliciting(u8 type)
+{
+	return !(quic_frame_ops[type].frame_attr & QUIC_A_N);
+}
 
 void quic_frame_ack(struct sock *sk, struct quic_frame *frame)
 {
@@ -2403,7 +2454,7 @@ int quic_frame_process(struct sock *sk, struct quic_frame *frame)
 		}
 		pr_debug("%s: done, type: %x, level: %d\n", __func__, type,
 			 level);
-		if (quic_frame_ops[type].ack_eliciting) {
+		if (quic_frame_ack_eliciting(type)) {
 			packet->ack_requested = 1;
 			/* Require immediate ACKs for non-crypto, non-stream or
 			 * stream-FIN frames.
@@ -2412,17 +2463,9 @@ int quic_frame_process(struct sock *sk, struct quic_frame *frame)
 			    (!quic_frame_stream(type) ||
 			     (type & QUIC_STREAM_BIT_FIN)))
 				packet->ack_immediate = 1;
-			/* rfc9000#section-9.1:
-			 *
-			 * PATH_CHALLENGE, PATH_RESPONSE, NEW_CONNECTION_ID,
-			 * and PADDING frames are "probing frames", and all
-			 * other frames are "non-probing frames".
-			 * (PATH_CHALLENGE, PATH_RESPONSE and PADDING are not
-			 * ack_eliciting.)
-			 */
-			if (!quic_frame_new_conn_id(type))
-				packet->non_probing = 1;
 		}
+		if (quic_frame_non_probe(type))
+			packet->non_probing = 1;
 		if (quic_frame_sack(type))
 			packet->has_sack = 1;
 
@@ -2447,7 +2490,6 @@ struct quic_frame *quic_frame_create(struct sock *sk, u8 type, void *data)
 	INIT_LIST_HEAD(&frame->list);
 	if (!frame->type)
 		frame->type = type;
-	frame->ack_eliciting = quic_frame_ops[type].ack_eliciting;
 	pr_debug("%s: done, type: %x, len: %u\n", __func__, type, frame->len);
 	return frame;
 }

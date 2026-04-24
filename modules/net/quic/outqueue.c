@@ -27,7 +27,7 @@ static bool quic_outq_limit_check(struct sock *sk, struct quic_frame *frame)
 		return true;
 
 	/* Enforce congestion control for ack-eliciting frames except PING. */
-	if (!outq->single && frame->ack_eliciting &&
+	if (!outq->single && quic_frame_ack_eliciting(frame->type) &&
 	    !quic_frame_ping(frame->type)) {
 		len = packet->frame_len + frame->len;
 		if (outq->inflight + len > outq->window)
@@ -274,9 +274,7 @@ static void quic_outq_transmit_old(struct sock *sk, u8 level)
 			break;
 		if (frame->level != level)
 			continue;
-		/* Do not transmit old Datagram and PING frames. */
-		if (quic_frame_dgram(frame->type) ||
-		    quic_frame_ping(frame->type))
+		if (!quic_frame_retransmittable(frame->type))
 			continue;
 		if (!quic_crypto(sk, frame->level)->send_ready)
 			break;
@@ -489,7 +487,8 @@ void quic_outq_ctrl_tail(struct sock *sk, struct quic_frame *frame, bool cork)
 			head = &pos->list;
 			break;
 		}
-		if (frame->ack_eliciting < pos->ack_eliciting) {
+		if (quic_frame_ack_eliciting(frame->type) <
+		    quic_frame_ack_eliciting(pos->type)) {
 			head = &pos->list;
 			break;
 		}
@@ -986,9 +985,7 @@ static void quic_outq_psent_retransmit_frames(struct sock *sk,
 			continue;  /* Already in queue for transmitting. */
 
 		list_del_init(&frame->list);
-		/* Don't retransmit DATAGRAM or PING frames. */
-		if (quic_frame_dgram(frame->type) ||
-		    quic_frame_ping(frame->type)) {
+		if (!quic_frame_retransmittable(frame->type)) {
 			bytes += frame->bytes;
 			quic_frame_put(frame);
 			continue;

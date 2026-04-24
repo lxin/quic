@@ -2092,7 +2092,7 @@ static u8 *quic_packet_pack_frames(struct sock *sk, struct sk_buff *skb,
 		pr_debug("%s: num=%llu type=%u len=%u frame_len=%u level=%u\n",
 			 __func__, number, frame->type, skb->len, frame->len,
 			 packet->level);
-		if (!frame->ack_eliciting || quic_frame_ping(frame->type)) {
+		if (!quic_frame_ack_eliciting(frame->type)) {
 			/* CONNECTION_CLOSE must be encrypted synchronously. */
 			if (quic_frame_close(frame->type))
 				cb->sync = 1;
@@ -2790,15 +2790,10 @@ int quic_packet_tail(struct sock *sk, struct quic_frame *frame)
 	if (frame->padding)
 		packet->padding = frame->padding;
 
-	/* Track frames that require retransmission if lost (i.e.,
-	 * ACK-eliciting and non-PING).
-	 */
-	if (frame->ack_eliciting) {
+	if (quic_frame_ack_eliciting(frame->type)) {
 		packet->ack_eliciting = 1;
-		if (!quic_frame_ping(frame->type)) {
-			packet->frames++;
-			packet->frame_len += frame->len;
-		}
+		packet->frames++;
+		packet->frame_len += frame->len;
 	}
 
 	list_move_tail(&frame->list, &packet->frame_list);

@@ -28,8 +28,8 @@ struct quic_packet {
 	u8 ack_eliciting:1; /* Packet contains ack-eliciting frames to send */
 	u8 ack_requested:1; /* Packet contains ack-eliciting frames received */
 	u8 ack_immediate:1; /* Send ACK immediately (skip ack_delay timer) */
-	u8 non_probing:1;   /* Ack-eliciting packet (excl. NEW_CONNECTION_ID) */
-	u8 has_sack:1;      /* Packet has ACK frames received */
+	u8 non_probing:1;   /* Packet contains non-probing frames */
+	u8 has_sack:1;      /* Packet contains ACK frames */
 	u8 ipfragok:1;      /* Allow IP fragmentation */
 	u8 padding:1;       /* Packet has padding frames */
 	u8 path:1;          /* Path identifier used to send this packet */
