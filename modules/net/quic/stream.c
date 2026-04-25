@@ -245,7 +245,7 @@ struct quic_stream *quic_stream_get(struct quic_stream_table *streams,
 	if (quic_stream_id_closed(streams, stream_id, send))
 		return ERR_PTR(-ENOSTR);
 
-	if (send && !(flags & MSG_QUIC_STREAM_NEW))
+	if (!(flags & MSG_QUIC_STREAM_NEW))
 		return ERR_PTR(-EINVAL);
 
 	if (quic_stream_id_exceeds(streams, stream_id, send))
