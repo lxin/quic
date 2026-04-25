@@ -2193,6 +2193,9 @@ static int quic_sock_set_crypto_secret(struct sock *sk, void *kopt, u32 len)
 		skb_queue_splice_init(&inq->backlog_list, &tmpq);
 		while ((skb = __skb_dequeue(&tmpq)) != NULL)
 			quic_packet_process(sk, skb);
+		/* quic_packet_process() may close socket. */
+		if (quic_is_closed(sk))
+			return -ECONNABORTED;
 		return 0;
 	}
 
@@ -2229,6 +2232,8 @@ static int quic_sock_set_crypto_secret(struct sock *sk, void *kopt, u32 len)
 	skb_queue_splice_init(&inq->backlog_list, &tmpq);
 	while ((skb = __skb_dequeue(&tmpq)) != NULL)
 		quic_packet_process(sk, skb);
+	if (quic_is_closed(sk)) /* quic_packet_process() may close socket. */
+		return -ECONNABORTED;
 
 	if (!crypto->send_ready)
 		return 0;
