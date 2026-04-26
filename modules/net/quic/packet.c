@@ -2119,6 +2119,9 @@ static u8 *quic_packet_pack_frames(struct sock *sk, struct sk_buff *skb,
 	if (quic_is_serv(sk) && !paths->validated)
 		paths->ampl_sndlen += skb->len + quic_packet_taglen(packet);
 
+	if (!sent) /* Packet doesn't need ACK/loss tracking. */
+		return p;
+
 	/* Reset path validation timer if handshake is done and we're not
 	 * currently probing an alternate path. After handshake, the timer may
 	 * trigger PATH_CHALLENGE frames for continued path validation, which
@@ -2128,9 +2131,6 @@ static u8 *quic_packet_pack_frames(struct sock *sk, struct sk_buff *skb,
 	if (quic_is_established(sk) &&
 	    !quic_path_alt_state(paths, QUIC_PATH_ALT_PROBING))
 		quic_timer_reset_path(sk);
-
-	if (!sent) /* Packet doesn't need ACK/loss tracking. */
-		return p;
 
 	/* Update the last sent timestamp if this packet is ACK-eliciting.
 	 * This is important for loss detection and PTO (Probe Timeout) logic.
