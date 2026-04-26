@@ -2442,6 +2442,11 @@ int quic_frame_process(struct sock *sk, struct quic_frame *frame)
 		} else if (!quic_frame_level_valid(level, type)) {
 			pr_debug("%s: invalid frame, type: %x, level: %d\n",
 				 __func__, type, level);
+			/* An endpoint MUST treat receipt of a frame in a
+			 * packet type that is not permitted as a connection
+			 * error of type PROTOCOL_VIOLATION.
+			 */
+			cb->errcode = QUIC_TRANSPORT_ERROR_PROTOCOL_VIOLATION;
 			return -EINVAL;
 		}
 		ret = quic_frame_ops[type].frame_process(sk, frame, type);
