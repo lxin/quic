@@ -2129,14 +2129,13 @@ static u8 *quic_packet_pack_frames(struct sock *sk, struct sk_buff *skb,
 	    !quic_path_alt_state(paths, QUIC_PATH_ALT_PROBING))
 		quic_timer_reset_path(sk);
 
+	if (!sent) /* Packet doesn't need ACK/loss tracking. */
+		return p;
+
 	/* Update the last sent timestamp if this packet is ACK-eliciting.
 	 * This is important for loss detection and PTO (Probe Timeout) logic.
 	 */
-	if (packet->ack_eliciting)
-		space->last_sent_time = now;
-
-	if (!sent) /* Packet doesn't need ACK/loss tracking. */
-		return p;
+	space->last_sent_time = now;
 
 	/* rfc9000#section-13.4.2:
 	 *
@@ -2278,7 +2277,7 @@ static struct sk_buff *quic_packet_handshake_create(struct sock *sk)
 	}
 
 	len = packet->len;
-	if (packet->ack_eliciting || !quic_is_serv(sk)) {
+	if (packet->frames || !quic_is_serv(sk)) {
 		/* rfc9000#section-14.1:
 		 *
 		 * A client MUST expand the payload of all UDP datagrams
@@ -2556,7 +2555,6 @@ int quic_packet_config(struct sock *sk, u8 level, u8 path)
 	if (!quic_packet_empty(packet))
 		return 0;
 
-	packet->ack_eliciting = 0;
 	packet->frame_len = 0;
 	packet->ipfragok = 0;
 	packet->padding = 0;
@@ -2791,7 +2789,6 @@ int quic_packet_tail(struct sock *sk, struct quic_frame *frame)
 		packet->padding = frame->padding;
 
 	if (quic_frame_ack_eliciting(frame->type)) {
-		packet->ack_eliciting = 1;
 		packet->frames++;
 		packet->frame_len += frame->len;
 	}
