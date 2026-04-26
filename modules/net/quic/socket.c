@@ -1340,7 +1340,7 @@ static int quic_recvmsg(struct sock *sk, struct msghdr *msg, size_t msg_len,
 		}
 		msg->msg_flags |= MSG_EOR;
 		bytes += frame->len; /* Track bytes fully consumed. */
-		if (frame->event || frame->level || frame->dgram) {
+		if (stream_id == -1) {
 			/* Only read one frame at a time for these types. */
 			list_del(&frame->list);
 			quic_frame_put(frame);
@@ -1360,8 +1360,7 @@ static int quic_recvmsg(struct sock *sk, struct msghdr *msg, size_t msg_len,
 		 */
 		if (list_entry_is_head(next, head, list) || copied >= msg_len)
 			break;
-		if (next->event || next->dgram || next->stream_id == -1 ||
-		    next->stream_id != stream_id)
+		if (next->stream_id == -1 || next->stream_id != stream_id)
 			break;
 	};
 
