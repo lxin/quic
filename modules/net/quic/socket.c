@@ -1338,9 +1338,9 @@ static int quic_recvmsg(struct sock *sk, struct msghdr *msg, size_t msg_len,
 			frame->read_offset += copy;
 			break;
 		}
-		msg->msg_flags |= MSG_EOR;
 		bytes += frame->len; /* Track bytes fully consumed. */
 		if (stream_id == -1) {
+			msg->msg_flags |= MSG_EOR;
 			/* Only read one frame at a time for these types. */
 			list_del(&frame->list);
 			quic_frame_put(frame);
