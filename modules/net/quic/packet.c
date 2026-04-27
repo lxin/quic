@@ -1444,12 +1444,13 @@ static int quic_packet_handshake_header_process(struct sock *sk,
  */
 static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb)
 {
-	bool ack_eliciting = false, is_serv = quic_is_serv(sk);
+	bool ack_eliciting = false, ack_immediate = false;
 	struct quic_path_group *paths = quic_paths(sk);
 	struct quic_packet *packet = quic_packet(sk);
 	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
 	struct quic_inqueue *inq = quic_inq(sk);
 	struct quic_cong *cong = quic_cong(sk);
+	bool is_serv = quic_is_serv(sk);
 	struct net *net = sock_net(sk);
 	struct quic_conn_id *conn_id;
 	struct quic_frame frame = {};
@@ -1614,18 +1615,20 @@ skip:
 		if (!packet->ack_eliciting)
 			goto next; /* No ACK-eliciting frame: skip ACK. */
 
+		if (packet->ack_immediate || cb->number < space->max_pn_seen)
+			ack_immediate = true;
+
+		/* On server, don't arm ACK timer for Initial; next handshake
+		 * msg can bundle the ACK.
+		 */
 		space->need_sack = 1; /* ACK needed for this packet space. */
 		if (cb->level != QUIC_CRYPTO_INITIAL) {
 			ack_eliciting = true;
 			goto next;
 		}
 
-		/* If the Initial packet has only CRYPTO/ACK frames
-		 * (ack_immediate not set), don't start ack_timer, as upcoming
-		 * TLS handshake packets can bundle the ACK on server.
-		 */
-		ack_eliciting |= (!is_serv || packet->ack_immediate);
 		if (!is_serv) {
+			ack_eliciting = true;
 			/* rfc9000#section-7.2
 			 *
 			 * After processing the first Initial packet, each
@@ -1660,6 +1663,10 @@ next:
 		/* Advance skb pointer to next QUIC packet. */
 		skb_pull(skb, cb->number_offset + cb->length);
 	}
+	if (ack_immediate) {
+		quic_outq_transmit(sk);
+		goto out;
+	}
 	if (inq->sack_flag == QUIC_SACK_FLAG_NONE && ack_eliciting) {
 		/* ACKs are not sent immediately, as they are typically bundled
 		 * with other TLS messages from userspace. If userspace doesn't
@@ -1669,6 +1676,7 @@ next:
 		quic_timer_reset(sk, QUIC_TIMER_SACK, inq->max_ack_delay);
 		inq->sack_flag = QUIC_SACK_FLAG_XMIT;
 	}
+out:
 	if (paths->blocked) {
 		/* The path was previously blocked due to the
 		 * anti-amplification limit.  Now that additional credit may be
@@ -1809,7 +1817,7 @@ static int quic_packet_app_process_done(struct sock *sk, struct sk_buff *skb)
 	if (!packet->ack_eliciting)
 		goto out; /* No ACK-eliciting frame: skip ACK. */
 
-	if (packet->ack_immediate) {
+	if (packet->ack_immediate || cb->number < space->max_pn_seen) {
 		space->need_sack = 1; /* ACK needed for this packet space. */
 		space->sack_path = cb->path; /* ACK on same path as packet. */
 		goto out;
