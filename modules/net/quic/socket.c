@@ -1331,25 +1331,24 @@ static int quic_recvmsg(struct sock *sk, struct msghdr *msg, size_t msg_len,
 		} else if (frame->dgram) { /* A Datagram Message received. */
 			msg->msg_flags |= MSG_QUIC_DATAGRAM;
 		}
-		if (flags & MSG_PEEK)
-			break; /* Peek: look at first frame, do not consume. */
 		if (copy != frame->len - frame->read_offset) {
 			/* Partial copy: update read_offset and exit loop. */
-			frame->read_offset += copy;
+			if (!(flags & MSG_PEEK))
+				frame->read_offset += copy;
 			break;
 		}
-		bytes += frame->len; /* Track bytes fully consumed. */
-		if (stream_id == -1) {
-			msg->msg_flags |= MSG_EOR;
-			/* Only read one frame at a time for these types. */
+		if (!(flags & MSG_PEEK)) {
+			if (stream_id != -1) /* Stream frame. */
+				freed += frame->len;
+
+			bytes += frame->len;
 			list_del(&frame->list);
 			quic_frame_put(frame);
+		}
+		if (stream_id == -1) { /* Non-stream frame. */
+			msg->msg_flags |= MSG_EOR;
 			break;
 		}
-		/* A Stream Message received. */
-		freed += frame->len;
-		list_del(&frame->list);
-		quic_frame_put(frame);
 		if (fin) {
 			sinfo.stream_flags |= MSG_QUIC_STREAM_FIN;
 			break;
@@ -1362,7 +1361,7 @@ static int quic_recvmsg(struct sock *sk, struct msghdr *msg, size_t msg_len,
 			break;
 		if (next->stream_id == -1 || next->stream_id != stream_id)
 			break;
-	};
+	}
 
 	if (stream_id != -1) {
 		/* Attach stream info if stream data was processed. */
