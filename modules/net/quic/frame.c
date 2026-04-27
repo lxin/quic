@@ -2460,7 +2460,7 @@ int quic_frame_process(struct sock *sk, struct quic_frame *frame)
 		pr_debug("%s: done, type: %x, level: %d\n", __func__, type,
 			 level);
 		if (quic_frame_ack_eliciting(type)) {
-			packet->ack_requested = 1;
+			packet->ack_eliciting = 1;
 			/* Require immediate ACKs for non-crypto, non-stream or
 			 * stream-FIN frames.
 			 */

@@ -25,7 +25,7 @@ struct quic_packet {
 	u16 hlen;      /* UDP + IP header length for sending */
 	u16 len;       /* QUIC packet length excluding taglen for sending */
 
-	u8 ack_requested:1; /* Packet contains ack-eliciting frames received */
+	u8 ack_eliciting:1; /* Packet contains ack-eliciting frames */
 	u8 ack_immediate:1; /* Send ACK immediately (skip ack_delay timer) */
 	u8 non_probing:1;   /* Packet contains non-probing frames */
 	u8 has_sack:1;      /* Packet contains ACK frames */
@@ -114,7 +114,7 @@ static inline void quic_packet_reset(struct quic_packet *packet)
 	packet->level = 0;
 	packet->has_sack = 0;
 	packet->non_probing = 0;
-	packet->ack_requested = 0;
+	packet->ack_eliciting = 0;
 	packet->ack_immediate = 0;
 }
 

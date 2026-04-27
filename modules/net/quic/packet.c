@@ -1444,7 +1444,7 @@ static int quic_packet_handshake_header_process(struct sock *sk,
  */
 static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb)
 {
-	bool start_ack_timer = false, is_serv = quic_is_serv(sk);
+	bool ack_eliciting = false, is_serv = quic_is_serv(sk);
 	struct quic_path_group *paths = quic_paths(sk);
 	struct quic_packet *packet = quic_packet(sk);
 	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
@@ -1541,8 +1541,8 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb)
 		cong->time = cb->time;
 		err = quic_pnspace_check(space, cb->number);
 		if (err) {
-			if (err > 0) { /* Trigger ACK if PN already marked. */
-				packet->ack_requested = 1;
+			if (err > 0) { /* ACK if PN already marked. */
+				packet->ack_eliciting = 1;
 				goto skip;
 			}
 			QUIC_INC_STATS(net, QUIC_MIB_PKT_INVNUMDROP);
@@ -1611,12 +1611,12 @@ skip:
 		cb->resume = 0; /* Clear resume for next decryption */
 		/* Reset to mark header decryption incomplete. */
 		cb->number_len = 0;
-		if (!packet->ack_requested)
+		if (!packet->ack_eliciting)
 			goto next; /* No ACK-eliciting frame: skip ACK. */
 
 		space->need_sack = 1; /* ACK needed for this packet space. */
 		if (cb->level != QUIC_CRYPTO_INITIAL) {
-			start_ack_timer = true;
+			ack_eliciting = true;
 			goto next;
 		}
 
@@ -1624,7 +1624,7 @@ skip:
 		 * (ack_immediate not set), don't start ack_timer, as upcoming
 		 * TLS handshake packets can bundle the ACK on server.
 		 */
-		start_ack_timer |= (!is_serv || packet->ack_immediate);
+		ack_eliciting |= (!is_serv || packet->ack_immediate);
 		if (!is_serv) {
 			/* rfc9000#section-7.2
 			 *
@@ -1660,7 +1660,7 @@ next:
 		/* Advance skb pointer to next QUIC packet. */
 		skb_pull(skb, cb->number_offset + cb->length);
 	}
-	if (inq->sack_flag == QUIC_SACK_FLAG_NONE && start_ack_timer) {
+	if (inq->sack_flag == QUIC_SACK_FLAG_NONE && ack_eliciting) {
 		/* ACKs are not sent immediately, as they are typically bundled
 		 * with other TLS messages from userspace. If userspace doesn't
 		 * send anything, start the ack_delay timer to ensure ACKs are
@@ -1806,21 +1806,21 @@ static int quic_packet_app_process_done(struct sock *sk, struct sk_buff *skb)
 		}
 	}
 
-	if (!packet->ack_requested)
+	if (!packet->ack_eliciting)
 		goto out; /* No ACK-eliciting frame: skip ACK. */
 
-	if (!packet->ack_immediate) {
-		/* Start ack delay timer to generate ACK frames on 1-RTT level
-		 * then transmit all pending ACKs.
-		 */
-		if (inq->sack_flag == QUIC_SACK_FLAG_NONE)
-			quic_timer_reset(sk, QUIC_TIMER_SACK,
-					 inq->max_ack_delay);
-		inq->sack_flag = QUIC_SACK_FLAG_APP;
+	if (packet->ack_immediate) {
+		space->need_sack = 1; /* ACK needed for this packet space. */
+		space->sack_path = cb->path; /* ACK on same path as packet. */
 		goto out;
 	}
-	space->need_sack = 1; /* ACK needed for this packet space. */
-	space->sack_path = cb->path; /* ACK on same path as packet. */
+
+	/* Start ack delay timer to generate ACK frames on 1-RTT level then
+	 * transmit all pending ACKs.
+	 */
+	if (inq->sack_flag == QUIC_SACK_FLAG_NONE)
+		quic_timer_reset(sk, QUIC_TIMER_SACK, inq->max_ack_delay);
+	inq->sack_flag = QUIC_SACK_FLAG_APP;
 
 out:
 	if (quic_is_established(sk)) {
@@ -1963,10 +1963,8 @@ static int quic_packet_app_process(struct sock *sk, struct sk_buff *skb)
 	quic_cong(sk)->time = cb->time;
 	err = quic_pnspace_check(space, cb->number);
 	if (err) {
-		if (err > 0) {
-			/* Immediate ACK if packet number already marked. */
-			packet->ack_requested = 1;
-			packet->ack_immediate = 1;
+		if (err > 0) { /* ACK if PN already marked. */
+			packet->ack_eliciting = 1;
 			goto out;
 		}
 		/* Drop if packet number is outside ACK tracking range. */
