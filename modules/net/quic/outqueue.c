@@ -518,22 +518,23 @@ void quic_outq_transmitted_tail(struct sock *sk, struct quic_frame *frame)
 	 *   first packet number used greater.
 	 */
 	f_prio = quic_level_prio(frame->level);
-	list_for_each_entry(pos, head, list) {
+	list_for_each_entry_reverse(pos, head, list) {
 		p_prio = quic_level_prio(pos->level);
 
-		if (f_prio > p_prio)
+		if (f_prio < p_prio)
 			continue;
-		if (f_prio < p_prio) {
+		if (f_prio > p_prio) {
 			head = &pos->list;
 			break;
 		}
-		if (frame->number < pos->number) {
+		if (frame->number >= pos->number) {
 			head = &pos->list;
 			break;
 		}
 	}
+
 	frame->transmitted = 1; /* Mark as in transmitted_list. */
-	list_add_tail(&frame->list, head);
+	list_add(&frame->list, head);
 }
 
 /* Inserts a sent packet into packet_sent_list in order by level. */
