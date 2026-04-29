@@ -52,9 +52,10 @@ void quic_timer_sack_handler(struct sock *sk)
 		return;
 	}
 
-	if (inq->sack_flag == QUIC_SACK_FLAG_APP) {
+	if (inq->sack_flag == QUIC_SACK_FLAG_APP && space->sack_pending) {
 		space->need_sack = 1; /* Request APP-level ACK. */
 		space->sack_path = 0; /* Send ACK on active path. */
+		space->sack_pending = 0;
 	}
 
 	quic_outq_transmit(sk); /* Transmit queued frames, including ACKs. */

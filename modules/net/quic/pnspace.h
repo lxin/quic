@@ -66,6 +66,7 @@ struct quic_pnspace {
 	u16 pn_map_len;        /* Length of the PN bit map (in bits) */
 	u8  need_sack;         /* Flag indicating a SACK frame should be sent */
 	u8  sack_path;         /* Path used for sending the SACK frame */
+	u8  sack_pending;      /* Delayed ACK pending */
 
 	s64 last_max_pn_seen; /* Largest PN seen before pn_map advance */
 	u64 last_max_pn_time; /* Timestamp last_max_pn_seen was received */

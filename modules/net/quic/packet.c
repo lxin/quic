@@ -1817,9 +1817,11 @@ static int quic_packet_app_process_done(struct sock *sk, struct sk_buff *skb)
 	if (!packet->ack_eliciting)
 		goto out; /* No ACK-eliciting frame: skip ACK. */
 
-	if (packet->ack_immediate || cb->number < space->max_pn_seen) {
+	if (packet->ack_immediate || cb->number < space->max_pn_seen ||
+	    cb->path) {
 		space->need_sack = 1; /* ACK needed for this packet space. */
 		space->sack_path = cb->path; /* ACK on same path as packet. */
+		space->sack_pending = 0;
 		goto out;
 	}
 
@@ -1829,6 +1831,7 @@ static int quic_packet_app_process_done(struct sock *sk, struct sk_buff *skb)
 	if (inq->sack_flag == QUIC_SACK_FLAG_NONE)
 		quic_timer_reset(sk, QUIC_TIMER_SACK, inq->max_ack_delay);
 	inq->sack_flag = QUIC_SACK_FLAG_APP;
+	space->sack_pending = 1;
 
 out:
 	if (quic_is_established(sk)) {
