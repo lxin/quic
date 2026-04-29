@@ -233,9 +233,11 @@ static bool quic_outq_delay_check(struct sock *sk, u8 level, bool nodelay)
 /* Sends stream data frames. */
 static void quic_outq_transmit_stream(struct sock *sk)
 {
+	struct quic_pnspace *space = quic_pnspace(sk, QUIC_CRYPTO_APP);
 	struct quic_outqueue *outq = quic_outq(sk);
 	struct quic_frame *frame, *next;
 	struct list_head *head;
+	bool sent = false;
 
 	/* Although frame->level is always App, stream data may need to be sent
 	 * at App or Early level depending on key availability. Use
@@ -253,11 +255,20 @@ static void quic_outq_transmit_stream(struct sock *sk)
 		if (quic_outq_delay_check(sk, outq->data_level, frame->nodelay))
 			break;
 		if (quic_packet_tail(sk, frame)) {
+			sent = true;
 			outq->stream_list_len -= frame->len;
 			continue;
 		}
 		outq->count += quic_packet_create_and_xmit(sk);
 		next = frame;
+	}
+
+	/* Bundle an ACK frame if there is a pending delayed ACK. */
+	if (sent && space->sack_pending) {
+		space->need_sack = 1;
+		space->sack_path = 0;
+		space->sack_pending = 0;
+		quic_outq_transmit_ctrl(sk, QUIC_CRYPTO_APP);
 	}
 }
 
