@@ -876,7 +876,7 @@ quic_frame_data_blocked_create(struct sock *sk, void *data, u8 type)
 	p = quic_put_var(p, outq->max_bytes);
 	frame_len = (u32)(p - buf);
 
-	frame = quic_frame_alloc(frame_len, NULL, GFP_KERNEL);
+	frame = quic_frame_alloc(frame_len, NULL, GFP_ATOMIC);
 	if (!frame)
 		return ERR_PTR(-ENOMEM);
 	quic_put_data(frame->data, buf, frame_len);
@@ -909,7 +909,7 @@ quic_frame_stream_data_blocked_create(struct sock *sk, void *data, u8 type)
 	p = quic_put_var(p, stream->send.max_bytes);
 	frame_len = (u32)(p - buf);
 
-	frame = quic_frame_alloc(frame_len, NULL, GFP_KERNEL);
+	frame = quic_frame_alloc(frame_len, NULL, GFP_ATOMIC);
 	if (!frame)
 		return ERR_PTR(-ENOMEM);
 	quic_put_data(frame->data, buf, frame_len);
@@ -944,7 +944,7 @@ quic_frame_streams_blocked_uni_create(struct sock *sk, void *data, u8 type)
 	p = quic_put_var(p, quic_stream_id_to_streams(*max));
 	frame_len = (u32)(p - buf);
 
-	frame = quic_frame_alloc(frame_len, NULL, GFP_KERNEL);
+	frame = quic_frame_alloc(frame_len, NULL, GFP_ATOMIC);
 	if (!frame)
 		return ERR_PTR(-ENOMEM);
 	quic_put_data(frame->data, buf, frame_len);
@@ -967,7 +967,7 @@ quic_frame_streams_blocked_bidi_create(struct sock *sk, void *data, u8 type)
 	p = quic_put_var(p, quic_stream_id_to_streams(*max));
 	frame_len = (u32)(p - buf);
 
-	frame = quic_frame_alloc(frame_len, NULL, GFP_KERNEL);
+	frame = quic_frame_alloc(frame_len, NULL, GFP_ATOMIC);
 	if (!frame)
 		return ERR_PTR(-ENOMEM);
 	quic_put_data(frame->data, buf, frame_len);
