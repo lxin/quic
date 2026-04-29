@@ -115,6 +115,19 @@ perf_tests()
 	daemon_stop "perf_test"
 }
 
+rr_tests()
+{
+	print_start "Performance RR Tests (IPv4)"
+	daemon_run ./perf_test -l --pkey ./keys/server-key.pem --cert ./keys/server-cert.pem -d 1
+	./perf_test --addr 127.0.0.1 -d 1|| return 1
+	daemon_stop "perf_test"
+
+	print_start "Performance RR Tests (IPv6)"
+	daemon_run ./perf_test -l --pkey ./keys/server-key.pem --cert ./keys/server-cert.pem -d 1
+	./perf_test --addr ::1 -d 1|| return 1
+	daemon_stop "perf_test"
+}
+
 netem_tests()
 {
 	modprobe -q sch_netem || return 0
@@ -291,10 +304,10 @@ sample_tests()
 
 }
 
-TESTS="func perf netem http3 tlshd alpn ticket sample"
+TESTS="func perf rr netem http3 tlshd alpn ticket sample"
 trap cleanup EXIT
 
-[ "$1" = "" ] || TESTS=$1
+[ "$1" = "" ] || TESTS=$@
 
 start_tests || exit $?
 
