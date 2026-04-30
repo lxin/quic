@@ -1544,6 +1544,9 @@ static int quic_frame_stop_sending_process(struct sock *sk,
 		goto out;
 	}
 
+	if (stream->send.state >= QUIC_STREAM_SEND_STATE_RESET_SENT)
+		goto out;
+
 	/* rfc9000#section-3.1:
 	 *
 	 * Alternatively, an endpoint might receive a STOP_SENDING frame from
