@@ -53,6 +53,7 @@ struct quic_cong {
 	u32 pto;		/* Probe timeout */
 
 	/* Timing & pacing */
+	u64 pc_start_time;      /* Persistent congestion tracking timestamp */
 	u64 recovery_time;	/* Recovery period start timestamp */
 	u64 pacing_rate;	/* Packet sending speed Bytes/sec */
 	u64 pacing_time;	/* Next scheduled send timestamp (ns) */

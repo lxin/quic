@@ -40,8 +40,6 @@ struct quic_packet_sent {
 	u64 sent_time;         /* Timestamp when packet was sent */
 	s64 number;            /* Packet number */
 	u8  level;             /* Packet number space */
-
-	u8  next_acked:1;      /* Next packet acked */
 	u8  ecn:2;             /* ECN bits */
 
 	u16 frame_len; /* Combined length of all frames held */

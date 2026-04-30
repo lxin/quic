@@ -716,7 +716,6 @@ void quic_outq_transmitted_sack(struct sock *sk, u8 level, s64 largest,
 	struct quic_outqueue *outq = quic_outq(sk);
 	struct quic_cong *cong = quic_cong(sk);
 	struct quic_packet_sent *sent, *next;
-	struct list_head *head;
 	u32 acked = 0;
 
 	quic_outq_path_confirm(sk, level, largest, smallest);
@@ -726,8 +725,8 @@ void quic_outq_transmitted_sack(struct sock *sk, u8 level, s64 largest,
 	/* Iterate backwards over sent packets to efficiently process newly
 	 * ACKed packets.
 	 */
-	head = &outq->packet_sent_list;
-	list_for_each_entry_safe_reverse(sent, next, head, list) {
+	list_for_each_entry_safe_reverse(sent, next, &outq->packet_sent_list,
+					 list) {
 		if (level != sent->level)
 			continue;
 		if (sent->number > largest)
@@ -747,10 +746,6 @@ void quic_outq_transmitted_sack(struct sock *sk, u8 level, s64 largest,
 			quic_set_sk_ecn(sk, INET_ECN_ECT_0);
 			quic_pnspace_inc_ecn_acked(space, sent->ecn);
 		}
-
-		/* Reverse traversal; Mark its next packet acked in list. */
-		if (!list_entry_is_head(next, head, list))
-			next->next_acked = 1;
 
 		outq->inflight -= sent->frame_len;
 		space->inflight -= sent->frame_len;
@@ -1014,7 +1009,6 @@ void quic_outq_retransmit_mark(struct sock *sk, u8 level, bool immediate)
 	struct quic_packet_sent *sent, *next;
 	s64 max = space->max_pn_acked_seen;
 	u64 delay = cong->loss_delay;
-	u64 pc_start = 0, duration;
 
 	space->loss_time = 0;
 	cong->time = quic_ktime_get_us();
@@ -1048,40 +1042,13 @@ void quic_outq_retransmit_mark(struct sock *sk, u8 level, bool immediate)
 			break;
 		}
 
-		/* 7.6.2. Establishing Persistent Congestion:
-		 *
-		 * A sender establishes persistent congestion after the receipt
-		 * of an acknowledgment if two packets that are ack-eliciting
-		 * are declared lost, and:
-
-		 * - across all packet number spaces, none of the packets sent
-		 *   between the send times of these two packets are
-		 *   acknowledged;
-		 *
-		 * - the duration between the send times of these two packets
-		 *   exceeds the persistent congestion duration (Section 7.6.1);
-		 *
-		 * - and a prior RTT sample existed when these two packets were
-		 *   sent.
-		 */
-		if (!pc_start) {
-			duration = 0;
-			if (!sent->next_acked && cong->is_rtt_set)
-				pc_start = sent->sent_time;
-		} else { /* Measure time span between candidate loss points. */
-			duration = sent->sent_time - pc_start;
-			/* Any acked packet in between breaks the condition. */
-			if (sent->next_acked)
-				pc_start = 0;
-		}
-
 		outq->inflight -= sent->frame_len;
 		space->inflight -= sent->frame_len;
 		/* Move frames from the lost packet back to the send queue. */
 		quic_outq_psent_retransmit_frames(sk, sent);
 
 		/* Call cong.on_packet_lost() and sync send window. */
-		quic_cong_on_packet_lost(cong, duration, sent->frame_len,
+		quic_cong_on_packet_lost(cong, sent->sent_time, sent->frame_len,
 					 sent->number);
 		quic_outq_sync_window(sk, cong->window);
 

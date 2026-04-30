@@ -264,39 +264,9 @@ static void cubic_recovery(struct quic_cong *cong)
 	cong->window = cong->ssthresh;
 }
 
-static bool quic_cong_check_persistent_congestion(struct quic_cong *cong,
-						  u64 time)
-{
-	u32 ssthresh;
-
-	if (!time)
-		return false;
-
-	/* rfc9002#section-7.6.1:
-	 *   (smoothed_rtt + max(4*rttvar, kGranularity) + max_ack_delay) *
-	 *      kPersistentCongestionThreshold
-	 */
-	ssthresh = cong->smoothed_rtt +
-		   max(4 * cong->rttvar, QUIC_KGRANULARITY);
-	ssthresh = (ssthresh + cong->max_ack_delay) *
-		   QUIC_KPERSISTENT_CONGESTION_THRESHOLD;
-	if (time <= ssthresh)
-		return false;
-
-	pr_debug("%s: persistent congestion, cwnd: %u, ssth: %u\n",
-		 __func__, cong->window, cong->ssthresh);
-	cong->min_rtt_valid = 0;
-	cong->window = cong->min_window;
-	cong->state = QUIC_CONG_SLOW_START;
-	return true;
-}
-
 static void quic_cubic_on_packet_lost(struct quic_cong *cong, u64 time,
 				      u32 bytes, s64 number)
 {
-	if (quic_cong_check_persistent_congestion(cong, time))
-		return;
-
 	switch (cong->state) {
 	case QUIC_CONG_SLOW_START:
 		pr_debug("%s: slow_start -> recovery, cwnd: %u, ssthresh: %u\n",
@@ -464,9 +434,6 @@ static void quic_reno_handle_packet_lost(struct quic_cong *cong)
 static void quic_reno_on_packet_lost(struct quic_cong *cong, u64 time,
 				     u32 bytes, s64 number)
 {
-	if (quic_cong_check_persistent_congestion(cong, time))
-		return;
-
 	quic_reno_handle_packet_lost(cong);
 }
 
@@ -529,10 +496,41 @@ static struct quic_cong_ops quic_congs[] = {
 	},
 };
 
+static bool quic_cong_check_persistent_congestion(struct quic_cong *cong,
+						  u64 time)
+{
+	u32 ssthresh;
+
+	time -= cong->pc_start_time;
+
+	/* rfc9002#section-7.6.1:
+	 *   (smoothed_rtt + max(4*rttvar, kGranularity) + max_ack_delay) *
+	 *      kPersistentCongestionThreshold
+	 */
+	ssthresh = cong->smoothed_rtt +
+		   max(4 * cong->rttvar, QUIC_KGRANULARITY);
+	ssthresh = (ssthresh + cong->max_ack_delay) *
+		   QUIC_KPERSISTENT_CONGESTION_THRESHOLD;
+
+	return time > ssthresh;
+}
+
 /* COMMON APIs */
 void quic_cong_on_packet_lost(struct quic_cong *cong, u64 time, u32 bytes,
 			      s64 number)
 {
+	if (cong->pc_start_time && time > cong->pc_start_time &&
+	    quic_cong_check_persistent_congestion(cong, time)) {
+		cong->pc_start_time = 0;
+		cong->min_rtt_valid = 0;
+		cong->window = cong->min_window;
+		cong->state = QUIC_CONG_SLOW_START;
+		return;
+	}
+
+	if (!cong->pc_start_time && cong->is_rtt_set)
+		cong->pc_start_time = time;
+
 	cong->ops->on_packet_lost(cong, time, bytes, number);
 }
 EXPORT_SYMBOL_GPL(quic_cong_on_packet_lost);
@@ -540,6 +538,21 @@ EXPORT_SYMBOL_GPL(quic_cong_on_packet_lost);
 void quic_cong_on_packet_acked(struct quic_cong *cong, u64 time, u32 bytes,
 			       s64 number)
 {
+	/* When a packet is acked, if time - cong->pc_start_time <= duration
+	 * threshold, it means the acked packet was sent within the persistent
+	 * congestion window.
+	 *
+	 * This breaks the condition in rfc9002#section-7.6.2:
+	 *
+	 * - across all packet number spaces, none of the packets sent between
+	 *   the send times of these two packets are acknowledged;
+	 *
+	 * so pc_start_time is reset to 0.
+	 */
+	if (cong->pc_start_time && time > cong->pc_start_time &&
+	    !quic_cong_check_persistent_congestion(cong, time))
+		cong->pc_start_time = 0;
+
 	cong->ops->on_packet_acked(cong, time, bytes, number);
 }
 EXPORT_SYMBOL_GPL(quic_cong_on_packet_acked);

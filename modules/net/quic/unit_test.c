@@ -759,7 +759,8 @@ static void quic_cong_test2(struct kunit *test)
 	KUNIT_EXPECT_EQ(test, cong.window, 262144);
 
 	/* slow_start -> recovery: go to recovery after one loss */
-	time = 300000;
+	time = cong.time;
+	cong.pc_start_time = time - 300000;
 	bytes = 1400;
 	quic_cong_on_packet_lost(&cong, time, bytes, 0);
 	KUNIT_EXPECT_EQ(test, cong.state, QUIC_CONG_RECOVERY_PERIOD);
@@ -767,7 +768,8 @@ static void quic_cong_test2(struct kunit *test)
 	KUNIT_EXPECT_EQ(test, cong.window, 131072);
 
 	/* recovery: no cwnd update after more loss */
-	time = 300000;
+	time = cong.time;
+	cong.pc_start_time = time - 300000;
 	bytes = 1400;
 	quic_cong_on_packet_lost(&cong, time, bytes, 0);
 	KUNIT_EXPECT_EQ(test, cong.state, QUIC_CONG_RECOVERY_PERIOD);
@@ -796,7 +798,8 @@ static void quic_cong_test2(struct kunit *test)
 	KUNIT_EXPECT_EQ(test, cong.window, 131100);
 
 	/* cong_avoid -> recovery: go back to recovery after one loss */
-	time = 300000;
+	time = cong.time;
+	cong.pc_start_time = time - 300000;
 	bytes = 1400;
 	quic_cong_on_packet_lost(&cong, time, bytes, 0);
 	KUNIT_EXPECT_EQ(test, cong.state, QUIC_CONG_RECOVERY_PERIOD);
@@ -811,7 +814,8 @@ static void quic_cong_test2(struct kunit *test)
 	KUNIT_EXPECT_EQ(test, cong.window, 65550);
 
 	/* recovery -> slow_start: if in persistent congestion */
-	time = 5000000;
+	time = cong.time;
+	cong.pc_start_time = time - 5000000;
 	bytes = 1400;
 	quic_cong_on_packet_lost(&cong, time, bytes, 0);
 	KUNIT_EXPECT_EQ(test, cong.state, QUIC_CONG_SLOW_START);
@@ -843,7 +847,8 @@ static void quic_cong_test2(struct kunit *test)
 	KUNIT_EXPECT_EQ(test, cong.state, QUIC_CONG_CONGESTION_AVOIDANCE);
 
 	/* cong_avoid -> slow_start: if in persistent congestion */
-	time = 5000000;
+	time = cong.time;
+	cong.pc_start_time = time - 5000000;
 	bytes = 1400;
 	quic_cong_on_packet_lost(&cong, time, bytes, 0);
 	KUNIT_EXPECT_EQ(test, cong.state, QUIC_CONG_SLOW_START);
@@ -912,7 +917,8 @@ static void quic_cong_test3(struct kunit *test)
 	KUNIT_EXPECT_EQ(test, cong.window, 106496);
 
 	/* slow_start -> recovery: go to recovery after one loss */
-	time = 300000;
+	time = cong.time;
+	cong.pc_start_time = time - 300000;
 	bytes = 1400;
 	quic_cong_on_packet_lost(&cong, time, bytes, 0);
 	KUNIT_EXPECT_EQ(test, cong.state, QUIC_CONG_RECOVERY_PERIOD);
@@ -920,7 +926,8 @@ static void quic_cong_test3(struct kunit *test)
 	KUNIT_EXPECT_EQ(test, cong.window, 74547);
 
 	/* recovery: no cwnd update after more loss */
-	time = 300000;
+	time = cong.time;
+	cong.pc_start_time = time - 300000;
 	bytes = 1400;
 	quic_cong_on_packet_lost(&cong, time, bytes, 0);
 	KUNIT_EXPECT_EQ(test, cong.state, QUIC_CONG_RECOVERY_PERIOD);
@@ -955,7 +962,8 @@ static void quic_cong_test3(struct kunit *test)
 	KUNIT_EXPECT_EQ(test, cong.window, 82313);
 
 	/* cong_avoid -> recovery: go back to recovery after one loss */
-	time = 300000;
+	time = cong.time;
+	cong.pc_start_time = time - 300000;
 	bytes = 1400;
 	quic_cong_on_packet_lost(&cong, time, bytes, 0);
 	KUNIT_EXPECT_EQ(test, cong.state, QUIC_CONG_RECOVERY_PERIOD);
@@ -970,7 +978,8 @@ static void quic_cong_test3(struct kunit *test)
 	KUNIT_EXPECT_EQ(test, cong.window, 57619);
 
 	/* recovery -> slow_start: if in persistent congestion */
-	time = 5000000;
+	time = cong.time;
+	cong.pc_start_time = time - 5000000;
 	bytes = 1400;
 	quic_cong_on_packet_lost(&cong, time, bytes, 0);
 	KUNIT_EXPECT_EQ(test, cong.state, QUIC_CONG_SLOW_START);
