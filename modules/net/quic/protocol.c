@@ -286,13 +286,13 @@ static int quic_conns_seq_show(struct seq_file *seq, void *v)
 	quic_seq_dump_addr(seq, quic_path_uaddr(paths, 0));
 
 	outq = quic_outq(sk);
-	seq_printf(seq, "%d\t%d\t%d\t%d\t%d\t%d\t%d\t", outq->window,
+	seq_printf(seq, "%u\t%u\t%u\t%u\t%u\t%u\t%u\t", outq->window,
 		   quic_packet_mss(quic_packet(sk)), outq->inflight,
 		   READ_ONCE(sk->sk_wmem_queued), sk_rmem_alloc_get(sk),
 		   sk->sk_sndbuf, sk->sk_rcvbuf);
 
 	uid = from_kuid_munged(seq_user_ns(seq), sock_net_uid(net, sk));
-	seq_printf(seq, "%u\t%lu\n", uid, sock_i_ino(sk));
+	seq_printf(seq, "%u\t%llu\n", uid, (u64)sock_i_ino(sk));
 
 	return 0;
 }
@@ -344,7 +344,7 @@ static int quic_eps_seq_show(struct seq_file *seq, void *v)
 	quic_seq_dump_addr(seq, quic_path_uaddr(paths, 0));
 
 	uid = from_kuid_munged(seq_user_ns(seq), sock_net_uid(net, sk));
-	seq_printf(seq, "%u\t%lu\n", uid, sock_i_ino(sk));
+	seq_printf(seq, "%u\t%llu\n", uid, (u64)sock_i_ino(sk));
 
 	return 0;
 }
