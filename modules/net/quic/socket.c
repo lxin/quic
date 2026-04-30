@@ -1055,6 +1055,10 @@ static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 			err = -ENETUNREACH;
 			goto err;
 		}
+		if (!msg_len) {
+			err = -EMSGSIZE;
+			goto err;
+		}
 
 		/* Prepare the message info used by the frame creator. */
 		msginfo.level = hinfo.crypto_level;
@@ -1122,11 +1126,11 @@ static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 			err = -EINVAL;
 			goto err;
 		}
-		len = iov_iter_count(&msg->msg_iter);
-		if (len > sk->sk_sndbuf) {
+		if (!msg_len || msg_len > sk->sk_sndbuf) {
 			err = -EMSGSIZE;
 			goto err;
 		}
+		len = msg_len;
 		if (sk_stream_wspace(sk) < len || !sk_wmem_schedule(sk, len)) {
 			err = quic_wait_for_send(sk, flags, len);
 			if (err)
@@ -1158,9 +1162,9 @@ static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 	msginfo.flags = sinfo.stream_flags;
 	flags |= sinfo.stream_flags;
 
-	if (!iov_iter_count(msginfo.msg)) { /* Allow stream FIN without data. */
+	if (!msg_len) { /* Allow stream FIN without data. */
 		if (!(flags & MSG_QUIC_STREAM_FIN)) {
-			err = -EINVAL;
+			err = -EMSGSIZE;
 			goto err;
 		}
 		len = 0;
