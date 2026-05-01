@@ -2028,7 +2028,7 @@ static struct quic_frame *quic_frame_datagram_create(struct sock *sk,
 	if (msg_len > max_frame_len - hlen)
 		return ERR_PTR(-EMSGSIZE);
 
-	frame = quic_frame_alloc(msg_len + hlen, NULL, GFP_ATOMIC);
+	frame = quic_frame_alloc(msg_len + hlen, NULL, GFP_KERNEL);
 	if (!frame)
 		return ERR_PTR(-ENOMEM);
 
