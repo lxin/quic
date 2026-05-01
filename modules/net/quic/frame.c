@@ -1514,7 +1514,6 @@ static int quic_frame_stop_sending_process(struct sock *sk,
 					   struct quic_frame *frame, u8 type)
 {
 	struct quic_stream_table *streams = quic_streams(sk);
-	struct quic_outqueue *outq = quic_outq(sk);
 	struct quic_stream_update update = {};
 	struct quic_stream *stream;
 	struct quic_errinfo info;
@@ -1569,8 +1568,6 @@ static int quic_frame_stop_sending_process(struct sock *sk,
 			    sizeof(update));
 
 	stream->send.state = update.state;
-	quic_outq_list_purge(sk, &outq->transmitted_list, stream);
-	quic_outq_list_purge(sk, &outq->stream_list, stream);
 out:
 	return (int)(frame->len - len);
 }
@@ -2128,6 +2125,7 @@ static void quic_frame_reset_stream_ack(struct sock *sk,
 {
 	struct quic_stream_table *streams = quic_streams(sk);
 	struct quic_stream *stream = frame->stream;
+	struct quic_outqueue *outq = quic_outq(sk);
 	struct quic_stream_update update = {};
 
 	/* Notify that stream has been reset. */
@@ -2146,6 +2144,9 @@ static void quic_frame_reset_stream_ack(struct sock *sk,
 	 */
 	stream->send.state = update.state;
 	/* Release the send stream. */
+	quic_outq_list_purge(sk, &outq->transmitted_list, stream);
+	quic_outq_list_purge(sk, &outq->control_list, stream);
+	quic_outq_list_purge(sk, &outq->stream_list, stream);
 	quic_stream_put(streams, stream, quic_is_serv(sk), true);
 	/* Wake up processes blocked while attempting to open a stream. */
 	sk->sk_write_space(sk);
@@ -2171,6 +2172,7 @@ static void quic_frame_stream_ack(struct sock *sk, struct quic_frame *frame)
 {
 	struct quic_stream_table *streams = quic_streams(sk);
 	struct quic_stream *stream = frame->stream;
+	struct quic_outqueue *outq = quic_outq(sk);
 	struct quic_stream_update update = {};
 
 	stream->send.frags--;
@@ -2192,6 +2194,9 @@ static void quic_frame_stream_ack(struct sock *sk, struct quic_frame *frame)
 	 */
 	stream->send.state = update.state;
 	/* Release the send stream. */
+	quic_outq_list_purge(sk, &outq->transmitted_list, stream);
+	quic_outq_list_purge(sk, &outq->control_list, stream);
+	quic_outq_list_purge(sk, &outq->stream_list, stream);
 	quic_stream_put(streams, stream, quic_is_serv(sk), true);
 	/* Wake up processes blocked while attempting to open a stream. */
 	sk->sk_write_space(sk);
@@ -2404,9 +2409,6 @@ bool quic_frame_ack_eliciting(u8 type)
 void quic_frame_ack(struct sock *sk, struct quic_frame *frame)
 {
 	quic_frame_ops[frame->type].frame_ack(sk, frame);
-
-	list_del_init(&frame->list);
-	frame->transmitted = 0;
 	quic_frame_put(frame);
 }
 

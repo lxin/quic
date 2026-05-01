@@ -658,6 +658,8 @@ static void quic_outq_psent_sack_frames(struct sock *sk,
 
 		acked += frame->bytes;
 		/* Remove from send/transmitted list and release reference. */
+		list_del_init(&frame->list);
+		frame->transmitted = 0;
 		quic_frame_ack(sk, frame);
 	}
 	quic_outq_wfree(acked, sk);

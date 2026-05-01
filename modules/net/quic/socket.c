@@ -1706,7 +1706,6 @@ static int quic_sock_set_event(struct sock *sk, void *kopt, u32 len)
 static int quic_sock_stream_reset(struct sock *sk, void *kopt, u32 len)
 {
 	struct quic_stream_table *streams = quic_streams(sk);
-	struct quic_outqueue *outq = quic_outq(sk);
 	struct quic_errinfo info = {};
 	struct quic_stream *stream;
 	struct quic_frame *frame;
@@ -1736,8 +1735,6 @@ static int quic_sock_stream_reset(struct sock *sk, void *kopt, u32 len)
 		return PTR_ERR(frame);
 
 	stream->send.state = QUIC_STREAM_SEND_STATE_RESET_SENT;
-	quic_outq_list_purge(sk, &outq->transmitted_list, stream);
-	quic_outq_list_purge(sk, &outq->stream_list, stream);
 	quic_outq_ctrl_tail(sk, frame, false);
 	return 0;
 }
@@ -1745,7 +1742,6 @@ static int quic_sock_stream_reset(struct sock *sk, void *kopt, u32 len)
 static int quic_sock_stream_stop_sending(struct sock *sk, void *kopt, u32 len)
 {
 	struct quic_stream_table *streams = quic_streams(sk);
-	struct quic_inqueue *inq = quic_inq(sk);
 	struct quic_errinfo info = {};
 	struct quic_stream *stream;
 
@@ -1773,9 +1769,6 @@ static int quic_sock_stream_stop_sending(struct sock *sk, void *kopt, u32 len)
 	/* Defer sending; a STOP_SENDING frame is already in flight. */
 	if (stream->recv.stop_sent)
 		return -EAGAIN;
-
-	quic_inq_list_purge(sk, &inq->stream_list, stream);
-	quic_inq_list_purge(sk, &inq->recv_list, stream);
 
 	return quic_outq_transmit_frame(sk, QUIC_FRAME_STOP_SENDING, &info, 0,
 					false);
