@@ -2940,17 +2940,42 @@ static int quic_frame_get_address(union quic_addr *addr,
 	return 0;
 }
 
+enum {
+	QUIC_TRANSPORT_PARAM_IDX_MAX_DATAGRAM_FRAME_SIZE =
+					QUIC_TRANSPORT_PARAM_MAX + 1,
+	QUIC_TRANSPORT_PARAM_IDX_GREASE_QUIC_BIT,
+	QUIC_TRANSPORT_PARAM_IDX_DISABLE_1RTT_ENCRYPTION,
+	QUIC_TRANSPORT_PARAM_IDX_MAX,
+};
+
+static u32 quic_frame_param_idx(u32 param)
+{
+	if (param <= QUIC_TRANSPORT_PARAM_MAX)
+		return param;
+
+	if (param == QUIC_TRANSPORT_PARAM_MAX_DATAGRAM_FRAME_SIZE)
+		return QUIC_TRANSPORT_PARAM_IDX_MAX_DATAGRAM_FRAME_SIZE;
+	if (param == QUIC_TRANSPORT_PARAM_GREASE_QUIC_BIT)
+		return QUIC_TRANSPORT_PARAM_IDX_GREASE_QUIC_BIT;
+	if (param == QUIC_TRANSPORT_PARAM_DISABLE_1RTT_ENCRYPTION)
+		return QUIC_TRANSPORT_PARAM_IDX_DISABLE_1RTT_ENCRYPTION;
+
+	return QUIC_TRANSPORT_PARAM_IDX_MAX;
+}
+
 /* Parse full encoded transport parameters extension for QUIC connection. */
 int quic_frame_parse_transport_params_ext(struct sock *sk,
 					  struct quic_transport_param *params,
 					  u8 *data, u32 len)
 {
 	u8 *p = data, count = 1, token[QUIC_CONN_ID_TOKEN_LEN];
+	u8 param_seen[QUIC_TRANSPORT_PARAM_IDX_MAX] = {};
 	struct quic_conn_id_set *id_set = quic_dest(sk);
 	struct quic_path_group *paths = quic_paths(sk);
 	struct quic_packet *packet = quic_packet(sk);
+	u32 idx, versions[QUIC_MAX_VERSIONS] = {};
 	struct quic_conn_id *active, conn_id;
-	u32 versions[QUIC_MAX_VERSIONS] = {};
+	bool is_serv = quic_is_serv(sk);
 	u64 type, value, valuelen;
 	union quic_addr addr;
 	int err;
@@ -2967,9 +2992,23 @@ int quic_frame_parse_transport_params_ext(struct sock *sk,
 		if (!quic_get_var(&p, &len, &type))
 			return -EINVAL;
 
+		/* rfc9000#section-7.4:
+		 *
+		 * An endpoint MUST NOT send a parameter more than once in a
+		 * given transport parameters extension. An endpoint SHOULD
+		 * treat receipt of duplicate transport parameters as a
+		 * connection error of type TRANSPORT_PARAMETER_ERROR.
+		 */
+		idx = quic_frame_param_idx(type);
+		if (idx != QUIC_TRANSPORT_PARAM_IDX_MAX) {
+			if (param_seen[idx])
+				return -EINVAL;
+			param_seen[idx] = 1;
+		}
+
 		switch (type) {
 		case QUIC_TRANSPORT_PARAM_ORIGINAL_DESTINATION_CONNECTION_ID:
-			if (quic_is_serv(sk))
+			if (is_serv)
 				return -EINVAL;
 			err = quic_frame_get_conn_id(&conn_id, &p, &len);
 			if (err)
@@ -2981,7 +3020,7 @@ int quic_frame_parse_transport_params_ext(struct sock *sk,
 				return -EINVAL;
 			break;
 		case QUIC_TRANSPORT_PARAM_RETRY_SOURCE_CONNECTION_ID:
-			if (quic_is_serv(sk) || !paths->retry)
+			if (is_serv || !paths->retry)
 				return -EINVAL;
 			err = quic_frame_get_conn_id(&conn_id, &p, &len);
 			if (err)
@@ -3075,7 +3114,7 @@ int quic_frame_parse_transport_params_ext(struct sock *sk,
 			if (!quic_get_var(&p, &len, &valuelen) ||
 			    (u64)len < valuelen)
 				return -EINVAL;
-			if (!quic_is_serv(sk) && valuelen)
+			if (!is_serv && valuelen)
 				return -EINVAL;
 			params->disable_1rtt_encryption = 1;
 			len -= valuelen;
@@ -3116,7 +3155,7 @@ int quic_frame_parse_transport_params_ext(struct sock *sk,
 			params->max_datagram_frame_size = value;
 			break;
 		case QUIC_TRANSPORT_PARAM_STATELESS_RESET_TOKEN:
-			if (quic_is_serv(sk))
+			if (is_serv)
 				return -EINVAL;
 			if (!quic_get_var(&p, &len, &valuelen) ||
 			    (u64)len < valuelen ||
@@ -3143,7 +3182,7 @@ int quic_frame_parse_transport_params_ext(struct sock *sk,
 				return -EINVAL;
 			break;
 		case QUIC_TRANSPORT_PARAM_PREFERRED_ADDRESS:
-			if (quic_is_serv(sk))
+			if (is_serv)
 				return -EINVAL;
 			err = quic_frame_get_address(&addr, &conn_id, token, &p,
 						     &len, sk);
@@ -3171,6 +3210,23 @@ int quic_frame_parse_transport_params_ext(struct sock *sk,
 			p += valuelen;
 			break;
 		}
+	}
+
+	/* rfc9000#section-7.3:
+	 *
+	 * An endpoint MUST treat the absence of the
+	 * initial_source_connection_id transport parameter from either
+	 * endpoint or the absence of the original_destination_connection_id
+	 * transport parameter from the server as a connection error of type
+	 * TRANSPORT_PARAMETER_ERROR.
+	 */
+	type = QUIC_TRANSPORT_PARAM_INITIAL_SOURCE_CONNECTION_ID;
+	if (!param_seen[quic_frame_param_idx(type)])
+		return -EINVAL;
+	if (!is_serv) {
+		type = QUIC_TRANSPORT_PARAM_ORIGINAL_DESTINATION_CONNECTION_ID;
+		if (!param_seen[quic_frame_param_idx(type)])
+			return -EINVAL;
 	}
 
 	return quic_packet_select_version(sk, versions, count);
