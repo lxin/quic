@@ -25,6 +25,11 @@
 #define QUIC_PN_BITS		62
 #define QUIC_PN_MAX		(BIT_ULL(QUIC_PN_BITS) - 1)
 
+#define QUIC_VARINT_1BYTE_MAX		0x3fULL
+#define QUIC_VARINT_2BYTE_MAX		0x3fffULL
+#define QUIC_VARINT_4BYTE_MAX		0x3fffffffULL
+#define QUIC_VARINT_8BYTE_MAX		0x3fffffffffffffffULL
+
 struct quic_conn_id {
 	u8 data[QUIC_CONN_ID_MAX_LEN];
 	u8 len;

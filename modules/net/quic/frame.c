@@ -987,6 +987,17 @@ static int quic_frame_crypto_process(struct sock *sk, struct quic_frame *frame,
 		return -EINVAL;
 	if (!quic_get_var(&p, &len, &length) || length > len)
 		return -EINVAL;
+	/* rfc9000#section-19.6:
+	 *
+	 * The largest offset delivered on a stream -- the sum of the offset
+	 * and data length -- cannot exceed 26^2-1. Receipt of a frame that
+	 * exceeds this limit MUST be treated as a connection error of type
+	 * FRAME_ENCODING_ERROR or CRYPTO_BUFFER_EXCEEDED.
+	 */
+	if (offset + length > QUIC_VARINT_8BYTE_MAX) {
+		frame->errcode = QUIC_TRANSPORT_ERROR_FRAME_ENCODING;
+		return -EINVAL;
+	}
 
 	/* Allocate a new frame for the crypto payload. Avoid copying: reuse
 	 * the existing buffer by pointing to 'p' and holding the skb.
@@ -1047,6 +1058,18 @@ static int quic_frame_stream_process(struct sock *sk, struct quic_frame *frame,
 	if (type & QUIC_STREAM_BIT_LEN) {
 		if (!quic_get_var(&p, &len, &payload_len) || payload_len > len)
 			return -EINVAL;
+	}
+	/* rfc9000#section-19.8:
+	 *
+	 * The largest offset delivered on a stream -- the sum of the offset
+	 * and data length -- cannot exceed 26^2-1, as it is not possible to
+	 * provide flow control credit for that data. Receipt of a frame that
+	 * exceeds this limit MUST be treated as a connection error of type
+	 * FRAME_ENCODING_ERROR or FLOW_CONTROL_ERROR.
+	 */
+	if (offset + payload_len > QUIC_VARINT_8BYTE_MAX) {
+		frame->errcode = QUIC_TRANSPORT_ERROR_FRAME_ENCODING;
+		return -EINVAL;
 	}
 
 	/* Look up the stream for receiving data (may create it if valid). */
@@ -1117,7 +1140,7 @@ static int quic_frame_ack_process(struct sock *sk, struct quic_frame *frame,
 	if (!quic_get_var(&p, &len, &largest) ||
 	    !quic_get_var(&p, &len, &delay) ||
 	    !quic_get_var(&p, &len, &count) || count > QUIC_PN_MAP_MAX_GABS ||
-	    !quic_get_var(&p, &len, &range) || range > largest)
+	    !quic_get_var(&p, &len, &range))
 		return -EINVAL;
 
 	space = quic_pnspace(sk, level);
@@ -1134,7 +1157,17 @@ static int quic_frame_ack_process(struct sock *sk, struct quic_frame *frame,
 	max_pn_acked = space->max_pn_acked_seen;
 	quic_pnspace_reset_ecn_acked(space);
 
-	/* rfc9000#section-19.3.1: smallest = largest - ack_range. */
+	/* rfc9000#section-19.3.1:
+	 *
+	 * smallest = largest - ack_range.
+	 *
+	 * If any computed packet number is negative, an endpoint MUST generate
+	 * a connection error of type FRAME_ENCODING_ERROR.
+	 */
+	if (range > largest) {
+		frame->errcode = QUIC_TRANSPORT_ERROR_FRAME_ENCODING;
+		return -EINVAL;
+	}
 	smallest = largest - range;
 	/* Calculate ACK Delay, adjusted by the ACK delay exponent. */
 	delay <<= inq->ack_delay_exponent;
@@ -1143,15 +1176,21 @@ static int quic_frame_ack_process(struct sock *sk, struct quic_frame *frame,
 				   (s64)largest, delay);
 
 	for (i = 0; i < count; i++) {
-		if (!quic_get_var(&p, &len, &gap) || gap + 2 > smallest ||
-		    !quic_get_var(&p, &len, &range) ||
-		    range > smallest - gap - 2)
+		if (!quic_get_var(&p, &len, &gap) ||
+		    !quic_get_var(&p, &len, &range))
 			return -EINVAL;
 		/* rfc9000#section-19.3.1:
 		 *
 		 * smallest = largest - ack_range;
 		 * largest = previous_smallest - gap - 2.
+		 *
+		 * If any computed packet number is negative, an endpoint MUST
+		 * generate a connection error of type FRAME_ENCODING_ERROR.
 		 */
+		if (gap + 2 > smallest || range > smallest - gap - 2) {
+			frame->errcode = QUIC_TRANSPORT_ERROR_FRAME_ENCODING;
+			return -EINVAL;
+		}
 		largest = smallest - gap - 2;
 		smallest = largest - range;
 		quic_outq_transmitted_sack(sk, level, (s64)largest,
@@ -1196,6 +1235,17 @@ static int quic_frame_new_conn_id_process(struct sock *sk,
 	u32 len = frame->len;
 	int err;
 
+	if (!quic_conn_id_active(id_set)->len) {
+		/* rfc9000#section-19.15:
+		 *
+		 * An endpoint that is sending packets with a zero-length
+		 * Destination Connection ID MUST treat receipt of a
+		 * NEW_CONNECTION_ID frame as a connection error of type
+		 * PROTOCOL_VIOLATION.
+		 */
+		frame->errcode = QUIC_TRANSPORT_ERROR_PROTOCOL_VIOLATION;
+		return -EINVAL;
+	}
 	if (!quic_get_var(&p, &len, &seqno) || seqno > U32_MAX ||
 	    !quic_get_var(&p, &len, &prior) ||
 	    !quic_get_var(&p, &len, &length) ||
@@ -1342,6 +1392,16 @@ static int quic_frame_new_token_process(struct sock *sk,
 	if (!quic_get_var(&p, &len, &length) || length > len ||
 	    length > QUIC_TOKEN_MAX_LEN)
 		return -EINVAL;
+	if (!length) {
+		/* rfc9000#section-19.7:
+		 *
+		 * The token MUST NOT be empty. A client MUST treat receipt of
+		 * a NEW_TOKEN frame with an empty Token field as a connection
+		 * error of type FRAME_ENCODING_ERROR.
+		 */
+		frame->errcode = QUIC_TRANSPORT_ERROR_FRAME_ENCODING;
+		return -EINVAL;
+	}
 
 	/* Store the token internally so user space can retrieve it via
 	 * getsockopt().
@@ -1894,6 +1954,18 @@ static int quic_frame_streams_blocked_uni_process(struct sock *sk,
 
 	if (!quic_get_var(&p, &len, &max))
 		return -EINVAL;
+	if (max > QUIC_MAX_STREAMS_LIMIT) {
+		/* rfc9000#section-19.14:
+		 *
+		 * This value cannot exceed 2^60, as it is not possible to
+		 * encode stream IDs larger than 2^62-1. Receipt of a frame
+		 * that encodes a larger stream ID MUST be treated as a
+		 * connection error of type STREAM_LIMIT_ERROR or
+		 * FRAME_ENCODING_ERROR.
+		 */
+		frame->errcode = QUIC_TRANSPORT_ERROR_FRAME_ENCODING;
+		return -EINVAL;
+	}
 	if (max > quic_stream_id_to_streams(stream_id))
 		goto out; /* Peer requested more streams than allowed. */
 	/* Respond with a MAX_STREAMS_UNI frame to inform the peer of the
@@ -1924,6 +1996,10 @@ static int quic_frame_streams_blocked_bidi_process(struct sock *sk,
 	/* Follows the same processing logic as
 	 * quic_frame_streams_blocked_uni_process().
 	 */
+	if (max > QUIC_MAX_STREAMS_LIMIT) {
+		frame->errcode = QUIC_TRANSPORT_ERROR_FRAME_ENCODING;
+		return -EINVAL;
+	}
 	stream_id = streams->recv.max_bidi_stream_id;
 	if (max > quic_stream_id_to_streams(stream_id))
 		goto out;
