@@ -1126,7 +1126,7 @@ int quic_outq_probe_path_alt(struct sock *sk, bool cork)
 {
 	struct quic_conn_id_set *id_set = quic_dest(sk);
 	struct quic_path_group *paths = quic_paths(sk);
-	u64 number;
+	u64 number, timeout;
 	int err;
 
 	/* Try to select an alternate connection ID for the new path. */
@@ -1156,7 +1156,9 @@ int quic_outq_probe_path_alt(struct sock *sk, bool cork)
 	quic_set_sk_ecn(sk, 0);
 	/* Send PATH_CHALLENGE frame on the new path and reset path timer. */
 	quic_outq_transmit_frame(sk, QUIC_FRAME_PATH_CHALLENGE, NULL, 1, cork);
-	quic_timer_reset_path(sk);
+
+	timeout = max_t(u32, quic_cong(sk)->pto * 2, QUIC_MIN_PATH_TIMEOUT);
+	quic_timer_reset(sk, QUIC_TIMER_PATH, timeout);
 	return 0;
 }
 

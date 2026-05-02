@@ -574,6 +574,7 @@ static int quic_connect(struct sock *sk, struct sockaddr *addr, int addr_len)
 	if (err)
 		goto free;
 	quic_timer_start(sk, QUIC_TIMER_IDLE, inq->timeout);
+	quic_timer_start(sk, QUIC_TIMER_PATH, paths->keepalive_interval);
 out:
 	release_sock(sk);
 	return err;
@@ -1443,6 +1444,7 @@ static void quic_sock_fetch_config(struct sock *sk, struct quic_config *config)
 	config->congestion_control_algo = cong->algo;
 
 	config->plpmtud_probe_interval = paths->plpmtud_interval;
+	config->keepalive_probe_interval = paths->keepalive_interval;
 }
 
 /* Apply QUIC configuration settings to a socket. */
@@ -1487,6 +1489,11 @@ static int quic_sock_apply_config(struct sock *sk, struct quic_config *config)
 		if (config->plpmtud_probe_interval < QUIC_MIN_PROBE_TIMEOUT)
 			return -EINVAL;
 		paths->plpmtud_interval = config->plpmtud_probe_interval;
+	}
+	if (config->keepalive_probe_interval) {
+		if (config->keepalive_probe_interval < QUIC_MIN_PROBE_TIMEOUT)
+			return -EINVAL;
+		paths->keepalive_interval = config->keepalive_probe_interval;
 	}
 
 	return 0;
@@ -1604,6 +1611,7 @@ static int quic_accept_sock_setup(struct sock *sk,
 	if (err)
 		goto out;
 	quic_timer_start(sk, QUIC_TIMER_IDLE, inq->timeout);
+	quic_timer_start(sk, QUIC_TIMER_PATH, paths->keepalive_interval);
 
 	/* Process all packets in backlog list of this socket. */
 	while ((skb = __skb_dequeue(&req->backlog_list)) != NULL)
@@ -2291,7 +2299,6 @@ out:
 	 */
 	quic_set_state(sk, QUIC_SS_ESTABLISHED);
 	quic_timer_start(sk, QUIC_TIMER_PMTU, paths->plpmtud_interval);
-	quic_timer_reset_path(sk);
 	return 0;
 err:
 	quic_outq_transmit_close(sk, 0, QUIC_TRANSPORT_ERROR_INTERNAL,

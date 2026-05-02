@@ -87,48 +87,38 @@ static void quic_timer_loss_timeout(struct timer_list *t)
 void quic_timer_path_handler(struct sock *sk)
 {
 	struct quic_path_group *paths = quic_paths(sk);
-	u8 path = 0;
+	struct quic_probeinfo info = {};
+	u64 timeout;
 
 	if (quic_is_closed(sk))
 		return;
 
-	/* PATH_CHALLENGE frames are reused to keep the new path alive for NAT
-	 * rebind.  Skip probe attempt counting unless the path is explicitly
-	 * in PROBING state.
-	 */
-	if (!quic_path_alt_state(paths, QUIC_PATH_ALT_PROBING))
-		goto out;
-
-	/* Increment probe attempts; give up if exceeded max allowed. */
-	if (paths->alt_probes++ < QUIC_MAX_ALT_PROBES) {
-		path = 1;
-		goto out;
+	if (quic_path_alt_state(paths, QUIC_PATH_ALT_PROBING)) {
+		/* Increment probe attempts; give up if exceeded max allowed. */
+		if (paths->alt_probes++ < QUIC_MAX_ALT_PROBES) {
+			quic_outq_transmit_frame(sk, QUIC_FRAME_PATH_CHALLENGE,
+						 NULL, 1, false);
+			timeout = max_t(u32, quic_cong(sk)->pto * 2,
+					QUIC_MIN_PATH_TIMEOUT);
+			goto out;
+		}
+		/* Probing failed; drop the alternate path. */
+		quic_path_unbind(sk, paths, 1);
 	}
 
-	/* Probing failed; drop the alternate path. */
-	quic_path_unbind(sk, paths, 1);
-
+	/* Send PING to keep the path alive and help detect NAT rebinding. */
+	info.level = quic_is_established(sk) ? QUIC_CRYPTO_APP :
+					       QUIC_CRYPTO_INITIAL;
+	quic_outq_transmit_frame(sk, QUIC_FRAME_PING, &info, 0, false);
+	timeout = paths->keepalive_interval;
 out:
-	quic_outq_transmit_frame(sk, QUIC_FRAME_PATH_CHALLENGE, NULL, path,
-				 false);
-	quic_timer_reset_path(sk);
+	quic_timer_reset(sk, QUIC_TIMER_PATH, timeout);
 }
 
 static void quic_timer_path_timeout(struct timer_list *t)
 {
 	quic_timer_timeout((struct quic_timer *)t, QUIC_TIMER_PATH,
 			   QUIC_PATH_DEFERRED, quic_timer_path_handler);
-}
-
-void quic_timer_reset_path(struct sock *sk)
-{
-	struct quic_cong *cong = quic_cong(sk);
-	u64 timeout = cong->pto * 2;
-
-	/* Calculate timeout based on cong.pto, but enforce a lower bound. */
-	if (timeout < QUIC_MIN_PATH_TIMEOUT)
-		timeout = QUIC_MIN_PATH_TIMEOUT;
-	quic_timer_reset(sk, QUIC_TIMER_PATH, timeout);
 }
 
 void quic_timer_pmtu_handler(struct sock *sk)

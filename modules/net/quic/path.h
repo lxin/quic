@@ -91,7 +91,8 @@ struct quic_path_group {
 		u8 state;       /* Probe state machine (rfc8899#section-5.2) */
 	} pl;
 
-	u32 plpmtud_interval; /* Time interval for the PLPMTUD probe timer */
+	u32 plpmtud_interval;   /* Time interval for the PLPMTUD probe timer */
+	u32 keepalive_interval; /* Time interval to maintain path liveness */
 
 	u8 ecn_probes;  /* ECN probe counter */
 	u8 validated:1; /* Path validated with PATH_RESPONSE */

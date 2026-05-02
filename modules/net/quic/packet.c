@@ -1682,6 +1682,7 @@ out:
 		paths->blocked = 0;
 		quic_outq_update_loss_timer(sk);
 	}
+	quic_timer_reset(sk, QUIC_TIMER_PATH, paths->keepalive_interval);
 
 	consume_skb(skb);
 	return 0;
@@ -1843,6 +1844,10 @@ out:
 		inq->sack_flag = QUIC_SACK_FLAG_XMIT;
 		quic_timer_reset(sk, QUIC_TIMER_SACK, inq->max_ack_delay);
 	}
+	/* Shared path timer: keepalive when not ALT probing. */
+	if (!quic_path_alt_state(paths, QUIC_PATH_ALT_PROBING))
+		quic_timer_reset(sk, QUIC_TIMER_PATH,
+				 paths->keepalive_interval);
 	consume_skb(skb);
 	return 0;
 }
@@ -2123,16 +2128,6 @@ static u8 *quic_packet_pack_frames(struct sock *sk, struct sk_buff *skb,
 
 	if (!sent) /* Packet doesn't need ACK/loss tracking. */
 		return p;
-
-	/* Reset path validation timer if handshake is done and we're not
-	 * currently probing an alternate path. After handshake, the timer may
-	 * trigger PATH_CHALLENGE frames for continued path validation, which
-	 * should be suppressed if we've just sent ACK-eliciting data to avoid
-	 * unnecessary probes.
-	 */
-	if (quic_is_established(sk) &&
-	    !quic_path_alt_state(paths, QUIC_PATH_ALT_PROBING))
-		quic_timer_reset_path(sk);
 
 	/* Update the last sent timestamp if this packet is ACK-eliciting.
 	 * This is important for loss detection and PTO (Probe Timeout) logic.

@@ -120,6 +120,8 @@ struct quic_config {
 	__u8	stream_data_nodelay;
 	__u8	receive_session_ticket;
 	__u8	certificate_request;
+	__u8	reserved[3];
+	__u32	keepalive_probe_interval;
 };
 
 struct quic_crypto_secret {
