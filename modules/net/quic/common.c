@@ -23,11 +23,6 @@
 
 #include "common.h"
 
-#define QUIC_VARINT_1BYTE_MAX		0x3fULL
-#define QUIC_VARINT_2BYTE_MAX		0x3fffULL
-#define QUIC_VARINT_4BYTE_MAX		0x3fffffffULL
-#define QUIC_VARINT_8BYTE_MAX		0x3fffffffffffffffULL
-
 #define QUIC_VARINT_2BYTE_PREFIX	0x40
 #define QUIC_VARINT_4BYTE_PREFIX	0x80
 #define QUIC_VARINT_8BYTE_PREFIX	0xc0
