@@ -2063,8 +2063,8 @@ void quic_packet_backlog_work(struct work_struct *work)
 
 #define QUIC_MAX_ECN_PROBES	3
 
-static u8 *quic_packet_pack_frames(struct sock *sk, struct sk_buff *skb,
-				   struct quic_packet_sent *sent, u16 off)
+static void quic_packet_pack_frames(struct sock *sk, struct sk_buff *skb,
+				    struct quic_packet_sent *sent, u16 off)
 {
 	struct quic_path_group *paths = quic_paths(sk);
 	struct quic_packet *packet = quic_packet(sk);
@@ -2120,6 +2120,9 @@ static u8 *quic_packet_pack_frames(struct sock *sk, struct sk_buff *skb,
 		sent->frame_array[i++] = quic_frame_get(frame);
 	}
 
+	if (packet->padding) /* Pack the padding frame if any. */
+		memset(p, 0, packet->padding);
+
 	/* Track bytes sent before address validation to respect amplification
 	 * limits for server.
 	 */
@@ -2127,7 +2130,7 @@ static u8 *quic_packet_pack_frames(struct sock *sk, struct sk_buff *skb,
 		paths->ampl_sndlen += skb->len + quic_packet_taglen(packet);
 
 	if (!sent) /* Packet doesn't need ACK/loss tracking. */
-		return p;
+		return;
 
 	/* Update the last sent timestamp if this packet is ACK-eliciting.
 	 * This is important for loss detection and PTO (Probe Timeout) logic.
@@ -2164,7 +2167,6 @@ static u8 *quic_packet_pack_frames(struct sock *sk, struct sk_buff *skb,
 				 sent->frame_len, number);
 	/* Refresh loss detection timer after sending data. */
 	quic_outq_update_loss_timer(sk);
-	return p;
 }
 
 static struct quic_packet_sent *quic_packet_sent_alloc(u16 frames)
@@ -2258,9 +2260,9 @@ static struct sk_buff *quic_packet_handshake_create(struct sock *sk)
 	u8 type, fixed = 1, level = packet->level;
 	struct quic_packet_sent *sent = NULL;
 	struct quic_conn_id *active;
-	u32 len, hlen, plen = 0;
 	struct quichshdr *hdr;
 	struct sk_buff *skb;
+	u32 len, hlen;
 	u16 off;
 	u8 *p;
 
@@ -2273,7 +2275,6 @@ static struct sk_buff *quic_packet_handshake_create(struct sock *sk)
 		type = QUIC_PACKET_0RTT;
 	}
 
-	len = packet->len;
 	if (packet->frames || !quic_is_serv(sk)) {
 		/* rfc9000#section-14.1:
 		 *
@@ -2285,13 +2286,14 @@ static struct sk_buff *quic_packet_handshake_create(struct sock *sk)
 		 * datagrams carrying ack-eliciting Initial packets to at least
 		 * the smallest allowed maximum datagram size of 1200 bytes.
 		 */
-		hlen = QUIC_MIN_UDP_PAYLOAD -
+		len = QUIC_MIN_UDP_PAYLOAD -
 		       packet->taglen[QUIC_PACKET_FORM_LONG];
-		if (level == QUIC_CRYPTO_INITIAL && len < hlen) {
-			len = hlen;
-			plen = len - packet->len;
+		if (level == QUIC_CRYPTO_INITIAL && packet->len < len) {
+			packet->padding = len - packet->len;
+			packet->len = len;
 		}
 	}
+	len = packet->len;
 	if (packet->frames) {
 		/* If there are ack-eliciting frames (not including PING),
 		 * create packet_sent for acknowledge and loss detection.
@@ -2354,9 +2356,7 @@ static struct sk_buff *quic_packet_handshake_create(struct sock *sk)
 			    QUIC_PACKET_LENGTH_LEN);
 
 	/* Pack Packet Number and actual frames starting at offset 'off'. */
-	p = quic_packet_pack_frames(sk, skb, sent, off);
-	if (plen) /* Set padding to zero. */
-		memset(p, 0, plen);
+	quic_packet_pack_frames(sk, skb, sent, off);
 	return skb;
 }
 
@@ -2772,7 +2772,8 @@ int quic_packet_tail(struct sock *sk, struct quic_frame *frame)
 	 * tag).
 	 */
 	taglen = quic_packet_taglen(packet);
-	if (packet->len + frame->len > packet->mss[frame->dgram] - taglen) {
+	if (packet->len + frame->len + frame->padding >
+	    packet->mss[frame->dgram] - taglen) {
 		/* If some data has already been added to packet, bail out. */
 		if (packet->len != packet->overhead)
 			return 0;
@@ -2782,8 +2783,10 @@ int quic_packet_tail(struct sock *sk, struct quic_frame *frame)
 		if (!quic_frame_ping(frame->type))
 			packet->ipfragok = 1;
 	}
-	if (frame->padding)
+	if (frame->padding) {
 		packet->padding = frame->padding;
+		packet->len += frame->padding;
+	}
 
 	if (quic_frame_ack_eliciting(frame->type)) {
 		packet->frames++;

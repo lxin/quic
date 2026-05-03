@@ -119,6 +119,7 @@ struct quic_frame {
 	union {
 		u16 read_offset; /* READ: offset already read in frame data */
 		u16 errcode;     /* RX: error code set in frame processing */
+		u16 padding;     /* TX: padding bytes to append after frame */
 	};
 	u8  level;   /* Packet number space: Initial, Handshake, or App */
 	u8  type;    /* Frame type identifier */
@@ -130,7 +131,6 @@ struct quic_frame {
 	u8  transmitted:1;   /* Frame is in the transmitted queue */
 	u8  stream_fin:1;    /* Frame includes FIN flag for stream */
 	u8  nodelay:1;       /* Frame bypasses Nagle's algorithm for sending */
-	u8  padding:1;       /* Padding is needed after this frame */
 	u8  dgram:1;         /* Frame represents a datagram message (RX only) */
 	u8  event:1;         /* Frame represents an event (RX only) */
 	u8  path:1;          /* Path index used to send this frame */

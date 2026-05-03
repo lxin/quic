@@ -135,27 +135,25 @@ static struct quic_frame *
 quic_frame_ping_create(struct sock *sk, void *data, u8 type)
 {
 	struct quic_probeinfo *info = data;
-	u32 overhead, frame_len = 1;
+	u8 *p, buf[QUIC_FRAME_BUF_SMALL];
 	struct quic_frame *frame;
+	u32 overhead, frame_len;
+
+	p = quic_put_var(buf, type);
+	frame_len = (u32)(p - buf);
+
+	frame = quic_frame_alloc(frame_len, NULL, GFP_ATOMIC);
+	if (!frame)
+		return ERR_PTR(-ENOMEM);
+	frame->level = info->level;
+	quic_put_data(frame->data, buf, frame_len);
 
 	/* If a probe size is specified and larger than the overhead, request
 	 * padding to reach that total size.
 	 */
 	overhead = quic_packet_overhead(sk, info->level, 0);
-	if (info->size > overhead)
-		frame_len = info->size - overhead;
-
-	frame = quic_frame_alloc(frame_len, NULL, GFP_ATOMIC);
-	if (!frame)
-		return ERR_PTR(-ENOMEM);
-
-	frame->level = info->level;
-	quic_put_var(frame->data, type);
-	if (frame_len > 1) {
-		memset(frame->data + 1, 0, frame_len - 1);
-		frame->padding = 1;
-	}
-
+	if (info->size > overhead + frame_len)
+		frame->padding = info->size - overhead - frame_len;
 	return frame;
 }
 
