@@ -2286,11 +2286,13 @@ static struct sk_buff *quic_packet_handshake_create(struct sock *sk)
 		 * datagrams carrying ack-eliciting Initial packets to at least
 		 * the smallest allowed maximum datagram size of 1200 bytes.
 		 */
-		len = QUIC_MIN_UDP_PAYLOAD -
-		       packet->taglen[QUIC_PACKET_FORM_LONG];
-		if (level == QUIC_CRYPTO_INITIAL && packet->len < len) {
-			packet->padding = len - packet->len;
-			packet->len = len;
+		if (level == QUIC_CRYPTO_INITIAL) {
+			len = QUIC_MIN_UDP_PAYLOAD -
+			      packet->taglen[QUIC_PACKET_FORM_LONG];
+			if (packet->len < len) {
+				packet->padding = len - packet->len;
+				packet->len = len;
+			}
 		}
 	}
 	len = packet->len;
@@ -2420,6 +2422,21 @@ static struct sk_buff *quic_packet_app_create(struct sock *sk)
 	u16 off;
 
 	if (packet->frames) {
+		if (packet->path_validating) {
+			/* rfc9000#section-8.2:
+			 *
+			 * An endpoint MUST expand datagrams that contain a
+			 * PATH_CHALLENGE/PATH_RESPONSE frame to at least the
+			 * smallest allowed maximum datagram size of 1200
+			 * bytes.
+			 */
+			len = QUIC_MIN_UDP_PAYLOAD -
+			      packet->taglen[QUIC_PACKET_FORM_SHORT];
+			if (packet->len < len) {
+				packet->padding = len - packet->len;
+				packet->len = len;
+			}
+		}
 		/* If there are ack-eliciting frames (not including PING),
 		 * create packet_sent for acknowledge and loss detection.
 		 */
@@ -2552,6 +2569,7 @@ int quic_packet_config(struct sock *sk, u8 level, u8 path)
 	if (!quic_packet_empty(packet))
 		return 0;
 
+	packet->path_validating = 0;
 	packet->frame_len = 0;
 	packet->ipfragok = 0;
 	packet->padding = 0;
@@ -2789,6 +2807,9 @@ int quic_packet_tail(struct sock *sk, struct quic_frame *frame)
 	}
 
 	if (quic_frame_ack_eliciting(frame->type)) {
+		if (quic_frame_path_validating(frame->type))
+			packet->path_validating = 1;
+
 		packet->frames++;
 		packet->frame_len += frame->len;
 	}

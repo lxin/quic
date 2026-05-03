@@ -168,6 +168,12 @@ static inline bool quic_frame_close(u8 type)
 	       type == QUIC_FRAME_CONNECTION_CLOSE_APP;
 }
 
+static inline bool quic_frame_path_validating(u8 type)
+{
+	return type == QUIC_FRAME_PATH_CHALLENGE ||
+	       type == QUIC_FRAME_PATH_RESPONSE;
+}
+
 int quic_frame_build_transport_params_ext(struct sock *sk,
 					  struct quic_transport_param *params,
 					  u8 *data, u32 *len);
