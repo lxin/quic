@@ -1818,16 +1818,12 @@ static int quic_frame_connection_close_process(struct sock *sk,
 	if (!quic_get_var(&p, &len, &phrase_len) || phrase_len > len)
 		return -EINVAL;
 
-	len -= phrase_len;
 	/* Notify that the peer closed connection with error info. */
 	if (phrase_len) {
 		if (phrase_len > QUIC_CLOSE_PHRASE_BUFFER_SIZE - 1)
 			phrase_len = QUIC_CLOSE_PHRASE_BUFFER_SIZE - 1;
 		memcpy(c.phrase, p, phrase_len);
-
 		data = kmemdup(c.phrase, phrase_len + 1, GFP_ATOMIC);
-		if (!data)
-			return -ENOMEM;
 	}
 	if (type == QUIC_FRAME_CONNECTION_CLOSE)
 		QUIC_INC_STATS(sock_net(sk), QUIC_MIB_FRM_INCLOSES);
@@ -1846,7 +1842,8 @@ static int quic_frame_connection_close_process(struct sock *sk,
 	quic_set_state(sk, QUIC_SS_CLOSED);
 	pr_debug("%s: errcode: %d, frame: %d\n", __func__, c.errcode, c.frame);
 
-	return (int)(frame->len - len);
+	/* Stop processing further frames after a CLOSE frame. */
+	return (int)frame->len;
 }
 
 static int quic_frame_data_blocked_process(struct sock *sk,
