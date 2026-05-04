@@ -403,8 +403,8 @@ static const struct snmp_mib quic_snmp_list[] = {
 static int quic_snmp_seq_show(struct seq_file *seq, void *v)
 {
 #ifndef snmp_get_cpu_field_batch_cnt
-	struct net *net = seq_file_net(seq);
 	unsigned long buff[QUIC_MIB_MAX];
+	struct net *net = seq->private;
 	u32 idx;
 
 	memset(buff, 0, sizeof(unsigned long) * QUIC_MIB_MAX);
@@ -414,7 +414,7 @@ static int quic_snmp_seq_show(struct seq_file *seq, void *v)
 #else
 	unsigned long buff[ARRAY_SIZE(quic_snmp_list)];
 	const int cnt = ARRAY_SIZE(quic_snmp_list);
-	struct net *net = seq_file_net(seq);
+	struct net *net = seq->private;
 	u32 idx;
 
 	memset(buff, 0, sizeof(buff));
