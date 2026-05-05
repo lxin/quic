@@ -2491,6 +2491,7 @@ int quic_frame_process(struct sock *sk, struct quic_frame *frame)
 	struct quic_skb_cb *cb = QUIC_SKB_CB(frame->skb);
 	struct quic_packet *packet = quic_packet(sk);
 	u8 type, level = frame->level;
+	u64 value;
 	int ret;
 
 	if (!frame->len) {
@@ -2504,12 +2505,14 @@ int quic_frame_process(struct sock *sk, struct quic_frame *frame)
 	}
 
 	while (frame->len > 0) {
-		type = *frame->data++;
-		frame->len--;
+		ret = frame->len;
+		if (!quic_get_var(&frame->data, &ret, &value))
+			return -EINVAL;
+		frame->len = ret;
 
-		if (type > QUIC_FRAME_MAX) {
-			pr_debug("%s: unsupported frame, type: %x, level: %d\n",
-				 __func__, type, level);
+		if (value > QUIC_FRAME_MAX) {
+			pr_debug("%s: unsupported frame, type: %llx, level: %d\n",
+				 __func__, value, level);
 			/* rfc9000#section-12.4:
 			 *
 			 * An endpoint MUST treat the receipt of a frame of
@@ -2518,7 +2521,9 @@ int quic_frame_process(struct sock *sk, struct quic_frame *frame)
 			 */
 			cb->errcode = QUIC_TRANSPORT_ERROR_FRAME_ENCODING;
 			return -EPROTONOSUPPORT;
-		} else if (!quic_frame_level_valid(level, type)) {
+		}
+		type = (u8)value;
+		if (!quic_frame_level_valid(level, type)) {
 			pr_debug("%s: invalid frame, type: %x, level: %d\n",
 				 __func__, type, level);
 			/* An endpoint MUST treat receipt of a frame in a
