@@ -295,15 +295,13 @@ static u8 quic_v6_get_msg_ecn(struct sk_buff *skb)
 static int quic_v4_get_user_addr(struct sock *sk, union quic_addr *a,
 				 struct sockaddr *addr, int addr_len, bool any)
 {
-	u32 len = sizeof(struct sockaddr_in);
-
-	if (addr_len < len || addr->sa_family != AF_INET)
+	if (addr_len < sizeof(struct sockaddr_in) || addr->sa_family != AF_INET)
 		return -EINVAL;
 	if (ipv4_is_multicast(quic_addr(addr)->v4.sin_addr.s_addr))
 		return -EINVAL;
 	if (quic_addr(addr)->v4.sin_addr.s_addr == htonl(INADDR_ANY) && !any)
 		return -EINVAL;
-	memcpy(a, addr, len);
+	memcpy(a, addr, offsetof(struct sockaddr_in, __pad));
 	return 0;
 }
 
