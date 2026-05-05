@@ -1347,6 +1347,8 @@ void quic_outq_list_purge(struct sock *sk, struct list_head *head,
 
 		if (head == &outq->stream_list)
 			outq->stream_list_len -= frame->len;
+		if (frame->number < 0)
+			outq->unsent_bytes -= frame->bytes;
 
 		bytes += frame->bytes;
 		list_del_init(&frame->list);
