@@ -76,11 +76,10 @@ struct quic_path_group {
 	struct flowi fl;          /* Flow info from routing decisions */
 
 	/* Anti-amplification limit (rfc9000#section-8) */
-	u16 ampl_sndlen; /* Bytes sent before address is validated */
-	u16 ampl_rcvlen; /* Bytes received to lift amplification limit */
+	u32 ampl_sndlen; /* Bytes sent before address is validated */
+	u32 ampl_rcvlen; /* Bytes received to lift amplification limit */
 
 	/* MTU discovery handling */
-	u32 mtu_info; /* PMTU value from received ICMP, pending apply */
 	struct { /* PLPMTUD probing (rfc8899) */
 		s64 number; /* Packet number used for current probe */
 		u16 pmtu;   /* Confirmed path MTU */
@@ -90,6 +89,7 @@ struct quic_path_group {
 		u8 probe_count; /* Retry count for current probe_size */
 		u8 state;       /* Probe state machine (rfc8899#section-5.2) */
 	} pl;
+	u32 mtu_info; /* PMTU value from received ICMP, pending apply */
 
 	u32 plpmtud_interval;   /* Time interval for the PLPMTUD probe timer */
 	u32 keepalive_interval; /* Time interval to maintain path liveness */
