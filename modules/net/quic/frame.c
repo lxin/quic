@@ -2456,8 +2456,8 @@ static struct quic_frame_ops quic_frame_ops[QUIC_FRAME_MAX + 1] = {
 	quic_frame_create_and_process_and_ack(invalid, 0),
 	quic_frame_create_and_process_and_ack(invalid, 0),
 	/* 0x30 */
-	quic_frame_create_and_process_and_ack(datagram, QUIC_A___R___1),
-	quic_frame_create_and_process_and_ack(datagram, QUIC_A___R___1),
+	quic_frame_create_and_process_and_ack(datagram, QUIC_A_1),
+	quic_frame_create_and_process_and_ack(datagram, QUIC_A_1),
 };
 
 static bool quic_frame_level_valid(u8 level, u8 type)
