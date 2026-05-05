@@ -1282,6 +1282,7 @@ static void quic_packet_decrypt_done(struct sk_buff *skb, int err)
 	}
 
 	sock_hold(sk);
+	local_bh_disable();
 	bh_lock_sock(sk);
 	__skb_queue_tail(&sk->sk_receive_queue, skb);
 	if (sock_owned_by_user(sk)) {
@@ -1293,6 +1294,7 @@ static void quic_packet_decrypt_done(struct sk_buff *skb, int err)
 	quic_packet_flush_rxq(sk);
 out:
 	bh_unlock_sock(sk);
+	local_bh_enable();
 	sock_put(sk);
 }
 
@@ -2636,6 +2638,7 @@ static void quic_packet_encrypt_done(struct sk_buff *skb, int err)
 	}
 
 	sock_hold(sk);
+	local_bh_disable();
 	bh_lock_sock(sk);
 	__skb_queue_tail(&sk->sk_write_queue, skb);
 	if (sock_owned_by_user(sk)) {
@@ -2647,6 +2650,7 @@ static void quic_packet_encrypt_done(struct sk_buff *skb, int err)
 	quic_packet_flush_txq(sk);
 out:
 	bh_unlock_sock(sk);
+	local_bh_enable();
 	sock_put(sk);
 }
 
