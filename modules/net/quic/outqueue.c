@@ -1249,7 +1249,7 @@ int quic_outq_transmit_retire_conn_id(struct sock *sk, u64 prior, u8 path,
 	     seqno++) {
 		err = quic_outq_transmit_frame(sk,
 					       QUIC_FRAME_RETIRE_CONNECTION_ID,
-					       &seqno, path, cork);
+					       &seqno, path, true);
 		if (err)
 			return err;
 	}
