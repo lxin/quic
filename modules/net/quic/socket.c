@@ -1068,7 +1068,7 @@ static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 		while (iov_iter_count(&msg->msg_iter) > 0) {
 			if (sk_stream_wspace(sk) < len ||
 			    !sk_wmem_schedule(sk, len)) {
-				if (delay) {
+				if (outq->force_delay) {
 					/* Push buffered data if MSG_MORE was
 					 * used.
 					 */
@@ -1133,6 +1133,10 @@ static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 		}
 		len = msg_len;
 		if (sk_stream_wspace(sk) < len || !sk_wmem_schedule(sk, len)) {
+			if (outq->force_delay) {
+				outq->force_delay = 0;
+				quic_outq_transmit(sk);
+			}
 			err = quic_wait_for_send(sk, flags, len);
 			if (err)
 				goto err;
@@ -1173,7 +1177,7 @@ static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 
 	do {
 		if (!quic_sock_stream_writable(sk, stream, flags, len)) {
-			if (delay) {
+			if (outq->force_delay) {
 				outq->force_delay = 0;
 				quic_outq_transmit(sk);
 			}
