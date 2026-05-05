@@ -77,8 +77,13 @@ static int quic_inet_listen(struct socket *sock, int backlog)
 		goto out;
 	}
 
-	if (!sk_unhashed(sk)) /* Already hashed/listening. */
+	if (!sk_unhashed(sk)) { /* Already hashed/listening. */
+		if (quic_is_listen(sk)) {
+			sk->sk_max_ack_backlog = backlog;
+			err = 0;
+		}
 		goto out;
+	}
 
 	a = quic_path_saddr(paths, 0);
 	if (!a->v4.sin_port) { /* Auto-bind if not already bound. */
