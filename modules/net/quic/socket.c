@@ -2168,12 +2168,15 @@ static int quic_sock_set_crypto_secret(struct sock *sk, void *kopt, u32 len)
 	 */
 	if (s.level != QUIC_CRYPTO_APP &&
 	    s.level != QUIC_CRYPTO_EARLY &&
-	    s.level != QUIC_CRYPTO_HANDSHAKE)
+	    s.level != QUIC_CRYPTO_HANDSHAKE) {
+		memzero_explicit(s.secret, sizeof(s.secret));
 		return -EINVAL;
+	}
 
 	/* Install keys into the crypto context. */
 	crypto = quic_crypto(sk, s.level);
 	err = quic_crypto_set_secret(crypto, &s, packet->version);
+	memzero_explicit(s.secret, sizeof(s.secret));
 	if (err)
 		return err;
 
@@ -2662,6 +2665,7 @@ static int quic_sock_get_crypto_secret(struct sock *sk, u32 len,
 				       sockptr_t optval, sockptr_t optlen)
 {
 	struct quic_crypto_secret s = {};
+	int err = 0;
 
 	if (len > sizeof(s))
 		len = sizeof(s);
@@ -2676,8 +2680,10 @@ static int quic_sock_get_crypto_secret(struct sock *sk, u32 len,
 
 	if (copy_to_sockptr(optlen, &len, sizeof(len)) ||
 	    copy_to_sockptr(optval, &s, len))
-		return -EFAULT;
-	return 0;
+		err = -EFAULT;
+
+	memzero_explicit(s.secret, sizeof(s.secret));
+	return err;
 }
 
 /**
