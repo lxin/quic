@@ -2108,7 +2108,7 @@ static void quic_packet_pack_frames(struct sock *sk, struct sk_buff *skb,
 			/* CONNECTION_CLOSE must be encrypted synchronously. */
 			if (quic_frame_close(frame->type))
 				cb->sync = 1;
-			/* Skip non-ACK-eliciting/ping frames for tracking. */
+			/* Skip non-ACK-eliciting frames for tracking. */
 			quic_frame_put(frame);
 			continue;
 		}
