@@ -652,6 +652,7 @@ void quic_outq_transmit_app_close(struct sock *sk)
 static void quic_outq_psent_sack_frames(struct sock *sk,
 					struct quic_packet_sent *sent)
 {
+	struct quic_outqueue *outq = quic_outq(sk);
 	struct quic_frame *frame;
 	int acked = 0, i;
 
@@ -669,6 +670,8 @@ static void quic_outq_psent_sack_frames(struct sock *sk,
 
 		acked += frame->bytes;
 		/* Remove from send/transmitted list and release reference. */
+		if (!frame->transmitted)
+			outq->stream_list_len -= frame->len;
 		list_del_init(&frame->list);
 		frame->transmitted = 0;
 		quic_frame_ack(sk, frame);
