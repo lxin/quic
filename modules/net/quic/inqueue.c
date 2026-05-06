@@ -205,10 +205,22 @@ int quic_inq_stream_recv(struct sock *sk, struct quic_frame *frame)
 	 * handling of stream termination.
 	 */
 	size_known = (stream->recv.state == QUIC_STREAM_RECV_STATE_SIZE_KNOWN);
-	if (stream->recv.offset >= offset + frame->len &&
-	    (size_known || !frame->stream_fin)) {
-		quic_frame_put(frame);
-		return 0;
+	off = offset + frame->len;
+	if (stream->recv.offset >= off) {
+		if (size_known || !frame->stream_fin) {
+			quic_frame_put(frame);
+			return 0;
+		}
+		/* rfc9000#section-20.1:
+		 *
+		 * An endpoint received a STREAM frame or a RESET_STREAM frame
+		 * containing a final size that was lower than the size of
+		 * stream data that was already received.
+		 */
+		if (stream->recv.highest > off) {
+			frame->errcode = QUIC_TRANSPORT_ERROR_FINAL_SIZE;
+			return -EINVAL;
+		}
 	}
 
 	/* Check receive buffer size and system limits. */
@@ -219,7 +231,6 @@ int quic_inq_stream_recv(struct sock *sk, struct quic_frame *frame)
 	}
 
 	quic_inq_set_owner_r((int)frame->len, sk);
-	off = offset + frame->len;
 	if (off > stream->recv.highest) { /* Beyond current highest seen. */
 		/* rfc9000#section-4.1:
 		 *
