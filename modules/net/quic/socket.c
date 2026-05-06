@@ -1879,9 +1879,9 @@ static int quic_sock_connection_migrate(struct sock *sk, struct sockaddr *addr,
 	    quic_cmp_sk_addr(sk, quic_path_saddr(paths, 0), &a))
 		return -EINVAL;
 
-	if (!quic_is_established(sk)) {
+	if (quic_is_establishing(sk)) {
 		/* Allows setting a preferred address before the handshake
-		 * completes.  The address may use a different address family
+		 * completes. The address may use a different address family
 		 * (e.g., IPv4 vs IPv6).
 		 */
 		if (!quic_is_serv(sk) || paths->disable_saddr_alt)
