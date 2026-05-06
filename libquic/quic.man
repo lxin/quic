@@ -755,7 +755,8 @@ Data format in the event:
 .nf
 struct quic_stream_update {
   uint64_t id;
-  uint32_t state;
+  uint8_t  state;
+  uint8_t  reserved[3];
   uint32_t errcode;
   uint64_t finalsz;
 };
@@ -828,6 +829,7 @@ Data format in the event:
 .nf
 struct quic_connection_id_info {
   uint8_t  dest;
+  uint8_t  reserved[3];
   uint32_t active;
   uint32_t prior_to;
 };
@@ -854,8 +856,10 @@ Data format in the event:
 .nf
 struct quic_connection_close {
   uint32_t errcode;
-  uint8_t frame;
-  uint8_t phrase[];
+  uint8_t  frame;
+  uint8_t  reserved[3];
+#define QUIC_CLOSE_PHRASE_BUFFER_SIZE 64
+  uint8_t  phrase[QUIC_CLOSE_PHRASE_BUFFER_SIZE];
 };
 .fi
 .TP
@@ -1004,7 +1008,6 @@ struct quic_transport_param {
   uint64_t max_stream_data_bidi_local;       /* 65536 * 4 */
   uint64_t max_stream_data_bidi_remote;      /* 65536 * 4 */
   uint64_t max_stream_data_uni;              /* 65536 * 4 */
-  uint64_t reserved;
 };
 .fi
 .PP
@@ -1039,6 +1042,7 @@ struct quic_config {
   uint8_t  receive_session_ticket;
   uint8_t  certificate_request;
   uint8_t  reserved[3];
+  uint8_t  keepalive_probe_interval;
 };
 .fi
 .IP "version"
@@ -1185,7 +1189,9 @@ The `optval` type is:
 struct quic_connection_close {
   uint32_t errcode;
   uint8_t  frame;
-  uint8_t  phrase[];
+  uint8_t  reserved[3];
+#define QUIC_CLOSE_PHRASE_BUFFER_SIZE 64
+  uint8_t  phrase[QUIC_CLOSE_PHRASE_BUFFER_SIZE];
 };
 .fi
 .IP "errcode"
@@ -1283,10 +1289,12 @@ The `optval` type is:
 
 .nf
 struct quic_crypto_secret {
+  uint8_t  send;
   uint8_t  level;
-  uint16_t send;
+  uint16_t reserved;
   uint32_t type;
-  uint8_t  secret[48];
+#define QUIC_CRYPTO_SECRET_BUFFER_SIZE 48
+  uint8_t  secret[QUIC_CRYPTO_SECRET_BUFFER_SIZE];
 };
 .fi
 .IP "level"
