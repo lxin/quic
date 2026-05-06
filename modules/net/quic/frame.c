@@ -1409,7 +1409,7 @@ static int quic_frame_new_token_process(struct sock *sk,
 	if (quic_data_dup(token, p, length))
 		return -ENOMEM;
 	/* Notify upper layers that a valid NEW_TOKEN was received. */
-	quic_inq_event_recv(sk, QUIC_EVENT_NEW_TOKEN, token, token->len);
+	quic_inq_event_recv(sk, QUIC_EVENT_NEW_TOKEN, token->data, token->len);
 
 	len -= length;
 	return (int)(frame->len - len);
