@@ -2381,6 +2381,7 @@ int quic_do_setsockopt(struct sock *sk, int optname, sockptr_t optval,
 		break;
 	case QUIC_SOCKOPT_CRYPTO_SECRET:
 		retval = quic_sock_set_crypto_secret(sk, kopt, optlen);
+		memzero_explicit(kopt, optlen);
 		break;
 	default:
 		retval = -ENOPROTOOPT;
