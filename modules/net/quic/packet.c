@@ -1308,6 +1308,9 @@ static int quic_packet_process_error(struct sock *sk, struct sk_buff *skb,
 	if (!err) /* Invoked from backlog scheduling path. */
 		goto send;
 
+	if (err == -EINPROGRESS) /* Async decryption or already consumed. */
+		return err;
+
 	pr_debug("%s: failed, num: %llu, level: %d, err: %d\n",
 		 __func__, cb->number, cb->level, err);
 
@@ -1458,7 +1461,7 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb)
 	int err = 0;
 
 	if (cb->errcode) /* Re-entered after backlog scheduling. */
-		goto err;
+		return quic_packet_process_error(sk, skb, err);
 
 	/* Associate skb with sk to ensure sk is valid during async decryption
 	 * completion.
@@ -1495,10 +1498,12 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb)
 		if (err) {
 			QUIC_INC_STATS(net, QUIC_MIB_PKT_INVHDRDROP);
 			cb->level = packet->level;
-			goto err;
+			break;
 		}
-		if (!packet->level) /* Already consumed (e.g., Retry). */
-			return 0;
+		if (!packet->level) { /* Already consumed (e.g., Retry). */
+			err = -EINPROGRESS;
+			break;
+		}
 
 		cb->level = packet->level;
 		crypto = quic_crypto(sk, cb->level);
@@ -1511,10 +1516,10 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb)
 		if (err) {
 			if (err == -EINPROGRESS) {
 				QUIC_INC_STATS(net, QUIC_MIB_PKT_DECBACKLOGS);
-				return err;
+				break;
 			}
 			QUIC_INC_STATS(net, QUIC_MIB_PKT_DECDROP);
-			goto err;
+			break;
 		}
 		if (!cb->resume) /* Already decrypted (parse_alpn or async). */
 			QUIC_INC_STATS(net, QUIC_MIB_PKT_DECFASTPATHS);
@@ -1529,7 +1534,7 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb)
 			QUIC_INC_STATS(net, QUIC_MIB_PKT_INVHDRDROP);
 			cb->errcode = QUIC_TRANSPORT_ERROR_PROTOCOL_VIOLATION;
 			err = -EINVAL;
-			goto err;
+			break;
 		}
 
 		pr_debug("%s: recvd, num: %llu, level: %d, len: %d\n",
@@ -1542,10 +1547,11 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb)
 		if (err) {
 			if (err > 0) { /* ACK if PN already marked. */
 				packet->ack_eliciting = 1;
+				err = 0;
 				goto skip;
 			}
 			QUIC_INC_STATS(net, QUIC_MIB_PKT_INVNUMDROP);
-			goto err;
+			break;
 		}
 
 		/* Prepare a 'coalesced' frame for parsing and processing. */
@@ -1558,12 +1564,12 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb)
 		err = quic_frame_process(sk, &frame);
 		if (err) {
 			QUIC_INC_STATS(net, QUIC_MIB_PKT_INVFRMDROP);
-			goto err;
+			break;
 		}
 		/* Mark packet number as received for ACK generation. */
 		err = quic_pnspace_mark(space, cb->number);
 		if (err)
-			goto err;
+			break;
 
 		/* rfc9000#section-13.4.1:
 		 *
@@ -1655,7 +1661,7 @@ skip:
 		if (ntohs(uh->len) - sizeof(*uh) < QUIC_MIN_UDP_PAYLOAD) {
 			cb->errcode = QUIC_TRANSPORT_ERROR_PROTOCOL_VIOLATION;
 			err = -EINVAL;
-			goto err;
+			break;
 		}
 next:
 		/* Advance skb pointer to next QUIC packet. */
@@ -1686,10 +1692,10 @@ out:
 	}
 	quic_timer_reset(sk, QUIC_TIMER_PATH, paths->keepalive_interval);
 
+	if (err)
+		return quic_packet_process_error(sk, skb, err);
 	consume_skb(skb);
 	return 0;
-err:
-	return quic_packet_process_error(sk, skb, err);
 }
 
 /* Check if the packet arrived on an alternate path. If so and no alternate
