@@ -2302,8 +2302,8 @@ static struct sk_buff *quic_packet_handshake_create(struct sock *sk)
 	}
 	len = packet->len;
 	if (packet->frames) {
-		/* If there are ack-eliciting frames (not including PING),
-		 * create packet_sent for acknowledge and loss detection.
+		/* If there are ack-eliciting frames, create packet_sent for
+		 * acknowledge and loss detection.
 		 */
 		sent = quic_packet_sent_alloc(packet->frames);
 		if (!sent) { /* Move pending frames back to the outqueue. */
@@ -2442,8 +2442,8 @@ static struct sk_buff *quic_packet_app_create(struct sock *sk)
 				packet->len = len;
 			}
 		}
-		/* If there are ack-eliciting frames (not including PING),
-		 * create packet_sent for acknowledge and loss detection.
+		/* If there are ack-eliciting frames, create packet_sent for
+		 * acknowledge and loss detection.
 		 */
 		sent = quic_packet_sent_alloc(packet->frames);
 		if (!sent) { /* Move pending frames back to the outqueue. */
@@ -2758,7 +2758,7 @@ int quic_packet_create_and_xmit(struct sock *sk)
 	if (err && err != -EINPROGRESS)
 		goto err;
 
-	/* Return 1 if at least one ACK-eliciting (non-PING) frame was sent. */
+	/* Return 1 if at least one ACK-eliciting frame was sent. */
 	return !!packet->frames;
 err:
 	pr_debug("%s: err: %d\n", __func__, err);
