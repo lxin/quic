@@ -2016,7 +2016,7 @@ static int quic_frame_path_response_process(struct sock *sk,
 	u8 local, entropy[QUIC_PATH_ENTROPY_LEN];
 	u32 len = frame->len;
 
-	if (len < 8)
+	if (len < QUIC_PATH_ENTROPY_LEN)
 		return -EINVAL;
 
 	/* Verify path challenge entropy. */
