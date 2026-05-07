@@ -1495,7 +1495,7 @@ static int quic_sock_apply_config(struct sock *sk, struct quic_config *config)
 		paths->plpmtud_interval = config->plpmtud_probe_interval;
 	}
 	if (config->keepalive_probe_interval) {
-		if (config->keepalive_probe_interval < QUIC_MIN_PROBE_TIMEOUT)
+		if (config->keepalive_probe_interval < QUIC_MIN_PATH_TIMEOUT)
 			return -EINVAL;
 		paths->keepalive_interval = config->keepalive_probe_interval;
 	}
