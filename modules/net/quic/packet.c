@@ -986,6 +986,16 @@ static int quic_packet_listen_process(struct sock *sk, struct sk_buff *skb)
 	if (quic_accept_sock_exists(sk, skb))
 		return 0; /* Already handled by matched accept socket. */
 
+	/* rfc9000#section-6.1:
+	 *
+	 * An endpoint MUST NOT send a Version Negotiation packet in response
+	 * to receiving a Version Negotiation packet.
+	 */
+	if (!version) {
+		QUIC_INC_STATS(net, QUIC_MIB_PKT_INVHDRDROP);
+		kfree_skb(skb);
+		return -EINVAL;
+	}
 	if (!quic_packet_compatible_versions(version)) {
 		/* rfc9000#section-6.1:
 		 *
