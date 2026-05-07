@@ -724,9 +724,9 @@ static __init int quic_init(void)
 	quic_transport_param_init();
 	quic_crypto_init();
 
-	quic_frame_cachep = kmem_cache_create("quic_frame",
-					      sizeof(struct quic_frame),
-					      0, SLAB_HWCACHE_ALIGN, NULL);
+	quic_frame_cachep =
+		kmem_cache_create("quic_frame", sizeof(struct quic_frame),
+				  0, SLAB_HWCACHE_ALIGN | SLAB_ACCOUNT, NULL);
 	if (!quic_frame_cachep)
 		goto err;
 
