@@ -3026,7 +3026,7 @@ enum {
 	QUIC_TRANSPORT_PARAM_IDX_MAX,
 };
 
-static u32 quic_frame_param_idx(u32 param)
+static u32 quic_frame_param_idx(u64 param)
 {
 	if (param <= QUIC_TRANSPORT_PARAM_MAX)
 		return param;
