@@ -670,7 +670,7 @@ static void quic_outq_psent_sack_frames(struct sock *sk,
 
 		acked += frame->bytes;
 		/* Remove from send/transmitted list and release reference. */
-		if (!frame->transmitted)
+		if (!frame->transmitted && quic_frame_stream(frame->type))
 			outq->stream_list_len -= frame->len;
 		list_del_init(&frame->list);
 		frame->transmitted = 0;
