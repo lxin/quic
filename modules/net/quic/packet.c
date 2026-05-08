@@ -2195,7 +2195,7 @@ static struct quic_packet_sent *quic_packet_sent_alloc(u16 frames)
 	u32 len = frames * sizeof(struct quic_frame *);
 	struct quic_packet_sent *sent;
 
-	sent = kzalloc(sizeof(*sent) + len, GFP_ATOMIC);
+	sent = kzalloc(sizeof(*sent) + len, GFP_ATOMIC | __GFP_ACCOUNT);
 	if (sent)
 		sent->frames = frames;
 
