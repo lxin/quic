@@ -987,6 +987,8 @@ static int quic_frame_crypto_process(struct sock *sk, struct quic_frame *frame,
 		return -EINVAL;
 	if (!quic_get_var(&p, &len, &length) || length > len)
 		return -EINVAL;
+	if (!length)
+		goto out;
 	/* rfc9000#section-19.6:
 	 *
 	 * The largest offset delivered on a stream -- the sum of the offset
@@ -1017,6 +1019,7 @@ static int quic_frame_crypto_process(struct sock *sk, struct quic_frame *frame,
 		quic_frame_put(nframe);
 		return err;
 	}
+out:
 	len -= length;
 	/* Return number of bytes consumed from the original frame. */
 	return (int)(frame->len - len);
@@ -1043,8 +1046,8 @@ static int quic_frame_stream_process(struct sock *sk, struct quic_frame *frame,
 	u64 stream_id, payload_len, offset = 0;
 	struct quic_stream *stream;
 	struct quic_frame *nframe;
+	u8 *p = frame->data, fin;
 	u32 len = frame->len;
-	u8 *p = frame->data;
 	int err;
 
 	if (!quic_get_var(&p, &len, &stream_id))
@@ -1059,6 +1062,9 @@ static int quic_frame_stream_process(struct sock *sk, struct quic_frame *frame,
 		if (!quic_get_var(&p, &len, &payload_len) || payload_len > len)
 			return -EINVAL;
 	}
+	fin = !!(type & QUIC_STREAM_BIT_FIN);
+	if (!payload_len && !fin)
+		goto out;
 	/* rfc9000#section-19.8:
 	 *
 	 * The largest offset delivered on a stream -- the sum of the offset
@@ -1110,7 +1116,7 @@ static int quic_frame_stream_process(struct sock *sk, struct quic_frame *frame,
 
 	nframe->offset = offset;
 	nframe->stream = stream;
-	nframe->stream_fin = (type & QUIC_STREAM_BIT_FIN);
+	nframe->stream_fin = fin;
 	nframe->level = frame->level;
 
 	err = quic_inq_stream_recv(sk, nframe);
@@ -2149,6 +2155,8 @@ static int quic_frame_datagram_process(struct sock *sk,
 		if (!quic_get_var(&p, &len, &payload_len) || payload_len > len)
 			return -EINVAL;
 	}
+	if (!payload_len)
+		goto out;
 
 	/* rfc9221#section-3:
 	 *
@@ -2174,7 +2182,7 @@ static int quic_frame_datagram_process(struct sock *sk,
 		quic_frame_put(nframe);
 		return err;
 	}
-
+out:
 	len -= payload_len;
 	return (int)(frame->len - len);
 }
