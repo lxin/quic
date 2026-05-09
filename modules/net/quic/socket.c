@@ -1452,55 +1452,24 @@ static void quic_sock_fetch_config(struct sock *sk, struct quic_config *config)
 }
 
 /* Apply QUIC configuration settings to a socket. */
-static int quic_sock_apply_config(struct sock *sk, struct quic_config *config)
+static void quic_sock_apply_config(struct sock *sk, struct quic_config *config)
 {
 	struct quic_path_group *paths = quic_paths(sk);
 	struct quic_outqueue *outq = quic_outq(sk);
 	struct quic_cong *cong = quic_cong(sk);
 
-	if (config->receive_session_ticket)
-		outq->receive_session_ticket = config->receive_session_ticket;
-	if (config->validate_peer_address)
-		outq->validate_peer_address = config->validate_peer_address;
-	if (config->certificate_request)
-		outq->certificate_request = config->certificate_request;
-	if (config->stream_data_nodelay)
-		outq->stream_data_nodelay = config->stream_data_nodelay;
-	if (config->payload_cipher_type) {
-		if (config->payload_cipher_type != TLS_CIPHER_AES_GCM_128 &&
-		    config->payload_cipher_type != TLS_CIPHER_AES_GCM_256 &&
-		    config->payload_cipher_type != TLS_CIPHER_AES_CCM_128 &&
-		    config->payload_cipher_type != TLS_CIPHER_CHACHA20_POLY1305)
-			return -EINVAL;
-		outq->payload_cipher_type = config->payload_cipher_type;
-	}
-	if (config->version)
-		outq->version = config->version;
+	outq->receive_session_ticket = config->receive_session_ticket;
+	outq->validate_peer_address = config->validate_peer_address;
+	outq->certificate_request = config->certificate_request;
+	outq->stream_data_nodelay = config->stream_data_nodelay;
+	outq->payload_cipher_type = config->payload_cipher_type;
+	outq->version = config->version;
 
-	if (config->initial_smoothed_rtt) {
-		if (config->initial_smoothed_rtt < QUIC_RTT_MIN ||
-		    config->initial_smoothed_rtt > QUIC_RTT_MAX)
-			return -EINVAL;
-		quic_cong_set_srtt(cong, config->initial_smoothed_rtt);
-	}
-	if (config->congestion_control_algo) {
-		if (config->congestion_control_algo >= QUIC_CONG_ALG_MAX)
-			return -EINVAL;
-		quic_cong_set_algo(cong, config->congestion_control_algo);
-	}
+	quic_cong_set_srtt(cong, config->initial_smoothed_rtt);
+	quic_cong_set_algo(cong, config->congestion_control_algo);
 
-	if (config->plpmtud_probe_interval) {
-		if (config->plpmtud_probe_interval < QUIC_MIN_PROBE_TIMEOUT)
-			return -EINVAL;
-		paths->plpmtud_interval = config->plpmtud_probe_interval;
-	}
-	if (config->keepalive_probe_interval) {
-		if (config->keepalive_probe_interval < QUIC_MIN_PATH_TIMEOUT)
-			return -EINVAL;
-		paths->keepalive_interval = config->keepalive_probe_interval;
-	}
-
-	return 0;
+	paths->plpmtud_interval = config->plpmtud_probe_interval;
+	paths->keepalive_interval = config->keepalive_probe_interval;
 }
 
 /* Initialize an accept QUIC socket from a listen socket. */
@@ -2059,16 +2028,73 @@ static int quic_sock_set_transport_param(struct sock *sk, void *kopt, u32 len)
 	return 0;
 }
 
+/* Validate and copy configs. */
+static int quic_config_check_and_copy(struct quic_config *c,
+				      struct quic_config *config)
+{
+	if (c->receive_session_ticket)
+		config->receive_session_ticket = c->receive_session_ticket;
+	if (c->validate_peer_address)
+		config->validate_peer_address = c->validate_peer_address;
+	if (c->certificate_request)
+		config->certificate_request = c->certificate_request;
+	if (c->stream_data_nodelay)
+		config->stream_data_nodelay = c->stream_data_nodelay;
+	if (c->payload_cipher_type) {
+		if (c->payload_cipher_type != TLS_CIPHER_AES_GCM_128 &&
+		    c->payload_cipher_type != TLS_CIPHER_AES_GCM_256 &&
+		    c->payload_cipher_type != TLS_CIPHER_AES_CCM_128 &&
+		    c->payload_cipher_type != TLS_CIPHER_CHACHA20_POLY1305)
+			return -EINVAL;
+		config->payload_cipher_type = c->payload_cipher_type;
+	}
+	if (c->version)
+		config->version = c->version;
+
+	if (c->initial_smoothed_rtt) {
+		if (c->initial_smoothed_rtt < QUIC_RTT_MIN ||
+		    c->initial_smoothed_rtt > QUIC_RTT_MAX)
+			return -EINVAL;
+		config->initial_smoothed_rtt = c->initial_smoothed_rtt;
+	}
+	if (c->congestion_control_algo) {
+		if (c->congestion_control_algo >= QUIC_CONG_ALG_MAX)
+			return -EINVAL;
+		config->congestion_control_algo = c->congestion_control_algo;
+	}
+
+	if (c->plpmtud_probe_interval) {
+		if (c->plpmtud_probe_interval < QUIC_MIN_PROBE_TIMEOUT)
+			return -EINVAL;
+		config->plpmtud_probe_interval = c->plpmtud_probe_interval;
+	}
+	if (c->keepalive_probe_interval) {
+		if (c->keepalive_probe_interval < QUIC_MIN_PATH_TIMEOUT)
+			return -EINVAL;
+		config->keepalive_probe_interval = c->keepalive_probe_interval;
+	}
+
+	return 0;
+}
+
 static int quic_sock_set_config(struct sock *sk, void *kopt, u32 len)
 {
-	struct quic_config c = {};
+	struct quic_config config = {}, c = {};
+	int err;
 
 	if (quic_is_established(sk))
 		return -EINVAL;
 
 	quic_copy_common(&c, sizeof(c), kopt, len);
 
-	return quic_sock_apply_config(sk, &c);
+	quic_sock_fetch_config(sk, &config);
+
+	err = quic_config_check_and_copy(&c, &config);
+	if (err)
+		return err;
+
+	quic_sock_apply_config(sk, &config);
+	return 0;
 }
 
 static int quic_sock_set_alpn(struct sock *sk, u8 *data, u32 len)
