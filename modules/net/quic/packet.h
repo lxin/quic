@@ -16,7 +16,6 @@ struct quic_packet {
 
 	struct list_head frame_list; /* Frames to pack into packet for send */
 	struct sk_buff *head;        /* Head skb for packet bundling on send */
-	u16 frame_len; /* Length of all ack-eliciting frames */
 	u16 overhead;  /* QUIC header length excluding frames */
 	u32 version;   /* QUIC version used/selected during handshake */
 	u8 taglen[2];  /* Tag length for short and long packets */
@@ -43,8 +42,8 @@ struct quic_packet_sent {
 	u8  level;             /* Packet number space */
 	u8  ecn:2;             /* ECN bits */
 
-	u16 frame_len; /* Combined length of all frames held */
-	u16 frames;    /* Number of frames held */
+	u16 frames; /* Number of frames held */
+	u16 len;    /* The sent packet length including taglen */
 
 	struct quic_frame *frame_array[]; /* Array of pointers to held frames */
 };

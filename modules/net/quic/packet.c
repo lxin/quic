@@ -2175,17 +2175,17 @@ static void quic_packet_pack_frames(struct sock *sk, struct sk_buff *skb,
 	 */
 	sent->number = number;
 	sent->sent_time = now;
-	sent->frame_len = packet->frame_len;
+	sent->len = packet->len + quic_packet_taglen(packet);
 	sent->level = (packet->level % QUIC_CRYPTO_EARLY);
 
-	space->inflight += sent->frame_len;
-	outq->inflight += sent->frame_len;
+	space->inflight += sent->len;
+	outq->inflight += sent->len;
 	/* Append packet to sent list for loss and ACK tracking. */
 	quic_outq_packet_sent_tail(sk, sent);
 
 	/* Call cong.on_packet_sent() where it does pacing time update. */
-	quic_cong_on_packet_sent(quic_cong(sk), sent->sent_time,
-				 sent->frame_len, number);
+	quic_cong_on_packet_sent(quic_cong(sk), sent->sent_time, sent->len,
+				 number);
 	/* Refresh loss detection timer after sending data. */
 	quic_outq_update_loss_timer(sk);
 }
@@ -2591,7 +2591,6 @@ int quic_packet_config(struct sock *sk, u8 level, u8 path)
 		return 0;
 
 	packet->path_validating = 0;
-	packet->frame_len = 0;
 	packet->ipfragok = 0;
 	packet->padding = 0;
 	packet->frames = 0;
@@ -2832,9 +2831,7 @@ int quic_packet_tail(struct sock *sk, struct quic_frame *frame)
 	if (quic_frame_ack_eliciting(frame->type)) {
 		if (quic_frame_path_validating(frame->type))
 			packet->path_validating = 1;
-
 		packet->frames++;
-		packet->frame_len += frame->len;
 	}
 
 	list_move_tail(&frame->list, &packet->frame_list);

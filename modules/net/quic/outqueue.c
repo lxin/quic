@@ -29,7 +29,7 @@ static bool quic_outq_limit_check(struct sock *sk, struct quic_frame *frame)
 	/* Enforce congestion control for ack-eliciting frames except PING. */
 	if (!outq->single && quic_frame_ack_eliciting(frame->type) &&
 	    !quic_frame_ping(frame->type)) {
-		len = packet->frame_len + frame->len;
+		len = packet->len + frame->len;
 		if (outq->inflight + len > outq->window)
 			return true;
 	}
@@ -761,8 +761,8 @@ void quic_outq_transmitted_sack(struct sock *sk, u8 level, s64 largest,
 			quic_pnspace_inc_ecn_acked(space, sent->ecn);
 		}
 
-		outq->inflight -= sent->frame_len;
-		space->inflight -= sent->frame_len;
+		outq->inflight -= sent->len;
+		space->inflight -= sent->len;
 		/* Process the frames contained in the acknowledged packet. */
 		quic_outq_psent_sack_frames(sk, sent);
 
@@ -776,11 +776,11 @@ void quic_outq_transmitted_sack(struct sock *sk, u8 level, s64 largest,
 			crypto->key_update_time = cong->pto * 2;
 		}
 		/* Call cong.on_packet_acked() and sync send window. */
-		quic_cong_on_packet_acked(cong, sent->sent_time,
-					  sent->frame_len, sent->number);
+		quic_cong_on_packet_acked(cong, sent->sent_time, sent->len,
+					  sent->number);
 		quic_outq_sync_window(sk, cong->window);
 
-		acked += sent->frame_len;
+		acked += sent->len;
 		list_del(&sent->list);
 		kfree(sent);
 	}
@@ -1056,13 +1056,13 @@ void quic_outq_retransmit_mark(struct sock *sk, u8 level, bool immediate)
 			break;
 		}
 
-		outq->inflight -= sent->frame_len;
-		space->inflight -= sent->frame_len;
+		outq->inflight -= sent->len;
+		space->inflight -= sent->len;
 		/* Move frames from the lost packet back to the send queue. */
 		quic_outq_psent_retransmit_frames(sk, sent);
 
 		/* Call cong.on_packet_lost() and sync send window. */
-		quic_cong_on_packet_lost(cong, sent->sent_time, sent->frame_len,
+		quic_cong_on_packet_lost(cong, sent->sent_time, sent->len,
 					 sent->number);
 		quic_outq_sync_window(sk, cong->window);
 
