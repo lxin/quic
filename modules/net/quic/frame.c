@@ -626,7 +626,8 @@ quic_frame_reset_stream_create(struct sock *sk, void *data, u8 type)
 	u32 frame_len;
 
 	stream = quic_stream_find(streams, info->stream_id);
-	WARN_ON_ONCE(!stream);
+	if (WARN_ON_ONCE(!stream))
+		return ERR_PTR(-ENOENT);
 
 	p = quic_put_var(buf, type);
 	p = quic_put_var(p, info->stream_id);
@@ -671,7 +672,8 @@ quic_frame_stop_sending_create(struct sock *sk, void *data, u8 type)
 	u32 frame_len;
 
 	stream = quic_stream_find(streams, info->stream_id);
-	WARN_ON_ONCE(!stream);
+	if (WARN_ON_ONCE(!stream))
+		return ERR_PTR(-ENOENT);
 
 	p = quic_put_var(buf, type);
 	p = quic_put_var(p, info->stream_id);
