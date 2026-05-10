@@ -838,16 +838,27 @@ static int quic_packet_version_create_and_xmit(struct sock *sk)
  * in response to receiving a packet that it cannot associate with an active
  * connection.
  */
-static int quic_packet_stateless_reset_create_and_xmit(struct sock *sk)
+static int quic_packet_stateless_reset_create_and_xmit(struct sock *sk, u32 len)
 {
 	struct quic_crypto *crypto = quic_crypto(sk, QUIC_CRYPTO_INITIAL);
 	struct quic_packet *packet = quic_packet(sk);
-	u32 len, hlen, tlen = QUIC_CONN_ID_TOKEN_LEN;
+	u32 hlen, tlen = QUIC_CONN_ID_TOKEN_LEN;
 	union quic_addr *da = &packet->daddr;
 	u8 *p, token[QUIC_CONN_ID_TOKEN_LEN];
 	struct sk_buff *skb;
 	struct flowi fl;
 	int err;
+
+	/* rfc9000#section-10.3.3:
+	 *
+	 * An endpoint MUST ensure that every Stateless Reset that it sends is
+	 * smaller than the packet that triggered it, unless it maintains state
+	 * sufficient to prevent looping. In the event of a loop, this results
+	 * in packets eventually being too small to trigger a response.
+	 */
+	if (len <= QUIC_STATELESS_RESET_MIN_LEN)
+		return -EINVAL;
+	len = min_t(u32, QUIC_STATELESS_RESET_DEF_LEN, len - 1);
 
 	/* Clear routing cache and compute flow route. */
 	__sk_dst_reset(sk);
@@ -863,7 +874,6 @@ static int quic_packet_stateless_reset_create_and_xmit(struct sock *sk)
 	if (err)
 		return err;
 
-	len = QUIC_STATELESS_RESET_DEF_LEN;
 	hlen = quic_encap_len(da) + MAX_HEADER;
 	skb = alloc_skb(hlen + len, GFP_ATOMIC);
 	if (!skb)
@@ -961,7 +971,7 @@ static int quic_packet_listen_process(struct sock *sk, struct sk_buff *skb)
 				    (u8 *)quic_hdr(skb) + QUIC_HLEN,
 				    QUIC_CONN_ID_DEF_LEN);
 		/* Send a Stateless Reset for this 1-RTT packet. */
-		err = quic_packet_stateless_reset_create_and_xmit(sk);
+		err = quic_packet_stateless_reset_create_and_xmit(sk, len);
 		consume_skb(skb);
 		return err;
 	}
@@ -1012,7 +1022,7 @@ static int quic_packet_listen_process(struct sock *sk, struct sk_buff *skb)
 	/* Read Packet Type. */
 	type = quic_packet_version_get_type(version, quic_hshdr(skb)->type);
 	if (type != QUIC_PACKET_INITIAL) { /* Send a Stateless Reset. */
-		err = quic_packet_stateless_reset_create_and_xmit(sk);
+		err = quic_packet_stateless_reset_create_and_xmit(sk, len);
 		consume_skb(skb);
 		return err;
 	}
