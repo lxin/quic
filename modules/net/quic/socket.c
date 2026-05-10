@@ -1717,6 +1717,7 @@ static int quic_sock_stream_reset(struct sock *sk, void *kopt, u32 len)
 
 	stream->send.state = QUIC_STREAM_SEND_STATE_RESET_SENT;
 	quic_outq_ctrl_tail(sk, frame, false);
+	sk->sk_write_space(sk);
 	return 0;
 }
 

@@ -1632,6 +1632,7 @@ static int quic_frame_stop_sending_process(struct sock *sk,
 			    sizeof(update));
 
 	stream->send.state = update.state;
+	sk->sk_write_space(sk);
 out:
 	return (int)(frame->len - len);
 }
