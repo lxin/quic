@@ -609,9 +609,15 @@ int quic_inq_event_recv(struct sock *sk, u8 event, void *data, u32 len)
 	if (!(quic_inq(sk)->events & BIT(event)))
 		return 0;  /* Event type not subscribed by user. */
 
+	if (sk_rmem_alloc_get(sk) + 1 + len > sk->sk_rcvbuf ||
+	    !quic_sk_rmem_schedule(sk, 1 + len)) {
+		pr_debug("%s: nobuf: %u, len: %u\n", __func__, event, len);
+		return -ENOBUFS;
+	}
+
 	frame = quic_frame_alloc(1 + len, NULL, GFP_ATOMIC);
 	if (!frame) {
-		pr_debug("%s: event: %u, len: %u\n", __func__, event, len);
+		pr_debug("%s: nomem: %u, len: %u\n", __func__, event, len);
 		return -ENOMEM;
 	}
 	p = quic_put_data(frame->data, &event, 1);
