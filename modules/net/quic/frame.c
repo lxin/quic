@@ -2405,6 +2405,7 @@ enum quic_frame_attr {
 #define QUIC_A___R__01 (QUIC_A_R | QUIC_A_0 | QUIC_A_1)
 #define QUIC_A___R___1 (QUIC_A_R | QUIC_A_1)
 #define QUIC_A____IH01 (QUIC_A_0 | QUIC_A_H | QUIC_A_I | QUIC_A_1)
+#define QUIC_A______01 (QUIC_A_0 | QUIC_A_1)
 
 static struct quic_frame_ops quic_frame_ops[QUIC_FRAME_MAX + 1] = {
 	/* 0x00 */
@@ -2462,8 +2463,8 @@ static struct quic_frame_ops quic_frame_ops[QUIC_FRAME_MAX + 1] = {
 	quic_frame_create_and_process_and_ack(invalid, 0),
 	quic_frame_create_and_process_and_ack(invalid, 0),
 	/* 0x30 */
-	quic_frame_create_and_process_and_ack(datagram, QUIC_A_1),
-	quic_frame_create_and_process_and_ack(datagram, QUIC_A_1),
+	quic_frame_create_and_process_and_ack(datagram, QUIC_A______01),
+	quic_frame_create_and_process_and_ack(datagram, QUIC_A______01),
 };
 
 static bool quic_frame_level_valid(u8 level, u8 type)

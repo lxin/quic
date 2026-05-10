@@ -1029,6 +1029,7 @@ static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 	struct quic_stream *stream;
 	u32 flags = msg->msg_flags;
 	struct quic_frame *frame;
+	u8 level;
 
 	lock_sock(sk);
 	err = quic_msghdr_parse(sk, msg, &hinfo, &sinfo, &has_hinfo,
@@ -1116,7 +1117,8 @@ static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 		goto out;
 	}
 
-	if (quic_packet_config(sk, QUIC_CRYPTO_APP, 0)) {
+	level = quic_is_established(sk) ? QUIC_CRYPTO_APP : QUIC_CRYPTO_EARLY;
+	if (quic_packet_config(sk, level, 0)) {
 		err = -ENETUNREACH;
 		goto err;
 	}
