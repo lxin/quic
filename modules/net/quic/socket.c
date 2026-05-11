@@ -1847,7 +1847,7 @@ static int quic_sock_connection_migrate(struct sock *sk, struct sockaddr *addr,
 	/* Reject if connection is closed or address matches the current path's
 	 * source.
 	 */
-	if (quic_is_closed(sk) ||
+	if (quic_is_closed(sk) || quic_is_listen(sk) ||
 	    quic_cmp_sk_addr(sk, quic_path_saddr(paths, 0), &a))
 		return -EINVAL;
 
