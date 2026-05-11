@@ -16,14 +16,14 @@ struct quic_packet {
 
 	struct list_head frame_list; /* Frames to pack into packet for send */
 	struct sk_buff *head;        /* Head skb for packet bundling on send */
-	u16 overhead;  /* QUIC header length excluding frames */
 	u32 version;   /* QUIC version used/selected during handshake */
+	u16 overhead;  /* QUIC header length excluding frames */
 	u8 taglen[2];  /* Tag length for short and long packets */
 	u16 padding;   /* Total padding bytes to append after frames */
 	u16 frames;    /* Number of ack-eliciting frames */
 	u16 mss[2];    /* MSS for datagram and non-datagram packets */
 	u16 hlen;      /* UDP + IP header length for sending */
-	u16 len;       /* QUIC packet length excluding taglen for sending */
+	u16 len;       /* QUIC packet length including taglen for sending */
 
 	u8 path_validating:1; /* Packet contains path_validating frames */
 	u8 ack_eliciting:1;   /* Packet contains ack-eliciting frames */

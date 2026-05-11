@@ -2158,7 +2158,7 @@ static void quic_packet_pack_frames(struct sock *sk, struct sk_buff *skb,
 	 * limits for server.
 	 */
 	if (quic_is_serv(sk) && !paths->validated)
-		paths->ampl_sndlen += skb->len + quic_packet_taglen(packet);
+		paths->ampl_sndlen += packet->len;
 
 	if (!sent) /* Packet doesn't need ACK/loss tracking. */
 		return;
@@ -2185,7 +2185,7 @@ static void quic_packet_pack_frames(struct sock *sk, struct sk_buff *skb,
 	 */
 	sent->number = number;
 	sent->sent_time = now;
-	sent->len = packet->len + quic_packet_taglen(packet);
+	sent->len = packet->len;
 	sent->level = (packet->level % QUIC_CRYPTO_EARLY);
 
 	space->inflight += sent->len;
@@ -2318,15 +2318,14 @@ static struct sk_buff *quic_packet_handshake_create(struct sock *sk)
 		 * the smallest allowed maximum datagram size of 1200 bytes.
 		 */
 		if (level == QUIC_CRYPTO_INITIAL) {
-			len = QUIC_MIN_UDP_PAYLOAD -
-			      packet->taglen[QUIC_PACKET_FORM_LONG];
+			len = QUIC_MIN_UDP_PAYLOAD;
 			if (packet->len < len) {
 				packet->padding = len - packet->len;
 				packet->len = len;
 			}
 		}
 	}
-	len = packet->len;
+	len = packet->len - quic_packet_taglen(packet);
 	if (packet->frames) {
 		/* If there are ack-eliciting frames, create packet_sent for
 		 * acknowledge and loss detection.
@@ -2342,8 +2341,7 @@ static struct sk_buff *quic_packet_handshake_create(struct sock *sk)
 	 * Packet.
 	 */
 	hlen = packet->hlen + MAX_HEADER;
-	skb = alloc_skb(hlen + len + packet->taglen[QUIC_PACKET_FORM_LONG],
-			GFP_ATOMIC);
+	skb = alloc_skb(hlen + packet->len, GFP_ATOMIC);
 	if (!skb) {
 		kfree(sent);
 		quic_outq_retransmit_list(sk, &packet->frame_list);
@@ -2385,8 +2383,7 @@ static struct sk_buff *quic_packet_handshake_create(struct sock *sk)
 
 	/* Write Length. */
 	off = (u16)(p + QUIC_PACKET_LENGTH_LEN - skb->data);
-	p = quic_put_varint(p, len - off + QUIC_TAG_LEN,
-			    QUIC_PACKET_LENGTH_LEN);
+	p = quic_put_varint(p, packet->len - off, QUIC_PACKET_LENGTH_LEN);
 
 	/* Pack Packet Number and actual frames starting at offset 'off'. */
 	quic_packet_pack_frames(sk, skb, sent, off);
@@ -2461,8 +2458,7 @@ static struct sk_buff *quic_packet_app_create(struct sock *sk)
 			 * smallest allowed maximum datagram size of 1200
 			 * bytes.
 			 */
-			len = QUIC_MIN_UDP_PAYLOAD -
-			      packet->taglen[QUIC_PACKET_FORM_SHORT];
+			len = QUIC_MIN_UDP_PAYLOAD;
 			if (packet->len < len) {
 				packet->padding = len - packet->len;
 				packet->len = len;
@@ -2481,10 +2477,9 @@ static struct sk_buff *quic_packet_app_create(struct sock *sk)
 	/* Allocate skb with space for header + payload + AEAD taglen of Short
 	 * Packet.
 	 */
-	len = packet->len;
+	len = packet->len - quic_packet_taglen(packet);
 	hlen = packet->hlen + MAX_HEADER;
-	skb = alloc_skb(hlen + len + packet->taglen[QUIC_PACKET_FORM_SHORT],
-			GFP_ATOMIC);
+	skb = alloc_skb(hlen + packet->len, GFP_ATOMIC);
 	if (!skb) { /* Move pending frames back to the outqueue. */
 		kfree(sent);
 		quic_outq_retransmit_list(sk, &packet->frame_list);
@@ -2607,7 +2602,7 @@ int quic_packet_config(struct sock *sk, u8 level, u8 path)
 
 	packet->level = level;
 	packet->overhead = quic_packet_overhead(sk, level, path);
-	packet->len = packet->overhead;
+	packet->len = packet->overhead + quic_packet_taglen(packet);
 
 	/* Allow fragmentation for handshake packets before PLPMTUD probing
 	 * starts. MTU discovery does not rely on ICMP Packet Too Big once
@@ -2808,7 +2803,6 @@ void quic_packet_flush(struct sock *sk)
 int quic_packet_tail(struct sock *sk, struct quic_frame *frame)
 {
 	struct quic_packet *packet = quic_packet(sk);
-	u8 taglen;
 
 	/* Reject frame if it doesn't match the packet's encryption level or
 	 * path, or if padding is already in place (no further frames should be
@@ -2821,11 +2815,10 @@ int quic_packet_tail(struct sock *sk, struct quic_frame *frame)
 	/* Check if frame would exceed the current datagram MSS (excluding AEAD
 	 * tag).
 	 */
-	taglen = quic_packet_taglen(packet);
 	if (packet->len + frame->len + frame->padding >
-	    packet->mss[frame->dgram] - taglen) {
+	    packet->mss[frame->dgram]) {
 		/* If some data has already been added to packet, bail out. */
-		if (packet->len != packet->overhead)
+		if (!quic_packet_empty(packet))
 			return 0;
 		/* Otherwise, allow IP fragmentation for this packet unless
 		 * it’s a PING probe.
