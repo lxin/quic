@@ -1570,6 +1570,14 @@ static int quic_frame_reset_stream_process(struct sock *sk,
 	quic_inq_list_purge(sk, &inq->stream_list, stream);
 	quic_inq_list_purge(sk, &inq->early_list, stream);
 	quic_inq_list_purge(sk, &inq->recv_list, stream);
+
+	/* Account remaining stream data as consumed for connection-level flow
+	 * control. Otherwise inq->bytes diverges from peer outq->bytes after
+	 * RESET_STREAM.
+	 */
+	inq->highest += (finalsz - stream->recv.highest);
+	quic_inq_flow_control(sk, NULL, finalsz - stream->recv.bytes);
+
 	/* Release the receive stream. */
 	quic_stream_put(streams, stream, quic_is_serv(sk), false);
 out:
