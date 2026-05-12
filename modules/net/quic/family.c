@@ -328,7 +328,9 @@ static int quic_v6_get_user_addr(struct sock *sk, union quic_addr *a,
 	type = ipv6_addr_type(&ua->v6.sin6_addr);
 	if (type != IPV6_ADDR_ANY && !(type & IPV6_ADDR_UNICAST))
 		return -EINVAL;
-	if (type == IPV6_ADDR_ANY && !any)
+	if (any)
+		ua->v6.sin6_flowinfo = 0;
+	else if (type == IPV6_ADDR_ANY)
 		return -EINVAL;
 	if (type & IPV6_ADDR_LINKLOCAL) {
 		if (!ua->v6.sin6_scope_id)
@@ -340,6 +342,8 @@ static int quic_v6_get_user_addr(struct sock *sk, union quic_addr *a,
 			return -EINVAL;
 		}
 		rcu_read_unlock();
+	} else {
+		ua->v6.sin6_scope_id = 0;
 	}
 
 	memcpy(a, addr, len);
