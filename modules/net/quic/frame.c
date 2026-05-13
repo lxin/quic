@@ -3319,11 +3319,21 @@ int quic_frame_parse_transport_params_ext(struct sock *sk,
 	 * endpoint or the absence of the original_destination_connection_id
 	 * transport parameter from the server as a connection error of type
 	 * TRANSPORT_PARAMETER_ERROR.
+	 *
+	 * An endpoint MUST treat absence of the retry_source_connection_id
+	 * transport parameter from the server after receiving a Retry packet,
+	 * as a connection error of type TRANSPORT_PARAMETER_ERROR or
+	 * PROTOCOL_VIOLATION.
 	 */
 	type = QUIC_TRANSPORT_PARAM_INITIAL_SOURCE_CONNECTION_ID;
 	if (!param_seen[quic_frame_param_idx(type)])
 		return -EINVAL;
 	if (!is_serv) {
+		if (paths->retry) {
+			type = QUIC_TRANSPORT_PARAM_RETRY_SOURCE_CONNECTION_ID;
+			if (!param_seen[quic_frame_param_idx(type)])
+				return -EINVAL;
+		}
 		type = QUIC_TRANSPORT_PARAM_ORIGINAL_DESTINATION_CONNECTION_ID;
 		if (!param_seen[quic_frame_param_idx(type)])
 			return -EINVAL;
