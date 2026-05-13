@@ -125,7 +125,7 @@ bool quic_accept_sock_exists(struct sock *sk, struct sk_buff *skb)
 		goto out;
 
 	/* Found a matching accept socket. Process packet with this socket. */
-	bh_lock_sock(sk);
+	bh_lock_sock_nested(sk);
 	if (sock_owned_by_user(sk)) {
 		/* Socket is busy (owned by user context): queue to backlog. */
 		if (sk_add_backlog(sk, skb, READ_ONCE(sk->sk_rcvbuf))) {
