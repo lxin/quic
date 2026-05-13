@@ -1635,8 +1635,10 @@ static struct sock *quic_accept(struct sock *sk, int flags, int *errp,
 		goto free;
 
 	err = quic_accept_sock_setup(nsk, req);
-	if (err)
+	if (err) {
+		quic_request_sock_free(sk, req);
 		goto free;
+	}
 
 	/* Record the creation time of this accept socket in microseconds.
 	 * Used by quic_accept_sock_exists() to determine if a packet from
