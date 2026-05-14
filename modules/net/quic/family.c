@@ -328,9 +328,7 @@ static int quic_v6_get_user_addr(struct sock *sk, union quic_addr *a,
 	type = ipv6_addr_type(&ua->v6.sin6_addr);
 	if (type != IPV6_ADDR_ANY && !(type & IPV6_ADDR_UNICAST))
 		return -EINVAL;
-	if (any)
-		ua->v6.sin6_flowinfo = 0;
-	else if (type == IPV6_ADDR_ANY)
+	if (type == IPV6_ADDR_ANY && !any)
 		return -EINVAL;
 	if (type & IPV6_ADDR_LINKLOCAL) {
 		if (!ua->v6.sin6_scope_id)
@@ -342,11 +340,17 @@ static int quic_v6_get_user_addr(struct sock *sk, union quic_addr *a,
 			return -EINVAL;
 		}
 		rcu_read_unlock();
-	} else {
-		ua->v6.sin6_scope_id = 0;
 	}
 
 	memcpy(a, addr, len);
+
+	/* Clear sin6_flowinfo and sin6_scope_id so listen socket address
+	 * comparison can rely on memcmp() for hashing and lookup.
+	 */
+	if (any)
+		a->v6.sin6_flowinfo = 0;
+	if (!(type & IPV6_ADDR_LINKLOCAL))
+		a->v6.sin6_scope_id = 0;
 	return 0;
 }
 
