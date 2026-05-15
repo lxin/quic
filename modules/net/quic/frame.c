@@ -339,6 +339,7 @@ quic_frame_stream_create(struct sock *sk, void *data, u8 type)
 	frame->bytes = (u16)msg_len;
 	frame->len = frame->dlen + frame->bytes;
 	frame->nodelay = nodelay;
+	frame->stream_fin = !!(type & QUIC_STREAM_BIT_FIN);
 
 	return frame;
 }

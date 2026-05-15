@@ -174,6 +174,16 @@ static inline bool quic_frame_path_validating(u8 type)
 	       type == QUIC_FRAME_PATH_RESPONSE;
 }
 
+/* Return total memory used for socket accounting by a QUIC frame, including
+ * frame metadata and user bytes. STREAM_FIN frames may carry no user bytes.
+ */
+static inline int quic_frame_size(struct quic_frame *frame)
+{
+	if (!frame->bytes && !frame->stream_fin)
+		return 0;
+	return frame->bytes + sizeof(*frame);
+}
+
 int quic_frame_build_transport_params_ext(struct sock *sk,
 					  struct quic_transport_param *params,
 					  u8 *data, u32 *len);

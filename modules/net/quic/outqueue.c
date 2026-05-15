@@ -449,7 +449,7 @@ void quic_outq_stream_tail(struct sock *sk, struct quic_frame *frame, bool cork)
 	outq->bytes += frame->bytes;
 	outq->stream_list_len += frame->len;
 	outq->unsent_bytes += frame->bytes;
-	quic_outq_set_owner_w((int)frame->bytes, sk);
+	quic_outq_set_owner_w(quic_frame_size(frame), sk);
 
 	list_add_tail(&frame->list, &outq->stream_list);
 	if (!cork) /* If not corked, trigger transmission immediately. */
@@ -464,7 +464,7 @@ void quic_outq_dgram_tail(struct sock *sk, struct quic_frame *frame, bool cork)
 	struct quic_outqueue *outq = quic_outq(sk);
 
 	outq->unsent_bytes += frame->bytes;
-	quic_outq_set_owner_w((int)frame->bytes, sk);
+	quic_outq_set_owner_w(quic_frame_size(frame), sk);
 	list_add_tail(&frame->list, &outq->datagram_list);
 	if (!cork)
 		quic_outq_transmit(sk);
@@ -510,7 +510,7 @@ void quic_outq_ctrl_tail(struct sock *sk, struct quic_frame *frame, bool cork)
 	}
 
 	outq->unsent_bytes += frame->bytes;
-	quic_outq_set_owner_w((int)frame->bytes, sk);
+	quic_outq_set_owner_w(quic_frame_size(frame), sk);
 	list_add_tail(&frame->list, head);
 	if (!cork)
 		quic_outq_transmit(sk);
@@ -672,7 +672,7 @@ static void quic_outq_psent_sack_frames(struct sock *sk,
 		}
 		quic_frame_put(frame); /* Drop reference held in frame_array. */
 
-		acked += frame->bytes;
+		acked += quic_frame_size(frame);
 		/* Remove from send/transmitted list and release reference. */
 		if (!frame->transmitted && quic_frame_stream(frame->type))
 			outq->stream_list_len -= frame->len;
@@ -933,7 +933,7 @@ void quic_outq_sync_window(struct sock *sk, u32 window)
 		return;
 
 	/* Dynamically adjust sk_sndbuf based on the congestion window. */
-	sk->sk_sndbuf = (int)window * 2;
+	sk->sk_sndbuf = (int)window * 4;
 	if (sk_stream_wspace(sk) > 0)
 		sk->sk_write_space(sk); /* Wake blocked senders */
 }
@@ -1001,7 +1001,7 @@ static void quic_outq_psent_retransmit_frames(struct sock *sk,
 
 		list_del_init(&frame->list);
 		if (!quic_frame_retransmittable(frame->type)) {
-			bytes += frame->bytes;
+			bytes += quic_frame_size(frame);
 			quic_frame_put(frame);
 			continue;
 		}
@@ -1363,7 +1363,7 @@ void quic_outq_list_purge(struct sock *sk, struct list_head *head,
 		if (frame->number < 0)
 			outq->unsent_bytes -= frame->bytes;
 
-		bytes += frame->bytes;
+		bytes += quic_frame_size(frame);
 		list_del_init(&frame->list);
 		quic_frame_put(frame);
 	}
