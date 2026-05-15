@@ -902,7 +902,7 @@ static struct quic_stream *quic_sock_send_stream(struct sock *sk,
 }
 
 /* Wait until send buffer has enough space for sending. */
-static int quic_wait_for_send(struct sock *sk, u32 flags, u32 len)
+static int quic_wait_for_send(struct sock *sk, u32 flags, int len)
 {
 	long timeo = sock_sndtimeo(sk, flags & MSG_DONTWAIT);
 	DEFINE_WAIT(wait);
@@ -929,8 +929,7 @@ static int quic_wait_for_send(struct sock *sk, u32 flags, u32 len)
 			err = -EAGAIN;
 			break;
 		}
-		if ((int)len <= sk_stream_wspace(sk) &&
-		    sk_wmem_schedule(sk, (int)len))
+		if (len <= sk_stream_wspace(sk) && sk_wmem_schedule(sk, len))
 			break;
 
 		release_sock(sk);
@@ -944,7 +943,7 @@ static int quic_wait_for_send(struct sock *sk, u32 flags, u32 len)
 /* Check if a QUIC stream is writable. */
 static bool quic_sock_stream_writable(struct sock *sk,
 				      struct quic_stream *stream,
-				      u32 flags, u32 len)
+				      u32 flags, int len)
 {
 	/* Check if flow control limits allow sending 'len' bytes. */
 	if (quic_outq_flow_control(sk, stream, len,
@@ -959,7 +958,7 @@ static bool quic_sock_stream_writable(struct sock *sk,
 /* Wait until a QUIC stream is writable for sending data. */
 static int quic_wait_for_stream_send(struct sock *sk,
 				     struct quic_stream *stream,
-				     u32 flags, u32 len)
+				     u32 flags, int len)
 {
 	long timeo = sock_sndtimeo(sk, flags & MSG_DONTWAIT);
 	struct quic_stream_table *streams = quic_streams(sk);
