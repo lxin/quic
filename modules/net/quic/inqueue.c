@@ -227,13 +227,6 @@ int quic_inq_stream_recv(struct sock *sk, struct quic_frame *frame)
 		}
 	}
 
-	/* Check receive buffer size and system limits. */
-	if (sk_rmem_alloc_get(sk) + frame->len > sk->sk_rcvbuf ||
-	    !quic_sk_rmem_schedule(sk, frame->len)) {
-		QUIC_INC_STATS(net, QUIC_MIB_FRM_RCVBUFDROP);
-		return -ENOBUFS;
-	}
-
 	if (off > stream->recv.highest) { /* Beyond current highest seen. */
 		/* rfc9000#section-4.1:
 		 *
@@ -254,6 +247,14 @@ int quic_inq_stream_recv(struct sock *sk, struct quic_frame *frame)
 			return -EINVAL;
 		}
 	}
+
+	/* Check receive buffer size and system limits. */
+	if (sk_rmem_alloc_get(sk) + frame->len > sk->sk_rcvbuf ||
+	    !quic_sk_rmem_schedule(sk, frame->len)) {
+		QUIC_INC_STATS(net, QUIC_MIB_FRM_RCVBUFDROP);
+		return -ENOBUFS;
+	}
+
 	if (!stream->recv.highest) { /* Notify first data on stream. */
 		update.id = stream->id;
 		update.state = QUIC_STREAM_RECV_STATE_RECV;
