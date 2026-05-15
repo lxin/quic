@@ -122,13 +122,14 @@ static bool quic_inq_stream_tail(struct sock *sk, struct quic_stream *stream,
 	 */
 	overlap = stream->recv.offset - frame->offset;
 	if (overlap) { /* Drop overlapping prefix and fix memory accounting. */
-		quic_inq_rfree((int)frame->len, sk);
+		quic_inq_rfree((int)frame->bytes, sk);
 		frame->data += overlap;
 		frame->len -= overlap;
-		quic_inq_set_owner_r((int)frame->len, sk);
+		frame->bytes -= overlap;
+		quic_inq_set_owner_r((int)frame->bytes, sk);
 		frame->offset += overlap;
 	}
-	stream->recv.offset += frame->len; /* Advance stream receive offset. */
+	stream->recv.offset += frame->bytes; /* Advance receive offset. */
 
 	/* Queue frame for app delivery: early 0-RTT frames go to early_list,
 	 * moved to recv_list after handshake.
@@ -209,7 +210,7 @@ int quic_inq_stream_recv(struct sock *sk, struct quic_frame *frame)
 	 * handling of stream termination.
 	 */
 	size_known = (stream->recv.state == QUIC_STREAM_RECV_STATE_SIZE_KNOWN);
-	off = offset + frame->len;
+	off = offset + frame->bytes;
 	if (stream->recv.offset >= off) {
 		if (size_known || !frame->stream_fin) {
 			quic_frame_put(frame);
@@ -249,8 +250,8 @@ int quic_inq_stream_recv(struct sock *sk, struct quic_frame *frame)
 	}
 
 	/* Check receive buffer size and system limits. */
-	if (sk_rmem_alloc_get(sk) + frame->len > sk->sk_rcvbuf ||
-	    !quic_sk_rmem_schedule(sk, frame->len)) {
+	if (sk_rmem_alloc_get(sk) + frame->bytes > sk->sk_rcvbuf ||
+	    !quic_sk_rmem_schedule(sk, frame->bytes)) {
 		QUIC_INC_STATS(net, QUIC_MIB_FRM_RCVBUFDROP);
 		return -ENOBUFS;
 	}
@@ -274,7 +275,7 @@ int quic_inq_stream_recv(struct sock *sk, struct quic_frame *frame)
 				head = &pos->list;
 				break;
 			}
-			if (pos->offset + pos->len >= offset + frame->len &&
+			if (pos->offset + pos->bytes >= offset + frame->bytes &&
 			    (pos->stream_fin || !frame->stream_fin)) {
 				/* Duplicate or overlapping frame.  Keep if it
 				 * has FIN while the other does not.
@@ -319,7 +320,7 @@ int quic_inq_stream_recv(struct sock *sk, struct quic_frame *frame)
 		stream->recv.state = update.state;
 		stream->recv.finalsz = update.finalsz;
 add:
-		quic_inq_set_owner_r((int)frame->len, sk);
+		quic_inq_set_owner_r((int)frame->bytes, sk);
 		list_add_tail(&frame->list, head);
 		stream->recv.frags++;
 		inq->highest += highest;
@@ -328,7 +329,7 @@ add:
 	}
 
 	/* In-order: directly handled and queued. */
-	quic_inq_set_owner_r((int)frame->len, sk);
+	quic_inq_set_owner_r((int)frame->bytes, sk);
 	inq->highest += highest;
 	stream->recv.highest += highest;
 	if (quic_inq_stream_tail(sk, stream, frame) || !stream->recv.frags)
@@ -346,10 +347,10 @@ add:
 			break;
 		list_del(&frame->list);
 		stream->recv.frags--;
-		if (stream->recv.offset >= frame->offset + frame->len &&
+		if (stream->recv.offset >= frame->offset + frame->bytes &&
 		    !frame->stream_fin) {
 			/* Duplicate frame. Do not discard if it has FIN. */
-			quic_inq_rfree((int)frame->len, sk);
+			quic_inq_rfree((int)frame->bytes, sk);
 			quic_frame_put(frame);
 			continue;
 		}
@@ -372,7 +373,7 @@ void quic_inq_list_purge(struct sock *sk, struct list_head *head,
 		if (stream && frame->stream != stream)
 			continue;
 		list_del(&frame->list);
-		bytes += frame->len;
+		bytes += frame->bytes;
 		quic_frame_put(frame);
 	}
 	quic_inq_rfree(bytes, sk);
@@ -397,13 +398,14 @@ static void quic_inq_handshake_tail(struct sock *sk, struct quic_frame *frame)
 
 	overlap = crypto->recv_offset - frame->offset;
 	if (overlap) {
-		quic_inq_rfree((int)frame->len, sk);
+		quic_inq_rfree((int)frame->bytes, sk);
 		frame->data += overlap;
 		frame->len -= overlap;
-		quic_inq_set_owner_r((int)frame->len, sk);
+		frame->bytes -= overlap;
+		quic_inq_set_owner_r((int)frame->bytes, sk);
 		frame->offset += overlap;
 	}
-	crypto->recv_offset += frame->len;
+	crypto->recv_offset += frame->bytes;
 
 	if (frame->level) {
 		/* For handshake messages, insert frame before any data/event
@@ -426,14 +428,14 @@ static void quic_inq_handshake_tail(struct sock *sk, struct quic_frame *frame)
 	/* Special handling for New Session Ticket Message (level == 0). */
 	if (!crypto->ticket_ready &&
 	    crypto->recv_offset <= QUIC_TICKET_MAX_LEN &&
-	    crypto->recv_offset == ticket->len + frame->len) {
+	    crypto->recv_offset == ticket->len + frame->bytes) {
 		/* Append received frame data to ticket buffer. On failure,
 		 * abandon ticket assembly and suppress further processing to
 		 * avoid using a partial or corrupted ticket.
 		 */
-		if (quic_data_append(ticket, frame->data, frame->len)) {
+		if (quic_data_append(ticket, frame->data, frame->bytes)) {
 			pr_debug("%s: offset: %llu, len: %u\n", __func__,
-				 crypto->recv_offset, frame->len);
+				 crypto->recv_offset, frame->bytes);
 			quic_data_free(ticket);
 			goto out;
 		}
@@ -457,7 +459,7 @@ static void quic_inq_handshake_tail(struct sock *sk, struct quic_frame *frame)
 				    ticket->data, ticket->len);
 	}
 out:
-	quic_inq_rfree((int)frame->len, sk);
+	quic_inq_rfree((int)frame->bytes, sk);
 	quic_frame_put(frame); /* Copied to ticket buffer; release frame. */
 }
 
@@ -480,15 +482,15 @@ int quic_inq_handshake_recv(struct sock *sk, struct quic_frame *frame)
 	crypto = quic_crypto(sk, level);
 	crypto_offset = crypto->recv_offset;
 	pr_debug("%s: recv_offset: %llu, offset: %llu, level: %u, len: %u\n",
-		 __func__, crypto_offset, offset, level, frame->len);
+		 __func__, crypto_offset, offset, level, frame->bytes);
 
-	if (crypto_offset >= offset + frame->len) {
+	if (crypto_offset >= offset + frame->bytes) {
 		quic_frame_put(frame);
 		return 0;
 	}
 
-	if (sk_rmem_alloc_get(sk) + frame->len > sk->sk_rcvbuf ||
-	    !quic_sk_rmem_schedule(sk, frame->len)) {
+	if (sk_rmem_alloc_get(sk) + frame->bytes > sk->sk_rcvbuf ||
+	    !quic_sk_rmem_schedule(sk, frame->bytes)) {
 		/* rfc9000#section-7.5:
 		 *
 		 * If an endpoint's buffer is exceeded during the handshake, it
@@ -514,17 +516,17 @@ int quic_inq_handshake_recv(struct sock *sk, struct quic_frame *frame)
 				head = &pos->list;
 				break;
 			}
-			if (pos->offset + pos->len >= offset + frame->len) {
+			if (pos->offset + pos->bytes >= offset + frame->bytes) {
 				quic_frame_put(frame);
 				return 0;
 			}
 		}
-		quic_inq_set_owner_r((int)frame->len, sk);
+		quic_inq_set_owner_r((int)frame->bytes, sk);
 		list_add_tail(&frame->list, head);
 		return 0;
 	}
 
-	quic_inq_set_owner_r((int)frame->len, sk);
+	quic_inq_set_owner_r((int)frame->bytes, sk);
 	quic_inq_handshake_tail(sk, frame);
 
 	list_for_each_entry_safe(frame, pos, head, list) {
@@ -535,8 +537,8 @@ int quic_inq_handshake_recv(struct sock *sk, struct quic_frame *frame)
 		if (frame->offset > crypto->recv_offset)
 			break;
 		list_del(&frame->list);
-		if (crypto->recv_offset >= frame->offset + frame->len) {
-			quic_inq_rfree((int)frame->len, sk);
+		if (crypto->recv_offset >= frame->offset + frame->bytes) {
+			quic_inq_rfree((int)frame->bytes, sk);
 			quic_frame_put(frame);
 			continue;
 		}
@@ -625,6 +627,7 @@ int quic_inq_event_recv(struct sock *sk, u8 event, void *data, u32 len)
 	p = quic_put_data(frame->data, &event, 1);
 	quic_put_data(p, data, len);
 	frame->event = 1; /* Mark this frame as an event. */
+	frame->bytes = frame->len;
 
 	/* Insert event frame ahead of stream or dgram data. */
 	list_for_each_entry(pos, head, list) {
@@ -633,7 +636,7 @@ int quic_inq_event_recv(struct sock *sk, u8 event, void *data, u32 len)
 			break;
 		}
 	}
-	quic_inq_set_owner_r((int)frame->len, sk);
+	quic_inq_set_owner_r((int)frame->bytes, sk);
 	list_add_tail(&frame->list, head);
 	sk->sk_data_ready(sk);
 	return 0;
@@ -642,13 +645,13 @@ int quic_inq_event_recv(struct sock *sk, u8 event, void *data, u32 len)
 /* Process an incoming QUIC datagram frame. */
 int quic_inq_dgram_recv(struct sock *sk, struct quic_frame *frame)
 {
-	if (sk_rmem_alloc_get(sk) + frame->len > sk->sk_rcvbuf ||
-	    !quic_sk_rmem_schedule(sk, frame->len)) {
+	if (sk_rmem_alloc_get(sk) + frame->bytes > sk->sk_rcvbuf ||
+	    !quic_sk_rmem_schedule(sk, frame->bytes)) {
 		QUIC_INC_STATS(sock_net(sk), QUIC_MIB_FRM_RCVBUFDROP);
 		return -ENOBUFS;
 	}
 
-	quic_inq_set_owner_r((int)frame->len, sk);
+	quic_inq_set_owner_r((int)frame->bytes, sk);
 	frame->dgram = 1; /* Mark frame as datagram for delivery. */
 	list_add_tail(&frame->list, &quic_inq(sk)->recv_list);
 	sk->sk_data_ready(sk);

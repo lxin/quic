@@ -1017,6 +1017,7 @@ static int quic_frame_crypto_process(struct sock *sk, struct quic_frame *frame,
 
 	nframe->offset = offset;
 	nframe->level = frame->level;
+	nframe->bytes = nframe->len;
 
 	/* Submit the CRYPTO frame to inqueue for reassembly and processing. */
 	err = quic_inq_handshake_recv(sk, nframe);
@@ -1126,6 +1127,7 @@ static int quic_frame_stream_process(struct sock *sk, struct quic_frame *frame,
 	nframe->stream = stream;
 	nframe->stream_fin = fin;
 	nframe->level = frame->level;
+	nframe->bytes = nframe->len;
 
 	err = quic_inq_stream_recv(sk, nframe);
 	if (err) {
@@ -2194,6 +2196,7 @@ static int quic_frame_datagram_process(struct sock *sk,
 	if (!nframe)
 		return -ENOMEM;
 	nframe->skb = skb_get(frame->skb);
+	nframe->bytes = nframe->len;
 
 	err = quic_inq_dgram_recv(sk, nframe);
 	if (err) {

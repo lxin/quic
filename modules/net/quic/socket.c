@@ -1316,7 +1316,7 @@ static int quic_recvmsg(struct sock *sk, struct msghdr *msg, size_t msg_len,
 		 * remaining data in the frame and the remaining user buffer
 		 * space.
 		 */
-		copy = min_t(u32, frame->len - frame->read_offset,
+		copy = min_t(u32, frame->bytes - frame->read_offset,
 			     msg_len - copied);
 		if (copy) { /* Copy data from frame to user message iterator. */
 			copy = copy_to_iter(frame->data + frame->read_offset,
@@ -1344,7 +1344,7 @@ static int quic_recvmsg(struct sock *sk, struct msghdr *msg, size_t msg_len,
 		} else if (frame->dgram) { /* A Datagram Message received. */
 			msg->msg_flags |= MSG_QUIC_DATAGRAM;
 		}
-		if (copy != frame->len - frame->read_offset) {
+		if (copy != frame->bytes - frame->read_offset) {
 			/* Partial copy: update read_offset and exit loop. */
 			if (!(flags & MSG_PEEK))
 				frame->read_offset += copy;
@@ -1352,9 +1352,9 @@ static int quic_recvmsg(struct sock *sk, struct msghdr *msg, size_t msg_len,
 		}
 		if (!(flags & MSG_PEEK)) {
 			if (stream_id != -1) /* Stream frame. */
-				freed += frame->len;
+				freed += frame->bytes;
 
-			bytes += frame->len;
+			bytes += frame->bytes;
 			list_del(&frame->list);
 			quic_frame_put(frame);
 		}
