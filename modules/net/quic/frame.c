@@ -113,7 +113,7 @@ quic_frame_ack_create(struct sock *sk, void *data, u8 type)
 	/* Finalize frame metadata. */
 	frame->type = type;
 	frame->len = (u16)(p - frame->data);
-	frame->size = frame->len;
+	frame->dlen = frame->len;
 	frame->level = level;
 
 	return frame;
@@ -226,19 +226,19 @@ quic_frame_new_token_create(struct sock *sk, void *data, u8 type)
 	p = quic_put_var(p, tlen);
 	p = quic_put_data(p, buf, tlen);
 	frame->len = (u16)(p - frame->data);
-	frame->size = frame->len;
+	frame->dlen = frame->len;
 	outq->token_pending = 1; /* Mark token pending until it gets ACKed. */
 
 	return frame;
 }
 
-static struct quic_frame_frag *quic_frame_frag_alloc(u16 size)
+static struct quic_frame_frag *quic_frame_frag_alloc(u16 len)
 {
 	struct quic_frame_frag *frag;
 
-	frag = kzalloc(sizeof(*frag) + size, GFP_KERNEL);
+	frag = kzalloc(sizeof(*frag) + len, GFP_KERNEL);
 	if (frag)
-		frag->size = size;
+		frag->dlen = len;
 
 	return frag;
 }
@@ -335,9 +335,9 @@ quic_frame_stream_create(struct sock *sk, void *data, u8 type)
 
 	/* Finalize frame metadata. */
 	frame->type = type;
-	frame->size = (u16)(p - frame->data);
+	frame->dlen = (u16)(p - frame->data);
 	frame->bytes = (u16)msg_len;
-	frame->len = frame->size + frame->bytes;
+	frame->len = frame->dlen + frame->bytes;
 	frame->nodelay = nodelay;
 
 	return frame;
@@ -426,7 +426,7 @@ quic_frame_crypto_create(struct sock *sk, void *data, u8 type)
 
 	frame->bytes = (u16)msg_len;
 	frame->len = (u16)(p - frame->data);
-	frame->size = frame->len;
+	frame->dlen = frame->len;
 	frame->level = info->level;
 
 	return frame;
@@ -2139,7 +2139,7 @@ static struct quic_frame *quic_frame_datagram_create(struct sock *sk,
 
 	frame->bytes = (u16)msg_len;
 	frame->len = (u16)frame_len;
-	frame->size = frame->len;
+	frame->dlen = frame->len;
 	frame->dgram = 1;
 
 	return frame;
@@ -2626,7 +2626,7 @@ out:
 	refcount_set(&frame->refcnt, 1);
 	frame->offset = -1;
 	frame->len = (u16)size;
-	frame->size = frame->len;
+	frame->dlen = frame->len;
 	return frame;
 }
 
@@ -2734,9 +2734,9 @@ int quic_frame_stream_append(struct sock *sk, struct quic_frame *frame,
 	p = quic_put_var(p, frame->bytes + msg_len);
 
 	frame->type = type;
-	frame->size = (u16)(p - frame->data);
+	frame->dlen = (u16)(p - frame->data);
 	frame->bytes += msg_len;
-	frame->len = frame->size + frame->bytes;
+	frame->len = frame->dlen + frame->bytes;
 	frame->nodelay = nodelay;
 
 	return msg_len;

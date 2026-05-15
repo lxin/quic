@@ -2125,9 +2125,9 @@ static void quic_packet_pack_frames(struct sock *sk, struct sk_buff *skb,
 	list_for_each_entry_safe(frame, next, &packet->frame_list, list) {
 		list_del(&frame->list);
 		/* Write main frame data and appended fragments. */
-		p = quic_put_data(p, frame->data, frame->size);
+		p = quic_put_data(p, frame->data, frame->dlen);
 		for (frag = frame->flist; frag; frag = frag->next)
-			p = quic_put_data(p, frag->data, frag->size);
+			p = quic_put_data(p, frag->data, frag->dlen);
 		pr_debug("%s: num=%llu type=%u len=%u frame_len=%u level=%u\n",
 			 __func__, number, frame->type, skb->len, frame->len,
 			 packet->level);

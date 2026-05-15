@@ -98,7 +98,7 @@ struct quic_frame_ops {
 /* Fragment of data appended to a STREAM frame */
 struct quic_frame_frag {
 	struct quic_frame_frag *next; /* Next fragment in the linked list */
-	u16 size;  /* Size of this data fragment */
+	u16 dlen;  /* Length of the data fragment */
 	u8 data[]; /* Flexible array member holding fragment data */
 };
 
@@ -125,7 +125,7 @@ struct quic_frame {
 	u8  level;   /* Packet number space: Initial, Handshake, or App */
 	u8  type;    /* Frame type identifier */
 	u16 bytes;   /* Number of user data bytes */
-	u16 size;    /* Allocated data buffer size */
+	u16 dlen;    /* Length of the data buffer */
 	u16 len;     /* Total frame length including appended fragments */
 
 	u8  ack_eliciting:1; /* Frame requires acknowledgment */
