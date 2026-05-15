@@ -1992,6 +1992,7 @@ static int quic_packet_app_process(struct sock *sk, struct sk_buff *skb)
 		 */
 		QUIC_INC_STATS(net, QUIC_MIB_PKT_INVHDRDROP);
 		cb->errcode = QUIC_TRANSPORT_ERROR_PROTOCOL_VIOLATION;
+		err = -EINVAL;
 		goto err;
 	}
 
