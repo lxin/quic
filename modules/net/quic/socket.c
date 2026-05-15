@@ -1844,7 +1844,7 @@ static int quic_sock_connection_migrate(struct sock *sk, struct sockaddr *addr,
 	union quic_addr a;
 	int err;
 
-	if (quic_get_user_addr(sk, &a, addr, addr_len, false))
+	if (quic_get_user_addr(sk, &a, addr, addr_len, false) || !a.v4.sin_port)
 		return -EINVAL;
 	/* Reject if connection is closed or address matches the current path's
 	 * source.
@@ -1865,9 +1865,8 @@ static int quic_sock_connection_migrate(struct sock *sk, struct sockaddr *addr,
 		return 0;
 	}
 
-	/* Migration requires matching address family and a valid port. */
-	if (a.sa.sa_family != quic_path_saddr(paths, 0)->sa.sa_family ||
-	    !a.v4.sin_port)
+	/* Migration requires matching address family. */
+	if (a.sa.sa_family != quic_path_saddr(paths, 0)->sa.sa_family)
 		return -EINVAL;
 	/* Reject if migration in progress or preferred address active. */
 	if (!quic_path_alt_state(paths, QUIC_PATH_ALT_NONE) || paths->pref_addr)
