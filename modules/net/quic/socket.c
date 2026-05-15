@@ -1354,7 +1354,7 @@ static int quic_recvmsg(struct sock *sk, struct msghdr *msg, size_t msg_len,
 			if (stream_id != -1) /* Stream frame. */
 				freed += frame->bytes;
 
-			bytes += frame->bytes;
+			bytes += quic_frame_size(frame);
 			list_del(&frame->list);
 			quic_frame_put(frame);
 		}
