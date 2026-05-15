@@ -234,7 +234,6 @@ int quic_inq_stream_recv(struct sock *sk, struct quic_frame *frame)
 		return -ENOBUFS;
 	}
 
-	quic_inq_set_owner_r((int)frame->len, sk);
 	if (off > stream->recv.highest) { /* Beyond current highest seen. */
 		/* rfc9000#section-4.1:
 		 *
@@ -247,13 +246,11 @@ int quic_inq_stream_recv(struct sock *sk, struct quic_frame *frame)
 		if (inq->highest + highest > inq->max_bytes ||
 		    stream->recv.highest + highest > stream->recv.max_bytes) {
 			frame->errcode = QUIC_TRANSPORT_ERROR_FLOW_CONTROL;
-			quic_inq_rfree((int)frame->len, sk);
 			return -ENOBUFS;
 		}
 		/* Check for violation of known final size (protocol error). */
 		if (size_known && off > stream->recv.finalsz) {
 			frame->errcode = QUIC_TRANSPORT_ERROR_FINAL_SIZE;
-			quic_inq_rfree((int)frame->len, sk);
 			return -EINVAL;
 		}
 	}
@@ -281,7 +278,6 @@ int quic_inq_stream_recv(struct sock *sk, struct quic_frame *frame)
 				/* Duplicate or overlapping frame.  Keep if it
 				 * has FIN while the other does not.
 				 */
-				quic_inq_rfree((int)frame->len, sk);
 				quic_frame_put(frame);
 				return 0;
 			}
@@ -300,7 +296,6 @@ int quic_inq_stream_recv(struct sock *sk, struct quic_frame *frame)
 		if (off < stream->recv.highest ||
 		    (size_known && stream->recv.finalsz != off)) {
 			frame->errcode = QUIC_TRANSPORT_ERROR_FINAL_SIZE;
-			quic_inq_rfree((int)frame->len, sk);
 			return -EINVAL;
 		}
 
@@ -323,6 +318,7 @@ int quic_inq_stream_recv(struct sock *sk, struct quic_frame *frame)
 		stream->recv.state = update.state;
 		stream->recv.finalsz = update.finalsz;
 add:
+		quic_inq_set_owner_r((int)frame->len, sk);
 		list_add_tail(&frame->list, head);
 		stream->recv.frags++;
 		inq->highest += highest;
@@ -331,6 +327,7 @@ add:
 	}
 
 	/* In-order: directly handled and queued. */
+	quic_inq_set_owner_r((int)frame->len, sk);
 	inq->highest += highest;
 	stream->recv.highest += highest;
 	if (quic_inq_stream_tail(sk, stream, frame) || !stream->recv.frags)
@@ -503,7 +500,6 @@ int quic_inq_handshake_recv(struct sock *sk, struct quic_frame *frame)
 		return -ENOBUFS;
 	}
 
-	quic_inq_set_owner_r((int)frame->len, sk);
 	head = &inq->handshake_list;
 	if (offset > crypto_offset) {
 		list_for_each_entry(pos, head, list) {
@@ -518,15 +514,16 @@ int quic_inq_handshake_recv(struct sock *sk, struct quic_frame *frame)
 				break;
 			}
 			if (pos->offset + pos->len >= offset + frame->len) {
-				quic_inq_rfree((int)frame->len, sk);
 				quic_frame_put(frame);
 				return 0;
 			}
 		}
+		quic_inq_set_owner_r((int)frame->len, sk);
 		list_add_tail(&frame->list, head);
 		return 0;
 	}
 
+	quic_inq_set_owner_r((int)frame->len, sk);
 	quic_inq_handshake_tail(sk, frame);
 
 	list_for_each_entry_safe(frame, pos, head, list) {
