@@ -1251,6 +1251,9 @@ static int quic_wait_for_packet(struct sock *sk, struct list_head *head,
 	DEFINE_WAIT(wait);
 	int err = 0;
 
+	if (quic_is_listen(sk))
+		return -ENOTCONN;
+
 	for (;;) {
 		if (!list_empty(head))
 			break;
