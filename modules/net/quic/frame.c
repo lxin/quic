@@ -851,6 +851,9 @@ quic_frame_connection_close_create(struct sock *sk, void *data, u8 type)
 	frame->level = *level;
 	quic_put_data(frame->data, buf, frame_len);
 
+	pr_debug("%s: level: %d, errcode: %d, frame: %d\n", __func__,
+		 frame->level, outq->close_errcode, outq->close_frame);
+
 	return frame;
 }
 
@@ -1859,7 +1862,8 @@ static int quic_frame_connection_close_process(struct sock *sk,
 	outq->close_phrase = data;
 
 	quic_set_state(sk, QUIC_SS_CLOSED);
-	pr_debug("%s: errcode: %d, frame: %d\n", __func__, c.errcode, c.frame);
+	pr_debug("%s: level: %d, errcode: %d, frame: %d\n", __func__,
+		 frame->level, c.errcode, c.frame);
 
 	/* Stop processing further frames after a CLOSE frame. */
 	return (int)frame->len;

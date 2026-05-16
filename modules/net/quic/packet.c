@@ -2332,6 +2332,8 @@ static struct sk_buff *quic_packet_handshake_create(struct sock *sk)
 		 */
 		sent = quic_packet_sent_alloc(packet->frames);
 		if (!sent) { /* Move pending frames back to the outqueue. */
+			pr_debug("%s: failed, frames: %d\n", __func__,
+				 packet->frames);
 			quic_outq_retransmit_list(sk, &packet->frame_list);
 			return NULL;
 		}
@@ -2469,6 +2471,8 @@ static struct sk_buff *quic_packet_app_create(struct sock *sk)
 		 */
 		sent = quic_packet_sent_alloc(packet->frames);
 		if (!sent) { /* Move pending frames back to the outqueue. */
+			pr_debug("%s: failed, frames: %d\n", __func__,
+				 packet->frames);
 			quic_outq_retransmit_list(sk, &packet->frame_list);
 			return NULL;
 		}
