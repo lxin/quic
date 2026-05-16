@@ -869,13 +869,10 @@ static struct quic_stream *quic_sock_send_stream(struct sock *sk,
 
 	stream = quic_stream_get(streams, sinfo->stream_id, sinfo->stream_flags,
 				 is_serv, true);
-	if (!IS_ERR(stream)) {
-		if (stream->send.state >= QUIC_STREAM_SEND_STATE_SENT)
-			return ERR_PTR(-EINVAL); /* Closed/finished stream. */
+	if (!IS_ERR(stream))
+		goto out;
+	if (PTR_ERR(stream) != -EAGAIN)
 		return stream;
-	} else if (PTR_ERR(stream) != -EAGAIN) {
-		return stream;
-	}
 
 	/* App send keys are not ready yet, likely sending 0-RTT data.  Do not
 	 * wait for stream availability if it's beyond the current limit;
@@ -895,8 +892,13 @@ static struct quic_stream *quic_sock_send_stream(struct sock *sk,
 	/* Stream should now be available, retry getting the stream. */
 	stream = quic_stream_get(streams, sinfo->stream_id, sinfo->stream_flags,
 				 is_serv, true);
-	if (!IS_ERR(stream) &&
-	    stream->send.state >= QUIC_STREAM_SEND_STATE_SENT)
+	if (IS_ERR(stream))
+		return stream;
+out:
+	if ((sinfo->stream_flags & MSG_QUIC_STREAM_NEW) &&
+	    stream->send.state != QUIC_STREAM_SEND_STATE_READY)
+		return ERR_PTR(-EINVAL);
+	if (stream->send.state >= QUIC_STREAM_SEND_STATE_SENT)
 		return ERR_PTR(-EINVAL); /* Closed/finished stream. */
 	return stream;
 }

@@ -229,12 +229,8 @@ struct quic_stream *quic_stream_get(struct quic_stream_table *streams,
 		return ERR_PTR(-EINVAL);
 
 	stream = quic_stream_find(streams, stream_id);
-	if (stream) {
-		if (send && (flags & MSG_QUIC_STREAM_NEW) &&
-		    stream->send.state != QUIC_STREAM_SEND_STATE_READY)
-			return ERR_PTR(-EINVAL);
+	if (stream)
 		return stream;
-	}
 
 	if (!send && quic_stream_id_local(stream_id, is_serv)) {
 		if (quic_stream_id_closed(streams, stream_id, !send))
