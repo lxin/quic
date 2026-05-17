@@ -55,7 +55,7 @@ int quic_inq_event_recv(struct sock *sk, u8 event, void *data, u32 len);
 void quic_inq_list_purge(struct sock *sk, struct list_head *head,
 			 struct quic_stream *stream);
 void quic_inq_backlog_tail(struct sock *sk, struct sk_buff *skb);
-void quic_inq_data_read(struct sock *sk, u32 bytes);
+void quic_inq_data_rfree(int len, struct sock *sk);
 
 void quic_inq_flow_control(struct sock *sk, struct quic_stream *stream,
 			   u32 bytes);

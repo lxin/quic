@@ -1388,7 +1388,7 @@ static int quic_recvmsg(struct sock *sk, struct msghdr *msg, size_t msg_len,
 		quic_inq_flow_control(sk, stream, freed);
 	}
 
-	quic_inq_data_read(sk, bytes); /* Release receive memory accounting. */
+	quic_inq_data_rfree(bytes, sk); /* Release receive memory accounting. */
 	err = (int)copied;
 out:
 	release_sock(sk);

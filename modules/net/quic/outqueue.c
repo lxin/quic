@@ -338,8 +338,8 @@ static int quic_outq_transmit_single(struct sock *sk, u8 level)
 	return quic_outq_transmit_flush(sk);
 }
 
-/* Frees socket memory resources after send. */
-static void quic_outq_wfree(int len, struct sock *sk)
+/* Frees socket send memory resources. */
+static void quic_outq_data_wfree(int len, struct sock *sk)
 {
 	if (!len)
 		return;
@@ -353,7 +353,7 @@ static void quic_outq_wfree(int len, struct sock *sk)
 }
 
 /* Charges memory to socket for new frame. */
-static void quic_outq_set_owner_w(int len, struct sock *sk)
+static void quic_outq_data_wcharge(int len, struct sock *sk)
 {
 	if (!len)
 		return;
@@ -361,6 +361,11 @@ static void quic_outq_set_owner_w(int len, struct sock *sk)
 	refcount_add(len, &sk->sk_wmem_alloc);
 	sk_wmem_queued_add(sk, len);
 	sk_mem_charge(sk, len);
+}
+
+static void quic_outq_wcharge(struct quic_frame *frame, struct sock *sk)
+{
+	quic_outq_data_wcharge(quic_frame_size(frame), sk);
 }
 
 /* Appends data to an existing stream frame at the tail of the stream_list if
@@ -408,7 +413,7 @@ int quic_outq_stream_append(struct sock *sk, struct quic_msginfo *info,
 	outq->bytes += bytes;
 	outq->stream_list_len += (frame->len - len);
 	outq->unsent_bytes += bytes;
-	quic_outq_set_owner_w((int)bytes, sk);
+	quic_outq_data_wcharge(bytes, sk);
 
 	return bytes;
 }
@@ -449,7 +454,7 @@ void quic_outq_stream_tail(struct sock *sk, struct quic_frame *frame, bool cork)
 	outq->bytes += frame->bytes;
 	outq->stream_list_len += frame->len;
 	outq->unsent_bytes += frame->bytes;
-	quic_outq_set_owner_w(quic_frame_size(frame), sk);
+	quic_outq_wcharge(frame, sk);
 
 	list_add_tail(&frame->list, &outq->stream_list);
 	if (!cork) /* If not corked, trigger transmission immediately. */
@@ -464,7 +469,7 @@ void quic_outq_dgram_tail(struct sock *sk, struct quic_frame *frame, bool cork)
 	struct quic_outqueue *outq = quic_outq(sk);
 
 	outq->unsent_bytes += frame->bytes;
-	quic_outq_set_owner_w(quic_frame_size(frame), sk);
+	quic_outq_wcharge(frame, sk);
 	list_add_tail(&frame->list, &outq->datagram_list);
 	if (!cork)
 		quic_outq_transmit(sk);
@@ -510,7 +515,7 @@ void quic_outq_ctrl_tail(struct sock *sk, struct quic_frame *frame, bool cork)
 	}
 
 	outq->unsent_bytes += frame->bytes;
-	quic_outq_set_owner_w(quic_frame_size(frame), sk);
+	quic_outq_wcharge(frame, sk);
 	list_add_tail(&frame->list, head);
 	if (!cork)
 		quic_outq_transmit(sk);
@@ -680,7 +685,7 @@ static void quic_outq_psent_sack_frames(struct sock *sk,
 		frame->transmitted = 0;
 		quic_frame_ack(sk, frame);
 	}
-	quic_outq_wfree(acked, sk);
+	quic_outq_data_wfree(acked, sk);
 }
 
 #define QUIC_PMTUD_RAISE_TIMER_FACTOR	30
@@ -1009,7 +1014,7 @@ static void quic_outq_psent_retransmit_frames(struct sock *sk,
 		frame->transmitted = 0;
 		quic_outq_retransmit_frame(sk, frame);
 	}
-	quic_outq_wfree(bytes, sk);
+	quic_outq_data_wfree(bytes, sk);
 }
 
 /* rfc9002#section-a.10: DetectAndRemoveLostPackets()
@@ -1367,7 +1372,7 @@ void quic_outq_list_purge(struct sock *sk, struct list_head *head,
 		list_del_init(&frame->list);
 		quic_frame_put(frame);
 	}
-	quic_outq_wfree(bytes, sk);
+	quic_outq_data_wfree(bytes, sk);
 }
 
 void quic_outq_free(struct sock *sk)

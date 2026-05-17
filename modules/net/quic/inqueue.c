@@ -17,8 +17,8 @@
 #include <net/proto_memory.h>
 #endif
 
-/* Frees socket receive memory resources after read. */
-static void quic_inq_rfree(int len, struct sock *sk)
+/* Frees socket receive memory resources. */
+void quic_inq_data_rfree(int len, struct sock *sk)
 {
 	if (!len)
 		return;
@@ -28,13 +28,23 @@ static void quic_inq_rfree(int len, struct sock *sk)
 }
 
 /* Charges socket receive memory for new frame. */
-static void quic_inq_set_owner_r(int len, struct sock *sk)
+static void quic_inq_data_rcharge(int len, struct sock *sk)
 {
 	if (!len)
 		return;
 
 	atomic_add(len, &sk->sk_rmem_alloc);
 	sk_mem_charge(sk, len);
+}
+
+static void quic_inq_rfree(struct quic_frame *frame, struct sock *sk)
+{
+	quic_inq_data_rfree(quic_frame_size(frame), sk);
+}
+
+static void quic_inq_rcharge(struct quic_frame *frame, struct sock *sk)
+{
+	quic_inq_data_rcharge(quic_frame_size(frame), sk);
 }
 
 #define QUIC_INQ_RWND_SHIFT	4
@@ -122,12 +132,11 @@ static bool quic_inq_stream_tail(struct sock *sk, struct quic_stream *stream,
 	 */
 	overlap = stream->recv.offset - frame->offset;
 	if (overlap) { /* Drop overlapping prefix and fix memory accounting. */
-		quic_inq_rfree(quic_frame_size(frame), sk);
 		frame->data += overlap;
 		frame->len -= overlap;
 		frame->bytes -= overlap;
-		quic_inq_set_owner_r(quic_frame_size(frame), sk);
 		frame->offset += overlap;
+		quic_inq_data_rfree(overlap, sk);
 	}
 	stream->recv.offset += frame->bytes; /* Advance receive offset. */
 
@@ -325,7 +334,7 @@ int quic_inq_stream_recv(struct sock *sk, struct quic_frame *frame)
 		stream->recv.state = update.state;
 		stream->recv.finalsz = update.finalsz;
 add:
-		quic_inq_set_owner_r(quic_frame_size(frame), sk);
+		quic_inq_rcharge(frame, sk);
 		list_add_tail(&frame->list, head);
 		stream->recv.frags++;
 		inq->highest += highest;
@@ -334,7 +343,7 @@ add:
 	}
 
 	/* In-order: directly handled and queued. */
-	quic_inq_set_owner_r(quic_frame_size(frame), sk);
+	quic_inq_rcharge(frame, sk);
 	inq->highest += highest;
 	stream->recv.highest += highest;
 	if (quic_inq_stream_tail(sk, stream, frame) || !stream->recv.frags)
@@ -355,7 +364,7 @@ add:
 		if (stream->recv.offset >= frame->offset + frame->bytes &&
 		    !frame->stream_fin) {
 			/* Duplicate frame. Do not discard if it has FIN. */
-			quic_inq_rfree(quic_frame_size(frame), sk);
+			quic_inq_rfree(frame, sk);
 			quic_frame_put(frame);
 			continue;
 		}
@@ -381,7 +390,7 @@ void quic_inq_list_purge(struct sock *sk, struct list_head *head,
 		bytes += quic_frame_size(frame);
 		quic_frame_put(frame);
 	}
-	quic_inq_rfree(bytes, sk);
+	quic_inq_data_rfree(bytes, sk);
 }
 
 /* Handle in-order crypto (handshake) frame delivery.
@@ -403,12 +412,11 @@ static void quic_inq_handshake_tail(struct sock *sk, struct quic_frame *frame)
 
 	overlap = crypto->recv_offset - frame->offset;
 	if (overlap) {
-		quic_inq_rfree(quic_frame_size(frame), sk);
 		frame->data += overlap;
 		frame->len -= overlap;
 		frame->bytes -= overlap;
-		quic_inq_set_owner_r(quic_frame_size(frame), sk);
 		frame->offset += overlap;
+		quic_inq_data_rfree(overlap, sk);
 	}
 	crypto->recv_offset += frame->bytes;
 
@@ -464,7 +472,7 @@ static void quic_inq_handshake_tail(struct sock *sk, struct quic_frame *frame)
 				    ticket->data, ticket->len);
 	}
 out:
-	quic_inq_rfree(quic_frame_size(frame), sk);
+	quic_inq_rfree(frame, sk);
 	quic_frame_put(frame); /* Copied to ticket buffer; release frame. */
 }
 
@@ -529,12 +537,12 @@ int quic_inq_handshake_recv(struct sock *sk, struct quic_frame *frame)
 				return 0;
 			}
 		}
-		quic_inq_set_owner_r(quic_frame_size(frame), sk);
+		quic_inq_rcharge(frame, sk);
 		list_add_tail(&frame->list, head);
 		return 0;
 	}
 
-	quic_inq_set_owner_r(quic_frame_size(frame), sk);
+	quic_inq_rcharge(frame, sk);
 	quic_inq_handshake_tail(sk, frame);
 
 	list_for_each_entry_safe(frame, pos, head, list) {
@@ -546,7 +554,7 @@ int quic_inq_handshake_recv(struct sock *sk, struct quic_frame *frame)
 			break;
 		list_del(&frame->list);
 		if (crypto->recv_offset >= frame->offset + frame->bytes) {
-			quic_inq_rfree(quic_frame_size(frame), sk);
+			quic_inq_rfree(frame, sk);
 			quic_frame_put(frame);
 			continue;
 		}
@@ -644,7 +652,7 @@ int quic_inq_event_recv(struct sock *sk, u8 event, void *data, u32 len)
 			break;
 		}
 	}
-	quic_inq_set_owner_r(quic_frame_size(frame), sk);
+	quic_inq_rcharge(frame, sk);
 	list_add_tail(&frame->list, head);
 	sk->sk_data_ready(sk);
 	return 0;
@@ -659,16 +667,11 @@ int quic_inq_dgram_recv(struct sock *sk, struct quic_frame *frame)
 		return -ENOBUFS;
 	}
 
-	quic_inq_set_owner_r(quic_frame_size(frame), sk);
+	quic_inq_rcharge(frame, sk);
 	frame->dgram = 1; /* Mark frame as datagram for delivery. */
 	list_add_tail(&frame->list, &quic_inq(sk)->recv_list);
 	sk->sk_data_ready(sk);
 	return 0;
-}
-
-void quic_inq_data_read(struct sock *sk, u32 bytes)
-{
-	quic_inq_rfree((int)bytes, sk);
 }
 
 #define QUIC_INQ_BACKLOG_MAX	128
