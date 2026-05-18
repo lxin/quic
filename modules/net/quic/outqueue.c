@@ -1144,6 +1144,7 @@ int quic_outq_probe_path_alt(struct sock *sk, bool cork)
 {
 	struct quic_conn_id_set *id_set = quic_dest(sk);
 	struct quic_path_group *paths = quic_paths(sk);
+	struct quic_packet_sent *sent;
 	u64 number, timeout;
 	int err;
 
@@ -1170,7 +1171,12 @@ int quic_outq_probe_path_alt(struct sock *sk, bool cork)
 
 	/* Alternate connection ID selected; start active probing. */
 	quic_path_set_alt_state(paths, QUIC_PATH_ALT_PROBING);
-	/* Clear ECN counters to avoid mixing signals across paths. */
+	/* Reset ECN state when switching/probing a new path to avoid cross-path
+	 * mixing.
+	 */
+	list_for_each_entry(sent, &quic_outq(sk)->packet_sent_list, list)
+		sent->ecn = 0;
+	paths->ecn_probes = 0;
 	quic_set_sk_ecn(sk, 0);
 	/* Send PATH_CHALLENGE frame on the new path and reset path timer. */
 	quic_outq_transmit_frame(sk, QUIC_FRAME_PATH_CHALLENGE, NULL, 1, cork);

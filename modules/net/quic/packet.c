@@ -2176,7 +2176,8 @@ static void quic_packet_pack_frames(struct sock *sk, struct sk_buff *skb,
 	 * The endpoint sets an ECT(0) codepoint in the IP header of early
 	 * outgoing packets sent on a new path to the peer.
 	 */
-	if (!packet->level && paths->ecn_probes < QUIC_MAX_ECN_PROBES) {
+	if (!packet->level && paths->ecn_probes < QUIC_MAX_ECN_PROBES &&
+	    quic_path_alt_state(paths, QUIC_PATH_ALT_NONE)) {
 		paths->ecn_probes++;
 		cb->ecn = INET_ECN_ECT_0;
 		sent->ecn = INET_ECN_ECT_0;
