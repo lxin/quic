@@ -892,9 +892,9 @@ static u64 quic_outq_get_pto_time(struct sock *sk, u8 *level)
 /* rfc9002#section-a.8: SetLossDetectionTimer()
  *
  * Update the loss detection timer for the socket based on the earliest loss
- * time or PTO.  If no loss time is found, and no inflight packets exist but
- * connection is established or path is blocked due to anti-amplification
- * limit, stop the loss timer. Otherwise, set it to the earliest PTO time.
+ * time or PTO. If no loss time is found, and (no inflight packets exist with
+ * path validated OR path is blocked due to anti-amplification limit), stop the
+ * loss timer. Otherwise, set it to the earliest PTO time.
  */
 void quic_outq_update_loss_timer(struct sock *sk)
 {
@@ -907,7 +907,7 @@ void quic_outq_update_loss_timer(struct sock *sk)
 	if (time)
 		goto out;
 
-	if ((!outq->inflight && quic_is_established(sk)) || paths->blocked)
+	if ((!outq->inflight && paths->validated) || paths->blocked)
 		return quic_timer_stop(sk, QUIC_TIMER_LOSS);
 
 	time = quic_outq_get_pto_time(sk, &level);
