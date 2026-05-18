@@ -48,8 +48,8 @@ void quic_inq_flow_control(struct sock *sk, struct quic_stream *stream,
 	struct quic_pnspace *space = quic_pnspace(sk, QUIC_CRYPTO_APP);
 	struct quic_packet *packet = quic_packet(sk);
 	struct quic_inqueue *inq = quic_inq(sk);
+	u8 frame, transmit = 0;
 	u32 mss, window;
-	u8 frame = 0;
 
 	if (!bytes)
 		return;
@@ -59,18 +59,20 @@ void quic_inq_flow_control(struct sock *sk, struct quic_stream *stream,
 
 	 /* Check and update connection-level flow control. */
 	window = inq->max_data;
-	if (inq->bytes + window - inq->max_bytes >=
-	    max(mss, (window >> QUIC_INQ_RWND_SHIFT))) {
-		/* Reduce window increment if memory pressure detected. */
-		if (sk_under_memory_pressure(sk))
-			window >>= 1;
-		if (inq->max_bytes >= inq->bytes + window)
-			goto stream_out;
+	if (inq->bytes + window - inq->max_bytes <
+	    max(mss, (window >> QUIC_INQ_RWND_SHIFT)))
+		goto stream_out;
+
+	/* Reduce window increment if memory pressure detected. */
+	if (sk_under_memory_pressure(sk))
+		window >>= 1;
+	if (inq->max_bytes >= inq->bytes + window)
+		goto stream_out;
+	frame = QUIC_FRAME_MAX_DATA;
+	if (!quic_outq_transmit_frame(sk, frame, inq, 0, true)) {
 		/* Increase max data to already read + window. */
 		inq->max_bytes = inq->bytes + window;
-		if (!quic_outq_transmit_frame(sk, QUIC_FRAME_MAX_DATA, inq, 0,
-					      true))
-			frame = 1;
+		transmit = 1;
 	}
 
 stream_out:
@@ -81,21 +83,23 @@ stream_out:
 
 	/* Check and update stream-level flow control. */
 	window = stream->recv.window;
-	if (stream->recv.state < QUIC_STREAM_RECV_STATE_RECVD &&
-	    stream->recv.bytes + window - stream->recv.max_bytes >=
-	    max(mss, (window >> QUIC_INQ_RWND_SHIFT))) {
-		if (sk_under_memory_pressure(sk))
-			window >>= 1;
-		if (stream->recv.max_bytes >= stream->recv.bytes + window)
-			goto out;
+	if (stream->recv.state >= QUIC_STREAM_RECV_STATE_RECVD ||
+	    stream->recv.bytes + window - stream->recv.max_bytes <
+	    max(mss, (window >> QUIC_INQ_RWND_SHIFT)))
+		goto out;
+
+	if (sk_under_memory_pressure(sk))
+		window >>= 1;
+	if (stream->recv.max_bytes >= stream->recv.bytes + window)
+		goto out;
+	frame = QUIC_FRAME_MAX_STREAM_DATA;
+	if (!quic_outq_transmit_frame(sk, frame, stream, 0, true)) {
 		stream->recv.max_bytes = stream->recv.bytes + window;
-		if (!quic_outq_transmit_frame(sk, QUIC_FRAME_MAX_STREAM_DATA,
-					      stream, 0, true))
-			frame = 1;
+		transmit = 1;
 	}
 
 out:
-	if (frame) {
+	if (transmit) {
 		space->need_sack = 1; /* Bundle an ACK frame with it. */
 		quic_outq_transmit(sk);
 	}
