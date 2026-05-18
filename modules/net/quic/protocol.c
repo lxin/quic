@@ -87,6 +87,8 @@ static int quic_inet_listen(struct socket *sock, int backlog)
 
 	a = quic_path_saddr(paths, 0);
 	if (!a->v4.sin_port) { /* Auto-bind if not already bound. */
+		if (!a->sa.sa_family)
+			a->sa.sa_family = sk->sk_family;
 		err = quic_path_bind(sk, paths, 0);
 		if (err)
 			goto free;
