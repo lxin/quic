@@ -1079,10 +1079,8 @@ static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 				}
 				err = quic_wait_for_send(sk, flags, len);
 				if (err) {
-					/* Return error only if EPIPE or
-					 * nothing was sent.
-					 */
-					if (err == -EPIPE || !bytes)
+					/* Return error only if nothing sent. */
+					if (!bytes)
 						goto err;
 					goto out;
 				}
@@ -1186,14 +1184,14 @@ static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 			}
 			err = quic_wait_for_stream_send(sk, stream, flags, len);
 			if (err) {
+				if (!bytes)
+					goto err;
 				/* Return -ENOSPC (flow control limit hit) only
 				 * if stream info cmsg was set; otherwise treat
 				 * it as -EAGAIN.
 				 */
 				if (err == -ENOSPC && !has_sinfo)
 					err = -EAGAIN;
-				if (err == -EPIPE || !bytes)
-					goto err;
 				goto out;
 			}
 		}
