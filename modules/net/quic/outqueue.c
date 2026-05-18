@@ -134,42 +134,46 @@ int quic_outq_flow_control(struct sock *sk, struct quic_stream *stream,
 	struct quic_outqueue *outq = quic_outq(sk);
 	u8 frame, blocked = 0, transmit = 0;
 
-	/* Check stream-level flow control. */
-	if (stream->send.bytes + bytes > stream->send.max_bytes) {
-		/* Send a STREAM_DATA_BLOCKED frame only after the previous one
-		 * is acknowledged, and stream->send.max_bytes has been updated
-		 * via a received MAX_STREAM_DATA frame.
-		 */
-		if (!stream->send.data_blocked &&
-		    stream->send.last_max_bytes < stream->send.max_bytes) {
-			frame = QUIC_FRAME_STREAM_DATA_BLOCKED;
-			if (sndblock &&
-			    !quic_outq_transmit_frame(sk, frame, stream, 0,
-						      true))
-				transmit = 1;
-			stream->send.last_max_bytes = stream->send.max_bytes;
-			stream->send.data_blocked = 1;
-		}
-		blocked = 1;
-	}
 	/* Check connection-level flow control. */
-	if (outq->bytes + bytes > outq->max_bytes) {
-		/* Send a DATA_BLOCKED frame only after the previous one is
-		 * acknowledged, and max_bytes has been updated via a received
-		 * MAX_DATA frame.
-		 */
-		if (!outq->data_blocked &&
-		    outq->last_max_bytes < outq->max_bytes) {
-			frame = QUIC_FRAME_DATA_BLOCKED;
-			if (sndblock &&
-			    !quic_outq_transmit_frame(sk, frame, outq, 0, true))
-				transmit = 1;
+	if (outq->bytes + bytes <= outq->max_bytes)
+		goto stream_out;
+
+	/* Send a DATA_BLOCKED frame only after the previous one is ACKed, and
+	 * max_bytes has been updated via a received MAX_DATA frame.
+	 */
+	if (!outq->data_blocked && outq->last_max_bytes < outq->max_bytes) {
+		frame = QUIC_FRAME_DATA_BLOCKED;
+		if (!sndblock ||
+		    !quic_outq_transmit_frame(sk, frame, outq, 0, true)) {
 			outq->last_max_bytes = outq->max_bytes;
 			outq->data_blocked = 1;
+			transmit = sndblock;
 		}
-		blocked = 1;
 	}
+	blocked = 1;
 
+stream_out:
+	/* Check stream-level flow control. */
+	if (stream->send.bytes + bytes <= stream->send.max_bytes)
+		goto out;
+
+	/* Send a STREAM_DATA_BLOCKED frame only after the previous one is
+	 * ACKed, and stream->send.max_bytes has been updated via a received
+	 * MAX_STREAM_DATA frame.
+	 */
+	if (!stream->send.data_blocked &&
+	    stream->send.last_max_bytes < stream->send.max_bytes) {
+		frame = QUIC_FRAME_STREAM_DATA_BLOCKED;
+		if (!sndblock ||
+		    !quic_outq_transmit_frame(sk, frame, stream, 0, true)) {
+			stream->send.last_max_bytes = stream->send.max_bytes;
+			stream->send.data_blocked = 1;
+			transmit = sndblock;
+		}
+	}
+	blocked = 1;
+
+out:
 	if (transmit)
 		quic_outq_transmit(sk);
 
