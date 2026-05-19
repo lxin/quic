@@ -1800,15 +1800,6 @@ static int quic_packet_app_process_done(struct sock *sk, struct sk_buff *skb)
 	s64 max_bidi, max_uni;
 	u8 frame;
 
-	/* rfc9000#section-13.4.1:
-	 *
-	 * On receiving an IP packet with an ECT(0), ECT(1), or ECN-CE
-	 * codepoint, an ECN-enabled endpoint accesses the ECN field and
-	 * increases the corresponding ECT(0), ECT(1), or ECN-CE count. These
-	 * ECN counts are included in subsequent ACK frames.
-	 */
-	quic_pnspace_inc_ecn_local(space, quic_get_msg_ecn(skb));
-
 	/* Only process migration on the latest PN seen. */
 	if (cb->number == space->max_pn_seen)
 		quic_packet_path_alt_process(sk, skb);
@@ -2035,6 +2026,15 @@ static int quic_packet_app_process(struct sock *sk, struct sk_buff *skb)
 	err = quic_pnspace_mark(space, cb->number);
 	if (err)
 		goto err;
+
+	/* rfc9000#section-13.4.1:
+	 *
+	 * On receiving an IP packet with an ECT(0), ECT(1), or ECN-CE
+	 * codepoint, an ECN-enabled endpoint accesses the ECN field and
+	 * increases the corresponding ECT(0), ECT(1), or ECN-CE count. These
+	 * ECN counts are included in subsequent ACK frames.
+	 */
+	quic_pnspace_inc_ecn_local(space, quic_get_msg_ecn(skb));
 
 out:
 	return quic_packet_app_process_done(sk, skb);
