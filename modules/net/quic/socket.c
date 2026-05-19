@@ -1836,6 +1836,7 @@ static int quic_sock_set_connection_close(struct sock *sk, void *kopt, u32 len)
 	kfree(outq->close_phrase);
 	outq->close_phrase = data;
 	outq->close_errcode = c.errcode;
+	outq->close_frame = 0;
 	return 0;
 }
 
