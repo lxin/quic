@@ -635,25 +635,26 @@ void quic_outq_transmit_close(struct sock *sk, u8 type, u32 errcode, u8 level)
  */
 void quic_outq_transmit_app_close(struct sock *sk)
 {
-	u32 errcode = QUIC_TRANSPORT_ERROR_APPLICATION;
-	u8 type = QUIC_FRAME_CONNECTION_CLOSE, level;
 	struct quic_outqueue *outq = quic_outq(sk);
+	u8 type, level;
 
-	if (quic_is_established(sk)) {
-		/* Set close_frame so send is not delayed in
-		 * quic_outq_delay_check().
-		 */
-		level = QUIC_CRYPTO_APP;
-		type = QUIC_FRAME_CONNECTION_CLOSE_APP;
-		outq->close_pending = 1;
-		quic_outq_transmit(sk); /* Flush before sending close frame. */
-	} else if (quic_is_establishing(sk)) {
+	if (quic_is_closed(sk) || quic_is_listen(sk))
+		return;
+
+	if (quic_is_establishing(sk)) {
 		/* Handshake in progress: send close in INITIAL packets. */
 		level = QUIC_CRYPTO_INITIAL;
-		outq->close_errcode = errcode;
-	} else { /* Connection is already closed: no action needed. */
-		return;
+		type = QUIC_FRAME_CONNECTION_CLOSE;
+		outq->close_errcode = QUIC_TRANSPORT_ERROR_APPLICATION;
+		goto out;
 	}
+
+	level = QUIC_CRYPTO_APP;
+	type = QUIC_FRAME_CONNECTION_CLOSE_APP;
+	outq->close_pending = 1;
+	quic_outq_transmit(sk); /* Flush before sending close frame. */
+
+out:
 	quic_outq_transmit_frame(sk, type, &level, 0, false);
 }
 
