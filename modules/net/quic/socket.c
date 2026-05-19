@@ -516,8 +516,8 @@ static int quic_connect(struct sock *sk, struct sockaddr *addr, int addr_len)
 	struct quic_path_group *paths = quic_paths(sk);
 	struct quic_conn_id_set *dest = quic_dest(sk);
 	struct quic_packet *packet = quic_packet(sk);
+	struct quic_conn_id conn_id = {}, *active;
 	struct quic_inqueue *inq = quic_inq(sk);
-	struct quic_conn_id conn_id, *active;
 	union quic_addr *sa, a;
 	int err = -EINVAL;
 
@@ -1024,8 +1024,8 @@ static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 	struct quic_outqueue *outq = quic_outq(sk);
 	struct quic_handshake_info hinfo = {};
 	struct quic_stream_info sinfo = {};
+	struct quic_msginfo msginfo = {};
 	int err = 0, bytes = 0, len = 1;
-	struct quic_msginfo msginfo;
 	struct quic_crypto *crypto;
 	struct quic_stream *stream;
 	u32 flags = msg->msg_flags;
@@ -1529,7 +1529,7 @@ static int quic_accept_sock_setup(struct sock *sk,
 	struct quic_path_group *paths = quic_paths(sk);
 	struct quic_packet *packet = quic_packet(sk);
 	struct quic_inqueue *inq = quic_inq(sk);
-	struct quic_conn_id conn_id;
+	struct quic_conn_id conn_id = {};
 	struct sk_buff *skb;
 	int err;
 

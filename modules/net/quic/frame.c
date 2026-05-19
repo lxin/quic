@@ -1246,8 +1246,8 @@ static int quic_frame_new_conn_id_process(struct sock *sk,
 {
 	struct quic_conn_id_set *id_set = quic_dest(sk);
 	u64 seqno, prior, length, first;
+	struct quic_conn_id dcid = {};
 	u8 *p = frame->data, *token;
-	struct quic_conn_id dcid;
 	u32 len = frame->len;
 	int err;
 
@@ -2835,7 +2835,7 @@ int quic_frame_build_transport_params_ext(struct sock *sk,
 	struct quic_conn_id_set *id_set = quic_source(sk);
 	struct quic_path_group *paths = quic_paths(sk);
 	u8 *p = data, token[QUIC_CONN_ID_TOKEN_LEN];
-	struct quic_conn_id *scid, conn_id;
+	struct quic_conn_id *scid, conn_id = {};
 	u32 tlen = QUIC_CONN_ID_TOKEN_LEN;
 	struct quic_crypto *crypto;
 	u16 param_id;
@@ -3082,7 +3082,7 @@ int quic_frame_parse_transport_params_ext(struct sock *sk,
 	struct quic_path_group *paths = quic_paths(sk);
 	struct quic_packet *packet = quic_packet(sk);
 	u32 idx, versions[QUIC_MAX_VERSIONS] = {};
-	struct quic_conn_id *active, conn_id;
+	struct quic_conn_id *active, conn_id = {};
 	bool is_serv = quic_is_serv(sk);
 	u64 type, value, valuelen;
 	union quic_addr addr;

@@ -590,7 +590,7 @@ void quic_outq_transmit_probe(struct sock *sk)
 	struct quic_pnspace *space = quic_pnspace(sk, QUIC_CRYPTO_APP);
 	u32 taglen = quic_packet_taglen(quic_packet(sk));
 	struct quic_path_group *paths = quic_paths(sk);
-	struct quic_probeinfo info;
+	struct quic_probeinfo info = {};
 	u32 pathmtu;
 	s64 number;
 

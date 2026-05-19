@@ -444,8 +444,8 @@ static int quic_packet_get_alpn(struct quic_data *alpn, u8 *p, u32 len)
 static int quic_packet_parse_alpn(struct sk_buff *skb, struct quic_data *alpn)
 {
 	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
+	struct quic_conn_id dcid = {}, scid = {};
 	struct net *net = sock_net(skb->sk);
-	struct quic_conn_id dcid, scid;
 	u32 len = skb->len, version;
 	struct quic_crypto *crypto;
 	u8 *p = skb->data, type;
@@ -529,8 +529,8 @@ static struct sock *quic_packet_get_listen_sock(struct sk_buff *skb)
 static struct sock *quic_packet_get_sock(struct sk_buff *skb)
 {
 	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
+	struct quic_conn_id dcid = {}, *conn_id;
 	struct net *net = sock_net(skb->sk);
-	struct quic_conn_id dcid, *conn_id;
 	union quic_addr daddr, saddr;
 	struct quic_data alpns = {};
 	struct sock *sk = NULL;
@@ -677,7 +677,7 @@ static int quic_packet_retry_create_and_xmit(struct sock *sk)
 	u8 *p, buf[QUIC_FRAME_BUF_LARGE], tag[QUIC_TAG_LEN];
 	struct quic_packet *packet = quic_packet(sk);
 	union quic_addr *da = &packet->daddr;
-	struct quic_conn_id conn_id;
+	struct quic_conn_id conn_id = {};
 	struct quichshdr *hdr;
 	struct sk_buff *skb;
 	u32 len, tlen, hlen;
@@ -942,9 +942,9 @@ static int quic_packet_listen_process(struct sock *sk, struct sk_buff *skb)
 	u32 version, errcode, len = skb->len;
 	u8 *p = skb->data, type, retry = 0;
 	struct net *net = sock_net(sk);
+	struct quic_conn_id odcid = {};
 	struct quic_request_sock *req;
 	struct quic_crypto *crypto;
-	struct quic_conn_id odcid;
 	struct quic_data token;
 	int err;
 

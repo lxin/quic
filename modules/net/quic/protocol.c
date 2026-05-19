@@ -54,8 +54,8 @@ static int quic_inet_connect(struct socket *sock, struct sockaddr *addr,
 static int quic_inet_listen(struct socket *sock, int backlog)
 {
 	struct quic_conn_id_set *source, *dest;
+	struct quic_conn_id conn_id = {};
 	struct quic_path_group *paths;
-	struct quic_conn_id conn_id;
 	struct quic_crypto *crypto;
 	struct sock *sk = sock->sk;
 	union quic_addr *a;
