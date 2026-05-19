@@ -1368,6 +1368,7 @@ static int quic_packet_handshake_header_process(struct sock *sk,
 	u8 *p = (u8 *)quic_hshdr(skb), type = quic_hshdr(skb)->type;
 	struct quic_packet *packet = quic_packet(sk);
 	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
+	bool is_serv = quic_is_serv(sk);
 	struct net *net = sock_net(sk);
 	u32 len = skb->len, version;
 	struct quic_data token;
@@ -1381,6 +1382,8 @@ static int quic_packet_handshake_header_process(struct sock *sk,
 	if (err)
 		return err;
 	if (!version) { /* Version == 0 means a Version Negotiation packet. */
+		if (is_serv)
+			return -EINVAL;
 		if (!quic_packet_backlog_schedule(net, skb))
 			quic_packet_version_process(sk, skb);
 		/* Reset level: may change in quic_packet_version_process(). */
@@ -1413,7 +1416,7 @@ static int quic_packet_handshake_header_process(struct sock *sk,
 		if (err)
 			return err;
 		packet->level = QUIC_CRYPTO_INITIAL;
-		if (!quic_is_serv(sk) && token.len) {
+		if (!is_serv && token.len) {
 			/* rfc9000#section-17.2.2:
 			 *
 			 * Initial packets sent by the server MUST set the
@@ -1435,6 +1438,8 @@ static int quic_packet_handshake_header_process(struct sock *sk,
 		packet->level = QUIC_CRYPTO_HANDSHAKE;
 		break;
 	case QUIC_PACKET_0RTT:
+		if (!is_serv)
+			return -EINVAL;
 		if (!quic_crypto(sk, QUIC_CRYPTO_EARLY)->recv_ready) {
 			/* Queue to backlog until 0-RTT keys are ready. */
 			quic_inq_backlog_tail(sk, skb);
@@ -1443,6 +1448,8 @@ static int quic_packet_handshake_header_process(struct sock *sk,
 		packet->level = QUIC_CRYPTO_EARLY;
 		break;
 	case QUIC_PACKET_RETRY:
+		if (is_serv)
+			return -EINVAL;
 		if (!quic_packet_backlog_schedule(net, skb))
 			quic_packet_retry_process(sk, skb); /* Handle Retry. */
 		packet->level = 0;
