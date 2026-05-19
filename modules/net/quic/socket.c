@@ -1184,14 +1184,14 @@ static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 			}
 			err = quic_wait_for_stream_send(sk, stream, flags, len);
 			if (err) {
-				if (!bytes)
-					goto err;
 				/* Return -ENOSPC (flow control limit hit) only
 				 * if stream info cmsg was set; otherwise treat
 				 * it as -EAGAIN.
 				 */
 				if (err == -ENOSPC && !has_sinfo)
 					err = -EAGAIN;
+				if (!bytes)
+					goto err;
 				goto out;
 			}
 		}
