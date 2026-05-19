@@ -835,9 +835,13 @@ int quic_handshake_step(gnutls_session_t session,
 			struct quic_handshake_step **pstep)
 {
 	struct quic_handshake_ctx *ctx = quic_handshake_ctx_get(session);
-	quic_handshake_step_process_fn_t process_fn = ctx->next_step.process_fn;
+	quic_handshake_step_process_fn_t process_fn;
 	int ret;
 
+	if (ctx == NULL)
+		return -EINVAL;
+
+	process_fn = ctx->next_step.process_fn;
 	ctx->next_step.process_fn = NULL;
 
 	if (pstep == NULL)
