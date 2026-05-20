@@ -56,21 +56,19 @@ void quic_inq_flow_control(struct sock *sk, struct quic_stream *stream,
 			   u32 bytes)
 {
 	struct quic_pnspace *space = quic_pnspace(sk, QUIC_CRYPTO_APP);
-	struct quic_packet *packet = quic_packet(sk);
 	struct quic_inqueue *inq = quic_inq(sk);
 	u8 frame, transmit = 0;
-	u32 mss, window;
+	u32 window;
 
 	if (!bytes)
 		return;
 
-	mss = quic_packet_mss(packet);
 	inq->bytes += bytes; /* Account for bytes read at connection. */
 
 	 /* Check and update connection-level flow control. */
 	window = inq->max_data;
 	if (inq->bytes + window - inq->max_bytes <
-	    max(mss, (window >> QUIC_INQ_RWND_SHIFT)))
+	    max_t(u32, 1, (window >> QUIC_INQ_RWND_SHIFT)))
 		goto stream_out;
 
 	/* Reduce window increment if memory pressure detected. */
@@ -95,7 +93,7 @@ stream_out:
 	window = stream->recv.window;
 	if (stream->recv.state >= QUIC_STREAM_RECV_STATE_RECVD ||
 	    stream->recv.bytes + window - stream->recv.max_bytes <
-	    max(mss, (window >> QUIC_INQ_RWND_SHIFT)))
+	    max_t(u32, 1, (window >> QUIC_INQ_RWND_SHIFT)))
 		goto out;
 
 	if (sk_under_memory_pressure(sk))
