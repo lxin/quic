@@ -2476,8 +2476,8 @@ static struct quic_frame_ops quic_frame_ops[QUIC_FRAME_MAX + 1] = {
 	quic_frame_create_and_process_and_ack(connection_close, QUIC_A_N____01),
 	quic_frame_create_and_process_and_ack(handshake_done, QUIC_A___R___1),
 	quic_frame_create_and_process_and_ack(invalid, 0),
-	quic_frame_create_and_process_and_ack(invalid, 0),
 	/* 0x20 */
+	quic_frame_create_and_process_and_ack(invalid, 0),
 	quic_frame_create_and_process_and_ack(invalid, 0),
 	quic_frame_create_and_process_and_ack(invalid, 0),
 	quic_frame_create_and_process_and_ack(invalid, 0),
