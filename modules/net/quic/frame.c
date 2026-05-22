@@ -2760,6 +2760,7 @@ int quic_frame_stream_append(struct sock *sk, struct quic_frame *frame,
 	frame->bytes += msg_len;
 	frame->len = frame->dlen + frame->bytes;
 	frame->nodelay = nodelay;
+	frame->stream_fin = !!(type & QUIC_STREAM_BIT_FIN);
 
 	return msg_len;
 }
