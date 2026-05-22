@@ -1694,6 +1694,15 @@ next:
 		/* Advance skb pointer to next QUIC packet. */
 		skb_pull(skb, cb->number_offset + cb->length);
 	}
+	if (paths->blocked) {
+		/* The path was previously blocked due to the
+		 * anti-amplification limit. Now that additional credit may be
+		 * available, unblock the path and update the loss timer to
+		 * allow transmission of pending frames.
+		 */
+		paths->blocked = 0;
+		quic_outq_update_loss_timer(sk);
+	}
 	if (ack_immediate) {
 		quic_outq_transmit(sk);
 		goto out;
@@ -1708,15 +1717,6 @@ next:
 		inq->sack_flag = QUIC_SACK_FLAG_XMIT;
 	}
 out:
-	if (paths->blocked) {
-		/* The path was previously blocked due to the
-		 * anti-amplification limit.  Now that additional credit may be
-		 * available, unblock the path and update the loss timer to
-		 * allow transmission of pending frames.
-		 */
-		paths->blocked = 0;
-		quic_outq_update_loss_timer(sk);
-	}
 	quic_timer_reset(sk, QUIC_TIMER_PATH, paths->keepalive_interval);
 
 	if (err)
