@@ -59,8 +59,6 @@ struct quic_crypto {
 
 int quic_crypto_set_secret(struct quic_crypto *crypto,
 			   struct quic_crypto_secret *srt, u32 version);
-int quic_crypto_get_secret(struct quic_crypto *crypto,
-			   struct quic_crypto_secret *srt);
 int quic_crypto_set_cipher(struct quic_crypto *crypto, u32 type);
 int quic_crypto_key_update(struct quic_crypto *crypto);
 

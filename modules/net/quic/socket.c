@@ -2699,31 +2699,6 @@ static int quic_sock_get_transport_params_ext(struct sock *sk, u32 len,
 	return 0;
 }
 
-static int quic_sock_get_crypto_secret(struct sock *sk, u32 len,
-				       sockptr_t optval, sockptr_t optlen)
-{
-	struct quic_crypto_secret s = {};
-	int err = 0;
-
-	if (len > sizeof(s))
-		len = sizeof(s);
-
-	if (copy_from_sockptr(&s, optval, len))
-		return -EFAULT;
-
-	if (s.level >= QUIC_CRYPTO_MAX)
-		return -EINVAL;
-	if (quic_crypto_get_secret(quic_crypto(sk, s.level), &s))
-		return -EINVAL;
-
-	if (copy_to_sockptr(optlen, &len, sizeof(len)) ||
-	    copy_to_sockptr(optval, &s, len))
-		err = -EFAULT;
-
-	memzero_explicit(s.secret, sizeof(s.secret));
-	return err;
-}
-
 /**
  * quic_do_getsockopt - get a QUIC socket option
  * @sk: socket to query
@@ -2779,9 +2754,6 @@ int quic_do_getsockopt(struct sock *sk, int optname, sockptr_t optval,
 	case QUIC_SOCKOPT_TRANSPORT_PARAM_EXT:
 		retval = quic_sock_get_transport_params_ext(sk, len, optval,
 							    optlen);
-		break;
-	case QUIC_SOCKOPT_CRYPTO_SECRET:
-		retval = quic_sock_get_crypto_secret(sk, len, optval, optlen);
 		break;
 	default:
 		retval = -ENOPROTOOPT;

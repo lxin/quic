@@ -801,21 +801,6 @@ int quic_crypto_set_secret(struct quic_crypto *crypto,
 }
 EXPORT_SYMBOL_GPL(quic_crypto_set_secret);
 
-int quic_crypto_get_secret(struct quic_crypto *crypto,
-			   struct quic_crypto_secret *srt)
-{
-	u8 phase = crypto->key_phase;
-	u8 *secret;
-
-	if (!crypto->cipher)
-		return -EINVAL;
-	srt->type = crypto->cipher_type;
-	secret = srt->send ? crypto->tx_secret[phase] :
-			     crypto->rx_secret[phase];
-	memcpy(srt->secret, secret, crypto->cipher->secretlen);
-	return 0;
-}
-
 /* Initiating a Key Update. */
 int quic_crypto_key_update(struct quic_crypto *crypto)
 {
