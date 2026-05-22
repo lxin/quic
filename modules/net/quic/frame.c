@@ -1359,13 +1359,20 @@ static int quic_frame_retire_conn_id_process(struct sock *sk,
 	    seqno + 1 + id_set->max_count > U32_MAX)
 		return -EINVAL;
 
+	if (QUIC_SKB_CB(frame->skb)->seqno == seqno) {
+		/* The sequence number specified in a RETIRE_CONNECTION_ID
+		 * frame MUST NOT refer to the Destination Connection ID field
+		 * of the packet in which the frame is contained. The peer MAY
+		 * treat this as a connection error of type PROTOCOL_VIOLATION.
+		 */
+		frame->errcode = QUIC_TRANSPORT_ERROR_PROTOCOL_VIOLATION;
+		return -EINVAL;
+	}
 	first = quic_conn_id_first_number(id_set);
 	last  = quic_conn_id_last_number(id_set);
 	if (seqno >= first) {
 		if (seqno >= last) {
-			/* rfc9000#section-19.16:
-			 *
-			 * Receipt of a RETIRE_CONNECTION_ID frame containing a
+			/* Receipt of a RETIRE_CONNECTION_ID frame containing a
 			 * sequence number greater than any previously sent to
 			 * the peer MUST be treated as a connection error of
 			 * type PROTOCOL_VIOLATION.
