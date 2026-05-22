@@ -236,6 +236,7 @@ enum {
 	QUIC_TRANSPORT_ERROR_KEY_UPDATE			= 0x0e,
 	QUIC_TRANSPORT_ERROR_AEAD_LIMIT_REACHED		= 0x0f,
 	QUIC_TRANSPORT_ERROR_NO_VIABLE_PATH		= 0x10,
+	QUIC_TRANSPORT_ERROR_VERSION_NEGOTIATION	= 0x11,
 
 	/* The cryptographic handshake failed. A range of 256 values is reserved
 	 * for carrying error codes specific to the cryptographic handshake that

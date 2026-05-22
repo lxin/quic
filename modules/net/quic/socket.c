@@ -2173,6 +2173,8 @@ static int quic_sock_set_transport_params_ext(struct sock *sk, u8 *p, u32 len)
 	err = quic_frame_parse_transport_params_ext(sk, &param, p, len);
 	if (err) {
 		errcode = QUIC_TRANSPORT_ERROR_TRANSPORT_PARAM;
+		if (err == -EPROTONOSUPPORT)
+			errcode = QUIC_TRANSPORT_ERROR_VERSION_NEGOTIATION;
 		quic_outq_transmit_close(sk, 0, errcode, QUIC_CRYPTO_INITIAL);
 		return err;
 	}
