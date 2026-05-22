@@ -1345,6 +1345,16 @@ static int quic_frame_retire_conn_id_process(struct sock *sk,
 	u8 *p = frame->data;
 	int err;
 
+	if (!quic_conn_id_active(id_set)->len) {
+		/* rfc9000#section-19.16:
+		 *
+		 * An endpoint that provides a zero-length connection ID MUST
+		 * treat receipt of a RETIRE_CONNECTION_ID frame as a
+		 * connection error of type PROTOCOL_VIOLATION.
+		 */
+		frame->errcode = QUIC_TRANSPORT_ERROR_PROTOCOL_VIOLATION;
+		return -EINVAL;
+	}
 	if (!quic_get_var(&p, &len, &seqno) ||
 	    seqno + 1 + id_set->max_count > U32_MAX)
 		return -EINVAL;
