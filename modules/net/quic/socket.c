@@ -422,6 +422,7 @@ static int quic_init_sock(struct sock *sk)
 
 	sk_sockets_allocated_inc(sk);
 	sock_prot_inuse_add(sock_net(sk), sk->sk_prot, 1);
+	INIT_LIST_HEAD(quic_reqs(sk));
 
 	quic_conn_id_set_init(quic_source(sk), true);
 	quic_conn_id_set_init(quic_dest(sk), false);
@@ -612,7 +613,6 @@ static int quic_hash(struct sock *sk)
 
 	if (quic_alpn(sk)->data)
 		static_branch_inc(&quic_alpn_demux_key);
-	INIT_LIST_HEAD(quic_reqs(sk));
 
 	/* Hash a listen socket with source port only. */
 	hash = quic_listen_sock_hash(net, ntohs(sa->v4.sin_port));
