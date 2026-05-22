@@ -186,13 +186,19 @@ out:
 u64 quic_outq_wspace(struct sock *sk, struct quic_stream *stream)
 {
 	struct quic_outqueue *outq = quic_outq(sk);
-	u64 len = outq->max_bytes - outq->bytes;
+	u64 len;
 
-	if (stream) {
-		len = min_t(u64, len, sk_stream_wspace(sk));
-		len = min_t(u64, len,
-			    stream->send.max_bytes - stream->send.bytes);
-	}
+	if (outq->max_bytes <= outq->bytes)
+		return 0;
+	len = outq->max_bytes - outq->bytes;
+
+	if (!stream)
+		return len;
+
+	if (stream->send.max_bytes <= stream->send.bytes)
+		return 0;
+	len = min_t(u64, len, stream->send.max_bytes - stream->send.bytes);
+	len = min_t(u64, len, sk_stream_wspace(sk));
 
 	return len;
 }
