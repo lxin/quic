@@ -3058,7 +3058,8 @@ static int quic_frame_get_address(union quic_addr *addr,
 
 	quic_get_pref_addr(sk, addr, pp, plen);
 
-	if (!quic_get_int(pp, plen, &len, 1) || len > QUIC_CONN_ID_MAX_LEN)
+	if (!quic_get_int(pp, plen, &len, 1) ||
+	    !len || len > QUIC_CONN_ID_MAX_LEN)
 		return -EINVAL;
 	if (valuelen != QUIC_PREF_ADDR_LEN + 1 + len + QUIC_CONN_ID_TOKEN_LEN)
 		return -EINVAL;
