@@ -1400,9 +1400,9 @@ send:
 	return err;
 }
 
-/* Process the header of an incoming long-header QUIC handshake packet.  Parses
- * the packet type and handles Version Negotiation and Retry if present. Sets
- * packet->level to 0 if the packet is fully consumed.
+/* Process the header of an incoming long-header QUIC handshake packet. Parses
+ * the packet type and handles Version Negotiation and Retry if present. Returns
+ * -EINPROGRESS if the packet has been consumed or queued for later processing.
  */
 static int quic_packet_handshake_header_process(struct sock *sk,
 						struct sk_buff *skb)
@@ -1428,9 +1428,7 @@ static int quic_packet_handshake_header_process(struct sock *sk,
 			return -EINVAL;
 		if (!quic_packet_backlog_schedule(net, skb))
 			quic_packet_version_process(sk, skb);
-		/* Reset level: may change in quic_packet_version_process(). */
-		packet->level = 0;
-		return 0;
+		return -EINPROGRESS;
 	}
 	/* Read Packet Type. */
 	type = quic_packet_version_get_type(version, type);
@@ -1442,10 +1440,8 @@ static int quic_packet_handshake_header_process(struct sock *sk,
 		if (type != QUIC_PACKET_INITIAL ||
 		    !quic_packet_compatible_versions(version))
 			return -EINVAL;
-		if (quic_packet_backlog_schedule(net, skb)) {
-			packet->level = 0;
-			return 0;
-		}
+		if (quic_packet_backlog_schedule(net, skb))
+			return -EINPROGRESS;
 		/* Update crypto keys for the new negotiated version. */
 		err = quic_packet_version_change(sk, &quic_paths(sk)->orig_dcid,
 						 version);
@@ -1475,7 +1471,7 @@ static int quic_packet_handshake_header_process(struct sock *sk,
 		if (!quic_crypto(sk, QUIC_CRYPTO_HANDSHAKE)->recv_ready) {
 			/* Queue to backlog until Handshake keys are ready. */
 			quic_inq_backlog_tail(sk, skb);
-			return 0;
+			return -EINPROGRESS;
 		}
 		packet->level = QUIC_CRYPTO_HANDSHAKE;
 		break;
@@ -1485,7 +1481,7 @@ static int quic_packet_handshake_header_process(struct sock *sk,
 		if (!quic_crypto(sk, QUIC_CRYPTO_EARLY)->recv_ready) {
 			/* Queue to backlog until 0-RTT keys are ready. */
 			quic_inq_backlog_tail(sk, skb);
-			return 0;
+			return -EINPROGRESS;
 		}
 		packet->level = QUIC_CRYPTO_EARLY;
 		break;
@@ -1494,8 +1490,7 @@ static int quic_packet_handshake_header_process(struct sock *sk,
 			return -EINVAL;
 		if (!quic_packet_backlog_schedule(net, skb))
 			quic_packet_retry_process(sk, skb); /* Handle Retry. */
-		packet->level = 0;
-		return 0;
+		return -EINPROGRESS;
 	default:
 		return -EINVAL;
 	}
@@ -1565,12 +1560,10 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb)
 		 */
 		err = quic_packet_handshake_header_process(sk, skb);
 		if (err) {
-			QUIC_INC_STATS(net, QUIC_MIB_PKT_INVHDRDROP);
-			cb->level = packet->level;
-			break;
-		}
-		if (!packet->level) { /* Already consumed (e.g., Retry). */
-			err = -EINPROGRESS;
+			if (err != -EINPROGRESS) {
+				QUIC_INC_STATS(net, QUIC_MIB_PKT_INVHDRDROP);
+				cb->level = packet->level;
+			}
 			break;
 		}
 
