@@ -1161,6 +1161,30 @@ static int quic_packet_retry_process(struct sock *sk, struct sk_buff *skb)
 	u32 hlen, len, version;
 	int err;
 
+	/* rfc9000#section-17.2.5.1:
+	 *
+	 * A client MUST discard a Retry packet that contains a Source
+	 * Connection ID field that is identical to the Destination Connection
+	 * ID field of its Initial packet.
+	 */
+	active = quic_conn_id_active(quic_dest(sk));
+	if (active->len == packet->scid.len &&
+	    !memcmp(active->data, packet->scid.data, active->len)) {
+		err = -EINVAL;
+		goto err;
+	}
+	/* rfc9000#section-17.2.5.2:
+	 *
+	 * A client MUST accept and process at most one Retry packet for each
+	 * connection attempt. After the client has received and processed an
+	 * Initial or Retry packet from the server, it MUST discard any
+	 * subsequent Retry packets that it receives.
+	 */
+	if (paths->ampl_rcvlen || paths->retry) {
+		err = -EINVAL;
+		goto err;
+	}
+
 	hlen = QUIC_LONG_HLEN(&packet->dcid, &packet->scid);
 	len = skb->len - hlen;
 	if (len < QUIC_TAG_LEN) {
@@ -1196,7 +1220,6 @@ static int quic_packet_retry_process(struct sock *sk, struct sk_buff *skb)
 	 * packet to the value from the Source Connection ID field in the Retry
 	 * packet.
 	 */
-	active = quic_conn_id_active(quic_dest(sk));
 	quic_conn_id_update(active, packet->scid.data, packet->scid.len);
 	/* rfc9000#section-7.3:
 	 *
