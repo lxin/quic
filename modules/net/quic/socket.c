@@ -2651,7 +2651,7 @@ static int quic_sock_get_session_ticket(struct sock *sk, u32 len,
 	/* For servers, return the master key used for session resumption.  If
 	 * already set, reuse it.
 	 */
-	if (tlen)
+	if (tlen || quic_is_listen(sk))
 		goto out;
 
 	/* If not already set, derive the key using the peer address. */
