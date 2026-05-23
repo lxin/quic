@@ -1252,12 +1252,23 @@ err:
 
 static int quic_packet_version_process(struct sock *sk, struct sk_buff *skb)
 {
+	struct quic_path_group *paths = quic_paths(sk);
 	struct quic_packet *packet = quic_packet(sk);
 	u64 version, best = 0;
 	u32 hlen, len;
 	int err;
 	u8 *p;
 
+	/* rfc9000#section-6.2:
+	 *
+	 * A client MUST discard any Version Negotiation packet if it has
+	 * received and successfully processed any other packet, including an
+	 * earlier Version Negotiation packet.
+	 */
+	if (paths->ampl_rcvlen || paths->retry || paths->version) {
+		err = -EINVAL;
+		goto err;
+	}
 	hlen = QUIC_LONG_HLEN(&packet->dcid, &packet->scid);
 	len = skb->len - hlen;
 	if (len < QUIC_VERSION_LEN) {
@@ -1276,6 +1287,13 @@ static int quic_packet_version_process(struct sock *sk, struct sk_buff *skb)
 		quic_get_int(&p, &len, &version, QUIC_VERSION_LEN);
 		if (quic_packet_compatible_versions(version) && best < version)
 			best = version;
+		/* A client MUST discard a Version Negotiation packet that lists
+		 * the QUIC version selected by the client.
+		 */
+		if (packet->version == version) {
+			err = -EINVAL;
+			goto err;
+		}
 	}
 	if (best) {
 		/* Found one and update crypto keys using the new version. */
@@ -1286,6 +1304,7 @@ static int quic_packet_version_process(struct sock *sk, struct sk_buff *skb)
 		quic_outq_retransmit_mark(sk, QUIC_CRYPTO_INITIAL, true);
 		quic_outq_update_loss_timer(sk);
 		quic_outq_transmit(sk);
+		paths->version = 1;
 	}
 
 	consume_skb(skb);

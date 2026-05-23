@@ -97,6 +97,7 @@ struct quic_path_group {
 	u8 ecn_probes;  /* ECN probe counter */
 	u8 validated:1; /* Path validated with PATH_RESPONSE */
 	u8 blocked:1;   /* Blocked by anti-amplification limit */
+	u8 version:1;   /* Version negotiation performed */
 	u8 retry:1;     /* Retry used in initial packet */
 
 	/* Connection Migration (rfc9000#section-9) */
