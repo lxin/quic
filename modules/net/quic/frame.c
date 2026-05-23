@@ -2852,15 +2852,15 @@ int quic_frame_build_transport_params_ext(struct sock *sk,
 					  u8 *data, u32 *len)
 {
 	struct quic_conn_id_set *id_set = quic_source(sk);
+	struct quic_conn_id *active, *scid, conn_id = {};
 	struct quic_path_group *paths = quic_paths(sk);
 	u8 *p = data, token[QUIC_CONN_ID_TOKEN_LEN];
-	struct quic_conn_id *scid, conn_id = {};
 	u32 tlen = QUIC_CONN_ID_TOKEN_LEN;
 	struct quic_crypto *crypto;
 	u16 param_id;
 	int err;
 
-	scid = quic_conn_id_active(id_set);
+	active = quic_conn_id_active(id_set);
 	if (!quic_is_serv(sk))
 		goto out;
 
@@ -2885,8 +2885,8 @@ int quic_frame_build_transport_params_ext(struct sock *sk,
 		p = quic_put_var(p, QUIC_TRANSPORT_PARAM_STATELESS_RESET_TOKEN);
 		p = quic_put_var(p, tlen);
 		err = quic_crypto_generate_stateless_reset_token(crypto,
-								 scid->data,
-								 scid->len,
+								 active->data,
+								 active->len,
 								 token, tlen);
 		if (err)
 			return err;
@@ -2906,19 +2906,23 @@ int quic_frame_build_transport_params_ext(struct sock *sk,
 		/* Write preferred address parameter with an associated conn ID
 		 * and stateless reset token.
 		 */
-		quic_conn_id_generate(&conn_id);
+		scid = quic_conn_id_find(id_set, 1);
+		if (!scid) {
+			quic_conn_id_generate(&conn_id);
+			err = quic_conn_id_add(id_set, &conn_id, 1, sk);
+			if (err)
+				return err;
+			scid = &conn_id;
+		}
 		err = quic_crypto_generate_stateless_reset_token(crypto,
-								 conn_id.data,
-								 conn_id.len,
+								 scid->data,
+								 scid->len,
 								 token, tlen);
-		if (err)
-			return err;
-		err = quic_conn_id_add(id_set, &conn_id, 1, sk);
 		if (err)
 			return err;
 		param_id = QUIC_TRANSPORT_PARAM_PREFERRED_ADDRESS;
 		p = quic_frame_put_address(p, param_id,
-					   quic_path_saddr(paths, 1), &conn_id,
+					   quic_path_saddr(paths, 1), scid,
 					   token, sk);
 	}
 
@@ -2930,7 +2934,7 @@ out:
 	 * initial_source_connection_id transport parameter.
 	 */
 	param_id = QUIC_TRANSPORT_PARAM_INITIAL_SOURCE_CONNECTION_ID;
-	p = quic_frame_put_conn_id(p, param_id, scid);
+	p = quic_frame_put_conn_id(p, param_id, active);
 	param_id = QUIC_TRANSPORT_PARAM_INITIAL_MAX_STREAM_DATA_BIDI_LOCAL;
 	if (params->max_stream_data_bidi_local)
 		p = quic_put_param(p, param_id,
