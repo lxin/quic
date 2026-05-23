@@ -144,7 +144,7 @@ static bool quic_inq_stream_tail(struct sock *sk, struct quic_stream *stream,
 	head = &inq->recv_list;
 	if (frame->level && !quic_crypto(sk, QUIC_CRYPTO_APP)->recv_ready)
 		head = &inq->early_list;
-	frame->level = 0;
+	frame->level = QUIC_CRYPTO_APP;
 	frame->stream_id = stream->id; /* Reuse frame->offset field. */
 	list_add_tail(&frame->list, head);
 	if (!fin)

@@ -1884,7 +1884,7 @@ static int quic_sock_connection_migrate(struct sock *sk, struct sockaddr *addr,
 	}
 	/* Set path 1 destination addr same as path 0 and configure routing. */
 	quic_path_set_daddr(paths, 1, quic_path_daddr(paths, 0));
-	if (quic_packet_config(sk, 0, 1)) {
+	if (quic_packet_config(sk, QUIC_CRYPTO_APP, 1)) {
 		err = -EINVAL;
 		goto err;
 	}
@@ -2291,7 +2291,7 @@ done:
 		 * Reset the flag to avoid reprocessing, and Perform routing on
 		 * new path and set the local address for new path.
 		 */
-		if (quic_packet_config(sk, 0, 1)) {
+		if (quic_packet_config(sk, QUIC_CRYPTO_APP, 1)) {
 			paths->pref_addr = 0; /* Ignore preferred address. */
 			goto out;
 		}

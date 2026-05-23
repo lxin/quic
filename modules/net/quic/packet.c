@@ -231,7 +231,7 @@ void quic_packet_rcv_err_pmtu(struct sock *sk)
 	 * AEAD tag.  Also notify the QUIC path layer for possible state
 	 * changes and probing.
 	 */
-	packet->level = 0;
+	packet->level = QUIC_CRYPTO_APP;
 	taglen = quic_packet_taglen(packet);
 	info = info - packet->hlen - taglen;
 	pathmtu = quic_path_pl_toobig(paths, info, &reset_timer);
@@ -1821,7 +1821,7 @@ static int quic_packet_app_process_done(struct sock *sk, struct sk_buff *skb)
 		 * QUIC senders use acknowledgments to detect lost packets and
 		 * a PTO to ensure acknowledgments are received.
 		 */
-		quic_outq_retransmit_mark(sk, 0, false);
+		quic_outq_retransmit_mark(sk, QUIC_CRYPTO_APP, false);
 		quic_outq_update_loss_timer(sk);
 	}
 
