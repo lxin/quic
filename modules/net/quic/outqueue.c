@@ -38,7 +38,7 @@ static bool quic_outq_limit_check(struct sock *sk, struct quic_frame *frame)
 	 * path validation.
 	 */
 	if (quic_is_serv(sk) && !paths->validated) {
-		len = packet->len + frame->len;
+		len = packet->len + frame->len + frame->padding;
 		if (paths->ampl_sndlen + len > paths->ampl_rcvlen * 3) {
 			paths->blocked = 1;
 			return true;
