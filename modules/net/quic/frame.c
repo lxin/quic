@@ -1643,7 +1643,7 @@ static int quic_frame_stop_sending_process(struct sock *sk,
 		goto out;
 	}
 
-	if (stream->send.state >= QUIC_STREAM_SEND_STATE_RESET_SENT)
+	if (stream->send.state >= QUIC_STREAM_SEND_STATE_RECVD)
 		goto out;
 
 	/* rfc9000#section-3.1:
