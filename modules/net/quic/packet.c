@@ -152,6 +152,7 @@ int quic_packet_select_version(struct sock *sk, u32 *versions, u8 count)
 	struct quic_packet *packet = quic_packet(sk);
 	u8 i, pref_found = 0, ch_found = 0;
 	u32 preferred, chosen, best = 0;
+	int err = -EPROTONOSUPPORT;
 
 	preferred = quic_outq(sk)->version ?: QUIC_VERSION_V1;
 	chosen = packet->version;
@@ -166,21 +167,51 @@ int quic_packet_select_version(struct sock *sk, u32 *versions, u8 count)
 		if (best < versions[i]) /* Track highest offered version. */
 			best = versions[i];
 	}
-
 	if (!pref_found && !ch_found && !best)
-		return -EPROTONOSUPPORT;
+		return err;
 
 	if (quic_is_serv(sk)) {
+		/* rfc9368#section-4:
+		 *
+		 * When the server then processes the client's Version
+		 * Information, the server MUST validate that the client's
+		 * Chosen Version matches the version in use for the connection.
+		 */
+		if (versions[0] != chosen)
+			return err;
 		/* Server prefers preferred version if offered, else chosen. */
 		if (pref_found)
 			best = preferred;
 		else if (ch_found)
 			best = chosen;
-	} else { /* Client prefers chosen version, else preferred. */
+	} else {
+		/* If a client receives Version Information where the server's
+		 * Chosen Version was not sent by the client as part of its
+		 * Available Versions, the client MUST close the connection with
+		 * a version negotiation error.
+		 */
+		if (!quic_packet_compatible_versions(versions[0]))
+			return err;
+		/* Client prefers chosen version, else preferred. */
 		if (ch_found)
 			best = chosen;
 		else if (pref_found)
 			best = preferred;
+		if (quic_paths(sk)->version) {
+			/* If the client reacted to a Version Negotiation
+			 * packet and the server's Available Versions field is
+			 * empty, the client MUST close the connection with a
+			 * version negotiation error.
+			 */
+			if (count < 2)
+				return err;
+			/* If the client would have selected a different
+			 * version, the client MUST close the connection with a
+			 * version negotiation error.
+			 */
+			if (best != chosen)
+				return err;
+		}
 	}
 
 	if (packet->version == best)

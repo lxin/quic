@@ -3023,10 +3023,10 @@ static int quic_frame_get_conn_id(struct quic_conn_id *conn_id, u8 **pp,
 
 /* Parse QUIC version information transport parameter. */
 static int quic_frame_get_version_info(u32 *versions, u8 *count, u8 **pp,
-				       u32 *plen)
+				       u32 *plen, bool is_serv)
 {
 	u64 valuelen, v = 0;
-	u8 i;
+	u8 i, found = 0;
 
 	if (!quic_get_var(pp, plen, &valuelen) || !valuelen ||
 	    (u64)*plen < valuelen)
@@ -3037,10 +3037,24 @@ static int quic_frame_get_version_info(u32 *versions, u8 *count, u8 **pp,
 		return -EINVAL;
 
 	*count = (u8)(valuelen / QUIC_VERSION_LEN);
+	if (!*count)
+		return -EINVAL;
 	for (i = 0; i < *count; i++) {
 		quic_get_int(pp, plen, &v, QUIC_VERSION_LEN);
+		if (!v)
+			return -EINVAL;
+		if (i > 0 && versions[0] == v)
+			found = 1;
 		versions[i] = v;
 	}
+	/* rfc9368#section-4:
+	 *
+	 * If a server receives Version Information where the Chosen Version is
+	 * not included in Available Versions, it MUST treat it as a parsing
+	 * failure.
+	 */
+	if (is_serv && !found)
+		return -EINVAL;
 	return 0;
 }
 
@@ -3101,11 +3115,10 @@ int quic_frame_parse_transport_params_ext(struct sock *sk,
 					  struct quic_transport_param *params,
 					  u8 *data, u32 len)
 {
-	u8 *p = data, count = 1, token[QUIC_CONN_ID_TOKEN_LEN];
+	u8 *p = data, count, token[QUIC_CONN_ID_TOKEN_LEN];
 	u8 param_seen[QUIC_TRANSPORT_PARAM_IDX_MAX] = {};
 	struct quic_conn_id_set *id_set = quic_dest(sk);
 	struct quic_path_group *paths = quic_paths(sk);
-	struct quic_packet *packet = quic_packet(sk);
 	u32 idx, versions[QUIC_MAX_VERSIONS] = {};
 	struct quic_conn_id *active, conn_id = {};
 	bool is_serv = quic_is_serv(sk);
@@ -3120,7 +3133,6 @@ int quic_frame_parse_transport_params_ext(struct sock *sk,
 	params->active_connection_id_limit = QUIC_CONN_ID_LEAST;
 
 	active = quic_conn_id_active(id_set);
-	versions[0] = packet->version;
 	while (len > 0) {
 		if (!quic_get_var(&p, &len, &type))
 			return -EINVAL;
@@ -3301,18 +3313,12 @@ int quic_frame_parse_transport_params_ext(struct sock *sk,
 			break;
 		case QUIC_TRANSPORT_PARAM_VERSION_INFORMATION:
 			err = quic_frame_get_version_info(versions, &count, &p,
-							  &len);
+							  &len, is_serv);
 			if (err)
 				return err;
-			/* rfc9368#section-3:
-			 *
-			 * The version that the sender has chosen to use for
-			 * this connection.  In most cases, this field will be
-			 * equal to the value of the Version field in the long
-			 * header that carries this data.
-			 */
-			if (!count || versions[0] != packet->version)
-				return -EINVAL;
+			err = quic_packet_select_version(sk, versions, count);
+			if (err)
+				return err;
 			break;
 		case QUIC_TRANSPORT_PARAM_PREFERRED_ADDRESS:
 			if (is_serv)
@@ -3371,6 +3377,5 @@ int quic_frame_parse_transport_params_ext(struct sock *sk,
 		if (!param_seen[quic_frame_param_idx(type)])
 			return -EINVAL;
 	}
-
-	return quic_packet_select_version(sk, versions, count);
+	return 0;
 }
