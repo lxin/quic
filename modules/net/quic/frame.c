@@ -2555,8 +2555,9 @@ int quic_frame_process(struct sock *sk, struct quic_frame *frame)
 			return -EINVAL;
 		frame->len = ret;
 
-		if (value > QUIC_FRAME_MAX) {
-			pr_debug("%s: unsupported frame, type: %llx, level: %d\n",
+		if (value > QUIC_FRAME_MAX ||
+		    !quic_frame_ops[type].frame_attr) {
+			pr_debug("%s: unknown frame, type: %llx, level: %d\n",
 				 __func__, value, level);
 			/* rfc9000#section-12.4:
 			 *
