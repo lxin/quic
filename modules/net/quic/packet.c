@@ -2826,11 +2826,10 @@ int quic_packet_create_and_xmit(struct sock *sk)
 	if (err && err != -EINPROGRESS)
 		goto err;
 
-	/* Return 1 if at least one ACK-eliciting frame was sent. */
-	return !!packet->frames;
+	return 0;
 err:
 	pr_debug("%s: err: %d\n", __func__, err);
-	return 0;
+	return err;
 }
 
 /* Flush any coalesced/bundled QUIC packets. */
