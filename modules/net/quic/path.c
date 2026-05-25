@@ -339,10 +339,10 @@ void quic_path_set_param(struct quic_path_group *paths,
 			 struct quic_transport_param *p)
 {
 	if (p->remote) {
-		paths->disable_saddr_alt = p->disable_active_migration;
+		paths->disable_saddr_alt = !!p->disable_active_migration;
 		return;
 	}
-	paths->disable_daddr_alt = p->disable_active_migration;
+	paths->disable_daddr_alt = !!p->disable_active_migration;
 }
 
 /* State Machine defined in rfc8899#section-5.2 */

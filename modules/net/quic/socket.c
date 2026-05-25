@@ -1464,9 +1464,9 @@ static void quic_sock_apply_config(struct sock *sk, struct quic_config *config)
 	struct quic_cong *cong = quic_cong(sk);
 
 	outq->receive_session_ticket = config->receive_session_ticket;
-	outq->validate_peer_address = config->validate_peer_address;
+	outq->validate_peer_address = !!config->validate_peer_address;
 	outq->certificate_request = config->certificate_request;
-	outq->stream_data_nodelay = config->stream_data_nodelay;
+	outq->stream_data_nodelay = !!config->stream_data_nodelay;
 	outq->payload_cipher_type = config->payload_cipher_type;
 	outq->version = config->version;
 

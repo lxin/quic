@@ -598,14 +598,14 @@ void quic_inq_set_param(struct sock *sk, struct quic_transport_param *p)
 		return;
 	}
 
-	inq->disable_compatible_version = p->disable_compatible_version;
-	inq->disable_1rtt_encryption = p->disable_1rtt_encryption;
+	inq->disable_compatible_version = !!p->disable_compatible_version;
+	inq->disable_1rtt_encryption = !!p->disable_1rtt_encryption;
 	inq->max_datagram_frame_size = p->max_datagram_frame_size;
 	inq->max_udp_payload_size = p->max_udp_payload_size;
 	inq->ack_delay_exponent = p->ack_delay_exponent;
 	inq->max_idle_timeout = p->max_idle_timeout;
-	inq->grease_quic_bit = p->grease_quic_bit;
-	inq->stateless_reset = p->stateless_reset;
+	inq->grease_quic_bit = !!p->grease_quic_bit;
+	inq->stateless_reset = !!p->stateless_reset;
 	inq->max_ack_delay = p->max_ack_delay;
 	inq->max_data = p->max_data;
 
