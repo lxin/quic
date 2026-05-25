@@ -1853,8 +1853,9 @@ static int quic_sock_connection_migrate(struct sock *sk, struct sockaddr *addr,
 	/* Reject if connection is closed or address matches the current path's
 	 * source.
 	 */
-	if (quic_is_closed(sk) || quic_is_listen(sk) ||
-	    quic_cmp_sk_addr(sk, quic_path_saddr(paths, 0), &a))
+	if (quic_is_closed(sk) || quic_is_listen(sk))
+		return -EPIPE;
+	if (quic_cmp_sk_addr(sk, quic_path_saddr(paths, 0), &a))
 		return -EINVAL;
 
 	if (quic_is_establishing(sk)) {
@@ -1903,6 +1904,9 @@ static int quic_sock_key_update(struct sock *sk, void *kopt, u32 optlen)
 {
 	struct quic_crypto *crypto = quic_crypto(sk, QUIC_CRYPTO_APP);
 	int err;
+
+	if (!quic_is_established(sk))
+		return -EPIPE;
 
 	err = quic_crypto_key_update(crypto);
 	if (err)
@@ -2241,7 +2245,7 @@ static int quic_sock_set_crypto_secret(struct sock *sk, void *kopt, u32 len)
 			quic_packet_process(sk, skb);
 		/* quic_packet_process() may close socket. */
 		if (quic_is_closed(sk))
-			return -ECONNABORTED;
+			return -EPIPE;
 		return 0;
 	}
 
@@ -2279,7 +2283,7 @@ static int quic_sock_set_crypto_secret(struct sock *sk, void *kopt, u32 len)
 	while ((skb = __skb_dequeue(&tmpq)) != NULL)
 		quic_packet_process(sk, skb);
 	if (quic_is_closed(sk)) /* quic_packet_process() may close socket. */
-		return -ECONNABORTED;
+		return -EPIPE;
 
 	if (!crypto->send_ready)
 		return 0;
@@ -2469,6 +2473,9 @@ static int quic_sock_stream_open(struct sock *sk, u32 len, sockptr_t optval,
 	struct quic_stream_info sinfo = {};
 	struct quic_stream *stream;
 
+	if (quic_is_closed(sk) || quic_is_listen(sk))
+		return -EPIPE;
+
 	if (len > sizeof(sinfo))
 		len = sizeof(sinfo);
 
@@ -2647,7 +2654,7 @@ static int quic_sock_get_session_ticket(struct sock *sk, u32 len,
 	}
 
 	if (quic_is_closed(sk))
-		return -EINVAL;
+		return -EPIPE;
 
 	/* For servers, return the master key used for session resumption.  If
 	 * already set, reuse it.
