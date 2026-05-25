@@ -2080,9 +2080,9 @@ static int quic_frame_path_response_process(struct sock *sk,
 	 */
 	sk->sk_prot->unhash(sk);
 	quic_path_swap(paths);
-	sk->sk_prot->hash(sk);
 	quic_set_sk_addr(sk, quic_path_saddr(paths, 0), 1);
 	quic_set_sk_addr(sk, quic_path_daddr(paths, 0), 0);
+	sk->sk_prot->hash(sk);
 	/* Notify application of updated path; indicate whether it is a local
 	 * address change.
 	 */
