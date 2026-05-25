@@ -154,10 +154,10 @@ int quic_packet_select_version(struct sock *sk, u32 *versions, u8 count)
 	u32 preferred, chosen, best = 0;
 	int err = -EPROTONOSUPPORT;
 
-	preferred = quic_outq(sk)->version ?: QUIC_VERSION_V1;
-	chosen = packet->version;
+	preferred = quic_outq(sk)->version;
+	chosen = versions[0];
 
-	for (i = 0; i < count; i++) {
+	for (i = 1; i < count; i++) {
 		if (!quic_packet_compatible_versions(versions[i]))
 			continue;
 		if (preferred == versions[i])
@@ -177,9 +177,9 @@ int quic_packet_select_version(struct sock *sk, u32 *versions, u8 count)
 		 * Information, the server MUST validate that the client's
 		 * Chosen Version matches the version in use for the connection.
 		 */
-		if (versions[0] != chosen)
+		if (chosen != packet->version)
 			return err;
-		/* Server prefers preferred version if offered, else chosen. */
+		/* Server prefers preferred version over chosen. */
 		if (pref_found)
 			best = preferred;
 		else if (ch_found)
@@ -190,9 +190,9 @@ int quic_packet_select_version(struct sock *sk, u32 *versions, u8 count)
 		 * Available Versions, the client MUST close the connection with
 		 * a version negotiation error.
 		 */
-		if (!quic_packet_compatible_versions(versions[0]))
+		if (!quic_packet_compatible_versions(chosen))
 			return err;
-		/* Client prefers chosen version, else preferred. */
+		/* Client prefers chosen version over preferred. */
 		if (ch_found)
 			best = chosen;
 		else if (pref_found)

@@ -518,6 +518,7 @@ static int quic_connect(struct sock *sk, struct sockaddr *addr, int addr_len)
 	struct quic_path_group *paths = quic_paths(sk);
 	struct quic_conn_id_set *dest = quic_dest(sk);
 	struct quic_packet *packet = quic_packet(sk);
+	struct quic_outqueue *outq = quic_outq(sk);
 	struct quic_conn_id conn_id = {}, *active;
 	struct quic_inqueue *inq = quic_inq(sk);
 	union quic_addr *sa, a;
@@ -563,6 +564,8 @@ static int quic_connect(struct sock *sk, struct sockaddr *addr, int addr_len)
 	err = quic_crypto_set_cipher(crypto, TLS_CIPHER_AES_GCM_128);
 	if (err)
 		goto free;
+	if (outq->version)
+		packet->version = outq->version;
 	err = quic_crypto_initial_keys_install(crypto, active, packet->version,
 					       false);
 	if (err)
