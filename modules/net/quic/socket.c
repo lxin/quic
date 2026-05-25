@@ -408,6 +408,8 @@ static void quic_sock_destruct(struct sock *sk)
 	for (i = 0; i < QUIC_CRYPTO_MAX; i++)
 		quic_crypto_free(quic_crypto(sk, i));
 
+	quic_data_free(quic_alpn(sk));
+
 	quic_sk_destruct(sk);
 }
 
@@ -467,7 +469,6 @@ static void quic_destroy_sock(struct sock *sk)
 
 	quic_data_free(quic_ticket(sk));
 	quic_data_free(quic_token(sk));
-	quic_data_free(quic_alpn(sk));
 
 	sk_sockets_allocated_dec(sk);
 	sock_prot_inuse_add(sock_net(sk), sk->sk_prot, -1);
