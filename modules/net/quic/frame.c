@@ -2857,12 +2857,13 @@ int quic_frame_build_transport_params_ext(struct sock *sk,
 	struct quic_path_group *paths = quic_paths(sk);
 	u8 *p = data, token[QUIC_CONN_ID_TOKEN_LEN];
 	u32 tlen = QUIC_CONN_ID_TOKEN_LEN;
+	bool is_serv = quic_is_serv(sk);
 	struct quic_crypto *crypto;
 	u16 param_id;
 	int err;
 
 	active = quic_conn_id_active(id_set);
-	if (!quic_is_serv(sk))
+	if (!is_serv)
 		goto out;
 
 	crypto = quic_crypto(sk, QUIC_CRYPTO_INITIAL);
@@ -2973,7 +2974,8 @@ out:
 		p = quic_put_var(p, 0);
 	}
 	param_id = QUIC_TRANSPORT_PARAM_VERSION_INFORMATION;
-	if (!params->disable_compatible_version)
+	if (!params->disable_compatible_version &&
+	    (!is_serv || !quic_outq(sk)->disable_compatible_version))
 		p = quic_frame_put_version_info(p, param_id,
 						quic_packet(sk)->version);
 	if (params->grease_quic_bit) {
@@ -3131,6 +3133,7 @@ int quic_frame_parse_transport_params_ext(struct sock *sk,
 	params->ack_delay_exponent = QUIC_DEF_ACK_DELAY_EXPONENT;
 	params->max_ack_delay = QUIC_DEF_ACK_DELAY;
 	params->active_connection_id_limit = QUIC_CONN_ID_LEAST;
+	params->disable_compatible_version = 1;
 
 	active = quic_conn_id_active(id_set);
 	while (len > 0) {
@@ -3319,6 +3322,7 @@ int quic_frame_parse_transport_params_ext(struct sock *sk,
 			err = quic_packet_select_version(sk, versions, count);
 			if (err)
 				return err;
+			params->disable_compatible_version = 0;
 			break;
 		case QUIC_TRANSPORT_PARAM_PREFERRED_ADDRESS:
 			if (is_serv)
