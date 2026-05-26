@@ -2344,9 +2344,7 @@ out:
 	err = quic_outq_transmit_new_conn_id(sk, 0, 0, false);
 	if (err)
 		goto err;
-	/* Enter established state, and start PLPMTUD timer and Path Challenge
-	 * timer.
-	 */
+	/* Enter established state, and start PLPMTUD timer. */
 	quic_set_state(sk, QUIC_SS_ESTABLISHED);
 	quic_timer_start(sk, QUIC_TIMER_PMTU, paths->plpmtud_interval);
 	return 0;
