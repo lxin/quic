@@ -1310,7 +1310,7 @@ void quic_outq_set_param(struct sock *sk, struct quic_transport_param *p)
 	outq->max_data = p->max_data;
 
 	outq->max_bytes = outq->max_data;
-	cong->max_window = min_t(u64, outq->max_data, S32_MAX / 2);
+	cong->max_window = min_t(u64, outq->max_data, S32_MAX / 4);
 	cong->max_ack_delay = outq->max_ack_delay;
 
 	/* max_datagram_frame_size or max_udp_payload_size changed; reset
