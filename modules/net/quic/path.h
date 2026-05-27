@@ -16,6 +16,8 @@
 
 #define QUIC_PATH_ENTROPY_LEN	8
 
+#define QUIC_PMTUD_RAISE_TIMER_FACTOR	30
+
 extern struct workqueue_struct	*quic_wq;
 
 /* Connection Migration State Machine:

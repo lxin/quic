@@ -703,8 +703,6 @@ static void quic_outq_psent_sack_frames(struct sock *sk,
 	quic_outq_data_wfree(acked, sk);
 }
 
-#define QUIC_PMTUD_RAISE_TIMER_FACTOR	30
-
 /* Confirms the path probe and triggers PLPMTUD state machine. */
 static void quic_outq_path_confirm(struct sock *sk, u8 level, s64 largest,
 				   s64 smallest)

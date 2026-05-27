@@ -2079,7 +2079,9 @@ static int quic_config_check_and_copy(struct quic_config *c,
 	}
 
 	if (c->plpmtud_probe_interval) {
-		if (c->plpmtud_probe_interval < QUIC_MIN_PROBE_TIMEOUT)
+		if (c->plpmtud_probe_interval < QUIC_MIN_PROBE_TIMEOUT ||
+		    c->plpmtud_probe_interval >
+		    U32_MAX / QUIC_PMTUD_RAISE_TIMER_FACTOR)
 			return -EINVAL;
 		config->plpmtud_probe_interval = c->plpmtud_probe_interval;
 	}
