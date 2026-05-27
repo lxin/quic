@@ -998,7 +998,7 @@ static int quic_frame_crypto_process(struct sock *sk, struct quic_frame *frame,
 	/* rfc9000#section-19.6:
 	 *
 	 * The largest offset delivered on a stream -- the sum of the offset
-	 * and data length -- cannot exceed 26^2-1. Receipt of a frame that
+	 * and data length -- cannot exceed 2^62-1. Receipt of a frame that
 	 * exceeds this limit MUST be treated as a connection error of type
 	 * FRAME_ENCODING_ERROR or CRYPTO_BUFFER_EXCEEDED.
 	 */
@@ -1077,7 +1077,7 @@ static int quic_frame_stream_process(struct sock *sk, struct quic_frame *frame,
 	/* rfc9000#section-19.8:
 	 *
 	 * The largest offset delivered on a stream -- the sum of the offset
-	 * and data length -- cannot exceed 26^2-1, as it is not possible to
+	 * and data length -- cannot exceed 2^62-1, as it is not possible to
 	 * provide flow control credit for that data. Receipt of a frame that
 	 * exceeds this limit MUST be treated as a connection error of type
 	 * FRAME_ENCODING_ERROR or FLOW_CONTROL_ERROR.
