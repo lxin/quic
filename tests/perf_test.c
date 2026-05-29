@@ -240,10 +240,10 @@ static int do_server_reqrsp(struct options *opts, int sockfd)
 		}
 
 		if (!(count % 1000))
-			printf("  Processed %lu requests\n", count);
+			printf("  Processed %llu requests\n", (unsigned long long)count);
 	}
 
-	printf("DONE: Processed %lu requests total\n", count);
+	printf("DONE: Processed %llu requests total\n", (unsigned long long)count);
 
 	return 0;
 }
@@ -365,7 +365,7 @@ static int do_client_throughput(struct options *opts, int sockfd)
 	int ret;
 
 	printf("Running in THROUGHPUT mode\n");
-	printf("Starting throughput test: sending %lu bytes\n", opts->tot_len);
+	printf("Starting throughput test: sending %llu bytes\n", (unsigned long long)opts->tot_len);
 
 	start = get_now_time_ms();
 	flags = MSG_QUIC_STREAM_NEW; /* open stream when send first msg */
@@ -409,8 +409,8 @@ static int do_client_throughput(struct options *opts, int sockfd)
 
 	printf("\n=== Throughput Results ===\n");
 	printf("Total sent:       %u bytes\n", len);
-	printf("Message size:     %lu bytes\n", opts->msg_len);
-	printf("Total time:       %lu ms (%.3f sec)\n", start, start / 1000.0);
+	printf("Message size:     %llu bytes\n", (unsigned long long)opts->msg_len);
+	printf("Total time:       %llu ms (%.3f sec)\n", (unsigned long long)start, start / 1000.0);
 	if (rate < 1024)
 		printf("Throughput:       %.1f Kbits/sec\n", rate);
 	else
@@ -431,7 +431,8 @@ static int do_client_reqrsp(struct options *opts, int sockfd)
 	int ret;
 
 	printf("Running in REQUEST/RESPONSE mode\n");
-	printf("Starting request/response test with %lu requests\n", opts->num_reqs);
+	printf("Starting request/response test with %llu requests\n",
+	       (unsigned long long)opts->num_reqs);
 
 	total_time = 0;
 	sid = 0;
@@ -460,7 +461,8 @@ static int do_client_reqrsp(struct options *opts, int sockfd)
 		flags = 0;
 		ret = quic_sendmsg(sockfd, req_msg, opts->req_len, sid, flags);
 		if (ret == -1) {
-			printf("send error at request %lu: %d %d\n", i, ret, errno);
+			printf("send error at request %llu: %d %d\n",
+			       (unsigned long long)i, ret, errno);
 			return -1;
 		}
 
@@ -468,7 +470,8 @@ static int do_client_reqrsp(struct options *opts, int sockfd)
 		flags = 0;
 		ret = quic_recvmsg(sockfd, rsp_msg, sizeof(rsp_msg), &sid, &flags);
 		if (ret == -1) {
-			printf("recv error at request %lu: %d %d\n", i, ret, errno);
+			printf("recv error at request %llu: %d %d\n",
+			       (unsigned long long)i, ret, errno);
 			return -1;
 		}
 
@@ -482,7 +485,7 @@ static int do_client_reqrsp(struct options *opts, int sockfd)
 			max_latency = latency;
 
 		if ((i + 1) % 1000 == 0)
-			printf("  Completed %lu requests\n", i + 1);
+			printf("  Completed %llu requests\n", (unsigned long long)i + 1);
 	}
 
 	/* Close the stream */
@@ -494,17 +497,19 @@ static int do_client_reqrsp(struct options *opts, int sockfd)
 	}
 
 	printf("\n=== Request/Response Results ===\n");
-	printf("Total requests:   %lu\n", opts->num_reqs);
-	printf("Request size:     %lu bytes\n", opts->req_len);
-	printf("Response size:    %lu bytes\n", opts->rsp_len);
+	printf("Total requests:   %llu\n", (unsigned long long)opts->num_reqs);
+	printf("Request size:     %llu bytes\n", (unsigned long long)opts->req_len);
+	printf("Response size:    %llu bytes\n", (unsigned long long)opts->rsp_len);
 
 	avg_latency = (double)total_time / opts->num_reqs;
 	req_per_sec = (double)opts->num_reqs * 1000000.0 / total_time;
 
 	printf("\nLatency:\n");
 	printf("  Average:        %.2f us (%.3f ms)\n", avg_latency, avg_latency / 1000.0);
-	printf("  Minimum:        %lu us (%.3f ms)\n", min_latency, min_latency / 1000.0);
-	printf("  Maximum:        %lu us (%.3f ms)\n", max_latency, max_latency / 1000.0);
+	printf("  Minimum:        %llu us (%.3f ms)\n",
+	       (unsigned long long)min_latency, min_latency / 1000.0);
+	printf("  Maximum:        %llu us (%.3f ms)\n",
+	       (unsigned long long)max_latency, max_latency / 1000.0);
 	printf("\nThroughput:\n");
 	printf("  Requests/sec:   %.2f\n", req_per_sec);
 	printf("  Total time:     %.3f sec\n", total_time / 1000000.0);
