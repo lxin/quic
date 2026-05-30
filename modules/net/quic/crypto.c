@@ -47,10 +47,11 @@ static int quic_crypto_hkdf_expand(struct crypto_shash *tfm,
 				   struct quic_data *label,
 				   struct quic_data *key)
 {
-	u8 cnt = 1, info[QUIC_MAX_INFO_LEN], *p = info, *prev = NULL;
-	u8 LABEL[] = "tls13 ", tmp[QUIC_SECRET_LEN];
+	u8 info[QUIC_MAX_INFO_LEN], *p = info, tmp[QUIC_SECRET_LEN];
+	unsigned int i, infolen, hashlen = srt->len;
 	SHASH_DESC_ON_STACK(desc, tfm);
-	u32 i, infolen;
+	u8 LABEL[] = "tls13 ", cnt = 1;
+	const u8 *prev = NULL;
 	int err;
 
 	/* rfc8446#section-7.1:
@@ -72,26 +73,30 @@ static int quic_crypto_hkdf_expand(struct crypto_shash *tfm,
 	p = quic_put_data(p, LABEL, sizeof(LABEL) - 1);
 	p = quic_put_data(p, label->data, label->len);
 	*p++ = 0;
-	infolen = (u32)(p - info);
+	infolen = (unsigned int)(p - info);
 
 	desc->tfm = tfm;
 	err = crypto_shash_setkey(tfm, srt->data, srt->len);
 	if (err)
 		return err;
-	for (i = 0; i < key->len; i += srt->len) {
+
+	for (i = 0; i < key->len; i += hashlen) {
 		err = crypto_shash_init(desc);
 		if (err)
 			goto out;
+
 		if (prev) {
-			err = crypto_shash_update(desc, prev, srt->len);
+			err = crypto_shash_update(desc, prev, hashlen);
 			if (err)
 				goto out;
 		}
+
 		err = crypto_shash_update(desc, info, infolen);
 		if (err)
 			goto out;
+
 		BUILD_BUG_ON(sizeof(cnt) != 1);
-		if (key->len - i < srt->len) {
+		if (key->len - i < hashlen) {
 			err = crypto_shash_finup(desc, &cnt, 1, tmp);
 			if (err)
 				goto out;
@@ -107,6 +112,7 @@ static int quic_crypto_hkdf_expand(struct crypto_shash *tfm,
 	}
 out:
 	shash_desc_zero(desc);
+	memzero_explicit(tmp, sizeof(tmp));
 	return err;
 }
 
