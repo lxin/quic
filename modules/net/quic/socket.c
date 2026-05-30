@@ -1916,6 +1916,7 @@ static int quic_sock_key_update(struct sock *sk, void *kopt, u32 optlen)
 		return err;
 
 	crypto->key_pending = 1;
+	crypto->key_derived = 0;
 	crypto->key_phase = !crypto->key_phase;
 	return 0;
 }

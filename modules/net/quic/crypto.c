@@ -684,6 +684,7 @@ out:
 	 */
 	if (cb->key_update) {
 		crypto->key_pending = 1;
+		crypto->key_derived = 0;
 		crypto->key_phase = !crypto->key_phase;
 	}
 	/* rfc9001#section-6.1:
@@ -818,6 +819,8 @@ int quic_crypto_key_update(struct quic_crypto *crypto)
 
 	if (crypto->key_pending || !crypto->recv_ready)
 		return -EINVAL;
+	if (crypto->key_derived)
+		return 0;
 
 	/* rfc9001#section-6.1:
 	 *
@@ -852,7 +855,12 @@ int quic_crypto_key_update(struct quic_crypto *crypto)
 	err = quic_crypto_hkdf_expand(crypto->secret_tfm, &srt, &l, &k);
 	if (err)
 		return err;
-	return quic_crypto_keys_derive_and_install(crypto, true, !phase);
+	err = quic_crypto_keys_derive_and_install(crypto, true, !phase);
+	if (err)
+		return err;
+
+	crypto->key_derived = 1;
+	return 0;
 }
 EXPORT_SYMBOL_GPL(quic_crypto_key_update);
 
