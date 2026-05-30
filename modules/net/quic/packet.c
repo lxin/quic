@@ -2611,9 +2611,8 @@ void quic_packet_mss_update(struct sock *sk, u32 mss)
 		mss = outq->max_udp_payload_size;
 	packet->mss[QUIC_PACKET_MSS_NORMAL] = (u16)mss;
 
-	/* Update congestion control with new payload space (excluding tag). */
-	quic_cong_set_mss(cong, packet->mss[QUIC_PACKET_MSS_NORMAL] -
-				packet->taglen[QUIC_PACKET_FORM_SHORT]);
+	/* Update congestion control with new payload space (including tag). */
+	quic_cong_set_mss(cong, packet->mss[QUIC_PACKET_MSS_NORMAL]);
 	quic_outq_sync_window(sk, cong->window);
 
 	/* Limit MSS for DATAGRAM frame packets to max datagram frame size. */
