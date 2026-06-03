@@ -405,9 +405,11 @@ static void quic_sock_destruct(struct sock *sk)
 {
 	u8 i;
 
+	/* Deferred crypto free for async encryption/decryption. */
 	for (i = 0; i < QUIC_CRYPTO_MAX; i++)
 		quic_crypto_free(quic_crypto(sk, i));
 
+	/* Deferred ALPN free for RCU readers in quic_listen_sock_lookup(). */
 	quic_data_free(quic_alpn(sk));
 
 	quic_sk_destruct(sk);
