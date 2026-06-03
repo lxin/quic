@@ -9,7 +9,6 @@ menuconfig IP_QUIC
 	depends on IPV6
 	select CRYPTO
 	select CRYPTO_HMAC
-	select CRYPTO_HASH
 	select CRYPTO_AES
 	select CRYPTO_GCM
 	select CRYPTO_CCM
