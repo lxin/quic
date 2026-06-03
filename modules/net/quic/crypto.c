@@ -1173,10 +1173,9 @@ int quic_crypto_verify_token(struct quic_crypto *crypto, void *addr,
 
 	if (len < sizeof(flag) + addrlen + sizeof(ts) + QUIC_TAG_LEN)
 		return -EINVAL;
-	token_buf = kzalloc(len, GFP_KERNEL);
+	token_buf = kmemdup(token, len, GFP_KERNEL);
 	if (!token_buf)
 		return -ENOMEM;
-	memcpy(token_buf, token, len);
 
 	err = quic_crypto_token_protect(crypto, token_buf, len,
 					sizeof(flag) + addrlen, false);
