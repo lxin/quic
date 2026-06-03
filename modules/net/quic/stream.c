@@ -187,11 +187,11 @@ bool quic_stream_id_exceeds(struct quic_stream_table *streams, s64 stream_id,
 	u64 nstreams;
 
 	if (!send) {
-		/* recv.max_uni_stream_id is updated in
+		/* recv.max_uni/bidi_stream_id is updated in
 		 * quic_stream_max_streams_update() already based on
 		 * next_uni/bidi_stream_id, max_streams_uni/bidi, and
-		 * streams_uni/bidi, so only recv.max_uni_stream_id needs to be
-		 * checked.
+		 * streams_uni/bidi, so only recv.max_uni/bidi_stream_id needs
+		 * to be checked.
 		 */
 		if (quic_stream_id_uni(stream_id))
 			return stream_id > streams->recv.max_uni_stream_id;
