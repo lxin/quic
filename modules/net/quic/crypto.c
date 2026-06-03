@@ -222,8 +222,6 @@ static int quic_crypto_keys_derive_and_install(struct quic_crypto *crypto,
 		if (err)
 			goto out;
 	}
-	pr_debug("%s: rx: %d k: %16phN, iv: %12phN, hp_k:%16phN\n", __func__,
-		 rx, k.data, iv.data, hp_key);
 out:
 	memzero_explicit(key, sizeof(key));
 	memzero_explicit(hp_key, sizeof(hp_key));
