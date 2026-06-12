@@ -990,7 +990,8 @@ int quic_crypto_get_retry_tag(struct quic_crypto *crypto, struct sk_buff *skb,
 	u32 plen;
 	int err;
 
-	if (skb->len < QUIC_TAG_LEN)
+	/* The caller must ensure skb->len > QUIC_TAG_LEN. */
+	if (skb->len <= QUIC_TAG_LEN)
 		return -EINVAL;
 
 	/* rfc9001#section-5.8:
@@ -1020,7 +1021,6 @@ int quic_crypto_get_retry_tag(struct quic_crypto *crypto, struct sk_buff *skb,
 	if (err)
 		return err;
 
-	/* The caller must ensure skb->len > QUIC_TAG_LEN. */
 	plen = 1 + odcid->len + skb->len - QUIC_TAG_LEN;
 	pseudo_retry = quic_crypto_aead_mem_alloc(tfm, plen + QUIC_TAG_LEN, &iv,
 						  &req, &sg, 1);
