@@ -166,7 +166,7 @@ static void quic_v4_lower_xmit(struct sock *sk, struct sk_buff *skb,
 	struct dst_entry *dst;
 	__be16 df = 0;
 
-	pr_debug("%s: skb: %p, len: %d, num: %llu, %pI4:%d -> %pI4:%d\n",
+	pr_debug("%s: skb: %p, len: %d, num: %lld, %pI4:%d -> %pI4:%d\n",
 		 __func__, skb, skb->len, cb->number, &fl4->saddr,
 		 ntohs(fl4->fl4_sport), &fl4->daddr, ntohs(fl4->fl4_dport));
 
@@ -199,7 +199,7 @@ static void quic_v6_lower_xmit(struct sock *sk, struct sk_buff *skb,
 	struct dst_entry *dst;
 	__be32 label;
 
-	pr_debug("%s: skb: %p, len: %d, num: %llu, %pI6c:%d -> %pI6c:%d\n",
+	pr_debug("%s: skb: %p, len: %d, num: %lld, %pI6c:%d -> %pI6c:%d\n",
 		 __func__, skb, skb->len, cb->number, &fl6->saddr,
 		 ntohs(fl6->fl6_sport), &fl6->daddr, ntohs(fl6->fl6_dport));
 
