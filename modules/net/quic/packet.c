@@ -433,6 +433,8 @@ static int quic_packet_get_alpn(struct quic_data *alpn, u8 *p, u32 len)
 	if (len > (u32)length) /* Limit len to extensions length if larger. */
 		len = length;
 	while (len >= 4) { /* Scan extensions for ALPN (TLS_EXT_alpn). */
+		if (exts++ >= TLS_MAX_EXTENSIONS)
+			return err;
 		if (!quic_get_int(&p, &len, &type, 2))
 			break;
 		if (!quic_get_int(&p, &len, &length, 2))
@@ -449,8 +451,6 @@ static int quic_packet_get_alpn(struct quic_data *alpn, u8 *p, u32 len)
 		/* Skip non-ALPN extensions. */
 		p += length;
 		len -= length;
-		if (exts++ >= TLS_MAX_EXTENSIONS)
-			return err;
 	}
 	if (!found) { /* No ALPN ext: set alpn->len = 0 and alpn->data = p. */
 		quic_data(alpn, p, 0);
