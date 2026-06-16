@@ -2379,6 +2379,8 @@ int quic_do_setsockopt(struct sock *sk, int optname, sockptr_t optval,
 	int retval = 0;
 
 	if (optlen > 0) {
+		if (optlen > QUIC_TICKET_MAX_LEN)
+			return -EINVAL;
 		kopt = memdup_sockptr(optval, optlen);
 		if (IS_ERR(kopt))
 			return PTR_ERR(kopt);
