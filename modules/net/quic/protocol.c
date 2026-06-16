@@ -110,6 +110,9 @@ static int quic_inet_listen(struct socket *sock, int backlog)
 	err = quic_crypto_set_cipher(crypto, TLS_CIPHER_AES_GCM_128);
 	if (err)
 		goto free;
+	err = quic_crypto_set_token_secret(crypto);
+	if (err)
+		goto free;
 
 	/* Set socket state to LISTENING and add to sock hash table. */
 	quic_set_state(sk, QUIC_SS_LISTENING);
@@ -724,7 +727,6 @@ static __init int quic_init(void)
 	sysctl_quic_wmem[2] = max(64 * 1024, max_share);
 
 	quic_transport_param_init();
-	quic_crypto_init();
 
 	quic_frame_cachep =
 		kmem_cache_create("quic_frame", sizeof(struct quic_frame),

@@ -21,10 +21,6 @@
 #include "common.h"
 #include "crypto.h"
 
-#define QUIC_RANDOM_DATA_LEN	32
-
-static u8 quic_random_data[QUIC_RANDOM_DATA_LEN] __read_mostly;
-
 /* HKDF-Extract. */
 static int quic_crypto_hkdf_extract(struct crypto_shash *tfm,
 				    struct quic_data *srt,
@@ -1053,27 +1049,21 @@ int quic_crypto_get_retry_tag(struct quic_crypto *crypto, struct sk_buff *skb,
 }
 EXPORT_SYMBOL_GPL(quic_crypto_get_retry_tag);
 
-/* Derives a key and IV using HKDF, configures the AEAD transform and performs
- * AEAD encryption/decryption for the provided token.
- */
-static int quic_crypto_token_protect(struct quic_crypto *crypto, u8 *token,
-				     u32 len, u32 adlen, bool enc)
+int quic_crypto_set_token_secret(struct quic_crypto *crypto)
 {
-	u8 key[TLS_CIPHER_AES_GCM_128_KEY_SIZE], iv[QUIC_IV_LEN], *tiv;
 	/* Reuse TX AEAD (phase 1) in Initial crypto. */
+	u8 key[TLS_CIPHER_AES_GCM_128_KEY_SIZE], *srt = crypto->tx_secret[1];
 	struct crypto_aead *tfm = crypto->tx_tfm[1];
-	u32 extra = enc ? QUIC_TAG_LEN : 0;
-	struct quic_data srt = {}, k, i;
-	DECLARE_CRYPTO_WAIT(wait);
-	struct aead_request *req;
-	struct scatterlist *sg;
-	void *ctx = NULL;
+	struct quic_data s = {}, k, i;
 	int err;
 
-	quic_data(&srt, quic_random_data, QUIC_RANDOM_DATA_LEN);
+	if (!memchr_inv(srt, 0, TLS_CIPHER_AES_GCM_128_SECRET_SIZE))
+		get_random_bytes(srt, TLS_CIPHER_AES_GCM_128_SECRET_SIZE);
+
+	quic_data(&s, srt, TLS_CIPHER_AES_GCM_128_SECRET_SIZE);
 	quic_data(&k, key, TLS_CIPHER_AES_GCM_128_KEY_SIZE);
-	quic_data(&i, iv, QUIC_IV_LEN);
-	err = quic_crypto_keys_derive(crypto->secret_tfm, &srt, &k, &i, NULL,
+	quic_data(&i, crypto->tx_iv[1], QUIC_IV_LEN);
+	err = quic_crypto_keys_derive(crypto->secret_tfm, &s, &k, &i, NULL,
 				      QUIC_VERSION_V1);
 	if (err)
 		goto out;
@@ -1081,14 +1071,33 @@ static int quic_crypto_token_protect(struct quic_crypto *crypto, u8 *token,
 	if (err)
 		goto out;
 	err = crypto_aead_setkey(tfm, key, TLS_CIPHER_AES_GCM_128_KEY_SIZE);
-	if (err)
-		goto out;
+out:
+	memzero_explicit(key, sizeof(key));
+	return err;
+}
+
+/* Derives a key and IV using HKDF, configures the AEAD transform and performs
+ * AEAD encryption/decryption for the provided token.
+ */
+static int quic_crypto_token_protect(struct quic_crypto *crypto, u8 *token,
+				     u32 len, u32 adlen, bool enc)
+{
+	/* Reuse TX AEAD (phase 1) in Initial crypto. */
+	struct crypto_aead *tfm = crypto->tx_tfm[1];
+	u32 extra = enc ? QUIC_TAG_LEN : 0;
+	DECLARE_CRYPTO_WAIT(wait);
+	struct aead_request *req;
+	struct scatterlist *sg;
+	void *ctx = NULL;
+	u8 *tiv;
+	int err;
+
 	ctx = quic_crypto_aead_mem_alloc(tfm, 0, &tiv, &req, &sg, 1);
 	if (!ctx) {
 		err = -ENOMEM;
 		goto out;
 	}
-	memcpy(tiv, iv, QUIC_IV_LEN);
+	memcpy(tiv, crypto->tx_iv[1], QUIC_IV_LEN);
 
 	sg_init_one(sg, token, len);
 	aead_request_set_tfm(req, tfm);
@@ -1101,8 +1110,6 @@ static int quic_crypto_token_protect(struct quic_crypto *crypto, u8 *token,
 		err = crypto_wait_req(err, &wait);
 
 out:
-	memzero_explicit(key, sizeof(key));
-	memzero_explicit(iv, sizeof(iv));
 	kfree_sensitive(ctx);
 	return err;
 }
@@ -1221,7 +1228,7 @@ static int quic_crypto_generate_key(struct quic_crypto *crypto, void *data,
 	int err;
 
 	quic_data(&salt, data, len);
-	quic_data(&k, quic_random_data, QUIC_RANDOM_DATA_LEN);
+	quic_data(&k, crypto->tx_secret[1], TLS_CIPHER_AES_GCM_128_SECRET_SIZE);
 	quic_data(&s, secret, TLS_CIPHER_AES_GCM_128_SECRET_SIZE);
 	err = quic_crypto_hkdf_extract(tfm, &salt, &k, &s);
 	if (err)
@@ -1254,8 +1261,3 @@ int quic_crypto_generate_session_ticket_key(struct quic_crypto *crypto,
 					key, key_len);
 }
 EXPORT_SYMBOL_GPL(quic_crypto_generate_session_ticket_key);
-
-void quic_crypto_init(void)
-{
-	get_random_bytes(quic_random_data, QUIC_RANDOM_DATA_LEN);
-}

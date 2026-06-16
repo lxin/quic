@@ -572,6 +572,9 @@ static int quic_connect(struct sock *sk, struct sockaddr *addr, int addr_len)
 					       false);
 	if (err)
 		goto free;
+	err = quic_crypto_set_token_secret(crypto);
+	if (err)
+		goto free;
 
 	/* Add socket to hash table, change state to ESTABLISHING, and start
 	 * idle timer.
@@ -1501,6 +1504,10 @@ static int quic_accept_sock_init(struct sock *nsk, struct sock *sk)
 	if (quic_data_dup(quic_alpn(nsk), alpn->data, alpn->len))
 		return -ENOMEM;
 
+	memcpy(quic_crypto(nsk, QUIC_CRYPTO_INITIAL)->tx_secret[1],
+	       quic_crypto(sk, QUIC_CRYPTO_INITIAL)->tx_secret[1],
+	       QUIC_SECRET_LEN);
+
 	/* Copy socket metadata. */
 	nsk->sk_type = sk->sk_type;
 	nsk->sk_flags = sk->sk_flags;
@@ -1570,6 +1577,9 @@ static int quic_accept_sock_setup(struct sock *sk,
 		goto out;
 	err = quic_crypto_initial_keys_install(crypto, &req->dcid, req->version,
 					       true);
+	if (err)
+		goto out;
+	err = quic_crypto_set_token_secret(crypto);
 	if (err)
 		goto out;
 	/* Record the QUIC version offered by the peer. May later change if
