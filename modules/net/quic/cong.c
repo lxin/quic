@@ -440,10 +440,12 @@ static void quic_reno_on_packet_lost(struct quic_cong *cong, u64 time,
 static void quic_reno_on_packet_acked(struct quic_cong *cong, u64 time,
 				      u32 bytes, s64 number)
 {
+	u64 new_window;
+
 	switch (cong->state) {
 	case QUIC_CONG_SLOW_START:
-		cong->window = min_t(u32, cong->window + bytes,
-				     cong->max_window);
+		new_window = (u64)cong->window + bytes;
+		cong->window = min_t(u64, new_window, cong->max_window);
 		if (cong->window < cong->ssthresh)
 			break;
 		cong->state = QUIC_CONG_CONGESTION_AVOIDANCE;
@@ -461,7 +463,9 @@ static void quic_reno_on_packet_acked(struct quic_cong *cong, u64 time,
 		/* cong->window is never zero; it is initialized by
 		 * quic_packet_route() during connect/accept.
 		 */
-		cong->window += cong->mss * bytes / cong->window;
+		new_window = (u64)cong->mss * bytes / cong->window +
+			     cong->window;
+		cong->window = min_t(u64, new_window, cong->max_window);
 		break;
 	default:
 		pr_debug("%s: wrong congestion state: %d\n", __func__,
