@@ -10,6 +10,7 @@
  *    Xin Long <lucien.xin@gmail.com>
  */
 
+#include <crypto/utils.h>
 #include "socket.h"
 
 #define QUIC_HLEN		1
@@ -1247,7 +1248,7 @@ static int quic_packet_retry_process(struct sock *sk, struct sk_buff *skb)
 					tag);
 	if (err)
 		goto err;
-	if (memcmp(tag, p + len - QUIC_TAG_LEN, QUIC_TAG_LEN)) {
+	if (crypto_memneq(tag, p + len - QUIC_TAG_LEN, QUIC_TAG_LEN)) {
 		err = -EINVAL;
 		goto err;
 	}

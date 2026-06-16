@@ -12,6 +12,7 @@
 
 #include <crypto/skcipher.h>
 #include <linux/skbuff.h>
+#include <crypto/utils.h>
 #include <crypto/aead.h>
 #include <crypto/hash.h>
 #include <linux/quic.h>
@@ -1184,7 +1185,7 @@ int quic_crypto_verify_token(struct quic_crypto *crypto, void *addr,
 	p = token_buf;
 	flag = *p++;
 	len -= sizeof(flag);
-	if (memcmp(p, addr, addrlen))
+	if (crypto_memneq(p, addr, addrlen))
 		goto out;
 
 	p += addrlen;

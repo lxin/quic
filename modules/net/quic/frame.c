@@ -11,6 +11,7 @@
  */
 
 #include <linux/version.h>
+#include <crypto/utils.h>
 #include "socket.h"
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 10, 0)
@@ -2065,7 +2066,7 @@ static int quic_frame_path_response_process(struct sock *sk,
 
 	/* Verify path challenge entropy. */
 	memcpy(entropy, frame->data, QUIC_PATH_ENTROPY_LEN);
-	if (memcmp(paths->entropy, entropy, QUIC_PATH_ENTROPY_LEN))
+	if (crypto_memneq(paths->entropy, entropy, QUIC_PATH_ENTROPY_LEN))
 		goto out;
 
 	/* Peer App key ready; clean transmitted handshake packets. */

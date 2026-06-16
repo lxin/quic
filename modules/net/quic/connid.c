@@ -10,6 +10,7 @@
  *    Xin Long <lucien.xin@gmail.com>
  */
 
+#include <crypto/utils.h>
 #include <linux/quic.h>
 #include <net/sock.h>
 
@@ -52,7 +53,7 @@ bool quic_conn_id_token_exists(struct quic_conn_id_set *id_set, u8 *token)
 
 	dcid = (struct quic_dest_conn_id *)id_set->active;
 	if (memchr_inv(dcid->token, 0, QUIC_CONN_ID_TOKEN_LEN) &&
-	    !memcmp(dcid->token, token, QUIC_CONN_ID_TOKEN_LEN))
+	    !crypto_memneq(dcid->token, token, QUIC_CONN_ID_TOKEN_LEN))
 		return true; /* Fast path. */
 
 	list_for_each_entry(common, &id_set->head, list) {
@@ -60,7 +61,7 @@ bool quic_conn_id_token_exists(struct quic_conn_id_set *id_set, u8 *token)
 		if (common == id_set->active)
 			continue;
 		if (memchr_inv(dcid->token, 0, QUIC_CONN_ID_TOKEN_LEN) &&
-		    !memcmp(dcid->token, token, QUIC_CONN_ID_TOKEN_LEN))
+		    !crypto_memneq(dcid->token, token, QUIC_CONN_ID_TOKEN_LEN))
 			return true;
 	}
 	return false;
