@@ -237,6 +237,8 @@ struct quic_stream *quic_stream_get(struct quic_stream_table *streams,
 			return ERR_PTR(-ENOSTR);
 		return ERR_PTR(-EINVAL);
 	}
+	if (send && !quic_stream_id_local(stream_id, is_serv))
+		return ERR_PTR(-EINVAL);
 
 	if (quic_stream_id_closed(streams, stream_id, send))
 		return ERR_PTR(-ENOSTR);
