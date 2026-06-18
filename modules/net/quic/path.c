@@ -54,7 +54,11 @@ static void quic_udp_sock_put_work(struct work_struct *work)
 	 * to some lockdep warnings.
 	 */
 	sock_hold(sk);
+#ifdef RTEXT_FILTER_NAME_ONLY
+	udp_tunnel_sock_release(sk);
+#else
 	udp_tunnel_sock_release(sk->sk_socket);
+#endif
 
 	head = quic_udp_sock_head(sock_net(sk), ntohs(us->addr.v4.sin_port));
 	mutex_lock(&head->lock);
@@ -91,7 +95,11 @@ static struct quic_udp_sock *quic_udp_sock_create(struct sock *sk,
 	tuncfg.encap_type = 1;
 	tuncfg.encap_rcv = quic_udp_rcv;
 	tuncfg.encap_err_lookup = quic_udp_err;
+#ifdef RTEXT_FILTER_NAME_ONLY
+	setup_udp_tunnel_sock(net, sock->sk, &tuncfg);
+#else
 	setup_udp_tunnel_sock(net, sock, &tuncfg);
+#endif
 
 	refcount_set(&us->refcnt, 1);
 	us->sk = sock->sk;

@@ -724,7 +724,11 @@ bool quic_sk_accept_pmtu(struct sock *sk, struct sk_buff *skb)
 
 void quic_sk_destruct(struct sock *sk)
 {
+#ifdef RTEXT_FILTER_NAME_ONLY
+	quic_pf_ipv4(sk) ? inet_sock_destruct(sk) : inet6_sock_destruct(sk);
+#else
 	if (!quic_pf_ipv4(sk))
 		inet6_cleanup_sock(sk);
 	inet_sock_destruct(sk);
+#endif
 }
