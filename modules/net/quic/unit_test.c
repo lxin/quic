@@ -416,13 +416,12 @@ static void quic_crypto_test1(struct kunit *test)
 					       QUIC_VERSION_V2, 1);
 	KUNIT_EXPECT_EQ(test, ret, 0);
 
-	ret = quic_crypto_generate_stateless_reset_token(&crypto, conn_id.data,
-							 conn_id.len, token,
-							 16);
+	ret = quic_crypto_derive_secret(&crypto, conn_id.data, conn_id.len,
+					"stateless_reset", token, 16);
 	KUNIT_EXPECT_EQ(test, ret, 0);
 
-	ret = quic_crypto_generate_session_ticket_key(&crypto, conn_id.data,
-						      conn_id.len, token, 16);
+	ret = quic_crypto_derive_secret(&crypto, conn_id.data, conn_id.len,
+					"session_ticket", token, 16);
 	KUNIT_EXPECT_EQ(test, ret, 0);
 
 	addr.sin_port = htons(1234);

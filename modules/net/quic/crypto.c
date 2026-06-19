@@ -1215,12 +1215,11 @@ out:
 }
 EXPORT_SYMBOL_GPL(quic_crypto_verify_token);
 
-/* Generate a derived key using HKDF-Extract and HKDF-Expand with a given
+/* Generate a derived secret using HKDF-Extract and HKDF-Expand with a given
  * label.
  */
-static int quic_crypto_generate_key(struct quic_crypto *crypto, void *data,
-				    u32 len, char *label, u8 *token,
-				    u32 key_len)
+int quic_crypto_derive_secret(struct quic_crypto *crypto, void *data, u32 len,
+			      char *label, u8 *srt, u32 srt_len)
 {
 	struct crypto_shash *tfm = crypto->secret_tfm;
 	u8 secret[TLS_CIPHER_AES_GCM_128_SECRET_SIZE];
@@ -1235,29 +1234,10 @@ static int quic_crypto_generate_key(struct quic_crypto *crypto, void *data,
 		goto out;
 
 	quic_data(&l, label, strlen(label));
-	quic_data(&k, token, key_len);
+	quic_data(&k, srt, srt_len);
 	err = quic_crypto_hkdf_expand(tfm, &s, &l, &k);
 out:
 	memzero_explicit(secret, sizeof(secret));
 	return err;
 }
-
-/* Derive a stateless reset token from connection-specific input. */
-int quic_crypto_generate_stateless_reset_token(struct quic_crypto *crypto,
-					       void *data, u32 len, u8 *key,
-					       u32 key_len)
-{
-	return quic_crypto_generate_key(crypto, data, len, "stateless_reset",
-					key, key_len);
-}
-EXPORT_SYMBOL_GPL(quic_crypto_generate_stateless_reset_token);
-
-/* Derive a session ticket key using HKDF from connection-specific input. */
-int quic_crypto_generate_session_ticket_key(struct quic_crypto *crypto,
-					    void *data, u32 len, u8 *key,
-					    u32 key_len)
-{
-	return quic_crypto_generate_key(crypto, data, len, "session_ticket",
-					key, key_len);
-}
-EXPORT_SYMBOL_GPL(quic_crypto_generate_session_ticket_key);
+EXPORT_SYMBOL_GPL(quic_crypto_derive_secret);

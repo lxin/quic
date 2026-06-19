@@ -2661,6 +2661,7 @@ static int quic_sock_get_session_ticket(struct sock *sk, u32 len,
 	u32 tlen = quic_ticket(sk)->len;
 	struct quic_crypto *crypto;
 	union quic_addr a;
+	int err;
 
 	if (quic_is_closed(sk) || quic_is_listen(sk))
 		return -EPIPE;
@@ -2684,10 +2685,10 @@ static int quic_sock_get_session_ticket(struct sock *sk, u32 len,
 		a.v4.sin_port = 0;
 		ticket = key;
 		tlen = QUIC_TICKET_MASTER_KEY_LEN;
-		if (quic_crypto_generate_session_ticket_key(crypto, &a,
-							    sizeof(a), ticket,
-							    tlen))
-			return -EINVAL;
+		err = quic_crypto_derive_secret(crypto, &a, sizeof(a),
+						"session_ticket", ticket, tlen);
+		if (err)
+			return err;
 	}
 
 out:

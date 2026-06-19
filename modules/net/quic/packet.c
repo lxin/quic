@@ -913,10 +913,9 @@ static int quic_packet_stateless_reset_create_and_xmit(struct sock *sk, u32 len)
 		return err;
 
 	/* Generate stateless reset token from DCID in the packet received. */
-	err = quic_crypto_generate_stateless_reset_token(crypto,
-							 packet->dcid.data,
-							 packet->dcid.len,
-							 token, tlen);
+	err = quic_crypto_derive_secret(crypto, packet->dcid.data,
+					packet->dcid.len, "stateless_reset",
+					token, tlen);
 	if (err)
 		return err;
 

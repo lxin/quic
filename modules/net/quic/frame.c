@@ -519,8 +519,8 @@ quic_frame_new_conn_id_create(struct sock *sk, void *data, u8 type)
 	 * issues a stateless reset token by including the value in the
 	 * Stateless Reset Token field of a NEW_CONNECTION_ID frame.
 	 */
-	err = quic_crypto_generate_stateless_reset_token(crypto, scid.data,
-							 scid.len, token, tlen);
+	err = quic_crypto_derive_secret(crypto, scid.data, scid.len,
+					"stateless_reset", token, tlen);
 	if (err)
 		return ERR_PTR(err);
 	p = quic_put_data(p, token, tlen);
@@ -2887,10 +2887,9 @@ int quic_frame_build_transport_params_ext(struct sock *sk,
 		 */
 		p = quic_put_var(p, QUIC_TRANSPORT_PARAM_STATELESS_RESET_TOKEN);
 		p = quic_put_var(p, tlen);
-		err = quic_crypto_generate_stateless_reset_token(crypto,
-								 active->data,
-								 active->len,
-								 token, tlen);
+		err = quic_crypto_derive_secret(crypto, active->data,
+						active->len, "stateless_reset",
+						token, tlen);
 		if (err)
 			return err;
 		p = quic_put_data(p, token, tlen);
@@ -2917,10 +2916,8 @@ int quic_frame_build_transport_params_ext(struct sock *sk,
 				return err;
 			scid = &conn_id;
 		}
-		err = quic_crypto_generate_stateless_reset_token(crypto,
-								 scid->data,
-								 scid->len,
-								 token, tlen);
+		err = quic_crypto_derive_secret(crypto, scid->data, scid->len,
+						"stateless_reset", token, tlen);
 		if (err)
 			return err;
 		param_id = QUIC_TRANSPORT_PARAM_PREFERRED_ADDRESS;
