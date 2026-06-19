@@ -2658,37 +2658,38 @@ static int quic_sock_get_session_ticket(struct sock *sk, u32 len,
 					sockptr_t optval, sockptr_t optlen)
 {
 	u8 *ticket = quic_ticket(sk)->data, key[QUIC_TICKET_MASTER_KEY_LEN];
-	struct quic_crypto *crypto = quic_crypto(sk, QUIC_CRYPTO_APP);
 	u32 tlen = quic_ticket(sk)->len;
+	struct quic_crypto *crypto;
 	union quic_addr a;
+
+	if (quic_is_closed(sk) || quic_is_listen(sk))
+		return -EPIPE;
 
 	if (!quic_is_serv(sk)) {
 		/* For clients, retrieve the received TLS NewSessionTicket
 		 * message.
 		 */
+		crypto = quic_crypto(sk, QUIC_CRYPTO_APP);
 		if (quic_is_established(sk) && !crypto->ticket_ready)
 			tlen = 0;
 		goto out;
 	}
 
-	if (quic_is_closed(sk))
-		return -EPIPE;
-
-	/* For servers, return the master key used for session resumption.  If
-	 * already set, reuse it.
+	/* For servers, return the master key used for session resumption. If
+	 * already set, use it. Otherwise, derive key using the peer address.
 	 */
-	if (tlen || quic_is_listen(sk))
-		goto out;
+	if (!tlen) {
+		crypto = quic_crypto(sk, QUIC_CRYPTO_INITIAL);
+		memcpy(&a, quic_path_daddr(quic_paths(sk), 0), sizeof(a));
+		a.v4.sin_port = 0;
+		ticket = key;
+		tlen = QUIC_TICKET_MASTER_KEY_LEN;
+		if (quic_crypto_generate_session_ticket_key(crypto, &a,
+							    sizeof(a), ticket,
+							    tlen))
+			return -EINVAL;
+	}
 
-	/* If not already set, derive the key using the peer address. */
-	crypto = quic_crypto(sk, QUIC_CRYPTO_INITIAL);
-	memcpy(&a, quic_path_daddr(quic_paths(sk), 0), sizeof(a));
-	a.v4.sin_port = 0;
-	if (quic_crypto_generate_session_ticket_key(crypto, &a, sizeof(a), key,
-						    QUIC_TICKET_MASTER_KEY_LEN))
-		return -EINVAL;
-	ticket = key;
-	tlen = QUIC_TICKET_MASTER_KEY_LEN;
 out:
 	if (len < tlen)
 		return -EINVAL;
