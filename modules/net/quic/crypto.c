@@ -803,6 +803,34 @@ int quic_crypto_set_secret(struct quic_crypto *crypto,
 }
 EXPORT_SYMBOL_GPL(quic_crypto_set_secret);
 
+/* Save token secret in Initial TX secret (phase 1) for token generation. */
+int quic_crypto_set_token_secret(struct quic_crypto *crypto)
+{
+	/* Reuse TX AEAD (phase 1) in Initial crypto. */
+	u8 key[TLS_CIPHER_AES_GCM_128_KEY_SIZE], *srt = crypto->tx_secret[1];
+	struct crypto_aead *tfm = crypto->tx_tfm[1];
+	struct quic_data s = {}, k, i;
+	int err;
+
+	if (!memchr_inv(srt, 0, TLS_CIPHER_AES_GCM_128_SECRET_SIZE))
+		get_random_bytes(srt, TLS_CIPHER_AES_GCM_128_SECRET_SIZE);
+
+	quic_data(&s, srt, TLS_CIPHER_AES_GCM_128_SECRET_SIZE);
+	quic_data(&k, key, TLS_CIPHER_AES_GCM_128_KEY_SIZE);
+	quic_data(&i, crypto->tx_iv[1], QUIC_IV_LEN);
+	err = quic_crypto_keys_derive(crypto->secret_tfm, &s, &k, &i, NULL,
+				      QUIC_VERSION_V1);
+	if (err)
+		goto out;
+	err = crypto_aead_setauthsize(tfm, QUIC_TAG_LEN);
+	if (err)
+		goto out;
+	err = crypto_aead_setkey(tfm, key, TLS_CIPHER_AES_GCM_128_KEY_SIZE);
+out:
+	memzero_explicit(key, sizeof(key));
+	return err;
+}
+
 /* Initiating a Key Update. */
 int quic_crypto_key_update(struct quic_crypto *crypto)
 {
@@ -1049,33 +1077,6 @@ int quic_crypto_get_retry_tag(struct quic_crypto *crypto, struct sk_buff *skb,
 }
 EXPORT_SYMBOL_GPL(quic_crypto_get_retry_tag);
 
-int quic_crypto_set_token_secret(struct quic_crypto *crypto)
-{
-	/* Reuse TX AEAD (phase 1) in Initial crypto. */
-	u8 key[TLS_CIPHER_AES_GCM_128_KEY_SIZE], *srt = crypto->tx_secret[1];
-	struct crypto_aead *tfm = crypto->tx_tfm[1];
-	struct quic_data s = {}, k, i;
-	int err;
-
-	if (!memchr_inv(srt, 0, TLS_CIPHER_AES_GCM_128_SECRET_SIZE))
-		get_random_bytes(srt, TLS_CIPHER_AES_GCM_128_SECRET_SIZE);
-
-	quic_data(&s, srt, TLS_CIPHER_AES_GCM_128_SECRET_SIZE);
-	quic_data(&k, key, TLS_CIPHER_AES_GCM_128_KEY_SIZE);
-	quic_data(&i, crypto->tx_iv[1], QUIC_IV_LEN);
-	err = quic_crypto_keys_derive(crypto->secret_tfm, &s, &k, &i, NULL,
-				      QUIC_VERSION_V1);
-	if (err)
-		goto out;
-	err = crypto_aead_setauthsize(tfm, QUIC_TAG_LEN);
-	if (err)
-		goto out;
-	err = crypto_aead_setkey(tfm, key, TLS_CIPHER_AES_GCM_128_KEY_SIZE);
-out:
-	memzero_explicit(key, sizeof(key));
-	return err;
-}
-
 /* Derives a key and IV using HKDF, configures the AEAD transform and performs
  * AEAD encryption/decryption for the provided token.
  */
@@ -1215,8 +1216,8 @@ out:
 }
 EXPORT_SYMBOL_GPL(quic_crypto_verify_token);
 
-/* Generate a derived secret using HKDF-Extract and HKDF-Expand with a given
- * label.
+/* Derive a secret using HKDF-Extract and HKDF-Expand with the given label.
+ * Used to generate a stateless reset token or session resumption master key.
  */
 int quic_crypto_derive_secret(struct quic_crypto *crypto, void *data, u32 len,
 			      char *label, u8 *srt, u32 srt_len)
