@@ -12,11 +12,12 @@
 
 #include <linux/version.h>
 #include <crypto/utils.h>
-#include "socket.h"
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 10, 0)
 #include <net/proto_memory.h>
 #endif
+
+#include "socket.h"
 
 /* rfc9000#section-19.3:
  *

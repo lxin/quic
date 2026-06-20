@@ -11,6 +11,7 @@
  */
 
 #include <crypto/utils.h>
+
 #include "socket.h"
 
 #define QUIC_HLEN		1

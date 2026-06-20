@@ -11,11 +11,12 @@
  */
 
 #include <linux/version.h>
-#include "socket.h"
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 10, 0)
 #include <net/proto_memory.h>
 #endif
+
+#include "socket.h"
 
 /* Frees socket receive memory resources. */
 void quic_inq_data_rfree(int len, struct sock *sk)
