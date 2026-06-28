@@ -1200,7 +1200,8 @@ int quic_crypto_verify_token(struct quic_crypto *crypto, void *addr,
 	len -= addrlen;
 	if (flag == QUIC_TOKEN_FLAG_REGULAR)
 		timeout = QUIC_TOKEN_TIMEOUT_REGULAR;
-	if (!quic_get_int(&p, &len, &t, sizeof(ts)) || t + timeout < ts)
+	if (!quic_get_int(&p, &len, &t, sizeof(ts)) ||
+	    t > ts || ts - t > timeout)
 		goto out;
 
 	len -= QUIC_TAG_LEN;
