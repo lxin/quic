@@ -14,7 +14,7 @@
 #define QUIC_KGRANULARITY			1000U
 
 #define QUIC_RTT_INIT		333000U
-#define QUIC_RTT_MAX		2000000U
+#define QUIC_RTT_MAX		6000000U
 #define QUIC_RTT_MIN		QUIC_KGRANULARITY
 
 /* rfc9002#section-7.3: Congestion Control States

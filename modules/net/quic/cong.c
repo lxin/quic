@@ -657,7 +657,8 @@ void quic_cong_rtt_update(struct quic_cong *cong, u64 time, u32 ack_delay)
 	u32 adjusted_rtt, rttvar_sample;
 
 	/* Ignore RTT sample if ACK delay is suspiciously large. */
-	if (ack_delay > cong->max_ack_delay * 2)
+	if (ack_delay > cong->max_ack_delay * 2 ||
+	    cong->time - time > QUIC_RTT_MAX)
 		return;
 
 	/* rfc9002#section-5.1:
