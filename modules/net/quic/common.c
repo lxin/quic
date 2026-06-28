@@ -419,6 +419,9 @@ int quic_data_append(struct quic_data *to, u8 *data, u32 len)
 	if (!len)
 		return 0;
 
+	if (to->len > U32_MAX - len)
+		return -EOVERFLOW;
+
 	p = kzalloc(to->len + len, GFP_ATOMIC);
 	if (!p)
 		return -ENOMEM;
