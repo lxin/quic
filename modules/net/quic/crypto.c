@@ -1085,25 +1085,35 @@ static int quic_crypto_token_protect(struct quic_crypto *crypto, u8 *token,
 {
 	/* Reuse TX AEAD (phase 1) in Initial crypto. */
 	struct crypto_aead *tfm = crypto->tx_tfm[1];
-	u32 extra = enc ? QUIC_TAG_LEN : 0;
+	u32 extra = enc ? QUIC_TAG_LEN : 0, tslen;
 	DECLARE_CRYPTO_WAIT(wait);
 	struct aead_request *req;
 	struct scatterlist *sg;
 	void *ctx = NULL;
-	u8 *tiv;
+	u8 *nonce, *p, i;
+	__be64 n;
 	int err;
+	u64 ts;
 
-	ctx = quic_crypto_aead_mem_alloc(tfm, 0, &tiv, &req, &sg, 1);
+	ctx = quic_crypto_aead_mem_alloc(tfm, 0, &nonce, &req, &sg, 1);
 	if (!ctx) {
 		err = -ENOMEM;
 		goto out;
 	}
-	memcpy(tiv, crypto->tx_iv[1], QUIC_IV_LEN);
+	memcpy(nonce, crypto->tx_iv[1], QUIC_IV_LEN);
+
+	tslen = sizeof(ts);
+	p = token + adlen - tslen;
+	quic_get_int(&p, &tslen, &ts, tslen);
+
+	n = cpu_to_be64(ts);
+	for (i = 0; i < sizeof(n); i++)
+		nonce[QUIC_IV_LEN - sizeof(n) + i] ^= ((u8 *)&n)[i];
 
 	sg_init_one(sg, token, len);
 	aead_request_set_tfm(req, tfm);
 	aead_request_set_ad(req, adlen);
-	aead_request_set_crypt(req, sg, sg, len - adlen - extra, tiv);
+	aead_request_set_crypt(req, sg, sg, len - adlen - extra, nonce);
 	aead_request_set_callback(req, CRYPTO_TFM_REQ_MAY_BACKLOG,
 				  crypto_req_done, &wait);
 	err = enc ? crypto_aead_encrypt(req) : crypto_aead_decrypt(req);
@@ -1133,9 +1143,10 @@ int quic_crypto_generate_token(struct quic_crypto *crypto, void *addr,
 {
 	u8 *token_buf, *p, flag = *token;
 	u64 ts = quic_ktime_get_us();
+	u32 tslen = sizeof(ts);
 	int err, len;
 
-	len = sizeof(flag) + addrlen + sizeof(ts) + conn_id->len + QUIC_TAG_LEN;
+	len = sizeof(flag) + addrlen + tslen + conn_id->len + QUIC_TAG_LEN;
 	token_buf = kzalloc(len, GFP_KERNEL);
 	if (!token_buf)
 		return -ENOMEM;
@@ -1143,11 +1154,11 @@ int quic_crypto_generate_token(struct quic_crypto *crypto, void *addr,
 	p = token_buf;
 	p = quic_put_int(p, flag, sizeof(flag));
 	p = quic_put_data(p, addr, addrlen);
-	p = quic_put_int(p, ts, sizeof(ts));
+	p = quic_put_int(p, ts, tslen);
 	quic_put_data(p, conn_id->data, conn_id->len);
 
 	err = quic_crypto_token_protect(crypto, token_buf, len,
-					sizeof(flag) + addrlen, true);
+					sizeof(flag) + addrlen + tslen, true);
 	if (err)
 		goto out;
 
@@ -1176,16 +1187,17 @@ int quic_crypto_verify_token(struct quic_crypto *crypto, void *addr,
 {
 	u64 t, ts = quic_ktime_get_us(), timeout = QUIC_TOKEN_TIMEOUT_RETRY;
 	u8 *token_buf, *p, flag;
+	u32 tslen = sizeof(ts);
 	int err;
 
-	if (len < sizeof(flag) + addrlen + sizeof(ts) + QUIC_TAG_LEN)
+	if (len < sizeof(flag) + addrlen + tslen + QUIC_TAG_LEN)
 		return -EINVAL;
 	token_buf = kmemdup(token, len, GFP_KERNEL);
 	if (!token_buf)
 		return -ENOMEM;
 
 	err = quic_crypto_token_protect(crypto, token_buf, len,
-					sizeof(flag) + addrlen, false);
+					sizeof(flag) + addrlen + tslen, false);
 	if (err)
 		goto out;
 
@@ -1200,8 +1212,7 @@ int quic_crypto_verify_token(struct quic_crypto *crypto, void *addr,
 	len -= addrlen;
 	if (flag == QUIC_TOKEN_FLAG_REGULAR)
 		timeout = QUIC_TOKEN_TIMEOUT_REGULAR;
-	if (!quic_get_int(&p, &len, &t, sizeof(ts)) ||
-	    t > ts || ts - t > timeout)
+	if (!quic_get_int(&p, &len, &t, tslen) || t > ts || ts - t > timeout)
 		goto out;
 
 	len -= QUIC_TAG_LEN;
