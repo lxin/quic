@@ -1294,7 +1294,7 @@ static int quic_wait_for_packet(struct sock *sk, struct list_head *head,
 	return err;
 }
 
-#ifdef IP_TUNNEL_RECURSION_LIMIT
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(7, 1, 0)
 static int quic_recvmsg(struct sock *sk, struct msghdr *msg, size_t msg_len,
 			int flags)
 #else
