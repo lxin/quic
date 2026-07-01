@@ -1127,7 +1127,7 @@ out:
 
 /* Generate a token for Retry or address validation.
  *
- * Builds a token with the format: [client address][timestamp][original
+ * Builds a token with the format: [flag][client address][timestamp][original
  * DCID][auth tag]
  *
  * Encrypts the token (excluding the first flag byte) using AES-GCM with a key
