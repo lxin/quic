@@ -790,6 +790,7 @@ static __exit void quic_exit(void)
 	destroy_workqueue(quic_wq);
 	quic_hash_tables_destroy();
 	percpu_counter_destroy(&quic_sockets_allocated);
+	rcu_barrier();
 	kmem_cache_destroy(quic_frame_cachep);
 	pr_info("quic: exit\n");
 }
