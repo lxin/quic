@@ -17,15 +17,10 @@
 
 int quic_pnspace_init(struct quic_pnspace *space)
 {
-	if (!space->pn_map) {
-		space->pn_map = kzalloc(BITS_TO_BYTES(QUIC_PN_MAP_INITIAL),
-					GFP_KERNEL);
-		if (!space->pn_map)
-			return -ENOMEM;
-		space->pn_map_len = QUIC_PN_MAP_INITIAL;
-	} else {
-		bitmap_zero(space->pn_map, space->pn_map_len);
-	}
+	space->pn_map = kzalloc(BITS_TO_BYTES(QUIC_PN_MAP_INITIAL), GFP_KERNEL);
+	if (!space->pn_map)
+		return -ENOMEM;
+	space->pn_map_len = QUIC_PN_MAP_INITIAL;
 
 	space->max_time_limit = QUIC_PNSPACE_TIME_LIMIT;
 	space->next_pn = QUIC_PNSPACE_NEXT_PN;
