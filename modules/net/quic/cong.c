@@ -463,7 +463,7 @@ static void quic_reno_on_packet_acked(struct quic_cong *cong, u64 time,
 		/* cong->window is never zero; it is initialized by
 		 * quic_packet_route() during connect/accept.
 		 */
-		new_window = (u64)cong->mss * bytes / cong->window +
+		new_window = div64_ul((u64)cong->mss * bytes, cong->window) +
 			     cong->window;
 		cong->window = min_t(u64, new_window, cong->max_window);
 		break;
