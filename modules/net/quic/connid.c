@@ -111,6 +111,7 @@ static void quic_conn_id_del(struct quic_common_conn_id *common)
 int quic_conn_id_add(struct quic_conn_id_set *id_set,
 		     struct quic_conn_id *conn_id, u32 number, void *data)
 {
+	bool dest = id_set->entry_size == sizeof(struct quic_dest_conn_id);
 	struct quic_source_conn_id *s_conn_id;
 	struct quic_dest_conn_id *d_conn_id;
 	struct quic_common_conn_id *common;
@@ -120,8 +121,17 @@ int quic_conn_id_add(struct quic_conn_id_set *id_set,
 	/* Locate insertion point to keep list ordered by number. */
 	list = &id_set->head;
 	list_for_each_entry(common, list, list) {
-		if (number == common->number)
+		if (number == common->number) {
+			if (quic_conn_id_cmp(&common->id, conn_id))
+				return -EINVAL;
+			if (dest && data) {
+				d_conn_id = (struct quic_dest_conn_id *)common;
+				if (crypto_memneq(d_conn_id->token, data,
+						  QUIC_CONN_ID_TOKEN_LEN))
+					return -EINVAL;
+			}
 			return 0; /* Ignore if it already exists on the list. */
+		}
 		if (number < common->number) {
 			list = &common->list;
 			break;
@@ -135,7 +145,7 @@ int quic_conn_id_add(struct quic_conn_id_set *id_set,
 		return -ENOMEM;
 	common->id = *conn_id;
 	common->number = number;
-	if (id_set->entry_size == sizeof(struct quic_dest_conn_id)) {
+	if (dest) {
 		/* For destination connection IDs, copy the stateless reset
 		 * token if available.
 		 */
