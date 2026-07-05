@@ -399,8 +399,10 @@ s64 quic_get_num(s64 max_pkt_num, s64 pkt_num, u32 n)
 
 int quic_data_dup(struct quic_data *to, u8 *data, u32 len)
 {
-	if (!len)
+	if (!len) {
+		quic_data_free(to);
 		return 0;
+	}
 
 	data = kmemdup(data, len, GFP_ATOMIC);
 	if (!data)
