@@ -68,7 +68,7 @@ struct quic_cong {
 	u32 mss;		/* QUIC MSS (excl. UDP) */
 
 	/* Algorithm-specific */
-	struct quic_cong_ops *ops;
+	const struct quic_cong_ops *ops;
 	u64 priv[8];		/* Algo private data */
 
 	u32 initial_srtt;	/* Initial smoothed RTT */

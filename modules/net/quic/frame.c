@@ -2447,7 +2447,7 @@ enum quic_frame_attr {
 #define QUIC_A____IH01 (QUIC_A_0 | QUIC_A_H | QUIC_A_I | QUIC_A_1)
 #define QUIC_A______01 (QUIC_A_0 | QUIC_A_1)
 
-static struct quic_frame_ops quic_frame_ops[QUIC_FRAME_MAX + 1] = {
+static const struct quic_frame_ops quic_frame_ops[QUIC_FRAME_MAX + 1] = {
 	/* 0x00 */
 	quic_frame_create_and_process_and_ack(padding, QUIC_A_NP_IH01),
 	quic_frame_create_and_process_and_ack(ping, QUIC_A____IH01),

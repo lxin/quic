@@ -483,7 +483,7 @@ static void quic_reno_on_init(struct quic_cong *cong)
 {
 }
 
-static struct quic_cong_ops quic_congs[] = {
+static const struct quic_cong_ops quic_congs[] = {
 	{ /* QUIC_CONG_ALG_RENO */
 		.on_packet_acked = quic_reno_on_packet_acked,
 		.on_packet_lost = quic_reno_on_packet_lost,

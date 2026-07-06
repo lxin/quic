@@ -241,7 +241,8 @@ out:
 	.shash = sha_n, \
 }
 
-static struct quic_cipher ciphers[QUIC_CIPHER_MAX + 1 - QUIC_CIPHER_MIN] = {
+static const struct quic_cipher
+ciphers[QUIC_CIPHER_MAX + 1 - QUIC_CIPHER_MIN] = {
 	CIPHER_DESC(TLS_CIPHER_AES_GCM_128,
 		    "gcm(aes)", "ecb(aes)", "hmac(sha256)"),
 	CIPHER_DESC(TLS_CIPHER_AES_GCM_256,
@@ -704,7 +705,7 @@ EXPORT_SYMBOL_GPL(quic_crypto_decrypt);
 
 int quic_crypto_set_cipher(struct quic_crypto *crypto, u32 type)
 {
-	struct quic_cipher *cipher;
+	const struct quic_cipher *cipher;
 	void *tfm;
 	int err;
 
@@ -768,8 +769,8 @@ err:
 int quic_crypto_set_secret(struct quic_crypto *crypto,
 			   struct quic_crypto_secret *srt, u32 version)
 {
+	const struct quic_cipher *cipher;
 	u8 phase = crypto->key_phase;
-	struct quic_cipher *cipher;
 	int err;
 
 	/* If no cipher has been initialized yet, set it up. */
