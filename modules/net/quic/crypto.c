@@ -72,10 +72,10 @@ static int quic_crypto_hkdf_expand(struct crypto_shash *tfm,
 	*p++ = 0;
 	infolen = (unsigned int)(p - info);
 
-	desc->tfm = tfm;
 	err = crypto_shash_setkey(tfm, srt->data, srt->len);
 	if (err)
 		return err;
+	desc->tfm = tfm;
 
 	for (i = 0; i < key->len; i += hashlen) {
 		err = crypto_shash_init(desc);
