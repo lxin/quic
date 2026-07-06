@@ -123,6 +123,7 @@ static int quic_test_client_handshake(struct socket *sock,
 {
 	struct completion *done = &priv->sk_handshake_done;
 	struct tls_handshake_args args = {};
+	gfp_t gfp = GFP_KERNEL;
 	int err;
 
 	init_completion(&priv->sk_handshake_done);
@@ -135,14 +136,14 @@ static int quic_test_client_handshake(struct socket *sock,
 	if (psk) { /* Use PSK if configured; else X.509 handshake. */
 		args.ta_my_peerids[0] = psk;
 		args.ta_num_peerids = 1;
-		err = tls_client_hello_psk(&args, GFP_KERNEL);
+		err = tls_client_hello_psk(&args, gfp);
 		if (err)
 			return err;
 		goto wait;
 	}
 
 	args.ta_peername = "server.test";
-	err = tls_client_hello_x509(&args, GFP_KERNEL);
+	err = tls_client_hello_x509(&args, gfp);
 	if (err)
 		return err;
 wait:
@@ -163,6 +164,7 @@ static int quic_test_server_handshake(struct socket *sock,
 {
 	struct completion *done = &priv->sk_handshake_done;
 	struct tls_handshake_args args = {};
+	gfp_t gfp = GFP_KERNEL;
 	int err;
 
 	init_completion(&priv->sk_handshake_done);
@@ -173,13 +175,13 @@ static int quic_test_server_handshake(struct socket *sock,
 	args.ta_timeout_ms = 3000;
 
 	if (psk) {
-		err = tls_server_hello_psk(&args, GFP_KERNEL);
+		err = tls_server_hello_psk(&args, gfp);
 		if (err)
 			return err;
 		goto wait;
 	}
 
-	err = tls_server_hello_x509(&args, GFP_KERNEL);
+	err = tls_server_hello_x509(&args, gfp);
 	if (err)
 		return err;
 wait:

@@ -49,14 +49,14 @@ static bool quic_outq_limit_check(struct sock *sk, struct quic_frame *frame)
 }
 
 /* Flush any appended frames or coalesced/bundled packets. */
-static int quic_outq_transmit_flush(struct sock *sk)
+static int quic_outq_transmit_flush(struct sock *sk, gfp_t gfp)
 {
 	struct quic_packet *packet = quic_packet(sk);
 	struct quic_outqueue *outq = quic_outq(sk);
 	int count = outq->count;
 
 	outq->count = 0;
-	if (!quic_packet_empty(packet) && !quic_packet_create_and_xmit(sk))
+	if (!quic_packet_empty(packet) && !quic_packet_create_and_xmit(sk, gfp))
 		count++;
 	quic_packet_flush(sk);
 
@@ -66,7 +66,7 @@ static int quic_outq_transmit_flush(struct sock *sk)
 /* Transmits control frames at a given encryption level (Initial, Handshake,
  * 1-RTT)).
  */
-static void quic_outq_transmit_ctrl(struct sock *sk, u8 level)
+static void quic_outq_transmit_ctrl(struct sock *sk, u8 level, gfp_t gfp)
 {
 	struct quic_pnspace *space = quic_pnspace(sk, level);
 	struct quic_outqueue *outq = quic_outq(sk);
@@ -79,7 +79,7 @@ static void quic_outq_transmit_ctrl(struct sock *sk, u8 level)
 	if (space->need_sack) {
 		/* Transmit SACK (ACK for crypto space) first if needed. */
 		if (!quic_outq_transmit_frame(sk, QUIC_FRAME_ACK, &level,
-					      space->sack_path, true))
+					      space->sack_path, true, gfp))
 			space->need_sack = 0;
 	}
 
@@ -96,7 +96,7 @@ static void quic_outq_transmit_ctrl(struct sock *sk, u8 level)
 		if (quic_packet_tail(sk, frame))
 			continue; /* Frame appended. */
 		/* Flush already appended frames before processing this one. */
-		if (quic_packet_create_and_xmit(sk))
+		if (quic_packet_create_and_xmit(sk, gfp))
 			break;
 		outq->count++;
 		next = frame; /* Re-append this frame. */
@@ -104,7 +104,7 @@ static void quic_outq_transmit_ctrl(struct sock *sk, u8 level)
 }
 
 /* Transmit application datagrams (QUIC DATAGRAM frames). */
-static void quic_outq_transmit_dgram(struct sock *sk)
+static void quic_outq_transmit_dgram(struct sock *sk, gfp_t gfp)
 {
 	struct quic_outqueue *outq = quic_outq(sk);
 	struct quic_frame *frame, *next;
@@ -121,7 +121,7 @@ static void quic_outq_transmit_dgram(struct sock *sk)
 			break;
 		if (quic_packet_tail(sk, frame))
 			continue;
-		if (quic_packet_create_and_xmit(sk))
+		if (quic_packet_create_and_xmit(sk, gfp))
 			break;
 		outq->count++;
 		next = frame;
@@ -137,6 +137,7 @@ int quic_outq_flow_control(struct sock *sk, struct quic_stream *stream,
 {
 	struct quic_outqueue *outq = quic_outq(sk);
 	u8 frame, blocked = 0, transmit = 0;
+	gfp_t gfp = GFP_KERNEL;
 
 	/* Check connection-level flow control. */
 	if (outq->bytes + bytes <= outq->max_bytes)
@@ -148,7 +149,7 @@ int quic_outq_flow_control(struct sock *sk, struct quic_stream *stream,
 	if (!outq->data_blocked && outq->last_max_bytes < outq->max_bytes) {
 		frame = QUIC_FRAME_DATA_BLOCKED;
 		if (!sndblock ||
-		    !quic_outq_transmit_frame(sk, frame, outq, 0, true)) {
+		    !quic_outq_transmit_frame(sk, frame, outq, 0, true, gfp)) {
 			outq->last_max_bytes = outq->max_bytes;
 			outq->data_blocked = 1;
 			transmit = sndblock;
@@ -169,7 +170,8 @@ stream_out:
 	    stream->send.last_max_bytes < stream->send.max_bytes) {
 		frame = QUIC_FRAME_STREAM_DATA_BLOCKED;
 		if (!sndblock ||
-		    !quic_outq_transmit_frame(sk, frame, stream, 0, true)) {
+		    !quic_outq_transmit_frame(sk, frame, stream, 0, true,
+					      gfp)) {
 			stream->send.last_max_bytes = stream->send.max_bytes;
 			stream->send.data_blocked = 1;
 			transmit = sndblock;
@@ -179,7 +181,7 @@ stream_out:
 
 out:
 	if (transmit)
-		quic_outq_transmit(sk);
+		quic_outq_transmit(sk, gfp);
 
 	return blocked;
 }
@@ -245,7 +247,7 @@ static bool quic_outq_delay_check(struct sock *sk, u8 level, bool nodelay)
 }
 
 /* Sends stream data frames. */
-static void quic_outq_transmit_stream(struct sock *sk)
+static void quic_outq_transmit_stream(struct sock *sk, gfp_t gfp)
 {
 	struct quic_pnspace *space = quic_pnspace(sk, QUIC_CRYPTO_APP);
 	struct quic_outqueue *outq = quic_outq(sk);
@@ -273,7 +275,7 @@ static void quic_outq_transmit_stream(struct sock *sk)
 			outq->stream_list_len -= frame->len;
 			continue;
 		}
-		if (quic_packet_create_and_xmit(sk))
+		if (quic_packet_create_and_xmit(sk, gfp))
 			break;
 		outq->count++;
 		next = frame;
@@ -284,12 +286,12 @@ static void quic_outq_transmit_stream(struct sock *sk)
 		space->need_sack = 1;
 		space->sack_path = 0;
 		space->sack_pending = 0;
-		quic_outq_transmit_ctrl(sk, QUIC_CRYPTO_APP);
+		quic_outq_transmit_ctrl(sk, QUIC_CRYPTO_APP, gfp);
 	}
 }
 
 /* Sends pending frames at a specific encryption level from transmitted_list. */
-static void quic_outq_transmit_old(struct sock *sk, u8 level)
+static void quic_outq_transmit_old(struct sock *sk, u8 level, gfp_t gfp)
 {
 	struct quic_outqueue *outq = quic_outq(sk);
 	struct quic_frame *frame, *next;
@@ -311,7 +313,7 @@ static void quic_outq_transmit_old(struct sock *sk, u8 level)
 			break;
 		if (quic_packet_tail(sk, frame))
 			continue;
-		if (quic_packet_create_and_xmit(sk))
+		if (quic_packet_create_and_xmit(sk, gfp))
 			break;
 		outq->count++;
 		next = frame;
@@ -319,37 +321,37 @@ static void quic_outq_transmit_old(struct sock *sk, u8 level)
 }
 
 /* Sends all pending frames from outqueue. Returns number of packets sent. */
-int quic_outq_transmit(struct sock *sk)
+int quic_outq_transmit(struct sock *sk, gfp_t gfp)
 {
-	quic_outq_transmit_ctrl(sk, QUIC_CRYPTO_INITIAL);
-	quic_outq_transmit_ctrl(sk, QUIC_CRYPTO_HANDSHAKE);
-	quic_outq_transmit_ctrl(sk, QUIC_CRYPTO_APP);
+	quic_outq_transmit_ctrl(sk, QUIC_CRYPTO_INITIAL, gfp);
+	quic_outq_transmit_ctrl(sk, QUIC_CRYPTO_HANDSHAKE, gfp);
+	quic_outq_transmit_ctrl(sk, QUIC_CRYPTO_APP, gfp);
 
-	quic_outq_transmit_dgram(sk);
-	quic_outq_transmit_stream(sk);
+	quic_outq_transmit_dgram(sk, gfp);
+	quic_outq_transmit_stream(sk, gfp);
 
-	return quic_outq_transmit_flush(sk);
+	return quic_outq_transmit_flush(sk, gfp);
 }
 
 /* Transmits at most one packet at the specified encryption level. */
-static int quic_outq_transmit_single(struct sock *sk, u8 level)
+static int quic_outq_transmit_single(struct sock *sk, u8 level, gfp_t gfp)
 {
 	struct quic_outqueue *outq = quic_outq(sk);
 
 	outq->single = 1; /* Mark single-packet transmission. */
-	quic_outq_transmit_ctrl(sk, level);
+	quic_outq_transmit_ctrl(sk, level, gfp);
 
 	if (level == QUIC_CRYPTO_APP) {
 		/* Transmit DATAGRAM and STREAM frames at app level. */
-		quic_outq_transmit_dgram(sk);
-		quic_outq_transmit_stream(sk);
+		quic_outq_transmit_dgram(sk, gfp);
+		quic_outq_transmit_stream(sk, gfp);
 	}
 
 	/* Try sending frames in transmitted_list if no new frame was packed. */
-	quic_outq_transmit_old(sk, level);
+	quic_outq_transmit_old(sk, level, gfp);
 	outq->single = 0;
 
-	return quic_outq_transmit_flush(sk);
+	return quic_outq_transmit_flush(sk, gfp);
 }
 
 /* Frees socket send memory resources. */
@@ -472,7 +474,7 @@ void quic_outq_stream_tail(struct sock *sk, struct quic_frame *frame, bool cork)
 
 	list_add_tail(&frame->list, &outq->stream_list);
 	if (!cork) /* If not corked, trigger transmission immediately. */
-		quic_outq_transmit(sk);
+		quic_outq_transmit(sk, GFP_KERNEL);
 }
 
 /* Queues a datagram frame at the tail of the datagram list and optionally
@@ -486,7 +488,7 @@ void quic_outq_dgram_tail(struct sock *sk, struct quic_frame *frame, bool cork)
 	quic_outq_wcharge(frame, sk);
 	list_add_tail(&frame->list, &outq->datagram_list);
 	if (!cork)
-		quic_outq_transmit(sk);
+		quic_outq_transmit(sk, GFP_KERNEL);
 }
 
 /* Map level 0 (QUIC_CRYPTO_APP) to lowest priority. */
@@ -498,7 +500,8 @@ static u8 quic_level_prio(u8 level)
 /* Queues a control frame in control_list in correct order and optionally
  * transmits.
  */
-void quic_outq_ctrl_tail(struct sock *sk, struct quic_frame *frame, bool cork)
+void quic_outq_ctrl_tail(struct sock *sk, struct quic_frame *frame, bool cork,
+			 gfp_t gfp)
 {
 	struct quic_outqueue *outq = quic_outq(sk);
 	struct list_head *head;
@@ -532,7 +535,7 @@ void quic_outq_ctrl_tail(struct sock *sk, struct quic_frame *frame, bool cork)
 	quic_outq_wcharge(frame, sk);
 	list_add_tail(&frame->list, head);
 	if (!cork)
-		quic_outq_transmit(sk);
+		quic_outq_transmit(sk, gfp);
 }
 
 /* Inserts a frame into transmitted_list in order by level and number (first
@@ -599,7 +602,7 @@ void quic_outq_packet_sent_tail(struct sock *sk, struct quic_packet_sent *sent)
 }
 
 /* Transmit a probe packet (PING frame with padding) to assist with PLPMTUD. */
-void quic_outq_transmit_probe(struct sock *sk)
+void quic_outq_transmit_probe(struct sock *sk, gfp_t gfp)
 {
 	struct quic_pnspace *space = quic_pnspace(sk, QUIC_CRYPTO_APP);
 	u32 taglen = quic_packet_taglen(quic_packet(sk));
@@ -616,7 +619,8 @@ void quic_outq_transmit_probe(struct sock *sk)
 	info.level = QUIC_CRYPTO_APP;
 	/* Save the packet number used for confirming the probe via ACK. */
 	number = space->next_pn;
-	if (!quic_outq_transmit_frame(sk, QUIC_FRAME_PING, &info, 0, false)) {
+	if (!quic_outq_transmit_frame(sk, QUIC_FRAME_PING, &info, 0, false,
+				      gfp)) {
 		pathmtu = quic_path_pl_send(paths, number);
 		if (pathmtu) /* Pathmtu may drop if probe failures exceeds. */
 			quic_packet_mss_update(sk, pathmtu + taglen);
@@ -631,16 +635,18 @@ void quic_outq_transmit_close(struct sock *sk, u8 type, u32 errcode, u8 level)
 {
 	struct quic_outqueue *outq = quic_outq(sk);
 	struct quic_connection_close c = {};
+	gfp_t gfp = GFP_KERNEL;
 
 	c.errcode = errcode;
 	c.frame = type;
-	quic_inq_event_recv(sk, QUIC_EVENT_CONNECTION_CLOSE, &c, sizeof(c));
+	quic_inq_event_recv(sk, QUIC_EVENT_CONNECTION_CLOSE, &c, sizeof(c),
+			    gfp);
 
 	outq->close_errcode = errcode;
 	outq->close_frame = type;
 
 	quic_outq_transmit_frame(sk, QUIC_FRAME_CONNECTION_CLOSE, &level, 0,
-				 false);
+				 false, gfp);
 	quic_set_state(sk, QUIC_SS_CLOSED);
 }
 
@@ -650,6 +656,7 @@ void quic_outq_transmit_close(struct sock *sk, u8 type, u32 errcode, u8 level)
 void quic_outq_transmit_app_close(struct sock *sk)
 {
 	struct quic_outqueue *outq = quic_outq(sk);
+	gfp_t gfp = GFP_KERNEL;
 	u8 type, level;
 
 	if (quic_is_closed(sk) || quic_is_listen(sk))
@@ -666,15 +673,16 @@ void quic_outq_transmit_app_close(struct sock *sk)
 	level = QUIC_CRYPTO_APP;
 	type = QUIC_FRAME_CONNECTION_CLOSE_APP;
 	outq->close_pending = 1;
-	quic_outq_transmit(sk); /* Flush before sending close frame. */
+	quic_outq_transmit(sk, gfp); /* Flush before sending close frame. */
 
 out:
-	quic_outq_transmit_frame(sk, type, &level, 0, false);
+	quic_outq_transmit_frame(sk, type, &level, 0, false, gfp);
 }
 
 /* Processes frames in a sent packet that have been ACKed. */
 static void quic_outq_psent_sack_frames(struct sock *sk,
-					struct quic_packet_sent *sent)
+					struct quic_packet_sent *sent,
+					gfp_t gfp)
 {
 	struct quic_outqueue *outq = quic_outq(sk);
 	struct quic_frame *frame;
@@ -698,14 +706,14 @@ static void quic_outq_psent_sack_frames(struct sock *sk,
 			outq->stream_list_len -= frame->len;
 		list_del_init(&frame->list);
 		frame->transmitted = 0;
-		quic_frame_ack(sk, frame);
+		quic_frame_ack(sk, frame, gfp);
 	}
 	quic_outq_data_wfree(acked, sk);
 }
 
 /* Confirms the path probe and triggers PLPMTUD state machine. */
 static void quic_outq_path_confirm(struct sock *sk, u8 level, s64 largest,
-				   s64 smallest)
+				   s64 smallest, gfp_t gfp)
 {
 	struct quic_path_group *paths = quic_paths(sk);
 	struct quic_outqueue *outq = quic_outq(sk);
@@ -730,7 +738,7 @@ static void quic_outq_path_confirm(struct sock *sk, u8 level, s64 largest,
 		quic_packet_mss_update(sk, pathmtu);
 	}
 	if (!complete) /* Continue sending probe if PLPMTUD incomplete. */
-		quic_outq_transmit_probe(sk);
+		quic_outq_transmit_probe(sk, gfp);
 	if (raise_timer) { /* Reset the probe timer as raise timer if needed. */
 		intv = paths->plpmtud_interval * QUIC_PMTUD_RAISE_TIMER_FACTOR;
 		quic_timer_reset(sk, QUIC_TIMER_PMTU, intv);
@@ -745,7 +753,8 @@ static void quic_outq_path_confirm(struct sock *sk, u8 level, s64 largest,
  * tracking, and adjusts send window and pacing accordingly.
  */
 void quic_outq_transmitted_sack(struct sock *sk, u8 level, s64 largest,
-				s64 smallest, s64 ack_largest, u32 ack_delay)
+				s64 smallest, s64 ack_largest, u32 ack_delay,
+				gfp_t gfp)
 {
 	struct quic_pnspace *space = quic_pnspace(sk, level);
 	struct quic_crypto *crypto = quic_crypto(sk, level);
@@ -754,7 +763,7 @@ void quic_outq_transmitted_sack(struct sock *sk, u8 level, s64 largest,
 	struct quic_packet_sent *sent, *next;
 	u32 acked = 0;
 
-	quic_outq_path_confirm(sk, level, largest, smallest);
+	quic_outq_path_confirm(sk, level, largest, smallest, gfp);
 	pr_debug("%s: largest: %llu, smallest: %llu\n", __func__, largest,
 		 smallest);
 
@@ -786,7 +795,7 @@ void quic_outq_transmitted_sack(struct sock *sk, u8 level, s64 largest,
 		outq->inflight -= sent->len;
 		space->inflight -= sent->len;
 		/* Process the frames contained in the acknowledged packet. */
-		quic_outq_psent_sack_frames(sk, sent);
+		quic_outq_psent_sack_frames(sk, sent, gfp);
 
 		if (sent->number == ack_largest) {
 			/* Update RTT if largest acknowledged is newly ACKed. */
@@ -1122,6 +1131,7 @@ void quic_outq_transmit_pto(struct sock *sk)
 {
 	struct quic_outqueue *outq = quic_outq(sk);
 	struct quic_probeinfo info = {};
+	gfp_t gfp = GFP_ATOMIC;
 	u64 time;
 	u8 level;
 
@@ -1133,7 +1143,7 @@ void quic_outq_transmit_pto(struct sock *sk)
 		 */
 		quic_outq_retransmit_mark(sk, level, false);
 		quic_outq_update_loss_timer(sk);
-		quic_outq_transmit(sk);
+		quic_outq_transmit(sk, gfp);
 		return;
 	}
 
@@ -1141,7 +1151,7 @@ void quic_outq_transmit_pto(struct sock *sk)
 	quic_outq_get_pto_time(sk, &level);
 
 	/* Attempt to send one ACK-eliciting probe packets for PTO. */
-	if (quic_outq_transmit_single(sk, level))
+	if (quic_outq_transmit_single(sk, level, gfp))
 		goto out;
 
 	/* If still no packet can be sent, send a PING frame to elicit ACK. */
@@ -1149,7 +1159,7 @@ void quic_outq_transmit_pto(struct sock *sk)
 		info.level = level;
 		info.size = QUIC_MIN_UDP_PAYLOAD;
 	}
-	quic_outq_transmit_frame(sk, QUIC_FRAME_PING, &info, 0, false);
+	quic_outq_transmit_frame(sk, QUIC_FRAME_PING, &info, 0, false, gfp);
 
 out:
 	if (outq->pto_count < QUIC_MAX_PTO_COUNT)
@@ -1158,7 +1168,7 @@ out:
 }
 
 /* Initiate probing of an alternative QUIC path to support path migration. */
-int quic_outq_probe_path_alt(struct sock *sk, bool cork)
+int quic_outq_probe_path_alt(struct sock *sk, bool cork, gfp_t gfp)
 {
 	struct quic_conn_id_set *id_set = quic_dest(sk);
 	struct quic_path_group *paths = quic_paths(sk);
@@ -1178,7 +1188,7 @@ int quic_outq_probe_path_alt(struct sock *sk, bool cork)
 		number = quic_conn_id_first_number(id_set);
 		err = quic_outq_transmit_frame(sk,
 					       QUIC_FRAME_RETIRE_CONNECTION_ID,
-					       &number, 0, cork);
+					       &number, 0, cork, gfp);
 		if (err)
 			return err;
 
@@ -1197,7 +1207,8 @@ int quic_outq_probe_path_alt(struct sock *sk, bool cork)
 	paths->ecn_probes = 0;
 	quic_set_sk_ecn(sk, 0);
 	/* Send PATH_CHALLENGE frame on the new path and reset path timer. */
-	quic_outq_transmit_frame(sk, QUIC_FRAME_PATH_CHALLENGE, NULL, 1, cork);
+	quic_outq_transmit_frame(sk, QUIC_FRAME_PATH_CHALLENGE, NULL, 1, cork,
+				 gfp);
 
 	timeout = max_t(u32, quic_cong(sk)->pto * 2, QUIC_MIN_PATH_TIMEOUT);
 	quic_timer_reset(sk, QUIC_TIMER_PATH, timeout);
@@ -1225,16 +1236,16 @@ void quic_outq_update_path(struct sock *sk)
  * the path for the frame, and appends it to the control frame queue.
  */
 int quic_outq_transmit_frame(struct sock *sk, u8 type, void *data, u8 path,
-			     bool cork)
+			     bool cork, gfp_t gfp)
 {
 	struct quic_frame *frame;
 
-	frame = quic_frame_create(sk, type, data);
+	frame = quic_frame_create(sk, type, data, gfp);
 	if (IS_ERR(frame))
 		return PTR_ERR(frame);
 
 	frame->path = path;
-	quic_outq_ctrl_tail(sk, frame, cork);
+	quic_outq_ctrl_tail(sk, frame, cork, gfp);
 	return 0;
 }
 
@@ -1244,7 +1255,7 @@ int quic_outq_transmit_frame(struct sock *sk, u8 type, void *data, u8 path,
  * with sequence numbers between (last known + 1) and (max_count + prior - 1).
  */
 int quic_outq_transmit_new_conn_id(struct sock *sk, u64 prior, u8 path,
-				   bool cork)
+				   bool cork, gfp_t gfp)
 {
 	struct quic_conn_id_set *id_set = quic_source(sk);
 	u64 max, seqno;
@@ -1255,12 +1266,12 @@ int quic_outq_transmit_new_conn_id(struct sock *sk, u64 prior, u8 path,
 	for (seqno = quic_conn_id_last_number(id_set) + 1; seqno < max;
 	     seqno++) {
 		err = quic_outq_transmit_frame(sk, QUIC_FRAME_NEW_CONNECTION_ID,
-					       &prior, path, true);
+					       &prior, path, true, gfp);
 		if (err)
 			return err;
 	}
 	if (!cork)
-		quic_outq_transmit(sk);
+		quic_outq_transmit(sk, gfp);
 	return 0;
 }
 
@@ -1270,7 +1281,7 @@ int quic_outq_transmit_new_conn_id(struct sock *sk, u64 prior, u8 path,
  * from the first known ID up to the specified prior sequence number.
  */
 int quic_outq_transmit_retire_conn_id(struct sock *sk, u64 prior, u8 path,
-				      bool cork)
+				      bool cork, gfp_t gfp)
 {
 	struct quic_conn_id_set *id_set = quic_dest(sk);
 	u64 seqno;
@@ -1280,12 +1291,12 @@ int quic_outq_transmit_retire_conn_id(struct sock *sk, u64 prior, u8 path,
 	     seqno++) {
 		err = quic_outq_transmit_frame(sk,
 					       QUIC_FRAME_RETIRE_CONNECTION_ID,
-					       &seqno, path, true);
+					       &seqno, path, true, gfp);
 		if (err)
 			return err;
 	}
 	if (!cork)
-		quic_outq_transmit(sk);
+		quic_outq_transmit(sk, gfp);
 	return 0;
 }
 
@@ -1356,7 +1367,7 @@ static void quic_outq_psent_list_purge(struct sock *sk, struct list_head *head)
 	struct quic_packet_sent *sent, *next;
 
 	list_for_each_entry_safe(sent, next, head, list) {
-		quic_outq_psent_sack_frames(sk, sent);
+		quic_outq_psent_sack_frames(sk, sent, GFP_KERNEL);
 		list_del(&sent->list);
 		kfree(sent);
 	}

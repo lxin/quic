@@ -248,7 +248,7 @@ bool quic_accept_sock_exists(struct sock *sk, struct sk_buff *skb);
 
 struct quic_request_sock *quic_request_sock_create(struct sock *sk,
 						   struct quic_conn_id *odcid,
-						   u8 retry);
+						   u8 retry, gfp_t gfp);
 int quic_request_sock_backlog_tail(struct sock *sk,
 				   struct quic_request_sock *req,
 				   struct sk_buff *skb);

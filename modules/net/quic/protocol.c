@@ -58,6 +58,7 @@ static int quic_inet_listen(struct socket *sock, int backlog)
 	struct quic_path_group *paths;
 	struct quic_crypto *crypto;
 	struct sock *sk = sock->sk;
+	gfp_t gfp = GFP_KERNEL;
 	union quic_addr *a;
 	int err = -EINVAL;
 
@@ -99,11 +100,11 @@ static int quic_inet_listen(struct socket *sock, int backlog)
 	 * verification failure.
 	 */
 	quic_conn_id_generate(&conn_id);
-	err = quic_conn_id_add(dest, &conn_id, 0, NULL);
+	err = quic_conn_id_add(dest, &conn_id, 0, NULL, gfp);
 	if (err)
 		goto free;
 	quic_conn_id_generate(&conn_id);
-	err = quic_conn_id_add(source, &conn_id, 0, sk);
+	err = quic_conn_id_add(source, &conn_id, 0, sk, gfp);
 	if (err)
 		goto free;
 	/* Install initial keys to generate Retry/Stateless Reset tokens. */

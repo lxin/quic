@@ -265,7 +265,8 @@ static bool quic_crypto_is_cipher_chacha(struct quic_crypto *crypto)
 
 static void *quic_crypto_skcipher_mem_alloc(struct crypto_skcipher *tfm,
 					    u32 mask_size, u8 **iv,
-					    struct skcipher_request **req)
+					    struct skcipher_request **req,
+					    gfp_t gfp)
 {
 	unsigned int iv_size, req_size;
 	unsigned int len;
@@ -281,7 +282,7 @@ static void *quic_crypto_skcipher_mem_alloc(struct crypto_skcipher *tfm,
 	len = ALIGN(len, crypto_tfm_ctx_alignment());
 	len += req_size;
 
-	mem = kzalloc(len, GFP_ATOMIC);
+	mem = kzalloc(len, gfp);
 	if (!mem)
 		return NULL;
 
@@ -323,7 +324,7 @@ static int quic_crypto_get_number(struct sk_buff *skb)
 
 /* Header Protection. */
 static int quic_crypto_header_protect(struct quic_crypto *crypto,
-				      struct sk_buff *skb, bool enc)
+				      struct sk_buff *skb, bool enc, gfp_t gfp)
 {
 	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
 	u8 *mask, *iv, *p, h_mask, chacha;
@@ -346,7 +347,8 @@ static int quic_crypto_header_protect(struct quic_crypto *crypto,
 		tfm = crypto->tx_hp_tfm;
 	}
 
-	mask = quic_crypto_skcipher_mem_alloc(tfm, QUIC_SAMPLE_LEN, &iv, &req);
+	mask = quic_crypto_skcipher_mem_alloc(tfm, QUIC_SAMPLE_LEN, &iv, &req,
+					      gfp);
 	if (!mask)
 		return -ENOMEM;
 
@@ -415,7 +417,8 @@ out:
 
 static void *quic_crypto_aead_mem_alloc(struct crypto_aead *tfm, u32 ctx_size,
 					u8 **iv, struct aead_request **req,
-					struct scatterlist **sg, u32 nsg)
+					struct scatterlist **sg, u32 nsg,
+					gfp_t gfp)
 {
 	unsigned int iv_size, req_size;
 	unsigned int len;
@@ -432,7 +435,7 @@ static void *quic_crypto_aead_mem_alloc(struct crypto_aead *tfm, u32 ctx_size,
 	len = ALIGN(len, __alignof__(struct scatterlist));
 	len += nsg * sizeof(**sg);
 
-	mem = kzalloc(len, GFP_ATOMIC);
+	mem = kzalloc(len, gfp);
 	if (!mem)
 		return NULL;
 
@@ -468,7 +471,7 @@ static void quic_crypto_done(void *data, int err)
 
 /* AEAD Usage. */
 static int quic_crypto_payload_protect(struct quic_crypto *crypto,
-				       struct sk_buff *skb, bool enc)
+				       struct sk_buff *skb, bool enc, gfp_t gfp)
 {
 	u8 *base_iv, *iv, i, nonce[QUIC_IV_LEN], ccm, phase;
 	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
@@ -507,7 +510,7 @@ static int quic_crypto_payload_protect(struct quic_crypto *crypto,
 	}
 
 	ctx = quic_crypto_aead_mem_alloc(tfm, sizeof(void *), &iv, &req, &sg,
-					 nsg);
+					 nsg, gfp);
 	if (!ctx)
 		return -ENOMEM;
 
@@ -573,7 +576,8 @@ out:
  *
  * Return: 0 on success, or a negative error code.
  */
-int quic_crypto_encrypt(struct quic_crypto *crypto, struct sk_buff *skb)
+int quic_crypto_encrypt(struct quic_crypto *crypto, struct sk_buff *skb,
+			gfp_t gfp)
 {
 	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
 	int err;
@@ -592,11 +596,11 @@ int quic_crypto_encrypt(struct quic_crypto *crypto, struct sk_buff *skb)
 	if (crypto->key_pending && !crypto->key_update_send_time)
 		crypto->key_update_send_time = quic_ktime_get_us();
 
-	err = quic_crypto_payload_protect(crypto, skb, true);
+	err = quic_crypto_payload_protect(crypto, skb, true, gfp);
 	if (err)
 		return err;
 out:
-	return quic_crypto_header_protect(crypto, skb, true);
+	return quic_crypto_header_protect(crypto, skb, true, gfp);
 }
 EXPORT_SYMBOL_GPL(quic_crypto_encrypt);
 
@@ -606,7 +610,8 @@ EXPORT_SYMBOL_GPL(quic_crypto_encrypt);
  *
  * Return: 0 on success, or a negative error code.
  */
-int quic_crypto_decrypt(struct quic_crypto *crypto, struct sk_buff *skb)
+int quic_crypto_decrypt(struct quic_crypto *crypto, struct sk_buff *skb,
+			gfp_t gfp)
 {
 	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
 	int err = 0;
@@ -623,7 +628,7 @@ int quic_crypto_decrypt(struct quic_crypto *crypto, struct sk_buff *skb)
 		goto out;
 	}
 	if (!cb->number_len) { /* Packet header not yet decrypted. */
-		err = quic_crypto_header_protect(crypto, skb, false);
+		err = quic_crypto_header_protect(crypto, skb, false, gfp);
 		if (err) {
 			pr_debug("%s: hd decrypt err %d\n", __func__, err);
 			return err;
@@ -655,7 +660,7 @@ int quic_crypto_decrypt(struct quic_crypto *crypto, struct sk_buff *skb)
 		cb->key_update = 1; /* Mark packet as triggering key update. */
 	}
 
-	err = quic_crypto_payload_protect(crypto, skb, false);
+	err = quic_crypto_payload_protect(crypto, skb, false, gfp);
 	if (err) {
 		if (err == -EINPROGRESS)
 			return err;
@@ -1049,7 +1054,7 @@ int quic_crypto_get_retry_tag(struct quic_crypto *crypto, struct sk_buff *skb,
 
 	plen = 1 + odcid->len + skb->len - QUIC_TAG_LEN;
 	pseudo_retry = quic_crypto_aead_mem_alloc(tfm, plen + QUIC_TAG_LEN, &iv,
-						  &req, &sg, 1);
+						  &req, &sg, 1, GFP_KERNEL);
 	if (!pseudo_retry)
 		return -ENOMEM;
 
@@ -1096,7 +1101,8 @@ static int quic_crypto_token_protect(struct quic_crypto *crypto, u8 *token,
 	int err;
 	u64 ts;
 
-	ctx = quic_crypto_aead_mem_alloc(tfm, 0, &nonce, &req, &sg, 1);
+	ctx = quic_crypto_aead_mem_alloc(tfm, 0, &nonce, &req, &sg, 1,
+					 GFP_KERNEL);
 	if (!ctx) {
 		err = -ENOMEM;
 		goto out;

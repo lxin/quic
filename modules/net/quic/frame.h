@@ -88,10 +88,11 @@ struct quic_probeinfo {
 /* Operations for creating, processing, and acknowledging QUIC frames */
 struct quic_frame_ops {
 	struct quic_frame *(*frame_create)(struct sock *sk, void *data,
-					   u8 type);
+					   u8 type, gfp_t gfp);
 	int (*frame_process)(struct sock *sk, struct quic_frame *frame,
-			     u8 type);
-	void (*frame_ack)(struct sock *sk, struct quic_frame *frame);
+			     u8 type, gfp_t gfp);
+	void (*frame_ack)(struct sock *sk, struct quic_frame *frame,
+			  gfp_t gfp);
 	u8 frame_attr;
 };
 
@@ -197,9 +198,10 @@ struct quic_frame *quic_frame_alloc(u32 size, u8 *data, gfp_t gfp);
 struct quic_frame *quic_frame_get(struct quic_frame *frame);
 void quic_frame_put(struct quic_frame *frame);
 
-struct quic_frame *quic_frame_create(struct sock *sk, u8 type, void *data);
-int quic_frame_process(struct sock *sk, struct quic_frame *frame);
-void quic_frame_ack(struct sock *sk, struct quic_frame *frame);
+struct quic_frame *quic_frame_create(struct sock *sk, u8 type, void *data,
+				     gfp_t gfp);
+int quic_frame_process(struct sock *sk, struct quic_frame *frame, gfp_t gfp);
+void quic_frame_ack(struct sock *sk, struct quic_frame *frame, gfp_t gfp);
 
 bool quic_frame_retransmittable(u8 type);
 bool quic_frame_ack_eliciting(u8 type);

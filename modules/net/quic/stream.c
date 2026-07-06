@@ -82,20 +82,17 @@ static void quic_stream_delete(struct quic_stream *stream)
 /* Create and register new streams for sending or receiving. */
 static struct quic_stream *quic_stream_create(struct quic_stream_table *streams,
 					      s64 max_stream_id, bool send,
-					      bool is_serv)
+					      bool is_serv, gfp_t gfp)
 {
-	struct quic_stream_limits *limits = &streams->send;
 	struct quic_stream *pos, *stream = NULL;
-	gfp_t gfp = GFP_KERNEL_ACCOUNT;
+	struct quic_stream_limits *limits;
 	struct hlist_node *tmp;
 	HLIST_HEAD(head);
 	s64 stream_id;
 	u32 count = 0;
 
-	if (!send) {
-		limits = &streams->recv;
-		gfp = GFP_ATOMIC | __GFP_ACCOUNT;
-	}
+	gfp |= __GFP_ACCOUNT;
+	limits = send ? &streams->send : &streams->recv;
 	stream_id = limits->next_bidi_stream_id;
 	if (quic_stream_id_uni(max_stream_id))
 		stream_id = limits->next_uni_stream_id;
@@ -221,7 +218,7 @@ bool quic_stream_id_exceeds(struct quic_stream_table *streams, s64 stream_id,
 /* Get or create a send or recv stream by ID. Requires sock lock held. */
 struct quic_stream *quic_stream_get(struct quic_stream_table *streams,
 				    s64 stream_id, u32 flags, bool is_serv,
-				    bool send)
+				    bool send, gfp_t gfp)
 {
 	struct quic_stream *stream;
 
@@ -249,7 +246,7 @@ struct quic_stream *quic_stream_get(struct quic_stream_table *streams,
 	if (quic_stream_id_exceeds(streams, stream_id, send))
 		return ERR_PTR(-EAGAIN);
 
-	stream = quic_stream_create(streams, stream_id, send, is_serv);
+	stream = quic_stream_create(streams, stream_id, send, is_serv, gfp);
 	if (!stream)
 		return ERR_PTR(-ENOMEM);
 

@@ -54,7 +54,7 @@ static void quic_inq_rcharge(struct quic_frame *frame, struct sock *sk)
  * frames if needed.
  */
 void quic_inq_flow_control(struct sock *sk, struct quic_stream *stream,
-			   u32 bytes)
+			   u32 bytes, gfp_t gfp)
 {
 	struct quic_pnspace *space = quic_pnspace(sk, QUIC_CRYPTO_APP);
 	struct quic_inqueue *inq = quic_inq(sk);
@@ -78,7 +78,7 @@ void quic_inq_flow_control(struct sock *sk, struct quic_stream *stream,
 	if (inq->max_bytes >= inq->bytes + window)
 		goto stream_out;
 	frame = QUIC_FRAME_MAX_DATA;
-	if (!quic_outq_transmit_frame(sk, frame, inq, 0, true)) {
+	if (!quic_outq_transmit_frame(sk, frame, inq, 0, true, gfp)) {
 		/* Increase max data to already read + window. */
 		inq->max_bytes = inq->bytes + window;
 		transmit = 1;
@@ -102,7 +102,7 @@ stream_out:
 	if (stream->recv.max_bytes >= stream->recv.bytes + window)
 		goto out;
 	frame = QUIC_FRAME_MAX_STREAM_DATA;
-	if (!quic_outq_transmit_frame(sk, frame, stream, 0, true)) {
+	if (!quic_outq_transmit_frame(sk, frame, stream, 0, true, gfp)) {
 		stream->recv.max_bytes = stream->recv.bytes + window;
 		transmit = 1;
 	}
@@ -110,7 +110,7 @@ stream_out:
 out:
 	if (transmit) {
 		space->need_sack = 1; /* Bundle an ACK frame with it. */
-		quic_outq_transmit(sk);
+		quic_outq_transmit(sk, gfp);
 	}
 }
 
@@ -118,7 +118,7 @@ out:
  * delivered.
  */
 static bool quic_inq_stream_tail(struct sock *sk, struct quic_stream *stream,
-				 struct quic_frame *frame)
+				 struct quic_frame *frame, gfp_t gfp)
 {
 	struct quic_inqueue *inq = quic_inq(sk);
 	struct quic_stream_update update = {};
@@ -156,7 +156,7 @@ static bool quic_inq_stream_tail(struct sock *sk, struct quic_stream *stream,
 	update.state = QUIC_STREAM_RECV_STATE_RECVD;
 	update.finalsz = stream->recv.offset;
 	quic_inq_event_recv(sk, QUIC_EVENT_STREAM_UPDATE, &update,
-			    sizeof(update));
+			    sizeof(update), gfp);
 	/* rfc9000#section-3.2:
 	 *
 	 * Once all data for the stream has been received, the receiving part
@@ -202,7 +202,8 @@ static bool quic_sk_rmem_schedule(struct sock *sk, int size)
  * Returns 0 on success, -ENOBUFS if memory/flow limits are hit, or -EINVAL on
  * protocol violation.
  */
-int quic_inq_stream_recv(struct sock *sk, struct quic_frame *frame)
+int quic_inq_stream_recv(struct sock *sk, struct quic_frame *frame,
+			 gfp_t gfp)
 {
 	u64 offset = frame->offset, off, highest = 0;
 	struct quic_stream *stream = frame->stream;
@@ -273,7 +274,7 @@ int quic_inq_stream_recv(struct sock *sk, struct quic_frame *frame)
 		update.id = stream->id;
 		update.state = QUIC_STREAM_RECV_STATE_RECV;
 		quic_inq_event_recv(sk, QUIC_EVENT_STREAM_UPDATE, &update,
-				    sizeof(update));
+				    sizeof(update), gfp);
 	}
 	head = &inq->stream_list;
 	if (stream->recv.offset < offset) { /* Out-of-order: insert in order. */
@@ -322,7 +323,7 @@ int quic_inq_stream_recv(struct sock *sk, struct quic_frame *frame)
 		update.state = QUIC_STREAM_RECV_STATE_SIZE_KNOWN;
 		update.finalsz = off;
 		quic_inq_event_recv(sk, QUIC_EVENT_STREAM_UPDATE, &update,
-				    sizeof(update));
+				    sizeof(update), gfp);
 
 		/* rfc9000#section-3.2:
 		 *
@@ -345,7 +346,7 @@ add:
 	quic_inq_rcharge(frame, sk);
 	inq->highest += highest;
 	stream->recv.highest += highest;
-	if (quic_inq_stream_tail(sk, stream, frame) || !stream->recv.frags)
+	if (quic_inq_stream_tail(sk, stream, frame, gfp) || !stream->recv.frags)
 		return 0;
 
 	/* Check the buffered frames list and merge any frames contiguous with
@@ -367,7 +368,7 @@ add:
 			quic_frame_put(frame);
 			continue;
 		}
-		if (quic_inq_stream_tail(sk, stream, frame))
+		if (quic_inq_stream_tail(sk, stream, frame, gfp))
 			break;
 	}
 	return 0;
@@ -398,7 +399,8 @@ void quic_inq_list_purge(struct sock *sk, struct list_head *head,
  * Ticket Message in crypto frame (level == 0). Tickets are saved in
  * quic_ticket() and exposed to userspace via getsockopt().
  */
-static void quic_inq_handshake_tail(struct sock *sk, struct quic_frame *frame)
+static void quic_inq_handshake_tail(struct sock *sk, struct quic_frame *frame,
+				    gfp_t gfp)
 {
 	struct quic_crypto *crypto = quic_crypto(sk, frame->level);
 	struct quic_data *ticket = quic_ticket(sk);
@@ -445,7 +447,7 @@ static void quic_inq_handshake_tail(struct sock *sk, struct quic_frame *frame)
 		 * abandon ticket assembly and suppress further processing to
 		 * avoid using a partial or corrupted ticket.
 		 */
-		if (quic_data_append(ticket, frame->data, frame->bytes)) {
+		if (quic_data_append(ticket, frame->data, frame->bytes, gfp)) {
 			pr_debug("%s: offset: %llu, len: %u\n", __func__,
 				 crypto->recv_offset, frame->bytes);
 			quic_data_free(ticket);
@@ -468,7 +470,7 @@ static void quic_inq_handshake_tail(struct sock *sk, struct quic_frame *frame)
 		 * can receive it via NEW_SESSION_TICKET event or getsockopt().
 		 */
 		quic_inq_event_recv(sk, QUIC_EVENT_NEW_SESSION_TICKET,
-				    ticket->data, ticket->len);
+				    ticket->data, ticket->len, gfp);
 	}
 out:
 	quic_inq_rfree(frame, sk);
@@ -482,7 +484,8 @@ out:
  *
  * Returns: 0 on success, or -ENOBUFS if buffer limits are exceeded.
  */
-int quic_inq_handshake_recv(struct sock *sk, struct quic_frame *frame)
+int quic_inq_handshake_recv(struct sock *sk, struct quic_frame *frame,
+			    gfp_t gfp)
 {
 	u64 offset = frame->offset, crypto_offset;
 	struct quic_inqueue *inq = quic_inq(sk);
@@ -542,7 +545,7 @@ int quic_inq_handshake_recv(struct sock *sk, struct quic_frame *frame)
 	}
 
 	quic_inq_rcharge(frame, sk);
-	quic_inq_handshake_tail(sk, frame);
+	quic_inq_handshake_tail(sk, frame, gfp);
 
 	list_for_each_entry_safe(frame, pos, head, list) {
 		if (frame->level < level)
@@ -557,7 +560,7 @@ int quic_inq_handshake_recv(struct sock *sk, struct quic_frame *frame)
 			quic_frame_put(frame);
 			continue;
 		}
-		quic_inq_handshake_tail(sk, frame);
+		quic_inq_handshake_tail(sk, frame, gfp);
 	}
 	return 0;
 }
@@ -616,7 +619,8 @@ void quic_inq_set_param(struct sock *sk, struct quic_transport_param *p)
 }
 
 /* Process an incoming QUIC event and handle it for delivery. */
-int quic_inq_event_recv(struct sock *sk, u8 event, void *data, u32 len)
+int quic_inq_event_recv(struct sock *sk, u8 event, void *data, u32 len,
+			gfp_t gfp)
 {
 	struct list_head *head = &quic_inq(sk)->recv_list;
 	struct quic_frame *frame, *pos;
@@ -634,7 +638,7 @@ int quic_inq_event_recv(struct sock *sk, u8 event, void *data, u32 len)
 		return -ENOBUFS;
 	}
 
-	frame = quic_frame_alloc(1 + len, NULL, GFP_ATOMIC);
+	frame = quic_frame_alloc(1 + len, NULL, gfp);
 	if (!frame) {
 		pr_debug("%s: nomem: %u, len: %u\n", __func__, event, len);
 		return -ENOMEM;

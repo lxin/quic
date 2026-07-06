@@ -195,7 +195,7 @@ static inline bool quic_pnspace_set_ecn_peer(struct quic_pnspace *space,
 u16 quic_pnspace_num_gabs(struct quic_pnspace *space,
 			  struct quic_gap_ack_block *gabs);
 int quic_pnspace_check(struct quic_pnspace *space, s64 pn);
-int quic_pnspace_mark(struct quic_pnspace *space, s64 pn);
+int quic_pnspace_mark(struct quic_pnspace *space, s64 pn, gfp_t gfp);
 
 void quic_pnspace_free(struct quic_pnspace *space);
 int quic_pnspace_init(struct quic_pnspace *space);

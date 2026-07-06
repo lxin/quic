@@ -527,7 +527,7 @@ static int quic_packet_parse_alpn(struct sk_buff *skb, struct quic_data *alpn)
 		return err;
 	cb->number_offset = (u16)(p - skb->data);
 	cb->sync = 1;
-	err = quic_crypto_decrypt(crypto, skb);
+	err = quic_crypto_decrypt(crypto, skb, GFP_KERNEL);
 	if (err) {
 		QUIC_INC_STATS(net, QUIC_MIB_PKT_DECDROP);
 		return err;
@@ -686,7 +686,7 @@ int quic_packet_rcv(struct sock *sk, struct sk_buff *skb, bool icmp)
 	} else {
 		/* Socket not busy: process immediately. */
 		QUIC_INC_STATS(net, QUIC_MIB_PKT_RCVFASTPATHS);
-		sk->sk_backlog_rcv(sk, skb); /* quic_packet_process(). */
+		sk->sk_backlog_rcv(sk, skb); /* quic_backlog_rcv(). */
 	}
 	bh_unlock_sock(sk);
 	sock_put(sk);
@@ -754,7 +754,7 @@ static int quic_packet_retry_create_and_xmit(struct sock *sk)
 	/* Compute total packet length: header + token + integrity tag. */
 	len = QUIC_LONG_HLEN(&packet->scid, &conn_id) + tlen + QUIC_TAG_LEN;
 	hlen = quic_encap_len(da) + MAX_HEADER;
-	skb = alloc_skb(hlen + len, GFP_ATOMIC);
+	skb = alloc_skb(hlen + len, GFP_KERNEL);
 	if (!skb)
 		return -ENOMEM;
 	skb_reserve(skb, (int)(hlen + len));
@@ -835,7 +835,7 @@ static int quic_packet_version_create_and_xmit(struct sock *sk)
 	len = QUIC_LONG_HLEN(&packet->dcid, &packet->scid) +
 	      QUIC_VERSION_LEN * QUIC_VERSION_NUM;
 	hlen = quic_encap_len(da) + MAX_HEADER;
-	skb = alloc_skb(hlen + len, GFP_ATOMIC);
+	skb = alloc_skb(hlen + len, GFP_KERNEL);
 	if (!skb)
 		return -ENOMEM;
 	skb_reserve(skb, (int)(hlen + len));
@@ -885,7 +885,8 @@ static int quic_packet_version_create_and_xmit(struct sock *sk)
  * in response to receiving a packet that it cannot associate with an active
  * connection.
  */
-static int quic_packet_stateless_reset_create_and_xmit(struct sock *sk, u32 len)
+static int quic_packet_stateless_reset_create_and_xmit(struct sock *sk, u32 len,
+						       gfp_t gfp)
 {
 	struct quic_crypto *crypto = quic_crypto(sk, QUIC_CRYPTO_INITIAL);
 	struct quic_packet *packet = quic_packet(sk);
@@ -921,7 +922,7 @@ static int quic_packet_stateless_reset_create_and_xmit(struct sock *sk, u32 len)
 		return err;
 
 	hlen = quic_encap_len(da) + MAX_HEADER;
-	skb = alloc_skb(hlen + len, GFP_ATOMIC);
+	skb = alloc_skb(hlen + len, gfp);
 	if (!skb)
 		return -ENOMEM;
 	skb_reserve(skb, (int)(hlen + len));
@@ -970,7 +971,7 @@ static int quic_packet_refuse_close_create_and_xmit(struct sock *sk,
 	/* Set errcode used in CLOSE frame and Transmit it at Initial level. */
 	quic_outq(sk)->close_errcode = errcode;
 	quic_outq_transmit_frame(sk, QUIC_FRAME_CONNECTION_CLOSE, &level, 1,
-				 false);
+				 false, GFP_KERNEL);
 	return 0;
 }
 
@@ -982,7 +983,8 @@ static int quic_packet_refuse_close_create_and_xmit(struct sock *sk,
  * validation when needed, or sending a Version Negotiation packet if the
  * client's QUIC version is unsupported.
  */
-static int quic_packet_listen_process(struct sock *sk, struct sk_buff *skb)
+static int quic_packet_listen_process(struct sock *sk, struct sk_buff *skb,
+				      gfp_t gfp)
 {
 	struct quic_packet *packet = quic_packet(sk);
 	u32 version, errcode, len = skb->len;
@@ -1017,7 +1019,7 @@ static int quic_packet_listen_process(struct sock *sk, struct sk_buff *skb)
 				    (u8 *)quic_hdr(skb) + QUIC_HLEN,
 				    QUIC_CONN_ID_DEF_LEN);
 		/* Send a Stateless Reset for this 1-RTT packet. */
-		err = quic_packet_stateless_reset_create_and_xmit(sk, len);
+		err = quic_packet_stateless_reset_create_and_xmit(sk, len, gfp);
 		consume_skb(skb);
 		return err;
 	}
@@ -1068,7 +1070,7 @@ static int quic_packet_listen_process(struct sock *sk, struct sk_buff *skb)
 	/* Read Packet Type. */
 	type = quic_packet_version_get_type(version, quic_hshdr(skb)->type);
 	if (type != QUIC_PACKET_INITIAL) { /* Send a Stateless Reset. */
-		err = quic_packet_stateless_reset_create_and_xmit(sk, len);
+		err = quic_packet_stateless_reset_create_and_xmit(sk, len, gfp);
 		consume_skb(skb);
 		return err;
 	}
@@ -1133,7 +1135,7 @@ static int quic_packet_listen_process(struct sock *sk, struct sk_buff *skb)
 	}
 
 	/* Add request sock for this new QUIC connection. */
-	req = quic_request_sock_create(sk, &odcid, retry);
+	req = quic_request_sock_create(sk, &odcid, retry, gfp);
 	if (IS_ERR(req)) {
 		if (quic_packet_backlog_schedule(net, skb))
 			return 0;
@@ -1154,7 +1156,7 @@ out:
 }
 
 static int quic_packet_stateless_reset_process(struct sock *sk,
-					       struct sk_buff *skb)
+					       struct sk_buff *skb, gfp_t gfp)
 {
 	struct quic_conn_id_set *id_set = quic_dest(sk);
 	struct quic_connection_close c = {};
@@ -1190,7 +1192,8 @@ static int quic_packet_stateless_reset_process(struct sock *sk,
 	 * end the connection.
 	 */
 	c.errcode = QUIC_TRANSPORT_ERROR_CRYPTO;
-	quic_inq_event_recv(sk, QUIC_EVENT_CONNECTION_CLOSE, &c, sizeof(c));
+	quic_inq_event_recv(sk, QUIC_EVENT_CONNECTION_CLOSE, &c, sizeof(c),
+			    gfp);
 	quic_set_state(sk, QUIC_SS_CLOSED);
 	consume_skb(skb);
 	pr_debug("%s: peer reset\n", __func__);
@@ -1205,6 +1208,7 @@ static int quic_packet_retry_process(struct sock *sk, struct sk_buff *skb)
 	struct quic_conn_id *active;
 	u8 *p, tag[QUIC_TAG_LEN];
 	u32 hlen, len, version;
+	gfp_t gfp = GFP_KERNEL;
 	int err;
 
 	/* rfc9000#section-17.2.5.1:
@@ -1253,7 +1257,7 @@ static int quic_packet_retry_process(struct sock *sk, struct sk_buff *skb)
 		goto err;
 	}
 	/* Save the Retry token into quic_token(). */
-	err = quic_data_dup(quic_token(sk), p, len - QUIC_TAG_LEN);
+	err = quic_data_dup(quic_token(sk), p, len - QUIC_TAG_LEN, gfp);
 	if (err)
 		goto err;
 	/* Update crypto keys with new DCID (like version negotiation). */
@@ -1287,7 +1291,7 @@ static int quic_packet_retry_process(struct sock *sk, struct sk_buff *skb)
 	 */
 	quic_outq_retransmit_mark(sk, QUIC_CRYPTO_INITIAL, true);
 	quic_outq_update_loss_timer(sk);
-	quic_outq_transmit(sk);
+	quic_outq_transmit(sk, gfp);
 
 	consume_skb(skb);
 	return 0;
@@ -1349,7 +1353,7 @@ static int quic_packet_version_process(struct sock *sk, struct sk_buff *skb)
 		/* Retransmit CRYPTO in Initial packet with new version. */
 		quic_outq_retransmit_mark(sk, QUIC_CRYPTO_INITIAL, true);
 		quic_outq_update_loss_timer(sk);
-		quic_outq_transmit(sk);
+		quic_outq_transmit(sk, GFP_KERNEL);
 		paths->version = 1;
 	}
 
@@ -1374,7 +1378,7 @@ void quic_packet_flush_rxq(struct sock *sk)
 	while ((skb = __skb_dequeue(head)) != NULL) {
 		/* Mark SKB decrypted before processing. */
 		QUIC_SKB_CB(skb)->resume = 1;
-		quic_packet_process(sk, skb);
+		quic_packet_process(sk, skb, GFP_ATOMIC);
 	}
 }
 
@@ -1451,7 +1455,7 @@ send:
  * -EINPROGRESS if the packet has been consumed or queued for later processing.
  */
 static int quic_packet_handshake_header_process(struct sock *sk,
-						struct sk_buff *skb)
+						struct sk_buff *skb, gfp_t gfp)
 {
 	u8 *p = (u8 *)quic_hshdr(skb), type = quic_hshdr(skb)->type;
 	struct quic_packet *packet = quic_packet(sk);
@@ -1553,7 +1557,8 @@ static int quic_packet_handshake_header_process(struct sock *sk,
  * packet may be a coalesced packet, including multiple long headers and a
  * trailing short header.
  */
-static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb)
+static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb,
+					 gfp_t gfp)
 {
 	bool ack_eliciting = false, ack_immediate = false;
 	struct quic_path_group *paths = quic_paths(sk);
@@ -1597,14 +1602,14 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb)
 			 * quic_packet_app_process().
 			 */
 			cb->number_offset = 0;
-			quic_packet_process(sk, skb);
+			quic_packet_process(sk, skb, gfp);
 			skb = NULL;
 			break;
 		}
 		/* Parse long-header and handle Retry or Version Negotiation if
 		 * present.
 		 */
-		err = quic_packet_handshake_header_process(sk, skb);
+		err = quic_packet_handshake_header_process(sk, skb, gfp);
 		if (err) {
 			if (err != -EINPROGRESS) {
 				QUIC_INC_STATS(net, QUIC_MIB_PKT_INVHDRDROP);
@@ -1620,7 +1625,7 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb)
 		/* Set highest received PN for PN decode during decryption. */
 		cb->number = space->max_pn_seen;
 		cb->crypto_done = quic_packet_decrypt_done;
-		err = quic_crypto_decrypt(crypto, skb); /* Do decryption. */
+		err = quic_crypto_decrypt(crypto, skb, gfp);
 		if (err) {
 			if (err == -EINPROGRESS) {
 				QUIC_INC_STATS(net, QUIC_MIB_PKT_DECBACKLOGS);
@@ -1669,13 +1674,13 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb)
 		frame.level = cb->level;
 		frame.skb = skb;
 		/* Process this 'coalesced' frame. */
-		err = quic_frame_process(sk, &frame);
+		err = quic_frame_process(sk, &frame, gfp);
 		if (err) {
 			QUIC_INC_STATS(net, QUIC_MIB_PKT_INVFRMDROP);
 			break;
 		}
 		/* Mark packet number as received for ACK generation. */
-		err = quic_pnspace_mark(space, cb->number);
+		err = quic_pnspace_mark(space, cb->number, gfp);
 		if (err)
 			break;
 
@@ -1717,7 +1722,7 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb)
 			 */
 			paths->validated = 1;
 			quic_outq_transmitted_sack(sk, QUIC_CRYPTO_INITIAL,
-						   QUIC_PN_MAX, 0, -1, 0);
+						   QUIC_PN_MAX, 0, -1, 0, gfp);
 		}
 
 skip:
@@ -1785,7 +1790,7 @@ next:
 		quic_outq_update_loss_timer(sk);
 	}
 	if (ack_immediate) {
-		quic_outq_transmit(sk);
+		quic_outq_transmit(sk, gfp);
 		goto out;
 	}
 	if (inq->sack_flag == QUIC_SACK_FLAG_NONE && ack_eliciting) {
@@ -1810,7 +1815,8 @@ out:
  * connection ID is available, sends a RETIRE_CONNECTION_ID frame to request a
  * new one.
  */
-static int quic_packet_path_alt_detect(struct sock *sk, struct sk_buff *skb)
+static int quic_packet_path_alt_detect(struct sock *sk, struct sk_buff *skb,
+				       gfp_t gfp)
 {
 	struct quic_conn_id_set *source = quic_source(sk);
 	struct quic_conn_id_set *dest = quic_dest(sk);
@@ -1834,14 +1840,15 @@ static int quic_packet_path_alt_detect(struct sock *sk, struct sk_buff *skb)
 	 */
 	seqno = quic_conn_id_first_number(dest);
 	quic_outq_transmit_frame(sk, QUIC_FRAME_RETIRE_CONNECTION_ID, &seqno, 0,
-				 false);
+				 false, gfp);
 	return -EAGAIN;
 }
 
 /* Process detected connection migration. Either initiate probing on a newly
  * discovered alternate path or finalize migration if new path is now active.
  */
-static void quic_packet_path_alt_process(struct sock *sk, struct sk_buff *skb)
+static void quic_packet_path_alt_process(struct sock *sk, struct sk_buff *skb,
+					 gfp_t gfp)
 {
 	struct quic_path_group *paths = quic_paths(sk);
 	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
@@ -1852,7 +1859,7 @@ static void quic_packet_path_alt_process(struct sock *sk, struct sk_buff *skb)
 		 * initiated.
 		 */
 		if (quic_path_alt_state(paths, QUIC_PATH_ALT_NONE))
-			quic_outq_probe_path_alt(sk, true);
+			quic_outq_probe_path_alt(sk, true, gfp);
 		return;
 	}
 
@@ -1877,7 +1884,8 @@ static void quic_packet_path_alt_process(struct sock *sk, struct sk_buff *skb)
 }
 
 /* Final processing steps for a 1-RTT QUIC packet. */
-static int quic_packet_app_process_done(struct sock *sk, struct sk_buff *skb)
+static int quic_packet_app_process_done(struct sock *sk, struct sk_buff *skb,
+					gfp_t gfp)
 {
 	struct quic_pnspace *space = quic_pnspace(sk, QUIC_CRYPTO_APP);
 	struct quic_stream_table *streams = quic_streams(sk);
@@ -1890,7 +1898,7 @@ static int quic_packet_app_process_done(struct sock *sk, struct sk_buff *skb)
 
 	/* Only process migration on the latest PN seen. */
 	if (cb->number == space->max_pn_seen)
-		quic_packet_path_alt_process(sk, skb);
+		quic_packet_path_alt_process(sk, skb, gfp);
 
 	/* Increase anti-amplification credit if path isn't validated. */
 	if (!paths->validated)
@@ -1910,11 +1918,13 @@ static int quic_packet_app_process_done(struct sock *sk, struct sk_buff *skb)
 		/* Stream limits changed: advertise updated credits. */
 		if (max_uni) {
 			frame = QUIC_FRAME_MAX_STREAMS_UNI;
-			quic_outq_transmit_frame(sk, frame, &max_uni, 0, true);
+			quic_outq_transmit_frame(sk, frame, &max_uni, 0, true,
+						 gfp);
 		}
 		if (max_bidi) {
 			frame = QUIC_FRAME_MAX_STREAMS_BIDI;
-			quic_outq_transmit_frame(sk, frame, &max_bidi, 0, true);
+			quic_outq_transmit_frame(sk, frame, &max_bidi, 0, true,
+						 gfp);
 		}
 	}
 
@@ -1944,7 +1954,7 @@ out:
 		 */
 		if (inq->sack_flag == QUIC_SACK_FLAG_NONE)
 			quic_timer_reset(sk, QUIC_TIMER_IDLE, inq->timeout);
-		quic_outq_transmit(sk);
+		quic_outq_transmit(sk, gfp);
 	} else if (inq->sack_flag == QUIC_SACK_FLAG_NONE) {
 		/* If not yet established, ACKs are not sent immediately, as
 		 * they are typically bundled with other TLS messages from
@@ -1963,7 +1973,8 @@ out:
 }
 
 /* Process an incoming 1-RTT packet. */
-static int quic_packet_app_process(struct sock *sk, struct sk_buff *skb)
+static int quic_packet_app_process(struct sock *sk, struct sk_buff *skb,
+				   gfp_t gfp)
 {
 	struct quic_pnspace *space = quic_pnspace(sk, QUIC_CRYPTO_APP);
 	struct quic_crypto *crypto = quic_crypto(sk, QUIC_CRYPTO_APP);
@@ -2007,7 +2018,7 @@ static int quic_packet_app_process(struct sock *sk, struct sk_buff *skb)
 		/* No valid matched connection ID was found, so treat this as a
 		 * potential stateless reset packet.
 		 */
-		err = quic_packet_stateless_reset_process(sk, skb);
+		err = quic_packet_stateless_reset_process(sk, skb, gfp);
 		if (err)
 			goto err;
 		return 0;
@@ -2040,7 +2051,7 @@ static int quic_packet_app_process(struct sock *sk, struct sk_buff *skb)
 	if (cb->resume || !cb->number_len)
 		cb->number = space->max_pn_seen;
 	cb->crypto_done = quic_packet_decrypt_done;
-	err = quic_crypto_decrypt(crypto, skb); /* Do packet decryption. */
+	err = quic_crypto_decrypt(crypto, skb, gfp);
 	if (err) {
 		if (err == -EINPROGRESS) {
 			QUIC_INC_STATS(net, QUIC_MIB_PKT_DECBACKLOGS);
@@ -2057,7 +2068,7 @@ static int quic_packet_app_process(struct sock *sk, struct sk_buff *skb)
 		/* Notify application of the key update with new key phase. */
 		key_phase = cb->key_phase;
 		quic_inq_event_recv(sk, QUIC_EVENT_KEY_UPDATE, &key_phase,
-				    sizeof(key_phase));
+				    sizeof(key_phase), gfp);
 	}
 	if (!cb->resume) /* No decryption (disabled 1-RTT or async).*/
 		QUIC_INC_STATS(net, QUIC_MIB_PKT_DECFASTPATHS);
@@ -2094,7 +2105,7 @@ static int quic_packet_app_process(struct sock *sk, struct sk_buff *skb)
 
 	if (cb->number >= space->max_pn_seen) {
 		/* Only detect migration on the latest PN seen. */
-		err = quic_packet_path_alt_detect(sk, skb);
+		err = quic_packet_path_alt_detect(sk, skb, gfp);
 		if (err)
 			goto err;
 	}
@@ -2105,13 +2116,13 @@ static int quic_packet_app_process(struct sock *sk, struct sk_buff *skb)
 	frame.path = cb->path;
 	frame.skb = skb;
 	/* Process this 'coalesced' frame. */
-	err = quic_frame_process(sk, &frame);
+	err = quic_frame_process(sk, &frame, gfp);
 	if (err) {
 		QUIC_INC_STATS(net, QUIC_MIB_PKT_INVFRMDROP);
 		goto err;
 	}
 	/* Mark packet number as received for ACK generation. */
-	err = quic_pnspace_mark(space, cb->number);
+	err = quic_pnspace_mark(space, cb->number, gfp);
 	if (err)
 		goto err;
 
@@ -2125,13 +2136,13 @@ static int quic_packet_app_process(struct sock *sk, struct sk_buff *skb)
 	quic_pnspace_inc_ecn_local(space, quic_get_msg_ecn(skb));
 
 out:
-	return quic_packet_app_process_done(sk, skb);
+	return quic_packet_app_process_done(sk, skb, gfp);
 
 err:
 	return quic_packet_process_error(sk, skb, err);
 }
 
-int quic_packet_process(struct sock *sk, struct sk_buff *skb)
+int quic_packet_process(struct sock *sk, struct sk_buff *skb, gfp_t gfp)
 {
 	if (quic_is_closed(sk)) {
 		kfree_skb(skb);
@@ -2139,12 +2150,12 @@ int quic_packet_process(struct sock *sk, struct sk_buff *skb)
 	}
 
 	if (quic_is_listen(sk))
-		return quic_packet_listen_process(sk, skb);
+		return quic_packet_listen_process(sk, skb, gfp);
 
 	if (quic_hdr(skb)->form == QUIC_PACKET_FORM_LONG)
-		return quic_packet_handshake_process(sk, skb);
+		return quic_packet_handshake_process(sk, skb, gfp);
 
-	return quic_packet_app_process(sk, skb);
+	return quic_packet_app_process(sk, skb, gfp);
 }
 
 /* Work function to process packets in the backlog queue. */
@@ -2170,7 +2181,7 @@ void quic_packet_backlog_work(struct work_struct *work)
 		}
 
 		lock_sock(sk);
-		quic_packet_process(sk, skb);
+		quic_packet_process(sk, skb, GFP_KERNEL);
 		release_sock(sk);
 		sock_put(sk);
 		cond_resched();
@@ -2290,12 +2301,12 @@ static void quic_packet_pack_frames(struct sock *sk, struct sk_buff *skb,
 	quic_outq_update_loss_timer(sk);
 }
 
-static struct quic_packet_sent *quic_packet_sent_alloc(u16 frames)
+static struct quic_packet_sent *quic_packet_sent_alloc(u16 frames, gfp_t gfp)
 {
 	u32 len = frames * sizeof(struct quic_frame *);
 	struct quic_packet_sent *sent;
 
-	sent = kzalloc(sizeof(*sent) + len, GFP_ATOMIC | __GFP_ACCOUNT);
+	sent = kzalloc(sizeof(*sent) + len, gfp | __GFP_ACCOUNT);
 	if (sent)
 		sent->frames = frames;
 
@@ -2373,7 +2384,7 @@ static struct quic_packet_sent *quic_packet_sent_alloc(u16 frames)
  * the client to the server as part of the first flight, prior to handshake
  * completion.
  */
-static struct sk_buff *quic_packet_handshake_create(struct sock *sk)
+static struct sk_buff *quic_packet_handshake_create(struct sock *sk, gfp_t gfp)
 {
 	struct quic_conn_id_set *source = quic_source(sk);
 	struct quic_conn_id_set *dest = quic_dest(sk);
@@ -2420,7 +2431,7 @@ static struct sk_buff *quic_packet_handshake_create(struct sock *sk)
 		/* If there are ack-eliciting frames, create packet_sent for
 		 * acknowledge and loss detection.
 		 */
-		sent = quic_packet_sent_alloc(packet->frames);
+		sent = quic_packet_sent_alloc(packet->frames, gfp);
 		if (!sent) { /* Move pending frames back to the outqueue. */
 			pr_debug("%s: failed, frames: %d\n", __func__,
 				 packet->frames);
@@ -2433,7 +2444,7 @@ static struct sk_buff *quic_packet_handshake_create(struct sock *sk)
 	 * Packet.
 	 */
 	hlen = packet->hlen + MAX_HEADER;
-	skb = alloc_skb(hlen + packet->len, GFP_ATOMIC);
+	skb = alloc_skb(hlen + packet->len, gfp);
 	if (!skb) {
 		kfree(sent);
 		quic_outq_retransmit_list(sk, &packet->frame_list);
@@ -2483,7 +2494,7 @@ static struct sk_buff *quic_packet_handshake_create(struct sock *sk)
 }
 
 /* Ensures the packet number is within the valid range. */
-static int quic_packet_number_check(struct sock *sk)
+static int quic_packet_number_check(struct sock *sk, gfp_t gfp)
 {
 	struct quic_packet *packet = quic_packet(sk);
 	struct quic_pnspace *space;
@@ -2507,7 +2518,7 @@ static int quic_packet_number_check(struct sock *sk)
 
 		/* Notify application that the connection is being closed. */
 		quic_inq_event_recv(sk, QUIC_EVENT_CONNECTION_CLOSE, &c,
-				    sizeof(c));
+				    sizeof(c), gfp);
 		quic_set_state(sk, QUIC_SS_CLOSED);
 	}
 	return -EPIPE;
@@ -2530,7 +2541,7 @@ static int quic_packet_number_check(struct sock *sk)
  * A 1-RTT packet uses a short packet header. It is used after the version and
  * 1-RTT keys are negotiated.
  */
-static struct sk_buff *quic_packet_app_create(struct sock *sk)
+static struct sk_buff *quic_packet_app_create(struct sock *sk, gfp_t gfp)
 {
 	struct quic_conn_id_set *id_set = quic_dest(sk);
 	struct quic_packet *packet = quic_packet(sk);
@@ -2559,7 +2570,7 @@ static struct sk_buff *quic_packet_app_create(struct sock *sk)
 		/* If there are ack-eliciting frames, create packet_sent for
 		 * acknowledge and loss detection.
 		 */
-		sent = quic_packet_sent_alloc(packet->frames);
+		sent = quic_packet_sent_alloc(packet->frames, gfp);
 		if (!sent) { /* Move pending frames back to the outqueue. */
 			pr_debug("%s: failed, frames: %d\n", __func__,
 				 packet->frames);
@@ -2573,7 +2584,7 @@ static struct sk_buff *quic_packet_app_create(struct sock *sk)
 	 */
 	len = packet->len - quic_packet_taglen(packet);
 	hlen = packet->hlen + MAX_HEADER;
-	skb = alloc_skb(hlen + packet->len, GFP_ATOMIC);
+	skb = alloc_skb(hlen + packet->len, gfp);
 	if (!skb) { /* Move pending frames back to the outqueue. */
 		kfree(sent);
 		quic_outq_retransmit_list(sk, &packet->frame_list);
@@ -2713,7 +2724,7 @@ int quic_packet_config(struct sock *sk, u8 level, u8 path)
 	return quic_packet_route(sk);
 }
 
-static int quic_packet_xmit(struct sock *sk, struct sk_buff *skb);
+static int quic_packet_xmit(struct sock *sk, struct sk_buff *skb, gfp_t gfp);
 
 void quic_packet_flush_txq(struct sock *sk)
 {
@@ -2734,7 +2745,7 @@ void quic_packet_flush_txq(struct sock *sk)
 			continue;
 		}
 		cb->resume = 1; /* Mark this skb as encrypted before sending. */
-		quic_packet_xmit(sk, skb);
+		quic_packet_xmit(sk, skb, GFP_ATOMIC);
 	}
 	quic_packet_flush(sk);
 }
@@ -2812,7 +2823,7 @@ init:
 }
 
 /* Transmit a QUIC packet, possibly encrypting and bundling it. */
-static int quic_packet_xmit(struct sock *sk, struct sk_buff *skb)
+static int quic_packet_xmit(struct sock *sk, struct sk_buff *skb, gfp_t gfp)
 {
 	struct quic_packet *packet = quic_packet(sk);
 	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
@@ -2828,7 +2839,7 @@ static int quic_packet_xmit(struct sock *sk, struct sk_buff *skb)
 	 * completion.
 	 */
 	WARN_ON_ONCE(!skb_set_owner_sk_safe(skb, sk));
-	err = quic_crypto_encrypt(quic_crypto(sk, packet->level), skb);
+	err = quic_crypto_encrypt(quic_crypto(sk, packet->level), skb, gfp);
 	if (err) {
 		if (err != -EINPROGRESS) {
 			QUIC_INC_STATS(net, QUIC_MIB_PKT_ENCDROP);
@@ -2848,26 +2859,26 @@ xmit:
 }
 
 /* Create and transmit a new QUIC packet. */
-int quic_packet_create_and_xmit(struct sock *sk)
+int quic_packet_create_and_xmit(struct sock *sk, gfp_t gfp)
 {
 	struct quic_packet *packet = quic_packet(sk);
 	struct sk_buff *skb;
 	int err;
 
-	err = quic_packet_number_check(sk);
+	err = quic_packet_number_check(sk, gfp);
 	if (err)
 		goto err;
 
 	if (packet->level)
-		skb = quic_packet_handshake_create(sk);
+		skb = quic_packet_handshake_create(sk, gfp);
 	else
-		skb = quic_packet_app_create(sk);
+		skb = quic_packet_app_create(sk, gfp);
 	if (!skb) {
 		err = -ENOMEM;
 		goto err;
 	}
 
-	err = quic_packet_xmit(sk, skb);
+	err = quic_packet_xmit(sk, skb, gfp);
 	if (err && err != -EINPROGRESS)
 		goto err;
 

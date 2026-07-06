@@ -27,6 +27,7 @@ static void quic_pnspace_test1(struct kunit *test)
 {
 	struct quic_pnspace _space = {}, *space = &_space;
 	struct quic_gap_ack_block gabs[QUIC_PN_MAP_MAX_GABS];
+	gfp_t gfp = GFP_ATOMIC;
 	s64 pn;
 	int i;
 
@@ -39,24 +40,24 @@ static void quic_pnspace_test1(struct kunit *test)
 	KUNIT_EXPECT_EQ(test, space->min_pn_seen, 0);
 	KUNIT_EXPECT_EQ(test, space->pn_map_len, QUIC_PN_MAP_INITIAL);
 
-	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, -1));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, -1, gfp));
 
-	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 0));
-	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 1));
-	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 2));
-	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 3));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 0, gfp));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 1, gfp));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 2, gfp));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 3, gfp));
 	KUNIT_EXPECT_EQ(test, 4, space->base_pn);
 	KUNIT_EXPECT_EQ(test, 0, space->min_pn_seen);
 	KUNIT_EXPECT_EQ(test, 0, space->last_max_pn_seen);
 	KUNIT_EXPECT_EQ(test, 3, space->max_pn_seen);
 	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_num_gabs(space, gabs));
 
-	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 4));
-	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 6));
-	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 9));
-	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 13));
-	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 18));
-	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 24));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 4, gfp));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 6, gfp));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 9, gfp));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 13, gfp));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 18, gfp));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 24, gfp));
 	KUNIT_EXPECT_EQ(test, 5, space->base_pn);
 	KUNIT_EXPECT_EQ(test, 0, space->min_pn_seen);
 	KUNIT_EXPECT_EQ(test, 0, space->last_max_pn_seen);
@@ -75,29 +76,29 @@ static void quic_pnspace_test1(struct kunit *test)
 	KUNIT_EXPECT_EQ(test, 4, gabs[0].start - 1 + space->base_pn -
 				 (space->min_pn_seen + 1));
 
-	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 7));
-	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 8));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 7, gfp));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 8, gfp));
 	KUNIT_EXPECT_EQ(test, 5, space->base_pn);
 	KUNIT_EXPECT_EQ(test, 4, quic_pnspace_num_gabs(space, gabs));
 
-	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 5));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 5, gfp));
 	KUNIT_EXPECT_EQ(test, 10, space->base_pn);
 	KUNIT_EXPECT_EQ(test, 3, quic_pnspace_num_gabs(space, gabs));
 
-	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 15));
-	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 16));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 15, gfp));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 16, gfp));
 	KUNIT_EXPECT_EQ(test, 10, space->base_pn);
 	KUNIT_EXPECT_EQ(test, 4, quic_pnspace_num_gabs(space, gabs));
 
-	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 14));
-	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 17));
-	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 10));
-	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 11));
-	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 12));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 14, gfp));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 17, gfp));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 10, gfp));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 11, gfp));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 12, gfp));
 	KUNIT_EXPECT_EQ(test, 19, space->base_pn);
 	KUNIT_EXPECT_EQ(test, 1, quic_pnspace_num_gabs(space, gabs));
 
-	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 128));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 128, gfp));
 	KUNIT_EXPECT_EQ(test, 19, space->base_pn);
 	KUNIT_EXPECT_EQ(test, 0, space->min_pn_seen);
 	KUNIT_EXPECT_EQ(test, 128, space->max_pn_seen);
@@ -106,7 +107,7 @@ static void quic_pnspace_test1(struct kunit *test)
 	KUNIT_EXPECT_EQ(test, 2, quic_pnspace_num_gabs(space, gabs));
 
 	/* ! max_pn_seen <= last_max_pn_seen + QUIC_PN_MAP_LIMIT */
-	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 3073));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 3073, gfp));
 	KUNIT_EXPECT_EQ(test, 19, space->base_pn);
 	KUNIT_EXPECT_EQ(test, 0, space->min_pn_seen);
 	KUNIT_EXPECT_EQ(test, 3073, space->max_pn_seen);
@@ -114,9 +115,9 @@ static void quic_pnspace_test1(struct kunit *test)
 	KUNIT_EXPECT_EQ(test, 3136, space->pn_map_len);
 	KUNIT_EXPECT_EQ(test, 3, quic_pnspace_num_gabs(space, gabs));
 
-	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 3074));
-	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 3075));
-	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 3090));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 3074, gfp));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 3075, gfp));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 3090, gfp));
 	KUNIT_EXPECT_EQ(test, 19, space->base_pn);
 	KUNIT_EXPECT_EQ(test, 3090, space->max_pn_seen);
 	KUNIT_EXPECT_EQ(test, 3073, space->last_max_pn_seen);
@@ -124,24 +125,24 @@ static void quic_pnspace_test1(struct kunit *test)
 	KUNIT_EXPECT_EQ(test, 4, quic_pnspace_num_gabs(space, gabs));
 
 	/* ! space->max_pn_seen <= space->base_pn + QUIC_PN_MAP_LIMIT */
-	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 3190));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 3190, gfp));
 	KUNIT_EXPECT_EQ(test, 3076, space->base_pn);
 	KUNIT_EXPECT_EQ(test, 3190, space->max_pn_seen);
 	KUNIT_EXPECT_EQ(test, 3190, space->last_max_pn_seen);
 	KUNIT_EXPECT_EQ(test, 3264, space->pn_map_len);
 	KUNIT_EXPECT_EQ(test, 2, quic_pnspace_num_gabs(space, gabs));
 
-	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 3290));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 3290, gfp));
 	KUNIT_EXPECT_EQ(test, 3076, space->base_pn);
 	KUNIT_EXPECT_EQ(test, 3290, space->max_pn_seen);
 	KUNIT_EXPECT_EQ(test, 3190, space->last_max_pn_seen);
 	KUNIT_EXPECT_EQ(test, 3264, space->pn_map_len);
 	KUNIT_EXPECT_EQ(test, 3, quic_pnspace_num_gabs(space, gabs));
 
-	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 3289));
-	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 3288));
-	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 3192));
-	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 3191));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 3289, gfp));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 3288, gfp));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 3192, gfp));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 3191, gfp));
 	KUNIT_EXPECT_EQ(test, 3076, space->base_pn);
 	KUNIT_EXPECT_EQ(test, 3290, space->max_pn_seen);
 	KUNIT_EXPECT_EQ(test, 3190, space->last_max_pn_seen);
@@ -150,13 +151,13 @@ static void quic_pnspace_test1(struct kunit *test)
 
 	for (i = 1; i <= 128; i++)
 		KUNIT_EXPECT_EQ(test, 0,
-				quic_pnspace_mark(space, (s64)(256 * i)));
+				quic_pnspace_mark(space, (s64)(256 * i), gfp));
 
 	pn = QUIC_PN_MAP_SIZE + 1;
-	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, pn));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, pn, gfp));
 
 	pn = space->base_pn + QUIC_PN_MAP_SIZE + 1;
-	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, pn));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, pn, gfp));
 	KUNIT_EXPECT_EQ(test, pn + 1, space->base_pn);
 	KUNIT_EXPECT_EQ(test, pn, space->max_pn_seen);
 	KUNIT_EXPECT_EQ(test, pn, space->last_max_pn_seen);
@@ -170,6 +171,7 @@ static void quic_pnspace_test2(struct kunit *test)
 {
 	struct quic_pnspace _space = {}, *space = &_space;
 	struct quic_gap_ack_block gabs[QUIC_PN_MAP_MAX_GABS];
+	gfp_t gfp = GFP_ATOMIC;
 	s64 pn;
 
 	KUNIT_ASSERT_EQ(test, 0, quic_pnspace_init(space));
@@ -177,9 +179,9 @@ static void quic_pnspace_test2(struct kunit *test)
 	quic_pnspace_set_base_pn(space, 1);
 	space->max_time_limit = 30000;
 
-	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 2));
-	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 3));
-	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 5));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 2, gfp));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 3, gfp));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 5, gfp));
 	KUNIT_EXPECT_EQ(test, 1, space->base_pn);
 	KUNIT_EXPECT_EQ(test, 0, space->min_pn_seen);
 	KUNIT_EXPECT_EQ(test, 0, space->last_max_pn_seen);
@@ -195,32 +197,32 @@ static void quic_pnspace_test2(struct kunit *test)
 	msleep(50);
 	space->time = jiffies_to_usecs(jiffies);
 	/* ! max_pn_time - last_max_pn_time < max_time_limit */
-	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 4));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 4, gfp));
 	KUNIT_EXPECT_EQ(test, 1, space->base_pn);
-	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 1));
-	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 6));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 1, gfp));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 6, gfp));
 	KUNIT_EXPECT_EQ(test, 7, space->base_pn);
 	KUNIT_EXPECT_EQ(test, 0, space->min_pn_seen);
 	KUNIT_EXPECT_EQ(test, 6, space->last_max_pn_seen);
 	KUNIT_EXPECT_EQ(test, 6, space->max_pn_seen);
 	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_num_gabs(space, gabs));
 
-	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 8));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 8, gfp));
 	KUNIT_EXPECT_EQ(test, 7, space->base_pn);
 	KUNIT_EXPECT_EQ(test, 0, space->min_pn_seen);
 	KUNIT_EXPECT_EQ(test, 6, space->last_max_pn_seen);
 	KUNIT_EXPECT_EQ(test, 8, space->max_pn_seen);
 	KUNIT_EXPECT_EQ(test, 1, quic_pnspace_num_gabs(space, gabs));
 
-	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 7));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 7, gfp));
 	KUNIT_EXPECT_EQ(test, 9, space->base_pn);
 	KUNIT_EXPECT_EQ(test, 0, space->min_pn_seen);
 	KUNIT_EXPECT_EQ(test, 6, space->last_max_pn_seen);
 	KUNIT_EXPECT_EQ(test, 8, space->max_pn_seen);
 	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_num_gabs(space, gabs));
 
-	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 11));
-	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 10));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 11, gfp));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 10, gfp));
 	KUNIT_EXPECT_EQ(test, 9, space->base_pn);
 	KUNIT_EXPECT_EQ(test, 0, space->min_pn_seen);
 	KUNIT_EXPECT_EQ(test, 6, space->last_max_pn_seen);
@@ -229,14 +231,14 @@ static void quic_pnspace_test2(struct kunit *test)
 
 	msleep(50);
 	space->time = jiffies_to_usecs(jiffies);
-	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 18));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 18, gfp));
 	KUNIT_EXPECT_EQ(test, 9, space->base_pn);
 	KUNIT_EXPECT_EQ(test, 6, space->min_pn_seen);
 	KUNIT_EXPECT_EQ(test, 18, space->last_max_pn_seen);
 	KUNIT_EXPECT_EQ(test, 18, space->max_pn_seen);
 	KUNIT_EXPECT_EQ(test, 2, quic_pnspace_num_gabs(space, gabs));
 
-	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 9));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 9, gfp));
 	KUNIT_EXPECT_EQ(test, 12, space->base_pn);
 	KUNIT_EXPECT_EQ(test, 6, space->min_pn_seen);
 	KUNIT_EXPECT_EQ(test, 18, space->last_max_pn_seen);
@@ -245,23 +247,23 @@ static void quic_pnspace_test2(struct kunit *test)
 
 	msleep(50);
 	space->time = jiffies_to_usecs(jiffies);
-	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 17));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 17, gfp));
 	KUNIT_EXPECT_EQ(test, 12, space->base_pn);
 	KUNIT_EXPECT_EQ(test, 6, space->min_pn_seen);
 	KUNIT_EXPECT_EQ(test, 18, space->last_max_pn_seen);
 	KUNIT_EXPECT_EQ(test, 18, space->max_pn_seen);
 	KUNIT_EXPECT_EQ(test, 1, quic_pnspace_num_gabs(space, gabs));
 
-	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 19));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 19, gfp));
 	KUNIT_EXPECT_EQ(test, 20, space->base_pn);
 	KUNIT_EXPECT_EQ(test, 19, space->max_pn_seen);
 	KUNIT_EXPECT_EQ(test, 19, space->last_max_pn_seen);
 	KUNIT_EXPECT_EQ(test, 18, space->min_pn_seen);
 	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_num_gabs(space, gabs));
 
-	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 25));
-	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 26));
-	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 29));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 25, gfp));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 26, gfp));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 29, gfp));
 	KUNIT_EXPECT_EQ(test, 20, space->base_pn);
 	KUNIT_EXPECT_EQ(test, 29, space->max_pn_seen);
 	KUNIT_EXPECT_EQ(test, 19, space->last_max_pn_seen);
@@ -270,7 +272,7 @@ static void quic_pnspace_test2(struct kunit *test)
 
 	msleep(50);
 	space->time = jiffies_to_usecs(jiffies);
-	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 30));
+	KUNIT_EXPECT_EQ(test, 0, quic_pnspace_mark(space, 30, gfp));
 	KUNIT_EXPECT_EQ(test, 20, space->base_pn);
 	KUNIT_EXPECT_EQ(test, 30, space->max_pn_seen);
 	KUNIT_EXPECT_EQ(test, 19, space->min_pn_seen);
@@ -358,7 +360,7 @@ static void quic_encrypt_done(struct sk_buff *skb, int err)
 	cb->number_offset = 17;
 	cb->crypto_done = quic_encrypt_done;
 	cb->resume = 1;
-	quic_crypto_encrypt(&crypto, skb);
+	quic_crypto_encrypt(&crypto, skb, GFP_KERNEL);
 }
 
 static void quic_decrypt_done(struct sk_buff *skb, int err)
@@ -372,7 +374,7 @@ static void quic_decrypt_done(struct sk_buff *skb, int err)
 	cb->number_offset = 17;
 	cb->crypto_done = quic_decrypt_done;
 	cb->resume = 1;
-	quic_crypto_decrypt(&crypto, skb);
+	quic_crypto_decrypt(&crypto, skb, GFP_KERNEL);
 }
 
 static void quic_crypto_test1(struct kunit *test)
@@ -484,7 +486,7 @@ static void quic_crypto_test2(struct kunit *test)
 	cb->number_offset = 17;
 	cb->crypto_done = quic_encrypt_done;
 	cb->resume = 0;
-	err = quic_crypto_encrypt(&crypto, skb);
+	err = quic_crypto_encrypt(&crypto, skb, GFP_KERNEL);
 	if (err) {
 		if (err != -EINPROGRESS)
 			goto out;
@@ -508,7 +510,7 @@ static void quic_crypto_test2(struct kunit *test)
 	cb->crypto_done = quic_decrypt_done;
 	cb->resume = 0;
 	cb->length = (u16)(skb->len - cb->number_offset);
-	err = quic_crypto_decrypt(&crypto, skb);
+	err = quic_crypto_decrypt(&crypto, skb, GFP_KERNEL);
 	if (err) {
 		if (err != -EINPROGRESS)
 			goto out;

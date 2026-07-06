@@ -64,8 +64,10 @@ int quic_crypto_set_secret(struct quic_crypto *crypto,
 int quic_crypto_set_cipher(struct quic_crypto *crypto, u32 type);
 int quic_crypto_key_update(struct quic_crypto *crypto);
 
-int quic_crypto_encrypt(struct quic_crypto *crypto, struct sk_buff *skb);
-int quic_crypto_decrypt(struct quic_crypto *crypto, struct sk_buff *skb);
+int quic_crypto_encrypt(struct quic_crypto *crypto, struct sk_buff *skb,
+			gfp_t gfp);
+int quic_crypto_decrypt(struct quic_crypto *crypto, struct sk_buff *skb,
+			gfp_t gfp);
 
 int quic_crypto_derive_secret(struct quic_crypto *crypto, void *data, u32 len,
 			      char *label, u8 *srt, u32 srt_len);

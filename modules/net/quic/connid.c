@@ -109,7 +109,8 @@ static void quic_conn_id_del(struct quic_common_conn_id *common)
  * connection ID set.
  */
 int quic_conn_id_add(struct quic_conn_id_set *id_set,
-		     struct quic_conn_id *conn_id, u32 number, void *data)
+		     struct quic_conn_id *conn_id, u32 number, void *data,
+		     gfp_t gfp)
 {
 	bool dest = id_set->entry_size == sizeof(struct quic_dest_conn_id);
 	struct quic_source_conn_id *s_conn_id;
@@ -140,7 +141,7 @@ int quic_conn_id_add(struct quic_conn_id_set *id_set,
 
 	if (conn_id->len > QUIC_CONN_ID_MAX_LEN)
 		return -EINVAL;
-	common = kzalloc(id_set->entry_size, GFP_ATOMIC);
+	common = kzalloc(id_set->entry_size, gfp);
 	if (!common)
 		return -ENOMEM;
 	common->id = *conn_id;

@@ -44,7 +44,7 @@ EXPORT_SYMBOL_GPL(quic_pnspace_free);
  *
  * Return: 0 on success, or a negative errno value on failure.
  */
-static int quic_pnspace_grow(struct quic_pnspace *space, u16 size)
+static int quic_pnspace_grow(struct quic_pnspace *space, u16 size, gfp_t gfp)
 {
 	u16 len, inc, offset;
 	unsigned long *new;
@@ -53,7 +53,7 @@ static int quic_pnspace_grow(struct quic_pnspace *space, u16 size)
 	      QUIC_PN_MAP_INCREMENT;
 	len = (u16)min(space->pn_map_len + inc, QUIC_PN_MAP_SIZE);
 
-	new = kzalloc(BITS_TO_BYTES(len), GFP_ATOMIC);
+	new = kzalloc(BITS_TO_BYTES(len), gfp);
 	if (!new)
 		return -ENOMEM;
 
@@ -115,7 +115,7 @@ static void quic_pnspace_move(struct quic_pnspace *space, s64 pn)
  * Returns: 0 on success or if the packet was already marked, or a negative
  * error returned by bitmap growth when expanding the map.
  */
-int quic_pnspace_mark(struct quic_pnspace *space, s64 pn)
+int quic_pnspace_mark(struct quic_pnspace *space, s64 pn, gfp_t gfp)
 {
 	s64 last_max_pn_seen, off;
 	u64 last_max_pn_time;
@@ -146,7 +146,7 @@ int quic_pnspace_mark(struct quic_pnspace *space, s64 pn)
 			quic_pnspace_set_base_pn(space, pn + 1);
 			return 0;
 		}
-		err = quic_pnspace_grow(space, off + 1);
+		err = quic_pnspace_grow(space, off + 1, gfp);
 		if (err)
 			return err;
 	}

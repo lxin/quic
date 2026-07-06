@@ -38,6 +38,7 @@ void quic_timer_sack_handler(struct sock *sk)
 	struct quic_pnspace *space = quic_pnspace(sk, QUIC_CRYPTO_APP);
 	struct quic_inqueue *inq = quic_inq(sk);
 	struct quic_connection_close c = {};
+	gfp_t gfp = GFP_ATOMIC;
 
 	if (quic_is_closed(sk))
 		return;
@@ -45,7 +46,7 @@ void quic_timer_sack_handler(struct sock *sk)
 	if (inq->sack_flag == QUIC_SACK_FLAG_NONE) {
 		/* Idle timer expired, close the connection. */
 		quic_inq_event_recv(sk, QUIC_EVENT_CONNECTION_CLOSE, &c,
-				    sizeof(c));
+				    sizeof(c), gfp);
 		quic_set_state(sk, QUIC_SS_CLOSED);
 
 		pr_debug("%s: idle timeout\n", __func__);
@@ -58,7 +59,8 @@ void quic_timer_sack_handler(struct sock *sk)
 		space->sack_pending = 0;
 	}
 
-	quic_outq_transmit(sk); /* Transmit queued frames, including ACKs. */
+	/* Transmit queued frames, including ACKs. */
+	quic_outq_transmit(sk, gfp);
 	inq->sack_flag = QUIC_SACK_FLAG_NONE; /* Start as idle timer. */
 	quic_timer_start(sk, QUIC_TIMER_IDLE, inq->timeout);
 }
@@ -89,6 +91,7 @@ void quic_timer_path_handler(struct sock *sk)
 {
 	struct quic_path_group *paths = quic_paths(sk);
 	struct quic_probeinfo info = {};
+	gfp_t gfp = GFP_ATOMIC;
 	u64 timeout;
 
 	if (quic_is_closed(sk))
@@ -98,7 +101,7 @@ void quic_timer_path_handler(struct sock *sk)
 		/* Increment probe attempts; give up if exceeded max allowed. */
 		if (paths->alt_probes++ < QUIC_MAX_ALT_PROBES) {
 			quic_outq_transmit_frame(sk, QUIC_FRAME_PATH_CHALLENGE,
-						 NULL, 1, false);
+						 NULL, 1, false, gfp);
 			timeout = max_t(u32, quic_cong(sk)->pto * 2,
 					QUIC_MIN_PATH_TIMEOUT);
 			goto out;
@@ -110,7 +113,7 @@ void quic_timer_path_handler(struct sock *sk)
 	/* Send PING to keep the path alive and help detect NAT rebinding. */
 	info.level = quic_is_established(sk) ? QUIC_CRYPTO_APP :
 					       QUIC_CRYPTO_INITIAL;
-	quic_outq_transmit_frame(sk, QUIC_FRAME_PING, &info, 0, false);
+	quic_outq_transmit_frame(sk, QUIC_FRAME_PING, &info, 0, false, gfp);
 	timeout = paths->keepalive_interval;
 out:
 	quic_timer_reset(sk, QUIC_TIMER_PATH, timeout);
@@ -127,7 +130,7 @@ void quic_timer_pmtu_handler(struct sock *sk)
 	if (quic_is_closed(sk))
 		return;
 
-	quic_outq_transmit_probe(sk);
+	quic_outq_transmit_probe(sk, GFP_ATOMIC);
 }
 
 static void quic_timer_pmtu_timeout(struct timer_list *t)
@@ -141,7 +144,7 @@ void quic_timer_pace_handler(struct sock *sk)
 	if (quic_is_closed(sk))
 		return;
 
-	quic_outq_transmit(sk);
+	quic_outq_transmit(sk, GFP_ATOMIC);
 }
 
 static enum hrtimer_restart quic_timer_pace_timeout(struct hrtimer *hr)

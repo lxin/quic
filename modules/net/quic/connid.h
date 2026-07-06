@@ -165,7 +165,8 @@ static inline int quic_conn_id_cmp(struct quic_conn_id *a,
 }
 
 int quic_conn_id_add(struct quic_conn_id_set *id_set,
-		     struct quic_conn_id *conn_id, u32 number, void *data);
+		     struct quic_conn_id *conn_id, u32 number, void *data,
+		     gfp_t gfp);
 bool quic_conn_id_token_exists(struct quic_conn_id_set *id_set, u8 *token);
 void quic_conn_id_remove(struct quic_conn_id_set *id_set, u32 number);
 

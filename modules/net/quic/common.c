@@ -397,14 +397,14 @@ s64 quic_get_num(s64 max_pkt_num, s64 pkt_num, u32 n)
 	return cand;
 }
 
-int quic_data_dup(struct quic_data *to, u8 *data, u32 len)
+int quic_data_dup(struct quic_data *to, u8 *data, u32 len, gfp_t gfp)
 {
 	if (!len) {
 		quic_data_free(to);
 		return 0;
 	}
 
-	data = kmemdup(data, len, GFP_ATOMIC);
+	data = kmemdup(data, len, gfp);
 	if (!data)
 		return -ENOMEM;
 
@@ -414,7 +414,7 @@ int quic_data_dup(struct quic_data *to, u8 *data, u32 len)
 	return 0;
 }
 
-int quic_data_append(struct quic_data *to, u8 *data, u32 len)
+int quic_data_append(struct quic_data *to, u8 *data, u32 len, gfp_t gfp)
 {
 	u8 *p;
 
@@ -424,7 +424,7 @@ int quic_data_append(struct quic_data *to, u8 *data, u32 len)
 	if (to->len > U32_MAX - len)
 		return -EOVERFLOW;
 
-	p = kzalloc(to->len + len, GFP_ATOMIC);
+	p = kzalloc(to->len + len, gfp);
 	if (!p)
 		return -ENOMEM;
 	p = quic_put_data(p, to->data, to->len);

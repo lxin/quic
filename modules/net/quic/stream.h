@@ -112,7 +112,7 @@ static inline s64 quic_stream_streams_to_id(u64 streams, u8 type)
 
 struct quic_stream *quic_stream_get(struct quic_stream_table *streams,
 				    s64 stream_id, u32 flags, bool is_serv,
-				    bool send);
+				    bool send, gfp_t gfp);
 void quic_stream_put(struct quic_stream_table *streams,
 		     struct quic_stream *stream, bool is_serv, bool send);
 
