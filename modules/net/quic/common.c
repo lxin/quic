@@ -150,7 +150,8 @@ static int quic_uhash_table_init(struct quic_uhash_table *ht, u32 size)
 int quic_hash_tables_init(void)
 {
 	unsigned long nr_pages = totalram_pages();
-	u32 limit, size;
+	unsigned long limit;
+	u32 size;
 	int err;
 
 	/* Scale hash table size based on system memory, similar to SCTP. */
@@ -162,11 +163,11 @@ int quic_hash_tables_init(void)
 	limit = roundup_pow_of_two(limit ?: 1);
 
 	/* Source connection ID table (fast lookup, larger size) */
-	size = min(limit, 64 * 1024U);
+	size = min_t(unsigned long, limit, 64 * 1024UL);
 	err = quic_shash_table_init(&quic_hashinfo.shash, size);
 	if (err)
 		goto err;
-	size = min(limit, 16 * 1024U);
+	size = min_t(unsigned long, limit, 16 * 1024UL);
 	err = quic_shash_table_init(&quic_hashinfo.lhash, size);
 	if (err)
 		goto err;
