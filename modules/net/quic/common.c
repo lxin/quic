@@ -53,7 +53,7 @@ u32 quic_sock_hash(struct net *net, union quic_addr *s, union quic_addr *d)
 	u32 daddr = (d->sa.sa_family == AF_INET6) ?
 		    jhash(&d->v6.sin6_addr, 16, 0) :
 		    (__force u32)d->v4.sin_addr.s_addr;
-	u32 hash = jhash_3words(saddr, ports, net_hash_mix(net), daddr);
+	u32 hash = jhash_3words(saddr, daddr, ports, net_hash_mix(net));
 
 	return hash & (quic_sock_hash_size() - 1);
 }
@@ -70,7 +70,7 @@ u32 quic_listen_sock_hash_size(void)
 
 u32 quic_listen_sock_hash(struct net *net, u16 port)
 {
-	u32 hash = jhash_2words((__force u32)port, net_hash_mix(net), 0);
+	u32 hash = jhash_1word((__force u32)port, net_hash_mix(net));
 
 	return hash & (quic_listen_sock_hash_size() - 1);
 }
@@ -83,7 +83,7 @@ struct quic_shash_head *quic_listen_sock_head(u32 hash)
 struct quic_shash_head *quic_source_conn_id_head(struct net *net, u8 *scid,
 						 u32 len)
 {
-	u32 hash = jhash_2words(jhash(scid, len, 0), net_hash_mix(net), 0);
+	u32 hash = jhash_1word(jhash(scid, len, 0), net_hash_mix(net));
 	struct quic_shash_table *ht = &quic_hashinfo.shash;
 
 	return &ht->hash[hash & (ht->size - 1)];
@@ -91,7 +91,7 @@ struct quic_shash_head *quic_source_conn_id_head(struct net *net, u8 *scid,
 
 struct quic_uhash_head *quic_udp_sock_head(struct net *net, u16 port)
 {
-	u32 hash = jhash_2words((__force u32)port, net_hash_mix(net), 0);
+	u32 hash = jhash_1word((__force u32)port, net_hash_mix(net));
 	struct quic_uhash_table *ht = &quic_hashinfo.uhash;
 
 	return &ht->hash[hash & (ht->size - 1)];
@@ -103,8 +103,8 @@ u32 quic_addr_hash(struct net *net, union quic_addr *a)
 		   jhash(&a->v6.sin6_addr, 16, 0) :
 		   (__force u32)a->v4.sin_addr.s_addr;
 
-	return jhash_3words(addr, (__force u32)a->v4.sin_port,
-			    net_hash_mix(net), 0);
+	return jhash_2words(addr, (__force u32)a->v4.sin_port,
+			    net_hash_mix(net));
 }
 
 void quic_hash_tables_destroy(void)
