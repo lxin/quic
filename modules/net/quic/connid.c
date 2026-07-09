@@ -27,6 +27,8 @@ struct quic_conn_id *quic_conn_id_lookup(struct net *net, u8 *scid, u32 len)
 	struct quic_conn_id *conn_id = NULL;
 	struct hlist_nulls_node *node;
 
+	WARN_ON_ONCE(!rcu_read_lock_held());
+
 	hlist_nulls_for_each_entry_rcu(s_conn_id, node, &head->head, node) {
 		if (net != sock_net(s_conn_id->sk))
 			continue;
