@@ -326,6 +326,14 @@ static int quic_v6_get_user_addr(struct sock *sk, union quic_addr *a,
 		return -EINVAL;
 	ua = quic_addr(addr);
 	type = ipv6_addr_type(&ua->v6.sin6_addr);
+	if (type == IPV6_ADDR_MAPPED) {
+		if (ipv6_only_sock(sk))
+			return -EINVAL;
+		a->v4.sin_family = AF_INET;
+		a->v4.sin_port = ua->v6.sin6_port;
+		a->v4.sin_addr.s_addr = ua->v6.sin6_addr.s6_addr32[3];
+		return 0;
+	}
 	if (type != IPV6_ADDR_ANY && !(type & IPV6_ADDR_UNICAST))
 		return -EINVAL;
 	if (type == IPV6_ADDR_ANY && !any)
@@ -450,18 +458,6 @@ static bool quic_v4_cmp_sk_addr(struct sock *sk, union quic_addr *a,
 	return a->v4.sin_addr.s_addr == addr->v4.sin_addr.s_addr;
 }
 
-static bool quic_v4_match_v6_addr(union quic_addr *a4, union quic_addr *a6,
-				  bool a6_from_sk)
-{
-	if (ipv6_addr_any(&a6->v6.sin6_addr))
-		return a6_from_sk;
-	if (!ipv6_addr_v4mapped(&a6->v6.sin6_addr))
-		return false;
-	if (a4->v4.sin_addr.s_addr == htonl(INADDR_ANY))
-		return !a6_from_sk;
-	return a6->v6.sin6_addr.s6_addr32[3] == a4->v4.sin_addr.s_addr;
-}
-
 static bool quic_v6_cmp_sk_addr(struct sock *sk, union quic_addr *a,
 				union quic_addr *addr)
 {
@@ -474,9 +470,7 @@ static bool quic_v6_cmp_sk_addr(struct sock *sk, union quic_addr *a,
 	if (a->sa.sa_family != addr->sa.sa_family) {
 		if (ipv6_only_sock(sk))
 			return false;
-		if (a->sa.sa_family == AF_INET)
-			return quic_v4_match_v6_addr(a, addr, false);
-		return quic_v4_match_v6_addr(addr, a, true);
+		return quic_is_any_addr(a);
 	}
 
 	/* No match: specific socket vs ANY lookup. */
