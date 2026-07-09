@@ -688,7 +688,8 @@ void quic_set_sk_ecn(struct sock *sk, u8 ecn)
 int quic_get_dev_if(struct sock *sk, union quic_addr *a)
 {
 	if (!quic_af_ipv4(a) &&
-	    ipv6_addr_type(&a->v6.sin6_addr) & IPV6_ADDR_LINKLOCAL)
+	    ipv6_addr_type(&a->v6.sin6_addr) & IPV6_ADDR_LINKLOCAL &&
+	    a->v6.sin6_scope_id)
 		return a->v6.sin6_scope_id;
 
 	return sk->sk_bound_dev_if;
