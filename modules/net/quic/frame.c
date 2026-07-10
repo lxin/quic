@@ -237,9 +237,11 @@ static struct quic_frame_frag *quic_frame_frag_alloc(u16 len)
 {
 	struct quic_frame_frag *frag;
 
-	frag = kzalloc(sizeof(*frag) + len, GFP_KERNEL);
-	if (frag)
+	frag = kmalloc(sizeof(*frag) + len, GFP_KERNEL);
+	if (frag) {
 		frag->dlen = len;
+		frag->next = NULL;
+	}
 
 	return frag;
 }

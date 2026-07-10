@@ -2306,9 +2306,11 @@ static struct quic_packet_sent *quic_packet_sent_alloc(u16 frames, gfp_t gfp)
 	u32 len = frames * sizeof(struct quic_frame *);
 	struct quic_packet_sent *sent;
 
-	sent = kzalloc(sizeof(*sent) + len, gfp | __GFP_ACCOUNT);
-	if (sent)
+	sent = kmalloc(sizeof(*sent) + len, gfp | __GFP_ACCOUNT);
+	if (sent) {
 		sent->frames = frames;
+		sent->ecn = 0;
+	}
 
 	return sent;
 }

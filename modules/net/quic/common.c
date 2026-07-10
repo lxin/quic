@@ -425,7 +425,7 @@ int quic_data_append(struct quic_data *to, u8 *data, u32 len, gfp_t gfp)
 	if (to->len > U32_MAX - len)
 		return -EOVERFLOW;
 
-	p = kzalloc(to->len + len, gfp);
+	p = kmalloc(to->len + len, gfp);
 	if (!p)
 		return -ENOMEM;
 	p = quic_put_data(p, to->data, to->len);

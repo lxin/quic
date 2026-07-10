@@ -54,7 +54,7 @@ struct quic_request_sock *quic_request_sock_create(struct sock *sk,
 	if (sk_acceptq_is_full(sk)) /* Refuse if accept queue full. */
 		return ERR_PTR(-ENOBUFS);
 
-	req = kzalloc(sizeof(*req), gfp);
+	req = kmalloc(sizeof(*req), gfp);
 	if (!req)
 		return ERR_PTR(-ENOMEM);
 
@@ -67,6 +67,7 @@ struct quic_request_sock *quic_request_sock_create(struct sock *sk,
 	req->retry = retry;
 
 	skb_queue_head_init(&req->backlog_list);
+	req->blen = 0;
 
 	/* Enqueue request into listen socket’s pending list for accept(). */
 	list_add_tail(&req->list, quic_reqs(sk));

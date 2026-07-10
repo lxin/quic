@@ -80,7 +80,7 @@ static struct quic_udp_sock *quic_udp_sock_create(struct sock *sk,
 	struct socket *sock;
 	int err;
 
-	us = kzalloc(sizeof(*us), GFP_KERNEL);
+	us = kmalloc(sizeof(*us), GFP_KERNEL);
 	if (!us)
 		return ERR_PTR(-ENOMEM);
 

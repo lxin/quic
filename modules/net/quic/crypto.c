@@ -1154,7 +1154,7 @@ int quic_crypto_generate_token(struct quic_crypto *crypto, void *addr,
 	int err, len;
 
 	len = sizeof(flag) + addrlen + tslen + conn_id->len + QUIC_TAG_LEN;
-	token_buf = kzalloc(len, GFP_KERNEL);
+	token_buf = kmalloc(len, GFP_KERNEL);
 	if (!token_buf)
 		return -ENOMEM;
 
