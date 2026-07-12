@@ -609,7 +609,6 @@ void quic_outq_transmit_probe(struct sock *sk, gfp_t gfp)
 	struct quic_path_group *paths = quic_paths(sk);
 	struct quic_probeinfo info = {};
 	u32 pathmtu;
-	s64 number;
 
 	if (!quic_is_established(sk))
 		return;
@@ -618,13 +617,11 @@ void quic_outq_transmit_probe(struct sock *sk, gfp_t gfp)
 	info.size = paths->pl.probe_size;
 	info.level = QUIC_CRYPTO_APP;
 	/* Save the packet number used for confirming the probe via ACK. */
-	number = space->next_pn;
-	if (!quic_outq_transmit_frame(sk, QUIC_FRAME_PING, &info, 0, false,
-				      gfp)) {
-		pathmtu = quic_path_pl_send(paths, number);
-		if (pathmtu) /* Pathmtu may drop if probe failures exceeds. */
-			quic_packet_mss_update(sk, pathmtu + taglen);
-	}
+	pathmtu = quic_path_pl_send(paths, space->next_pn);
+	if (pathmtu) /* Pathmtu may drop if probe failures exceeds. */
+		quic_packet_mss_update(sk, pathmtu + taglen);
+	if (quic_outq_transmit_frame(sk, QUIC_FRAME_PING, &info, 0, false, gfp))
+		paths->pl.number = 0;
 
 	/* Restart the PLPMTUD timer for future probes if this one fails. */
 	quic_timer_reset(sk, QUIC_TIMER_PMTU, paths->plpmtud_interval);
