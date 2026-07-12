@@ -107,6 +107,8 @@ static inline u64 quic_stream_id_to_streams(s64 stream_id)
 
 static inline s64 quic_stream_streams_to_id(u64 streams, u8 type)
 {
+	if (!streams)
+		return -1;
 	return (s64)((streams - 1) << QUIC_STREAM_TYPE_BITS) | type;
 }
 
