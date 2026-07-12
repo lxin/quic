@@ -469,7 +469,7 @@ u32 quic_path_pl_recv(struct quic_path_group *paths, bool *raise_timer,
 				paths->pl.probe_size =
 					min_t(u16, next, QUIC_MAX_PLPMTU);
 				*complete = false;
-				return pathmtu;
+				return 0;
 			}
 			paths->pl.probe_high = QUIC_MAX_PLPMTU;
 		}
