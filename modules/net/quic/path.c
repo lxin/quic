@@ -518,7 +518,7 @@ u32 quic_path_pl_toobig(struct quic_path_group *paths, u32 pmtu,
 		return pathmtu;
 
 	if (paths->pl.state == QUIC_PL_BASE) {
-		if (pmtu >= QUIC_MIN_PLPMTU && pmtu < QUIC_BASE_PLPMTU) {
+		if (pmtu < QUIC_BASE_PLPMTU) {
 			paths->pl.state = QUIC_PL_ERROR; /* Base -> Error */
 
 			paths->pl.pmtu = QUIC_BASE_PLPMTU;
