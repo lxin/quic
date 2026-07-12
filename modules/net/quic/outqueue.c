@@ -1409,4 +1409,5 @@ void quic_outq_free(struct sock *sk)
 	quic_outq_list_purge(sk, &outq->control_list, NULL);
 	quic_outq_list_purge(sk, &outq->stream_list, NULL);
 	kfree(outq->close_phrase);
+	outq->close_phrase = NULL;
 }

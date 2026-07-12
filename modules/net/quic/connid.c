@@ -254,6 +254,7 @@ void quic_conn_id_set_free(struct quic_conn_id_set *id_set)
 	list_for_each_entry_safe(common, tmp, &id_set->head, list)
 		quic_conn_id_del(common);
 	id_set->count = 0;
+	id_set->alt = NULL;
 	id_set->active = NULL;
 }
 

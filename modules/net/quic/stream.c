@@ -366,6 +366,7 @@ void quic_stream_free(struct quic_stream_table *streams)
 			quic_stream_delete(stream);
 	}
 	kfree(streams->head);
+	streams->head = NULL;
 }
 
 /* Populate transport parameters from stream hash table. */
