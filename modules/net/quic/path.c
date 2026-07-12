@@ -106,9 +106,9 @@ static struct quic_udp_sock *quic_udp_sock_create(struct sock *sk,
 	memcpy(&us->addr, a, sizeof(*a));
 	us->bind_ifindex = udp_conf.bind_ifindex;
 
+	INIT_WORK(&us->work, quic_udp_sock_put_work);
 	head = quic_udp_sock_head(net, ntohs(a->v4.sin_port));
 	hlist_add_head(&us->node, &head->head);
-	INIT_WORK(&us->work, quic_udp_sock_put_work);
 
 	return us;
 }
