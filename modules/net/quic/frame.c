@@ -2662,8 +2662,8 @@ struct quic_frame *quic_frame_create(struct sock *sk, u8 type, void *data,
 		return ERR_PTR(-EINVAL);
 	frame = quic_frame_ops[type].frame_create(sk, data, type, gfp);
 	if (IS_ERR(frame)) {
-		pr_debug("%s: failed, type: %x, err: %ld\n", __func__, type,
-			 PTR_ERR(frame));
+		pr_debug("%s: failed, type: %x, err: %pe\n", __func__, type,
+			 frame);
 		return frame;
 	}
 	INIT_LIST_HEAD(&frame->list);
