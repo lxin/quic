@@ -69,7 +69,8 @@ static int quic_pnspace_grow(struct quic_pnspace *space, u16 size, gfp_t gfp)
 /* Check if a packet number has been received.
  *
  * Returns: 0 if the packet number has not been received.  1 if it has already
- * been received. -EINVAL if the packet number is too old to track.
+ * been received. -EINVAL if the packet number is invalid (out of range 0 to
+ * QUIC_PN_MAX) or too old to track (below min_pn_seen).
  */
 int quic_pnspace_check(struct quic_pnspace *space, s64 pn)
 {
