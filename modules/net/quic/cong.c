@@ -613,8 +613,7 @@ static void quic_cong_update_pacing_time(struct quic_cong *cong, u32 bytes)
 /* Compute and update the pacing rate based on congestion window and smoothed
  * RTT.
  */
-static void quic_cong_pace_update(struct quic_cong *cong, u32 bytes,
-				  u64 max_rate)
+static void quic_cong_pace_update(struct quic_cong *cong, u64 max_rate)
 {
 	u64 rate;
 
@@ -647,7 +646,7 @@ void quic_cong_on_ack_recv(struct quic_cong *cong, u32 bytes, u64 max_rate)
 		return;
 	if (cong->ops->on_ack_recv)
 		cong->ops->on_ack_recv(cong, bytes, max_rate);
-	quic_cong_pace_update(cong, bytes, max_rate);
+	quic_cong_pace_update(cong, max_rate);
 }
 EXPORT_SYMBOL_GPL(quic_cong_on_ack_recv);
 
