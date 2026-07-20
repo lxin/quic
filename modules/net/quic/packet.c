@@ -1075,6 +1075,13 @@ static int quic_packet_listen_process(struct sock *sk, struct sk_buff *skb,
 		return err;
 	}
 
+	/* This Destination Connection ID MUST be at least 8 bytes in length. */
+	if (packet->dcid.len < QUIC_CONN_ID_DEF_LEN) {
+		QUIC_INC_STATS(net, QUIC_MIB_PKT_INVHDRDROP);
+		kfree_skb(skb);
+		return err;
+	}
+
 	err = quic_packet_get_token(&token, &p, &len); /* Read Token. */
 	if (err) {
 		QUIC_INC_STATS(net, QUIC_MIB_PKT_INVHDRDROP);
