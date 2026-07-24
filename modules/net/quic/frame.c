@@ -3328,9 +3328,10 @@ int quic_frame_parse_transport_params_ext(struct sock *sk,
 		case QUIC_TRANSPORT_PARAM_ACTIVE_CONNECTION_ID_LIMIT:
 			if (!quic_get_param(&value, &p, &len))
 				return -EINVAL;
-			if (value < QUIC_CONN_ID_LEAST ||
-			    value > QUIC_CONN_ID_LIMIT)
+			if (value < QUIC_CONN_ID_LEAST)
 				return -EINVAL;
+			if (value > QUIC_CONN_ID_LIMIT)
+				value = QUIC_CONN_ID_LIMIT;
 			params->active_connection_id_limit = value;
 			break;
 		case QUIC_TRANSPORT_PARAM_MAX_DATAGRAM_FRAME_SIZE:
