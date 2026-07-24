@@ -2677,18 +2677,22 @@ static int quic_sock_get_session_ticket(struct sock *sk, u32 len,
 	union quic_addr a;
 	int err;
 
-	if (quic_is_closed(sk) || quic_is_listen(sk))
+	if (quic_is_listen(sk))
 		return -EPIPE;
 
 	if (!quic_is_serv(sk)) {
 		/* For clients, retrieve the received TLS NewSessionTicket
-		 * message.
+		 * message after the handshake completes, or the session data
+		 * while the handshake is in progress.
 		 */
 		crypto = quic_crypto(sk, QUIC_CRYPTO_APP);
-		if (quic_is_established(sk) && !crypto->ticket_ready)
+		if (!quic_is_establishing(sk) && !crypto->ticket_ready)
 			tlen = 0;
 		goto out;
 	}
+
+	if (quic_is_closed(sk))
+		return -EPIPE;
 
 	/* For servers, return the master key used for session resumption. If
 	 * already set, use it. Otherwise, derive key using the peer address.
