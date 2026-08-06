@@ -57,7 +57,7 @@ static u64 cubic_root(u64 n)
 	a = BIT_ULL(d + 1);
 
 	for (; a * a * a > n;) {
-		d = div64_ul(n, a * a);
+		d = div64_u64(n, a * a);
 		a = div64_ul(2 * a + d, 3);
 	}
 	return a;
@@ -138,7 +138,7 @@ static void cubic_cong_avoid(struct quic_cong *cong, u32 bytes)
 			 *       ╲│       C
 			 */
 			cubic->k = cubic->w_last_max - cong->window;
-			cubic->k = div64_ul(cubic->k * 10, (u64)cong->mss * 4);
+			cubic->k = div64_ul(cubic->k * 10, cong->mss * 4);
 			cubic->k = cubic_root(cubic->k);
 			cubic->origin_point = cubic->w_last_max;
 		} else {
@@ -605,7 +605,7 @@ static void quic_cong_update_pacing_time(struct quic_cong *cong, u32 bytes)
 	credit = cong->pacing_time - prior_time;
 
 	/* take into account OS jitter */
-	len_ns = div64_ul((u64)bytes * NSEC_PER_SEC, rate);
+	len_ns = div64_u64((u64)bytes * NSEC_PER_SEC, rate);
 	len_ns -= min_t(u64, len_ns / 2, credit);
 	cong->pacing_time += len_ns;
 }
