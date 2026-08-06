@@ -2839,15 +2839,16 @@ static int quic_packet_xmit(struct sock *sk, struct sk_buff *skb, gfp_t gfp)
 	struct net *net = sock_net(sk);
 	int err;
 
+	/* Associate skb with sk to ensure sk is valid during async encryption
+	 * completion.
+	 */
+	WARN_ON_ONCE(!skb_set_owner_sk_safe(skb, sk));
+
 	/* Skip encryption if taglen == 0 (e.g., disable_1rtt_encryption). */
 	if (!packet->taglen[quic_hdr(skb)->form])
 		goto xmit;
 
 	cb->crypto_done = quic_packet_encrypt_done;
-	/* Associate skb with sk to ensure sk is valid during async encryption
-	 * completion.
-	 */
-	WARN_ON_ONCE(!skb_set_owner_sk_safe(skb, sk));
 	err = quic_crypto_encrypt(quic_crypto(sk, packet->level), skb, gfp);
 	if (err) {
 		if (err != -EINPROGRESS) {
