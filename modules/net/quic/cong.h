@@ -103,8 +103,10 @@ static inline void quic_cong_set_mss(struct quic_cong *cong, u32 mss)
 
 	/* rfc9002#section-7.2: Initial and Minimum Congestion Window */
 	cong->mss = mss;
-	cong->min_window = max(min(mss * 10, 14720U), mss * 2);
+	cong->min_window = mss * 2;
 
+	if (!cong->window)
+		cong->window = min(mss * 10, 14720U);
 	if (cong->window < cong->min_window)
 		cong->window = cong->min_window;
 }

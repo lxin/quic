@@ -716,6 +716,7 @@ static void quic_cong_test2(struct kunit *test)
 	cong.max_ack_delay = 25000;
 	cong.max_window = 262144;
 	quic_cong_set_mss(&cong, 1400);
+	cong.min_window = 14000;
 
 	quic_cong_set_algo(&cong, QUIC_CONG_ALG_RENO);
 	quic_cong_set_srtt(&cong, QUIC_RTT_INIT);
@@ -879,6 +880,7 @@ static void quic_cong_test3(struct kunit *test)
 	cong.max_ack_delay = 25000;
 	cong.max_window = 106496;
 	quic_cong_set_mss(&cong, 1400);
+	cong.min_window = 14000;
 
 	quic_cong_set_algo(&cong, 1); /* QUIC_CONG_ALG_CUBIC */
 	quic_cong_set_srtt(&cong, QUIC_RTT_INIT);
