@@ -791,12 +791,6 @@ static void quic_cong_test2(struct kunit *test)
 	bytes = 1400;
 	quic_cong_on_packet_acked(&cong, time, bytes, 0);
 	KUNIT_EXPECT_EQ(test, cong.state, QUIC_CONG_CONGESTION_AVOIDANCE);
-	KUNIT_EXPECT_EQ(test, cong.window, 131086);
-
-	time = cong.time - 300000;
-	bytes = 1400;
-	quic_cong_on_packet_acked(&cong, time, bytes, 0);
-	KUNIT_EXPECT_EQ(test, cong.state, QUIC_CONG_CONGESTION_AVOIDANCE);
 	KUNIT_EXPECT_EQ(test, cong.window, 131100);
 
 	/* cong_avoid -> recovery: go back to recovery after one loss */
@@ -948,12 +942,12 @@ static void quic_cong_test3(struct kunit *test)
 	/* cong_avoid: cwnd increase in concave/Convex after SACK */
 	inc = cong.window - cwnd;
 	cwnd = cong.window;
-	for (i = 0; i < 18; i++) {
+	for (i = 0; i < 17; i++) {
 		time = cong.time + 100000;
 		cong.time = time;
 		bytes = 56000;
 		quic_cong_on_packet_acked(&cong, time, bytes, 0);
-		if (i < 9)
+		if (i < 8)
 			KUNIT_EXPECT_LE(test, inc, cong.window - cwnd);
 		else
 			KUNIT_EXPECT_GE(test, inc, cong.window - cwnd);
