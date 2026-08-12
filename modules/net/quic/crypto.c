@@ -556,13 +556,15 @@ static int quic_crypto_payload_protect(struct quic_crypto *crypto,
 	aead_request_set_callback(req, CRYPTO_TFM_REQ_MAY_BACKLOG,
 				  (void *)quic_crypto_done, skb);
 	*(struct quic_crypto **)ctx = crypto;
+	atomic_inc(&crypto->async_pending[phase]);
 	cb->crypto_ctx = ctx; /* Async free context for quic_crypto_done() */
 	err = enc ? crypto_aead_encrypt(req) : crypto_aead_decrypt(req);
 	if (err == -EINPROGRESS || err == -EBUSY) {
-		atomic_inc(&crypto->async_pending[phase]);
 		memzero_explicit(nonce, sizeof(nonce));
 		return -EINPROGRESS;
 	}
+	atomic_dec(&crypto->async_pending[phase]);
+	cb->crypto_ctx = NULL;
 
 out:
 	kfree_sensitive(ctx);
