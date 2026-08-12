@@ -223,35 +223,56 @@ static bool quic_pnspace_next_gap_ack(const struct quic_pnspace *space,
 	return true;
 }
 
-/* Generate gap acknowledgment blocks (GABs).  GABs describe ranges of
+/* Generate gap acknowledgment blocks (GABs). GABs describe ranges of
  * unacknowledged packets between received ones, and are used in ACK frames.
+ *
+ * This function uses a sliding window approach to ensure the most recent gaps
+ * are preserved when the total number exceeds QUIC_PN_MAP_MAX_GABS. If there
+ * are more gaps than the limit, the oldest gaps are merged into a single gap,
+ * and the newest (QUIC_PN_MAP_MAX_GABS) gaps are preserved individually.
  *
  * Returns: Number of generated GABs (up to QUIC_PN_MAP_MAX_GABS).
  */
 u16 quic_pnspace_num_gabs(struct quic_pnspace *space,
 			  struct quic_gap_ack_block *gabs)
 {
-	u16 start, end, ngaps = 0;
+	struct quic_gap_ack_block tmp[QUIC_PN_MAP_MAX_GABS];
+	u16 start, end, mstart = 0, ngaps = 0, i = 0;
 	s64 iter;
 
 	if (!quic_pnspace_has_gap(space))
 		return 0;
 
 	iter = space->base_pn;
-	/* Loop through all gaps until the end of the window or max allowed
-	 * gaps.
-	 */
+
+	/* Scan all gaps using a sliding window to keep the newest ones. */
 	while (quic_pnspace_next_gap_ack(space, &iter, &start, &end)) {
-		gabs[ngaps].start = start;
-		if (ngaps == QUIC_PN_MAP_MAX_GABS - 1) {
-			gabs[ngaps].end =
-				(u16)(space->max_pn_seen - space->base_pn);
+		if (ngaps < QUIC_PN_MAP_MAX_GABS) {
+			if (ngaps == 0)
+				mstart = start;
+			gabs[ngaps].start = start;
+			gabs[ngaps].end = end;
 			ngaps++;
-			break;
+			continue;
 		}
-		gabs[ngaps].end = end;
-		ngaps++;
+		gabs[i].start = start;
+		gabs[i].end = end;
+		i = (i + 1) % QUIC_PN_MAP_MAX_GABS;
 	}
+	if (i == 0) {
+		if (ngaps == QUIC_PN_MAP_MAX_GABS)
+			gabs[0].start = mstart;
+		return ngaps;
+	}
+
+	/* Overflow occurred: merge all discarded gaps with the gap at
+	 * position i (which hasn't been overwritten yet) into one.
+	 */
+	gabs[i].start = mstart;
+	memcpy(tmp, gabs, ngaps * sizeof(*gabs));
+	memcpy(gabs, &tmp[i], (ngaps - i) * sizeof(*gabs));
+	memcpy(gabs + (ngaps - i), tmp, i * sizeof(*gabs));
+
 	return ngaps;
 }
 EXPORT_SYMBOL_GPL(quic_pnspace_num_gabs);
