@@ -2087,6 +2087,7 @@ static int quic_frame_path_response_process(struct sock *sk,
 {
 	struct quic_path_group *paths = quic_paths(sk);
 	u8 local, entropy[QUIC_PATH_ENTROPY_LEN];
+	union quic_addr *sa, *da;
 	u32 len = frame->len;
 
 	if (len < QUIC_PATH_ENTROPY_LEN)
@@ -2109,16 +2110,24 @@ static int quic_frame_path_response_process(struct sock *sk,
 	 */
 	sk->sk_prot->unhash(sk);
 	quic_path_swap(paths);
-	quic_set_sk_addr(sk, quic_path_saddr(paths, 0), 1);
-	quic_set_sk_addr(sk, quic_path_daddr(paths, 0), 0);
+	sa = quic_path_saddr(paths, 0);
+	da = quic_path_daddr(paths, 0);
+	quic_set_sk_addr(sk, sa, true);
+	quic_set_sk_addr(sk, da, false);
 	sk->sk_prot->hash(sk);
 	/* Notify application of updated path; indicate whether it is a local
 	 * address change.
 	 */
-	local = !quic_cmp_sk_addr(sk, quic_path_saddr(paths, 1),
-				  quic_path_saddr(paths, 0));
-	quic_inq_event_recv(sk, QUIC_EVENT_CONNECTION_MIGRATION, &local,
-			    sizeof(local), gfp);
+	if (!quic_cmp_sk_addr(sk, quic_path_saddr(paths, 1), sa)) {
+		local = 1;
+		quic_inq_event_recv(sk, QUIC_EVENT_CONNECTION_MIGRATION,
+				    &local, sizeof(local), gfp);
+	}
+	if (!quic_cmp_sk_addr(sk, quic_path_daddr(paths, 1), da)) {
+		local = 0;
+		quic_inq_event_recv(sk, QUIC_EVENT_CONNECTION_MIGRATION,
+				    &local, sizeof(local), gfp);
+	}
 
 	/* Update path ID for all control and transmitted frames, reset route,
 	 * and use the active connection ID for the new path.
