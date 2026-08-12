@@ -167,13 +167,15 @@ struct sock *quic_sock_lookup(struct sk_buff *skb, union quic_addr *sa,
 			      union quic_addr *da, struct sock *usk,
 			      struct quic_conn_id *dcid)
 {
+	union quic_addr *path_sa, *path_da;
 	struct net *net = sock_net(usk);
 	struct quic_path_group *paths;
 	struct hlist_nulls_node *node;
 	struct quic_shash_head *head;
 	struct sock *sk = NULL, *tmp;
 	struct quic_conn_id *odcid;
-	unsigned int hash;
+	unsigned int hash, seq;
+	bool match;
 
 	hash = quic_sock_hash(net, sa, da);
 	head = quic_sock_head(hash);
@@ -185,10 +187,23 @@ begin:
 			continue;
 		paths = quic_paths(tmp);
 		odcid = quic_path_orig_dcid(paths);
-		if (quic_cmp_sk_addr(tmp, quic_path_saddr(paths, 0), sa) &&
-		    quic_cmp_sk_addr(tmp, quic_path_daddr(paths, 0), da) &&
-		    quic_path_usock(paths, 0) == usk &&
-		    (!dcid || !quic_conn_id_cmp(odcid, dcid))) {
+
+		/* Protect path[0] reads with seqcount retry to detect torn
+		 * reads during concurrent quic_path_swap(). The seqcount
+		 * ensures we either see a consistent old or new path, never
+		 * a mix of both.
+		 */
+		do {
+			seq = read_seqcount_begin(&paths->path_seq);
+			path_sa = quic_path_saddr(paths, 0);
+			path_da = quic_path_daddr(paths, 0);
+			match = (quic_cmp_sk_addr(tmp, path_sa, sa) &&
+				 quic_cmp_sk_addr(tmp, path_da, da) &&
+				 quic_path_usock(paths, 0) == usk &&
+				 (!dcid || !quic_conn_id_cmp(odcid, dcid)));
+		} while (read_seqcount_retry(&paths->path_seq, seq));
+
+		if (match) {
 			sk = tmp;
 			break;
 		}
@@ -431,6 +446,7 @@ static int quic_init_sock(struct sock *sk)
 
 	quic_conn_id_set_init(quic_source(sk), true);
 	quic_conn_id_set_init(quic_dest(sk), false);
+	quic_path_init(quic_paths(sk));
 	quic_cong_init(quic_cong(sk));
 
 	quic_sock_apply_transport_param(sk, p);

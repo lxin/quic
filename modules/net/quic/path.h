@@ -75,6 +75,7 @@ struct quic_path_group {
 	/* Path validation (rfc9000#section-8.2) */
 	u8 entropy[QUIC_PATH_ENTROPY_LEN]; /* Entropy for PATH_CHALLENGE */
 	struct quic_path path[2]; /* Active path (0) and alternate path (1) */
+	seqcount_t path_seq;      /* Protects path[0] during swap */
 	struct flowi fl;          /* Flow info from routing decisions */
 
 	/* Anti-amplification limit (rfc9000#section-8) */
@@ -168,6 +169,7 @@ quic_path_orig_dcid(struct quic_path_group *paths)
 }
 
 int quic_packet_rcv(struct sock *sk, struct sk_buff *skb, bool icmp);
+void quic_path_init(struct quic_path_group *paths);
 
 bool quic_path_detect_alt(struct quic_path_group *paths, union quic_addr *sa,
 			  union quic_addr *da, struct sock *sk);

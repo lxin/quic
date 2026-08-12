@@ -270,14 +270,23 @@ void quic_path_swap(struct quic_path_group *paths)
 	paths->alt_probes = 0;
 	paths->alt_state = QUIC_PATH_ALT_SWAPPED;
 
+	/* Protect path[0] modifications with seqcount for RCU readers in
+	 * quic_sock_lookup(). The seqcount allows readers to detect torn reads
+	 * during the non-atomic structure assignment.
+	 */
+	local_bh_disable();
+	write_seqcount_begin(&paths->path_seq);
 	if (paths->path[1].udp_sk) {
 		paths->path[0] = paths->path[1];
 		paths->path[1] = path;
-		return;
+		goto out;
 	}
 
 	paths->path[0].daddr = paths->path[1].daddr;
 	paths->path[1].daddr = path.daddr;
+out:
+	write_seqcount_end(&paths->path_seq);
+	local_bh_enable();
 }
 
 /* Frees resources associated with a QUIC path.
@@ -580,4 +589,9 @@ bool quic_path_pl_confirm(struct quic_path_group *paths, s64 largest,
 {
 	return paths->pl.number && paths->pl.number >= smallest &&
 	       paths->pl.number <= largest;
+}
+
+void quic_path_init(struct quic_path_group *paths)
+{
+	seqcount_init(&paths->path_seq);
 }
