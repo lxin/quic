@@ -584,13 +584,13 @@ int quic_crypto_encrypt(struct quic_crypto *crypto, struct sk_buff *skb,
 	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
 	int err;
 
-	cb->key_phase = crypto->key_phase;
 	/* Packet payload is already encrypted (e.g., resumed from async),
 	 * proceed to header protection only.
 	 */
 	if (cb->resume)
 		goto out;
 
+	cb->key_phase = crypto->key_phase;
 	/* If a key update is pending and this is the first packet using the
 	 * new key, save the current time. Later used to clear old keys after
 	 * some time has passed (see quic_crypto_decrypt()).
