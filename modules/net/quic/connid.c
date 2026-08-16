@@ -83,13 +83,10 @@ static void quic_source_conn_id_free(struct quic_source_conn_id *s_conn_id)
 	u32 len = s_conn_id->common.id.len;
 	struct quic_shash_head *head;
 
-	if (!hlist_nulls_unhashed(&s_conn_id->node)) {
-		head = quic_source_conn_id_head(sock_net(s_conn_id->sk), data,
-						len);
-		spin_lock_bh(&head->lock);
-		hlist_nulls_del_init_rcu(&s_conn_id->node);
-		spin_unlock_bh(&head->lock);
-	}
+	head = quic_source_conn_id_head(sock_net(s_conn_id->sk), data, len);
+	spin_lock_bh(&head->lock);
+	hlist_nulls_del_init_rcu(&s_conn_id->node);
+	spin_unlock_bh(&head->lock);
 
 	/* Freeing is deferred via RCU to avoid use-after-free during
 	 * concurrent lookups.
