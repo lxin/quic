@@ -1152,8 +1152,8 @@ int quic_crypto_generate_token(struct quic_crypto *crypto, void *addr,
 {
 	u8 *token_buf, *p, flag = *token;
 	u64 ts = quic_ktime_get_us();
-	u32 tslen = sizeof(ts);
-	int err, len;
+	u32 len, tslen = sizeof(ts);
+	int err;
 
 	len = sizeof(flag) + addrlen + tslen + conn_id->len + QUIC_TAG_LEN;
 	token_buf = kmalloc(len, GFP_KERNEL);
