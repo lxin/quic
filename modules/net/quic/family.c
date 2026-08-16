@@ -468,7 +468,7 @@ static bool quic_v6_cmp_sk_addr(struct sock *sk, union quic_addr *a,
 		return false;
 
 	if (a->sa.sa_family != addr->sa.sa_family) {
-		if (ipv6_only_sock(sk))
+		if (ipv6_only_sock(sk) || a->sa.sa_family == AF_INET)
 			return false;
 		return quic_is_any_addr(a);
 	}
