@@ -250,57 +250,51 @@ struct sock *quic_listen_sock_lookup(struct sk_buff *skb, union quic_addr *sa,
 	head = quic_listen_sock_head(hash);
 
 	rcu_read_lock();
-	if (!alpns->len) { /* No ALPNs or parse failed */
-		sk_nulls_for_each_rcu(tmp, node, &head->head) {
-			/* If alpns->data != NULL, TLS parsing succeeded but no
-			 * ALPN was found.  In this case, only match sockets
-			 * that have no ALPN set.
-			 */
-			a = quic_path_saddr(quic_paths(tmp), 0);
-			if (net == sock_net(tmp) &&
-			    quic_cmp_sk_addr(tmp, a, sa) &&
-			    quic_path_usock(quic_paths(tmp), 0) == skb->sk &&
-			    (!alpns->data || !quic_alpn(tmp)->len)) {
-				if (!quic_is_any_addr(a)) {
-					sk = tmp;
-					break; /* Prefer specific addr match. */
-				}
-				/* Prefer ipv4 ANY over ipv6 ANY for v4 addr. */
-				if (!sk || a->sa.sa_family == sa->sa.sa_family)
-					sk = tmp;
-			}
-		}
-		/* No need to check get_nulls_value(node) != hash for !sk, as
-		 * hashtable size is fixed and a listen sk can not rehashed.
-		 */
-		goto out;
-	}
+	/* Iterate sockets, checking ALPN requirements. Address specificity
+	 * always takes precedence over ALPN preference order.
+	 */
+	sk_nulls_for_each_rcu(tmp, node, &head->head) {
+		bool alpn_match = false;
 
-	/* ALPN present: loop through each ALPN entry. */
-	for (p = alpns->data, len = alpns->len; len;
-	     len -= length, p += length) {
-		quic_get_int(&p, &len, &length, 1);
-		quic_data(&alpn, p, length);
-		sk_nulls_for_each_rcu(tmp, node, &head->head) {
-			a = quic_path_saddr(quic_paths(tmp), 0);
-			if (net == sock_net(tmp) &&
-			    quic_cmp_sk_addr(tmp, a, sa) &&
-			    quic_path_usock(quic_paths(tmp), 0) == skb->sk &&
-			    quic_data_has(quic_alpn(tmp), &alpn)) {
-				if (!quic_is_any_addr(a)) {
-					sk = tmp;
+		a = quic_path_saddr(quic_paths(tmp), 0);
+		if (net != sock_net(tmp) || !quic_cmp_sk_addr(tmp, a, sa) ||
+		    quic_path_usock(quic_paths(tmp), 0) != skb->sk)
+			continue;
+
+		if (!alpns->len) {
+			/* No ALPN extension or empty ALPN list.
+			 * If alpns->data is NULL, match any socket.
+			 * If alpns->data is set (empty ALPN), only match
+			 * sockets with no ALPN configured.
+			 */
+			alpn_match = (!alpns->data || !quic_alpn(tmp)->len);
+		} else {
+			/* Check if any client ALPN matches this socket. */
+			for (p = alpns->data, len = alpns->len; len;
+			     len -= length, p += length) {
+				quic_get_int(&p, &len, &length, 1);
+				quic_data(&alpn, p, length);
+				if (quic_data_has(quic_alpn(tmp), &alpn)) {
+					alpn_match = true;
 					break;
 				}
-				if (!sk || a->sa.sa_family == sa->sa.sa_family)
-					sk = tmp;
 			}
 		}
-		/* No need to check get_nulls_value(node) != hash for !sk, as
-		 * hashtable size is fixed and a listen sk can not rehashed.
-		 */
-		if (sk)
-			break;
+
+		if (alpn_match) {
+			if (!quic_is_any_addr(a)) {
+				/* Specific address - best match. */
+				sk = tmp;
+				goto out;
+			}
+			/* ANY address - keep as candidate. */
+			if (!sk || a->sa.sa_family == sa->sa.sa_family)
+				sk = tmp;
+		}
 	}
+	/* No need to check get_nulls_value(node) != hash for !sk, as
+	 * hashtable size is fixed and a listen sk can not rehashed.
+	 */
 out:
 	if (sk && sk->sk_reuseport)
 		sk = reuseport_select_sock(sk, quic_addr_hash(net, da), skb, 1);
