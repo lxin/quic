@@ -450,7 +450,7 @@ static bool quic_v4_cmp_sk_addr(struct sock *sk, union quic_addr *a,
 		return false;
 	if (a->v4.sin_family != addr->v4.sin_family)
 		return false;
-	/* No match: specific socket vs ANY lookup. */
+	/* Match only if socket is also ANY-bound. */
 	if (addr->v4.sin_addr.s_addr == htonl(INADDR_ANY))
 		return a->v4.sin_addr.s_addr == htonl(INADDR_ANY);
 	if (a->v4.sin_addr.s_addr == htonl(INADDR_ANY))
@@ -473,7 +473,7 @@ static bool quic_v6_cmp_sk_addr(struct sock *sk, union quic_addr *a,
 		return quic_is_any_addr(a);
 	}
 
-	/* No match: specific socket vs ANY lookup. */
+	/* Match only if socket is also ANY-bound. */
 	if (ipv6_addr_any(&addr->v6.sin6_addr))
 		return ipv6_addr_any(&a->v6.sin6_addr);
 	if (ipv6_addr_any(&a->v6.sin6_addr))
