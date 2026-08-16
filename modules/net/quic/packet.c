@@ -2717,9 +2717,9 @@ int quic_packet_config(struct sock *sk, u8 level, u8 path)
 	packet->overhead = quic_packet_overhead(sk, level, path);
 	packet->len = packet->overhead + quic_packet_taglen(packet);
 
-	/* Allow fragmentation for handshake packets before PLPMTUD probing
-	 * starts. MTU discovery does not rely on ICMP Packet Too Big once
-	 * PLPMTUD is enabled.
+	/* Allow fragmentation for handshake packets if PLPMTUD is enabled, as
+	 * MTU discovery does not rely on ICMP Packet Too Big once PLPMTUD is
+	 * enabled.
 	 */
 	packet->ipfragok = level && !!quic_paths(sk)->plpmtud_interval;
 
