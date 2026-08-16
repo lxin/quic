@@ -1174,7 +1174,7 @@ int quic_crypto_generate_token(struct quic_crypto *crypto, void *addr,
 	memcpy(token, token_buf, len);
 	*tlen = len;
 out:
-	kfree(token_buf);
+	kfree_sensitive(token_buf);
 	return err;
 }
 EXPORT_SYMBOL_GPL(quic_crypto_generate_token);
@@ -1232,7 +1232,7 @@ int quic_crypto_verify_token(struct quic_crypto *crypto, void *addr,
 		quic_conn_id_update(conn_id, p, len);
 	err = 0;
 out:
-	kfree(token_buf);
+	kfree_sensitive(token_buf);
 	return err;
 }
 EXPORT_SYMBOL_GPL(quic_crypto_verify_token);
