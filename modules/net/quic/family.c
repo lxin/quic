@@ -593,6 +593,9 @@ void quic_udp_conf_init(struct sock *sk, struct udp_port_cfg *conf,
 int quic_flow_route(struct sock *sk, union quic_addr *da, union quic_addr *sa,
 		    struct flowi *fl)
 {
+	if (sa->sa.sa_family && da->sa.sa_family != sa->sa.sa_family)
+		return -EINVAL;
+
 	return quic_af_ipv4(da) ? quic_v4_flow_route(sk, da, sa, fl) :
 				  quic_v6_flow_route(sk, da, sa, fl);
 }
