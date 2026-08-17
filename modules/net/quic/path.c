@@ -183,10 +183,17 @@ int quic_path_bind(struct sock *sk, struct quic_path_group *paths, u8 path)
 
 	port = ntohs(a->v4.sin_port);
 	if (port) {
+		if (inet_port_requires_bind_service(net, port) &&
+		    !ns_capable(net->user_ns, CAP_NET_BIND_SERVICE))
+			return -EACCES;
 		head = quic_udp_sock_head(net, port);
 		mutex_lock(&head->lock);
 		us = quic_udp_sock_lookup(sk, a, port);
 		if (us) {
+			if (!uid_eq(sk->sk_uid, us->sk->sk_uid)) {
+				mutex_unlock(&head->lock);
+				return -EADDRINUSE;
+			}
 			/* Allow reuse of an existing UDP tunnel socket.
 			 * However, if it is in the middle of asynchronous
 			 * teardown (via workqueue), it is temporarily unusable.
