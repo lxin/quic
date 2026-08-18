@@ -11,8 +11,8 @@
  */
 
 #include <crypto/skcipher.h>
+#include <crypto/algapi.h>
 #include <linux/skbuff.h>
-#include <crypto/utils.h>
 #include <crypto/aead.h>
 #include <crypto/hash.h>
 #include <linux/quic.h>

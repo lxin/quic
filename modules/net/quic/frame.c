@@ -11,7 +11,7 @@
  */
 
 #include <linux/version.h>
-#include <crypto/utils.h>
+#include <crypto/algapi.h>
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 10, 0)
 #include <net/proto_memory.h>

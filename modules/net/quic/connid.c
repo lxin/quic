@@ -10,7 +10,7 @@
  *    Xin Long <lucien.xin@gmail.com>
  */
 
-#include <crypto/utils.h>
+#include <crypto/algapi.h>
 #include <linux/quic.h>
 #include <net/sock.h>
 
