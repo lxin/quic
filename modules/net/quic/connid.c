@@ -112,11 +112,13 @@ int quic_conn_id_add(struct quic_conn_id_set *id_set,
 		     gfp_t gfp)
 {
 	bool dest = id_set->entry_size == sizeof(struct quic_dest_conn_id);
-	struct quic_source_conn_id *s_conn_id;
+	struct quic_source_conn_id *s_conn_id, *pos;
 	struct quic_dest_conn_id *d_conn_id;
 	struct quic_common_conn_id *common;
+	struct hlist_nulls_node *node;
 	struct quic_shash_head *head;
 	struct list_head *list;
+	struct net *net;
 
 	/* Locate insertion point to keep list ordered by number. */
 	list = &id_set->head;
@@ -160,11 +162,24 @@ int quic_conn_id_add(struct quic_conn_id_set *id_set,
 		common->hashed = 1;
 		s_conn_id = (struct quic_source_conn_id *)common;
 		s_conn_id->sk = data;
+		net = sock_net(s_conn_id->sk);
 
-		head = quic_source_conn_id_head(sock_net(s_conn_id->sk),
-						common->id.data,
+		head = quic_source_conn_id_head(net, common->id.data,
 						common->id.len);
 		spin_lock_bh(&head->lock);
+
+		/* Check for collision before inserting */
+		hlist_nulls_for_each_entry(pos, node, &head->head, node) {
+			if (net != sock_net(pos->sk))
+				continue;
+			if (quic_conn_id_cmp(&pos->common.id, &common->id))
+				continue;
+			spin_unlock_bh(&head->lock);
+			kfree(common);
+			WARN_ON_ONCE(1);
+			return -EEXIST;
+		}
+
 		hlist_nulls_add_head_rcu(&s_conn_id->node, &head->head);
 		spin_unlock_bh(&head->lock);
 	}
