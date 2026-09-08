@@ -136,5 +136,4 @@ void quic_packet_free(struct sock *sk);
 int quic_packet_select_version(struct sock *sk, u32 *versions, u8 count);
 u32 *quic_packet_compatible_versions(u32 version);
 
-void quic_packet_backlog_work(struct work_struct *work);
 void quic_packet_rcv_err_pmtu(struct sock *sk);

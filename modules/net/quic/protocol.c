@@ -614,26 +614,15 @@ static void quic_protosw_exit(void)
 static int __net_init quic_net_init(struct net *net)
 {
 	struct quic_net *qn = quic_net(net);
-	int err;
+	int err = 0;
 
 	qn->stat = alloc_percpu(struct quic_mib);
 	if (!qn->stat)
 		return -ENOMEM;
 
-	err = quic_crypto_set_cipher(&qn->crypto, TLS_CIPHER_AES_GCM_128);
-	if (err) {
-		free_percpu(qn->stat);
-		qn->stat = NULL;
-		return err;
-	}
-
-	INIT_WORK(&qn->work, quic_packet_backlog_work);
-	skb_queue_head_init(&qn->backlog_list);
-
 #if IS_ENABLED(CONFIG_PROC_FS)
 	err = quic_net_proc_init(net);
 	if (err) {
-		quic_crypto_free(&qn->crypto);
 		free_percpu(qn->stat);
 		qn->stat = NULL;
 	}
@@ -648,9 +637,6 @@ static void __net_exit quic_net_exit(struct net *net)
 #if IS_ENABLED(CONFIG_PROC_FS)
 	quic_net_proc_exit(net);
 #endif
-	cancel_work_sync(&qn->work);
-	skb_queue_purge(&qn->backlog_list);
-	quic_crypto_free(&qn->crypto);
 	free_percpu(qn->stat);
 	qn->stat = NULL;
 }

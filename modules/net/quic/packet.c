@@ -340,31 +340,29 @@ out:
 	return 1;
 }
 
-#define QUIC_PACKET_BACKLOG_MAX		4096
-
 /* Queue a packet for later processing when sleeping is allowed. */
-static int quic_packet_backlog_schedule(struct net *net, struct sk_buff *skb)
+static int quic_packet_deferred_schedule(struct sk_buff *skb)
 {
 	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
-	struct quic_net *qn = quic_net(net);
-	struct sk_buff_head *head;
+	struct sock *sk = skb->sk;
+	int len = skb->truesize;
 
 	if (cb->backlog)
 		return 0;
 
-	head = &qn->backlog_list;
-	spin_lock_bh(&head->lock);
-	if (head->qlen >= QUIC_PACKET_BACKLOG_MAX) {
-		spin_unlock_bh(&head->lock);
-		QUIC_INC_STATS(net, QUIC_MIB_PKT_RCVDROP);
+	if (sk_rmem_alloc_get(sk) + len > sk->sk_rcvbuf ||
+	    !quic_sk_rmem_schedule(sk, len)) {
+		QUIC_INC_STATS(sock_net(sk), QUIC_MIB_PKT_RCVDROP);
 		kfree_skb(skb);
 		return -ENOBUFS;
 	}
 	cb->backlog = 1;
-	__skb_queue_tail(head, skb);
-	spin_unlock_bh(&head->lock);
+	skb_set_owner_r(skb, sk);
+	__skb_queue_tail(&quic_packet(sk)->deferred_list, skb);
 
-	queue_work(quic_wq, &qn->work);
+	sock_hold(sk);
+	if (!queue_work(quic_wq, quic_work(sk)))
+		sock_put(sk);
 	return 1;
 }
 
@@ -511,8 +509,6 @@ static int quic_packet_parse_alpn(struct sk_buff *skb, struct quic_data *alpn)
 	u64 offset, length;
 	int err;
 
-	if (!static_branch_unlikely(&quic_alpn_demux_key))
-		return 0;
 	err = quic_packet_get_long_header(&dcid, &scid, &version, &p, &len);
 	if (err)
 		return err;
@@ -527,12 +523,10 @@ static int quic_packet_parse_alpn(struct sk_buff *skb, struct quic_data *alpn)
 		return err;
 	if (!quic_get_var(&p, &len, &length) || length > (u64)len)
 		return -EINVAL;
-	if (quic_packet_backlog_schedule(net, skb))
-		return -EINPROGRESS;
 	cb->length = (u16)length;
 
 	/* Install initial keys for packet decryption to crypto. */
-	crypto = &quic_net(net)->crypto;
+	crypto = quic_crypto(skb->sk, QUIC_CRYPTO_INITIAL);
 	err = quic_crypto_initial_keys_install(crypto, &dcid, version, 1);
 	if (err)
 		return err;
@@ -561,26 +555,6 @@ static int quic_packet_parse_alpn(struct sk_buff *skb, struct quic_data *alpn)
 
 	/* Parse the TLS CLIENT_HELLO message. */
 	return quic_packet_get_alpn(alpn, p, length);
-}
-
-/* Lookup listening socket for Client Initial packet (in process context). */
-static struct sock *quic_packet_get_listen_sock(struct sk_buff *skb)
-{
-	union quic_addr daddr, saddr;
-	struct quic_data alpns = {};
-	struct sock *sk;
-	int err;
-
-	quic_get_msg_addrs(skb, &daddr, &saddr);
-
-	err = quic_packet_parse_alpn(skb, &alpns);
-	if (err)
-		return ERR_PTR(err);
-
-	sk = quic_listen_sock_lookup(skb, &daddr, &saddr, skb->sk, &alpns);
-	if (!sk)
-		return ERR_PTR(-ENOENT);
-	return sk;
 }
 
 /* Determine the QUIC socket associated with an incoming packet. */
@@ -651,9 +625,6 @@ static struct sock *quic_packet_get_sock(struct sk_buff *skb, struct sock *usk)
 	/* Final fallback: listener socket lookup
 	 * (Used for receiving the first Client Initial packet).
 	 */
-	err = quic_packet_parse_alpn(skb, &alpns);
-	if (err)
-		return ERR_PTR(err);
 	sk = quic_listen_sock_lookup(skb, &daddr, &saddr, usk, &alpns);
 	if (!sk)
 		return ERR_PTR(-ENOENT);
@@ -669,8 +640,7 @@ int quic_packet_rcv(struct sock *sk, struct sk_buff *skb, bool icmp)
 	if (unlikely(icmp))
 		return quic_packet_rcv_err(sk, skb);
 
-	/* Save the UDP socket to skb->sk for later QUIC socket lookup. */
-	if (skb_linearize(skb) || !skb_set_owner_sk_safe(skb, sk)) {
+	if (skb_linearize(skb)) {
 		err = -EINVAL;
 		goto err;
 	}
@@ -679,8 +649,6 @@ int quic_packet_rcv(struct sock *sk, struct sk_buff *skb, bool icmp)
 	sk = quic_packet_get_sock(skb, sk);
 	if (IS_ERR(sk)) {
 		err = PTR_ERR(sk);
-		if (err == -EINPROGRESS)
-			return 0;
 		goto err;
 	}
 
@@ -999,11 +967,13 @@ static int quic_packet_listen_process(struct sock *sk, struct sk_buff *skb,
 				      gfp_t gfp)
 {
 	struct quic_packet *packet = quic_packet(sk);
-	u32 version, errcode, len = skb->len;
+	u32 version, errcode, toff, len = skb->len;
+	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
 	u8 *p = skb->data, type, retry = 0;
 	struct net *net = sock_net(sk);
 	struct quic_conn_id odcid = {};
 	struct quic_request_sock *req;
+	struct quic_data alpns = {};
 	struct quic_crypto *crypto;
 	struct quic_data token;
 	int err;
@@ -1101,17 +1071,33 @@ static int quic_packet_listen_process(struct sock *sk, struct sk_buff *skb,
 		kfree_skb(skb);
 		return err;
 	}
+	if (token.len)
+		toff = token.data - skb->data;;
 
 	/* Associate skb with sk to ensure sk is valid if skb is delayed to
 	 * process in workqueue.
 	 */
 	WARN_ON_ONCE(!skb_set_owner_sk_safe(skb, sk));
 	packet->version = version;
+	if (!cb->resume && static_branch_unlikely(&quic_alpn_demux_key)) {
+		if (quic_packet_deferred_schedule(skb))
+			return -EINPROGRESS;
+		err = quic_packet_parse_alpn(skb, &alpns);
+		if (err) {
+			kfree_skb(skb);
+			return err;
+		}
+		if (quic_listen_sock_switch(skb, &alpns))
+			return 0; /* Switched to different listen socket. */
+		if (token.len) /* Update after skb->data may change. */
+			token.data = skb->data + toff;
+	}
+
 	/* Save original DCID for future token validation or Retry logic. */
 	quic_conn_id_update(&odcid, packet->dcid.data, packet->dcid.len);
 	/* If configured to validate client addresses, handle token logic. */
 	if (quic_outq(sk)->validate_peer_address) {
-		if (quic_packet_backlog_schedule(net, skb))
+		if (quic_packet_deferred_schedule(skb))
 			return 0;
 		if (!token.len) {
 			/* rfc9000#section-8.1.2:
@@ -1157,7 +1143,7 @@ static int quic_packet_listen_process(struct sock *sk, struct sk_buff *skb,
 	/* Add request sock for this new QUIC connection. */
 	req = quic_request_sock_create(sk, &odcid, retry, gfp);
 	if (IS_ERR(req)) {
-		if (quic_packet_backlog_schedule(net, skb))
+		if (quic_packet_deferred_schedule(skb))
 			return 0;
 		/* rfc9000#section-5.2.2:
 		 *
@@ -1468,7 +1454,7 @@ static int quic_packet_process_error(struct sock *sk, struct sk_buff *skb,
 	/* Schedule packet processing in backlog context so the CONNECTION_CLOSE
 	 * can be sent from a safe/process context.
 	 */
-	ret = quic_packet_backlog_schedule(sock_net(sk), skb);
+	ret = quic_packet_deferred_schedule(skb);
 	if (ret) {
 		if (ret > 0) /* Mark it only if scheduling succeeded. */
 			outq->close_pending = 1;
@@ -1508,7 +1494,6 @@ static int quic_packet_handshake_header_process(struct sock *sk,
 	struct quic_packet *packet = quic_packet(sk);
 	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
 	bool is_serv = quic_is_serv(sk);
-	struct net *net = sock_net(sk);
 	u32 len = skb->len, version;
 	struct quic_data token;
 	u64 length;
@@ -1523,7 +1508,7 @@ static int quic_packet_handshake_header_process(struct sock *sk,
 	if (!version) { /* Version == 0 means a Version Negotiation packet. */
 		if (is_serv)
 			return -EINVAL;
-		if (!quic_packet_backlog_schedule(net, skb))
+		if (!quic_packet_deferred_schedule(skb))
 			quic_packet_version_process(sk, skb);
 		return -EINPROGRESS;
 	}
@@ -1537,7 +1522,7 @@ static int quic_packet_handshake_header_process(struct sock *sk,
 		if (type != QUIC_PACKET_INITIAL ||
 		    !quic_packet_compatible_versions(version))
 			return -EINVAL;
-		if (quic_packet_backlog_schedule(net, skb))
+		if (quic_packet_deferred_schedule(skb))
 			return -EINPROGRESS;
 		/* Update crypto keys for the new negotiated version. */
 		err = quic_packet_version_change(sk, &quic_paths(sk)->orig_dcid,
@@ -1585,7 +1570,7 @@ static int quic_packet_handshake_header_process(struct sock *sk,
 	case QUIC_PACKET_RETRY:
 		if (is_serv)
 			return -EINVAL;
-		if (!quic_packet_backlog_schedule(net, skb))
+		if (!quic_packet_deferred_schedule(skb))
 			quic_packet_retry_process(sk, skb); /* Handle Retry. */
 		return -EINPROGRESS;
 	default:
@@ -2106,7 +2091,7 @@ static int quic_packet_app_process(struct sock *sk, struct sk_buff *skb,
 			return err;
 		}
 		if (err == -EKEYREVOKED) {
-			quic_packet_backlog_schedule(net, skb);
+			quic_packet_deferred_schedule(skb);
 			return err;
 		}
 		QUIC_INC_STATS(net, QUIC_MIB_PKT_DECDROP);
@@ -2207,33 +2192,19 @@ int quic_packet_process(struct sock *sk, struct sk_buff *skb, gfp_t gfp)
 }
 
 /* Work function to process packets in the backlog queue. */
-void quic_packet_backlog_work(struct work_struct *work)
+static void quic_packet_deferred_work(struct work_struct *work)
 {
-	struct quic_net *qn = container_of(work, struct quic_net, work);
-	struct sk_buff_head *head = &qn->backlog_list;
+	struct quic_sock *qs = container_of(work, struct quic_sock, work);
+	struct sock *sk = &qs->inet.sk;
+	struct sk_buff_head *head;
 	struct sk_buff *skb;
-	struct sock *sk;
 
-	while ((skb = skb_dequeue(head)) != NULL) {
-		sk = skb->sk;
-		if (sk->sk_protocol == IPPROTO_QUIC) {
-			sock_hold(sk);
-		} else {
-			sk = quic_packet_get_listen_sock(skb);
-			if (IS_ERR(sk)) {
-				QUIC_INC_STATS(sock_net(skb->sk),
-					       QUIC_MIB_PKT_RCVDROP);
-				kfree_skb(skb);
-				continue;
-			}
-		}
-
-		lock_sock(sk);
+	lock_sock(sk);
+	head = &quic_packet(sk)->deferred_list;
+	while ((skb = __skb_dequeue(head)) != NULL)
 		quic_packet_process(sk, skb, GFP_KERNEL);
-		release_sock(sk);
-		sock_put(sk);
-		cond_resched();
-	}
+	release_sock(sk);
+	sock_put(sk);
 }
 
 /* Make these fixed for easy coding. */
@@ -3002,6 +2973,8 @@ void quic_packet_init(struct sock *sk)
 	INIT_LIST_HEAD(&packet->frame_list);
 	skb_queue_head_init(&packet->deferred_list);
 	skb_queue_head_init(&packet->backlog_list);
+	INIT_WORK(quic_work(sk), quic_packet_deferred_work);
+
 	packet->taglen[QUIC_PACKET_FORM_SHORT] = QUIC_TAG_LEN;
 	packet->taglen[QUIC_PACKET_FORM_LONG] = QUIC_TAG_LEN;
 	packet->mss[QUIC_PACKET_MSS_NORMAL] = QUIC_MIN_UDP_PAYLOAD;
@@ -3014,6 +2987,7 @@ void quic_packet_free(struct sock *sk)
 {
 	struct quic_packet *packet = quic_packet(sk);
 
+	flush_work(quic_work(sk));
 	__skb_queue_purge(&packet->deferred_list);
 	__skb_queue_purge(&packet->backlog_list);
 }

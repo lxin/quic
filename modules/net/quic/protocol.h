@@ -51,12 +51,6 @@ struct quic_net {
 #if IS_ENABLED(CONFIG_PROC_FS)
 	struct proc_dir_entry *proc_net; /* procfs entry for QUIC stats */
 #endif
-	/* Context for decrypting Initial packets for ALPN */
-	struct quic_crypto crypto;
-
-	/* Queue of packets deferred for processing in process context */
-	struct sk_buff_head backlog_list;
-	struct work_struct work; /* Work to drain/process backlog_list */
 };
 
 struct quic_net *quic_net(struct net *net);

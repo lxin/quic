@@ -138,7 +138,8 @@ bool quic_accept_sock_exists(struct sock *sk, struct sk_buff *skb)
 
 	/* Look up accepted socket matching packet addresses and DCID. */
 	local_bh_disable();
-	sk = quic_sock_lookup(skb, &packet->saddr, &packet->daddr, skb->sk,
+	sk = quic_sock_lookup(skb, &packet->saddr, &packet->daddr,
+			      quic_path_usock(quic_paths(sk), 0),
 			      &packet->dcid);
 	if (!sk)
 		goto out;
