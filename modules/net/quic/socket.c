@@ -26,6 +26,19 @@ static void quic_enter_memory_pressure(struct sock *sk)
 	WRITE_ONCE(quic_memory_pressure, 1);
 }
 
+/* Check and optionally charge receive memory for a QUIC socket.
+ * Equivalent to sk_rmem_schedule().
+ */
+bool quic_sk_rmem_schedule(struct sock *sk, int size)
+{
+	int delta;
+
+	if (!sk_has_account(sk))
+		return true;
+	delta = size - sk->sk_forward_alloc;
+	return delta <= 0 || __sk_mem_schedule(sk, delta, SK_MEM_RECV);
+}
+
 /* Check if a matching request sock already exists. Match is based on
  * source/destination addresses and DCID.
  */
@@ -79,15 +92,21 @@ int quic_request_sock_backlog_tail(struct sock *sk,
 				   struct quic_request_sock *req,
 				   struct sk_buff *skb)
 {
-	/* Use listen sock sk_rcvbuf to limit the request sock's backlog len. */
-	if (req->blen + skb->truesize > sk->sk_rcvbuf) {
+	u32 limit = sk->sk_rcvbuf / sk->sk_max_ack_backlog;
+	int len = skb->truesize;
+
+	limit =  max_t(u32, limit, QUIC_MIN_UDP_PAYLOAD * 4);
+	if (req->blen + len > limit || !quic_sk_rmem_schedule(sk, len)) {
 		QUIC_INC_STATS(sock_net(sk), QUIC_MIB_PKT_RCVDROP);
 		kfree_skb(skb);
 		return -ENOBUFS;
 	}
 
+	QUIC_SKB_CB(skb)->backlog = 1;
+	skb_set_owner_r(skb, sk);
 	__skb_queue_tail(&req->backlog_list, skb);
-	req->blen += skb->truesize;
+	req->blen += len;
+
 	sk->sk_data_ready(sk);
 	return 0;
 }

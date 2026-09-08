@@ -178,19 +178,6 @@ out:
 	return fin;
 }
 
-/* Check and optionally charge receive memory for a QUIC socket.
- * Equivalent to sk_rmem_schedule().
- */
-static bool quic_sk_rmem_schedule(struct sock *sk, int size)
-{
-	int delta;
-
-	if (!sk_has_account(sk))
-		return true;
-	delta = size - sk->sk_forward_alloc;
-	return delta <= 0 || __sk_mem_schedule(sk, delta, SK_MEM_RECV);
-}
-
 #define QUIC_RCVBUF_OOO_LIMIT(sk)	((sk)->sk_rcvbuf * 3 / 4)
 
 /* Process an incoming QUIC stream frame.

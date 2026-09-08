@@ -253,3 +253,4 @@ int quic_request_sock_backlog_tail(struct sock *sk,
 				   struct quic_request_sock *req,
 				   struct sk_buff *skb);
 struct quic_request_sock *quic_request_sock_lookup(struct sock *sk);
+bool quic_sk_rmem_schedule(struct sock *sk, int size);
