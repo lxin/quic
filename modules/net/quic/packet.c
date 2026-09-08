@@ -577,18 +577,18 @@ static struct sock *quic_packet_get_listen_sock(struct sk_buff *skb)
 	if (err)
 		return ERR_PTR(err);
 
-	sk = quic_listen_sock_lookup(skb, &daddr, &saddr, &alpns);
+	sk = quic_listen_sock_lookup(skb, &daddr, &saddr, skb->sk, &alpns);
 	if (!sk)
 		return ERR_PTR(-ENOENT);
 	return sk;
 }
 
 /* Determine the QUIC socket associated with an incoming packet. */
-static struct sock *quic_packet_get_sock(struct sk_buff *skb)
+static struct sock *quic_packet_get_sock(struct sk_buff *skb, struct sock *usk)
 {
 	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
 	struct quic_conn_id dcid = {}, *conn_id;
-	struct net *net = sock_net(skb->sk);
+	struct net *net = sock_net(usk);
 	union quic_addr daddr, saddr;
 	struct quic_data alpns = {};
 	struct sock *sk = NULL;
@@ -618,13 +618,13 @@ static struct sock *quic_packet_get_sock(struct sk_buff *skb)
 		 * (May be used to send a stateless reset from a listen socket).
 		 */
 		quic_get_msg_addrs(skb, &daddr, &saddr);
-		sk = quic_listen_sock_lookup(skb, &daddr, &saddr, &alpns);
+		sk = quic_listen_sock_lookup(skb, &daddr, &saddr, usk, &alpns);
 		if (sk)
 			return sk;
 		/* Final fallback: address-based connection lookup
 		 * (May be used to receive a stateless reset).
 		 */
-		sk = quic_sock_lookup(skb, &daddr, &saddr, skb->sk, NULL);
+		sk = quic_sock_lookup(skb, &daddr, &saddr, usk, NULL);
 		if (!sk)
 			return ERR_PTR(-ENOENT);
 		return sk;
@@ -645,7 +645,7 @@ static struct sock *quic_packet_get_sock(struct sk_buff *skb)
 	 * (May be used for 0-RTT or a follow-up Client Initial packet).
 	 */
 	quic_get_msg_addrs(skb, &daddr, &saddr);
-	sk = quic_sock_lookup(skb, &daddr, &saddr, skb->sk, &dcid);
+	sk = quic_sock_lookup(skb, &daddr, &saddr, usk, &dcid);
 	if (sk)
 		return sk;
 	/* Final fallback: listener socket lookup
@@ -654,7 +654,7 @@ static struct sock *quic_packet_get_sock(struct sk_buff *skb)
 	err = quic_packet_parse_alpn(skb, &alpns);
 	if (err)
 		return ERR_PTR(err);
-	sk = quic_listen_sock_lookup(skb, &daddr, &saddr, &alpns);
+	sk = quic_listen_sock_lookup(skb, &daddr, &saddr, usk, &alpns);
 	if (!sk)
 		return ERR_PTR(-ENOENT);
 	return sk;
@@ -676,7 +676,7 @@ int quic_packet_rcv(struct sock *sk, struct sk_buff *skb, bool icmp)
 	}
 
 	/* Look up socket from socket or connection IDs hash tables. */
-	sk = quic_packet_get_sock(skb);
+	sk = quic_packet_get_sock(skb, sk);
 	if (IS_ERR(sk)) {
 		err = PTR_ERR(sk);
 		if (err == -EINPROGRESS)

@@ -239,7 +239,7 @@ static inline void quic_set_state(struct sock *sk, int state)
 }
 
 struct sock *quic_listen_sock_lookup(struct sk_buff *skb, union quic_addr *sa,
-				     union quic_addr *da,
+				     union quic_addr *da, struct sock *usk,
 				     struct quic_data *alpns);
 struct sock *quic_sock_lookup(struct sk_buff *skb, union quic_addr *sa,
 			      union quic_addr *da, struct sock *usk,

@@ -248,10 +248,10 @@ begin:
  * found.
  */
 struct sock *quic_listen_sock_lookup(struct sk_buff *skb, union quic_addr *sa,
-				     union quic_addr *da,
+				     union quic_addr *da, struct sock *usk,
 				     struct quic_data *alpns)
 {
-	struct net *net = sock_net(skb->sk);
+	struct net *net = sock_net(usk);
 	struct hlist_nulls_node *node;
 	struct sock *sk = NULL, *tmp;
 	struct quic_shash_head *head;
@@ -273,7 +273,7 @@ struct sock *quic_listen_sock_lookup(struct sk_buff *skb, union quic_addr *sa,
 
 		a = quic_path_saddr(quic_paths(tmp), 0);
 		if (net != sock_net(tmp) || !quic_cmp_sk_addr(tmp, a, sa) ||
-		    quic_path_usock(quic_paths(tmp), 0) != skb->sk)
+		    quic_path_usock(quic_paths(tmp), 0) != usk)
 			continue;
 
 		if (!alpns->len) {
