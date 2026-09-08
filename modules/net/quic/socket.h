@@ -244,6 +244,8 @@ struct sock *quic_listen_sock_lookup(struct sk_buff *skb, union quic_addr *sa,
 struct sock *quic_sock_lookup(struct sk_buff *skb, union quic_addr *sa,
 			      union quic_addr *da, struct sock *usk,
 			      struct quic_conn_id *dcid);
+
+bool quic_listen_sock_switch(struct sk_buff *skb, struct quic_data *alpns);
 bool quic_accept_sock_exists(struct sock *sk, struct sk_buff *skb);
 
 struct quic_request_sock *quic_request_sock_create(struct sock *sk,

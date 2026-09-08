@@ -3000,6 +3000,7 @@ void quic_packet_init(struct sock *sk)
 	struct quic_packet *packet = quic_packet(sk);
 
 	INIT_LIST_HEAD(&packet->frame_list);
+	skb_queue_head_init(&packet->deferred_list);
 	skb_queue_head_init(&packet->backlog_list);
 	packet->taglen[QUIC_PACKET_FORM_SHORT] = QUIC_TAG_LEN;
 	packet->taglen[QUIC_PACKET_FORM_LONG] = QUIC_TAG_LEN;
@@ -3013,5 +3014,6 @@ void quic_packet_free(struct sock *sk)
 {
 	struct quic_packet *packet = quic_packet(sk);
 
+	__skb_queue_purge(&packet->deferred_list);
 	__skb_queue_purge(&packet->backlog_list);
 }

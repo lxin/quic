@@ -14,6 +14,7 @@ struct quic_packet {
 	union quic_addr daddr;    /* Dest address from received packet */
 	union quic_addr saddr;    /* Source address from received packet */
 
+	struct sk_buff_head deferred_list; /* Packets deferred to work queue */
 	struct sk_buff_head backlog_list;  /* Packets waiting for crypto keys */
 	struct list_head frame_list; /* Frames to pack into packet for send */
 	struct sk_buff *head;        /* Head skb for packet bundling on send */

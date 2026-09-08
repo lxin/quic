@@ -320,6 +320,50 @@ out:
 	return sk;
 }
 
+/* Switch packet to a different listening socket based on ALPN matching.
+ *
+ * When ALPN demultiplexing is enabled, this function attempts to find a
+ * listening socket that matches the parsed ALPN. If a different socket is
+ * found, the packet is switched to that socket for processing.
+ *
+ * Return: true if switched to a different socket, false otherwise.
+ */
+bool quic_listen_sock_switch(struct sk_buff *skb, struct quic_data *alpns)
+{
+	struct sock *nsk, *sk = skb->sk;
+	struct quic_packet *packet;
+
+	if (!alpns->data)
+		return false;
+
+	local_bh_disable();
+	packet = quic_packet(sk);
+	nsk = quic_listen_sock_lookup(skb, &packet->saddr, &packet->daddr,
+				      quic_path_usock(quic_paths(sk), 0),
+				      alpns);
+	if (!nsk)
+		goto out;
+	if (nsk == sk) {
+		sock_put(nsk);
+		goto out;
+	}
+	local_bh_enable();
+	release_sock(sk);
+
+	skb_orphan(skb);
+
+	lock_sock(nsk);
+	nsk->sk_backlog_rcv(nsk, skb); /* quic_packet_process(). */
+	release_sock(nsk);
+	sock_put(nsk);
+
+	lock_sock(sk);
+	return true;
+out:
+	local_bh_enable();
+	return false;
+}
+
 static void quic_write_space(struct sock *sk)
 {
 	__poll_t mask = EPOLLOUT | EPOLLWRNORM | EPOLLWRBAND;
