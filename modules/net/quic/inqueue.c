@@ -664,25 +664,10 @@ int quic_inq_dgram_recv(struct sock *sk, struct quic_frame *frame)
 	return 0;
 }
 
-#define QUIC_INQ_BACKLOG_MAX	128
-
-void quic_inq_backlog_tail(struct sock *sk, struct sk_buff *skb)
-{
-	struct sk_buff_head *head = &quic_inq(sk)->backlog_list;
-
-	if (head->qlen >= QUIC_INQ_BACKLOG_MAX) {
-		QUIC_INC_STATS(sock_net(sk), QUIC_MIB_PKT_RCVDROP);
-		kfree_skb(skb);
-		return;
-	}
-	__skb_queue_tail(head, skb);
-}
-
 void quic_inq_init(struct sock *sk)
 {
 	struct quic_inqueue *inq = quic_inq(sk);
 
-	skb_queue_head_init(&inq->backlog_list);
 	INIT_LIST_HEAD(&inq->handshake_list);
 	INIT_LIST_HEAD(&inq->stream_list);
 	INIT_LIST_HEAD(&inq->early_list);
@@ -693,7 +678,6 @@ void quic_inq_free(struct sock *sk)
 {
 	struct quic_inqueue *inq = quic_inq(sk);
 
-	__skb_queue_purge(&inq->backlog_list);
 	quic_inq_list_purge(sk, &inq->handshake_list, NULL);
 	quic_inq_list_purge(sk, &inq->stream_list, NULL);
 	quic_inq_list_purge(sk, &inq->early_list, NULL);

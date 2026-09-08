@@ -14,6 +14,7 @@ struct quic_packet {
 	union quic_addr daddr;    /* Dest address from received packet */
 	union quic_addr saddr;    /* Source address from received packet */
 
+	struct sk_buff_head backlog_list;  /* Packets waiting for crypto keys */
 	struct list_head frame_list; /* Frames to pack into packet for send */
 	struct sk_buff *head;        /* Head skb for packet bundling on send */
 	u32 version;   /* QUIC version used/selected during handshake */
@@ -129,6 +130,7 @@ int quic_packet_route(struct sock *sk);
 void quic_packet_mss_update(struct sock *sk, u32 mss);
 void quic_packet_flush(struct sock *sk);
 void quic_packet_init(struct sock *sk);
+void quic_packet_free(struct sock *sk);
 
 int quic_packet_select_version(struct sock *sk, u32 *versions, u8 count);
 u32 *quic_packet_compatible_versions(u32 version);

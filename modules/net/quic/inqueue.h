@@ -18,7 +18,6 @@ enum {
 };
 
 struct quic_inqueue {
-	struct sk_buff_head backlog_list; /* Packets waiting for crypto keys */
 	struct list_head handshake_list; /* CRYPTO frames awaiting reassembly */
 	struct list_head stream_list;    /* STREAM frames awaiting reassembly */
 	struct list_head early_list;     /* 0-RTT STREAM frames reassembled */
@@ -58,7 +57,6 @@ int quic_inq_dgram_recv(struct sock *sk, struct quic_frame *frame);
 
 void quic_inq_list_purge(struct sock *sk, struct list_head *head,
 			 struct quic_stream *stream);
-void quic_inq_backlog_tail(struct sock *sk, struct sk_buff *skb);
 void quic_inq_data_rfree(int len, struct sock *sk);
 
 void quic_inq_flow_control(struct sock *sk, struct quic_stream *stream,

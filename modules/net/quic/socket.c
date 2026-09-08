@@ -483,6 +483,7 @@ static void quic_destroy_sock(struct sock *sk)
 	quic_outq_free(sk);
 	quic_inq_free(sk);
 	quic_timer_free(sk);
+	quic_packet_free(sk);
 
 	for (i = 0; i < QUIC_PNSPACE_MAX; i++)
 		quic_pnspace_free(quic_pnspace(sk, i));
@@ -2313,7 +2314,7 @@ static int quic_sock_set_crypto_secret(struct sock *sk, void *kopt, u32 len)
 		 * all buffered 0-RTT or Handshake packets.
 		 */
 		__skb_queue_head_init(&tmpq);
-		skb_queue_splice_init(&inq->backlog_list, &tmpq);
+		skb_queue_splice_init(&packet->backlog_list, &tmpq);
 		while ((skb = __skb_dequeue(&tmpq)) != NULL)
 			quic_packet_process(sk, skb, gfp);
 		/* quic_packet_process() may close socket. */
@@ -2352,7 +2353,7 @@ static int quic_sock_set_crypto_secret(struct sock *sk, void *kopt, u32 len)
 	 * packets.
 	 */
 	__skb_queue_head_init(&tmpq);
-	skb_queue_splice_init(&inq->backlog_list, &tmpq);
+	skb_queue_splice_init(&packet->backlog_list, &tmpq);
 	while ((skb = __skb_dequeue(&tmpq)) != NULL)
 		quic_packet_process(sk, skb, gfp);
 	if (quic_is_closed(sk)) /* quic_packet_process() may close socket. */

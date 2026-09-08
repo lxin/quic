@@ -1481,6 +1481,22 @@ send:
 	return err;
 }
 
+static int quic_packet_backlog_tail(struct sock *sk, struct sk_buff *skb)
+{
+	int len = skb->truesize;
+
+	if (sk_rmem_alloc_get(sk) + len > sk->sk_rcvbuf ||
+	    !quic_sk_rmem_schedule(sk, len)) {
+		QUIC_INC_STATS(sock_net(sk), QUIC_MIB_PKT_RCVDROP);
+		kfree_skb(skb);
+		return -ENOBUFS;
+	}
+	QUIC_SKB_CB(skb)->backlog = 1;
+	skb_set_owner_r(skb, sk);
+	__skb_queue_tail(&quic_packet(sk)->backlog_list, skb);
+	return 0;
+}
+
 /* Process the header of an incoming long-header QUIC handshake packet. Parses
  * the packet type and handles Version Negotiation and Retry if present. Returns
  * -EINPROGRESS if the packet has been consumed or queued for later processing.
@@ -1551,7 +1567,7 @@ static int quic_packet_handshake_header_process(struct sock *sk,
 	case QUIC_PACKET_HANDSHAKE:
 		if (!quic_crypto(sk, QUIC_CRYPTO_HANDSHAKE)->recv_ready) {
 			/* Queue to backlog until Handshake keys are ready. */
-			quic_inq_backlog_tail(sk, skb);
+			quic_packet_backlog_tail(sk, skb);
 			return -EINPROGRESS;
 		}
 		packet->level = QUIC_CRYPTO_HANDSHAKE;
@@ -1561,7 +1577,7 @@ static int quic_packet_handshake_header_process(struct sock *sk,
 			return -EINVAL;
 		if (!quic_crypto(sk, QUIC_CRYPTO_EARLY)->recv_ready) {
 			/* Queue to backlog until 0-RTT keys are ready. */
-			quic_inq_backlog_tail(sk, skb);
+			quic_packet_backlog_tail(sk, skb);
 			return -EINPROGRESS;
 		}
 		packet->level = QUIC_CRYPTO_EARLY;
@@ -2042,7 +2058,7 @@ static int quic_packet_app_process(struct sock *sk, struct sk_buff *skb,
 
 	if (!crypto->recv_ready) {
 		/* Queue to backlog until 1-RTT keys are ready. */
-		quic_inq_backlog_tail(sk, skb);
+		quic_packet_backlog_tail(sk, skb);
 		return 0;
 	}
 
@@ -2984,10 +3000,18 @@ void quic_packet_init(struct sock *sk)
 	struct quic_packet *packet = quic_packet(sk);
 
 	INIT_LIST_HEAD(&packet->frame_list);
+	skb_queue_head_init(&packet->backlog_list);
 	packet->taglen[QUIC_PACKET_FORM_SHORT] = QUIC_TAG_LEN;
 	packet->taglen[QUIC_PACKET_FORM_LONG] = QUIC_TAG_LEN;
 	packet->mss[QUIC_PACKET_MSS_NORMAL] = QUIC_MIN_UDP_PAYLOAD;
 	packet->mss[QUIC_PACKET_MSS_DGRAM] = QUIC_MIN_UDP_PAYLOAD;
 
 	packet->version = QUIC_VERSION_V1;
+}
+
+void quic_packet_free(struct sock *sk)
+{
+	struct quic_packet *packet = quic_packet(sk);
+
+	__skb_queue_purge(&packet->backlog_list);
 }
