@@ -1535,6 +1535,7 @@ static int quic_accept_sock_init(struct sock *nsk, struct sock *sk)
 	nsk->sk_rcvtimeo = sk->sk_rcvtimeo;
 	nsk->sk_sndtimeo = sk->sk_sndtimeo;
 	nsk->sk_bound_dev_if = sk->sk_bound_dev_if;
+	nsk->sk_uid = sk->sk_uid;
 
 	inet_sk(nsk)->pmtudisc = inet_sk(sk)->pmtudisc;
 
