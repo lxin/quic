@@ -108,7 +108,6 @@ static void quic_request_sock_free(struct sock *sk,
 bool quic_accept_sock_exists(struct sock *sk, struct sk_buff *skb)
 {
 	struct quic_packet *packet = quic_packet(sk);
-	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
 	bool exist = false;
 
 	/* Skip if packet is newer than the last accept socket creation time.
@@ -132,12 +131,9 @@ bool quic_accept_sock_exists(struct sock *sk, struct sk_buff *skb)
 		if (sk_add_backlog(sk, skb, READ_ONCE(sk->sk_rcvbuf))) {
 			QUIC_INC_STATS(sock_net(sk), QUIC_MIB_PKT_RCVDROP);
 			kfree_skb(skb);
-		} else {
-			cb->backlog = 1;
 		}
 	} else {
 		/* Socket not busy: process immediately. */
-		cb->backlog = 0;
 		sk->sk_backlog_rcv(sk, skb); /* quic_packet_process(). */
 	}
 	bh_unlock_sock(sk);
