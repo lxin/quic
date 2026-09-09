@@ -2648,7 +2648,7 @@ static int quic_sock_get_alpn(struct sock *sk, u32 len, sockptr_t optval,
 		len = 0;
 		goto out;
 	}
-	if (len < alpns->len)
+	if (len < alpns->len - 1)
 		return -EINVAL;
 
 	len = QUIC_ALPN_MAX_LEN;
