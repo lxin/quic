@@ -2185,14 +2185,14 @@ quic_frame_datagram_create(struct sock *sk, void *data, u8 type, gfp_t gfp)
 	 * limited by other factors.
 	 */
 	msg_len = iov_iter_count(msg);
-	if (msg_len > max_frame_len - hlen)
+	if (msg_len + hlen > max_frame_len)
 		return ERR_PTR(-EMSGSIZE);
 
 	frame = quic_frame_alloc(msg_len + hlen, NULL, gfp);
 	if (!frame)
 		return ERR_PTR(-ENOMEM);
 
-	p = quic_put_var(frame->data, type);
+	p = quic_put_var(frame->data, QUIC_FRAME_DATAGRAM_LEN);
 	/* For simplicity, create DATAGRAM_LEN frame with Length encoded. */
 	p = quic_put_var(p, msg_len);
 
