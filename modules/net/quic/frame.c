@@ -3355,12 +3355,8 @@ int quic_frame_parse_transport_params_ext(struct sock *sk,
 		case QUIC_TRANSPORT_PARAM_MAX_DATAGRAM_FRAME_SIZE:
 			if (!quic_get_param(&value, &p, &len))
 				return -EINVAL;
-			if (value) {
-				if (value < QUIC_PATH_MIN_PMTU)
-					return -EINVAL;
-				if (value > QUIC_PATH_MAX_PMTU)
-					value = QUIC_PATH_MAX_PMTU;
-			}
+			if (value && value > QUIC_PATH_MAX_PMTU)
+				value = QUIC_PATH_MAX_PMTU;
 			params->max_datagram_frame_size = value;
 			break;
 		case QUIC_TRANSPORT_PARAM_STATELESS_RESET_TOKEN:
