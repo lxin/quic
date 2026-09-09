@@ -222,9 +222,8 @@ static struct sock *quic_get_bucket_sock(struct seq_file *seq, bool listen)
 		head = listen ? quic_listen_sock_head(st->bucket) :
 				quic_sock_head(st->bucket);
 		sk_nulls_for_each_rcu(sk, node, &head->head) {
-			if (net != sock_net(sk))
-				continue;
-			if (likely(refcount_inc_not_zero(&sk->sk_refcnt)))
+			if (net == sock_net(sk) &&
+			    likely(refcount_inc_not_zero(&sk->sk_refcnt)))
 				return sk;
 		}
 	}
@@ -234,13 +233,9 @@ static struct sock *quic_get_bucket_sock(struct seq_file *seq, bool listen)
 static struct sock *quic_get_first_sock(struct seq_file *seq, bool listen)
 {
 	struct quic_iter_state *st = seq->private;
-	struct sock *sk;
 
 	st->bucket = 0;
-	rcu_read_lock();
-	sk = quic_get_bucket_sock(seq, listen);
-	rcu_read_unlock();
-	return sk;
+	return quic_get_bucket_sock(seq, listen);
 }
 
 static struct sock *quic_get_next_sock(struct seq_file *seq, struct sock *sk,
@@ -248,22 +243,22 @@ static struct sock *quic_get_next_sock(struct seq_file *seq, struct sock *sk,
 {
 	struct quic_iter_state *st = seq->private;
 	struct net *net = seq_file_net(seq);
-	struct sock *nsk = sk;
+	struct hlist_nulls_node *node;
+	struct sock *nsk;
 
-	rcu_read_lock();
-	while ((nsk = sk_nulls_next(nsk)) != NULL) {
-		if (net != sock_net(nsk))
-			continue;
-		if (likely(refcount_inc_not_zero(&nsk->sk_refcnt)))
-			break;
-	}
-	if (!nsk) {
-		st->bucket++;
-		nsk = quic_get_bucket_sock(seq, listen);
-	}
-	rcu_read_unlock();
+	node = rcu_dereference_raw(sk->sk_nulls_node.next);
 	sock_put(sk);
-	return nsk;
+
+	while (!is_a_nulls(node)) {
+		nsk = hlist_nulls_entry(node, struct sock, sk_nulls_node);
+		if (net == sock_net(nsk) &&
+		    likely(refcount_inc_not_zero(&nsk->sk_refcnt)))
+			return nsk;
+		node = rcu_dereference_raw(node->next);
+	}
+
+	st->bucket++;
+	return quic_get_bucket_sock(seq, listen);
 }
 
 static struct sock *quic_get_idx_sock(struct seq_file *seq, loff_t pos,
@@ -314,6 +309,8 @@ static int quic_conns_seq_show(struct seq_file *seq, void *v)
 
 static void *quic_conns_seq_start(struct seq_file *seq, loff_t *pos)
 {
+	rcu_read_lock();
+
 	if (!*pos)
 		return SEQ_START_TOKEN;
 
@@ -336,6 +333,8 @@ static void quic_conns_seq_stop(struct seq_file *seq, void *v)
 {
 	if (v && v != SEQ_START_TOKEN)
 		sock_put((struct sock *)v);
+
+	rcu_read_unlock();
 }
 
 static int quic_eps_seq_show(struct seq_file *seq, void *v)
@@ -366,6 +365,8 @@ static int quic_eps_seq_show(struct seq_file *seq, void *v)
 
 static void *quic_eps_seq_start(struct seq_file *seq, loff_t *pos)
 {
+	rcu_read_lock();
+
 	if (!*pos)
 		return SEQ_START_TOKEN;
 
@@ -388,6 +389,8 @@ static void quic_eps_seq_stop(struct seq_file *seq, void *v)
 {
 	if (v && v != SEQ_START_TOKEN)
 		sock_put((struct sock *)v);
+
+	rcu_read_unlock();
 }
 
 static const struct snmp_mib quic_snmp_list[] = {
