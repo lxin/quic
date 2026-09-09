@@ -1071,7 +1071,8 @@ static int quic_packet_listen_process(struct sock *sk, struct sk_buff *skb,
 	/* Read Packet Type. */
 	type = quic_packet_version_get_type(version, quic_hshdr(skb)->type);
 	if (type != QUIC_PACKET_INITIAL) { /* Send a Stateless Reset. */
-		err = quic_packet_stateless_reset_create_and_xmit(sk, len, gfp);
+		err = quic_packet_stateless_reset_create_and_xmit(sk, skb->len,
+								  gfp);
 		consume_skb(skb);
 		return err;
 	}
