@@ -1127,8 +1127,7 @@ static int quic_frame_stream_process(struct sock *sk, struct quic_frame *frame,
 	/* Skip if stream already finished receiving, was reset, or
 	 * stop-sending requested.
 	 */
-	if (stream->recv.state >= QUIC_STREAM_RECV_STATE_RECVD ||
-	    stream->recv.stop_sent)
+	if (stream->recv.state >= QUIC_STREAM_RECV_STATE_RECVD)
 		goto out;
 
 	/* Follows the same processing logic as quic_frame_crypto_process(). */
