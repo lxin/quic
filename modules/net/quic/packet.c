@@ -762,7 +762,7 @@ static int quic_packet_retry_create_and_xmit(struct sock *sk)
 	/* Build Long Packet header. */
 	hdr = skb_push(skb, len);
 	hdr->form = QUIC_PACKET_FORM_LONG;
-	hdr->fixed = !quic_outq(sk)->grease_quic_bit;
+	hdr->fixed = 1;
 	hdr->type = quic_packet_version_put_type(packet->version,
 						 QUIC_PACKET_RETRY);
 	hdr->reserved = 0;
@@ -843,7 +843,7 @@ static int quic_packet_version_create_and_xmit(struct sock *sk, gfp_t gfp)
 	/* Build Long Packet header. */
 	hdr = skb_push(skb, len);
 	hdr->form = QUIC_PACKET_FORM_LONG;
-	hdr->fixed = !quic_outq(sk)->grease_quic_bit;
+	hdr->fixed = 1;
 	hdr->type = 0;
 	hdr->reserved = 0;
 	hdr->pnl = 0;
