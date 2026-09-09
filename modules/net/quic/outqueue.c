@@ -190,13 +190,13 @@ int quic_outq_flow_control(struct sock *sk, struct quic_stream *stream,
 	/* Send a DATA_BLOCKED frame only after the previous one is ACKed, and
 	 * max_bytes has been updated via a received MAX_DATA frame.
 	 */
-	if (!outq->data_blocked && outq->last_max_bytes < outq->max_bytes) {
+	if (!outq->max_bytes || outq->last_max_bytes < outq->max_bytes) {
 		frame = QUIC_FRAME_DATA_BLOCKED;
-		if (!sndblock ||
+		if (sndblock && !outq->data_blocked &&
 		    !quic_outq_transmit_frame(sk, frame, outq, 0, true, gfp)) {
 			outq->last_max_bytes = outq->max_bytes;
 			outq->data_blocked = 1;
-			transmit = sndblock;
+			transmit = 1;
 		}
 	}
 	blocked = 1;
@@ -210,15 +210,15 @@ stream_out:
 	 * ACKed, and stream->send.max_bytes has been updated via a received
 	 * MAX_STREAM_DATA frame.
 	 */
-	if (!stream->send.data_blocked &&
+	if (!stream->send.max_bytes ||
 	    stream->send.last_max_bytes < stream->send.max_bytes) {
 		frame = QUIC_FRAME_STREAM_DATA_BLOCKED;
-		if (!sndblock ||
+		if (sndblock && !stream->send.data_blocked &&
 		    !quic_outq_transmit_frame(sk, frame, stream, 0, true,
 					      gfp)) {
 			stream->send.last_max_bytes = stream->send.max_bytes;
 			stream->send.data_blocked = 1;
-			transmit = sndblock;
+			transmit = 1;
 		}
 	}
 	blocked = 1;
