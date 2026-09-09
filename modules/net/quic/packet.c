@@ -814,7 +814,7 @@ static int quic_packet_retry_create_and_xmit(struct sock *sk)
  * contains a version that is not supported by the server. It is only sent by
  * servers.
  */
-static int quic_packet_version_create_and_xmit(struct sock *sk)
+static int quic_packet_version_create_and_xmit(struct sock *sk, gfp_t gfp)
 {
 	struct quic_packet *packet = quic_packet(sk);
 	union quic_addr *da = &packet->daddr;
@@ -835,7 +835,7 @@ static int quic_packet_version_create_and_xmit(struct sock *sk)
 	len = QUIC_LONG_HLEN(&packet->dcid, &packet->scid) +
 	      QUIC_VERSION_LEN * QUIC_VERSION_NUM;
 	hlen = quic_encap_len(da) + MAX_HEADER;
-	skb = alloc_skb(hlen + len, GFP_KERNEL);
+	skb = alloc_skb(hlen + len, gfp);
 	if (!skb)
 		return -ENOMEM;
 	skb_reserve(skb, (int)(hlen + len));
@@ -1062,7 +1062,7 @@ static int quic_packet_listen_process(struct sock *sk, struct sk_buff *skb,
 		 * packet. This includes a list of versions that the server
 		 * will accept.
 		 */
-		err = quic_packet_version_create_and_xmit(sk);
+		err = quic_packet_version_create_and_xmit(sk, gfp);
 		consume_skb(skb);
 		return err;
 	}
