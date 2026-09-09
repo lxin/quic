@@ -186,6 +186,8 @@ static __poll_t quic_inet_poll(struct file *file, struct socket *sock,
 		mask |= EPOLLOUT | EPOLLWRNORM;
 	} else {
 		sk_set_bit(SOCKWQ_ASYNC_NOSPACE, sk);
+		/* Race breaker the same way as tcp_poll(). */
+		smp_mb__after_atomic();
 		/* Do writeable check again after the bit is set to avoid a
 		 * lost I/O signal, similar to sctp_poll().
 		 */
