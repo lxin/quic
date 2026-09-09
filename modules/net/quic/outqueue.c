@@ -1125,14 +1125,29 @@ void quic_outq_retransmit_mark(struct sock *sk, u8 level, bool immediate)
  */
 void quic_outq_retransmit_list(struct sock *sk, struct list_head *head)
 {
+	struct quic_packet *packet = quic_packet(sk);
+	struct quic_outqueue *outq = quic_outq(sk);
 	struct quic_frame *frame, *next;
+	struct quic_pnspace *space;
+	int bytes = 0;
 
+	space = quic_pnspace(sk, packet->level);
 	/* Clear transmitted bit and put them in queue for transmitting. */
 	list_for_each_entry_safe(frame, next, head, list) {
 		list_del_init(&frame->list);
+		if (frame->number < 0) {
+			outq->unsent_bytes -= quic_frame_size(frame);
+			frame->number = space->next_pn;
+		}
+		if (!quic_frame_retransmittable(frame->type)) {
+			bytes += quic_frame_size(frame);
+			quic_frame_put(frame);
+			continue;
+		}
 		frame->transmitted = 0;
 		quic_outq_retransmit_frame(sk, frame);
 	}
+	quic_outq_data_wfree(bytes, sk);
 }
 
 #define QUIC_MAX_PTO_COUNT	8
