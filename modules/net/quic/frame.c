@@ -2635,6 +2635,7 @@ int quic_frame_process(struct sock *sk, struct quic_frame *frame, gfp_t gfp)
 			 * packet type that is not permitted as a connection
 			 * error of type PROTOCOL_VIOLATION.
 			 */
+			cb->errframe = type;
 			cb->errcode = QUIC_TRANSPORT_ERROR_PROTOCOL_VIOLATION;
 			return -EINVAL;
 		}
