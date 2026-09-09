@@ -2610,8 +2610,10 @@ int quic_frame_process(struct sock *sk, struct quic_frame *frame, gfp_t gfp)
 
 	while (frame->len > 0) {
 		ret = frame->len;
-		if (!quic_get_var(&frame->data, &ret, &value))
+		if (!quic_get_var(&frame->data, &ret, &value)) {
+			cb->errcode = QUIC_TRANSPORT_ERROR_FRAME_ENCODING;
 			return -EINVAL;
+		}
 		frame->len = ret;
 
 		if (value > QUIC_FRAME_MAX ||
