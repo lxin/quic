@@ -106,6 +106,43 @@ static void quic_outq_transmit_ctrl(struct sock *sk, u8 level, gfp_t gfp)
 	}
 }
 
+/* Applies pacing and Nagle’s algorithm. Returns true if sending should be
+ * delayed, false if immediate send.
+ */
+static bool quic_outq_delay_check(struct sock *sk, u8 level, bool nodelay)
+{
+	struct quic_packet *packet = quic_packet(sk);
+	struct quic_outqueue *outq = quic_outq(sk);
+	u64 pacing_time;
+
+	if (level || outq->close_pending)
+		return false; /* No delay for early data/closing conn */
+
+	pacing_time = quic_cong(sk)->pacing_time;
+	if (pacing_time > ktime_get_ns()) { /* Delay data TX in PACE timer. */
+		quic_timer_start(sk, QUIC_TIMER_PACE, pacing_time);
+		return true;
+	}
+
+	if (nodelay) /* If the frame is not the last part of a msg. */
+		return false;
+	/* If there’s already data queued in the packet, send immediately. */
+	if (!quic_packet_empty(packet))
+		return false;
+	/* If Nagle is disabled via config or no data is in flight, and
+	 * MSG_MORE isn't set, allow immediate send.
+	 */
+	if ((outq->stream_data_nodelay || !outq->inflight) &&
+	    !outq->force_delay)
+		return false;
+	/* If enough stream data is available to build a full-sized packet,
+	 * send immediately.
+	 */
+	if (outq->stream_list_len >= quic_packet_max_payload(packet))
+		return false;
+	return true; /* Otherwise, delay sending to coalesce more data. */
+}
+
 /* Transmit application datagrams (QUIC DATAGRAM frames). */
 static void quic_outq_transmit_dgram(struct sock *sk, gfp_t gfp)
 {
@@ -122,6 +159,8 @@ static void quic_outq_transmit_dgram(struct sock *sk, gfp_t gfp)
 		if (quic_packet_config(sk, outq->data_level, frame->path))
 			break;
 		if (quic_outq_limit_check(sk, frame))
+			break;
+		if (quic_outq_delay_check(sk, outq->data_level, true))
 			break;
 		if (quic_packet_tail(sk, frame))
 			continue;
@@ -212,43 +251,6 @@ u64 quic_outq_wspace(struct sock *sk, struct quic_stream *stream)
 	len = min_t(u64, len, sk_stream_wspace(sk));
 
 	return len;
-}
-
-/* Applies pacing and Nagle’s algorithm. Returns true if sending should be
- * delayed, false if immediate send.
- */
-static bool quic_outq_delay_check(struct sock *sk, u8 level, bool nodelay)
-{
-	struct quic_packet *packet = quic_packet(sk);
-	struct quic_outqueue *outq = quic_outq(sk);
-	u64 pacing_time;
-
-	if (level || outq->close_pending)
-		return false; /* No delay for early data/closing conn */
-
-	pacing_time = quic_cong(sk)->pacing_time;
-	if (pacing_time > ktime_get_ns()) { /* Delay data TX in PACE timer. */
-		quic_timer_start(sk, QUIC_TIMER_PACE, pacing_time);
-		return true;
-	}
-
-	if (nodelay) /* If the frame is not the last of a sendmsg. */
-		return false;
-	/* If there’s already data queued in the packet, send immediately. */
-	if (!quic_packet_empty(packet))
-		return false;
-	/* If Nagle is disabled via config or no data is in flight, and
-	 * MSG_MORE isn't set, allow immediate send.
-	 */
-	if ((outq->stream_data_nodelay || !outq->inflight) &&
-	    !outq->force_delay)
-		return false;
-	/* If enough stream data is available to build a full-sized packet,
-	 * send immediately.
-	 */
-	if (outq->stream_list_len >= quic_packet_max_payload(packet))
-		return false;
-	return true; /* Otherwise, delay sending to coalesce more data. */
 }
 
 /* Sends stream data frames. */
