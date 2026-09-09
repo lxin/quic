@@ -1440,11 +1440,6 @@ static int quic_wait_for_accept(struct sock *sk, u32 flags)
 			pr_debug("%s: sk not listening\n", __func__);
 			break;
 		}
-		if (sk->sk_err) {
-			err = -EINVAL;
-			pr_debug("%s: sk_err: %d\n", __func__, sk->sk_err);
-			break;
-		}
 		if (signal_pending(current)) {
 			err = sock_intr_errno(timeo);
 			break;
