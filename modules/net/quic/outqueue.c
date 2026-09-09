@@ -479,7 +479,7 @@ void quic_outq_stream_tail(struct sock *sk, struct quic_frame *frame, bool cork)
 
 	outq->bytes += frame->bytes;
 	outq->stream_list_len += frame->len;
-	outq->unsent_bytes += frame->bytes;
+	outq->unsent_bytes += quic_frame_size(frame);
 	quic_outq_wcharge(frame, sk);
 
 	list_add_tail(&frame->list, &outq->stream_list);
@@ -494,7 +494,7 @@ void quic_outq_dgram_tail(struct sock *sk, struct quic_frame *frame, bool cork)
 {
 	struct quic_outqueue *outq = quic_outq(sk);
 
-	outq->unsent_bytes += frame->bytes;
+	outq->unsent_bytes += quic_frame_size(frame);
 	quic_outq_wcharge(frame, sk);
 	list_add_tail(&frame->list, &outq->datagram_list);
 	if (!cork)
@@ -547,7 +547,7 @@ void quic_outq_ctrl_tail(struct sock *sk, struct quic_frame *frame, bool cork,
 		}
 	}
 
-	outq->unsent_bytes += frame->bytes;
+	outq->unsent_bytes += quic_frame_size(frame);
 	quic_outq_wcharge(frame, sk);
 	list_add_tail(&frame->list, head);
 	if (!cork)
@@ -1407,7 +1407,7 @@ void quic_outq_list_purge(struct sock *sk, struct list_head *head,
 		if (head == &outq->stream_list)
 			outq->stream_list_len -= frame->len;
 		if (frame->number < 0)
-			outq->unsent_bytes -= frame->bytes;
+			outq->unsent_bytes -= quic_frame_size(frame);
 
 		bytes += quic_frame_size(frame);
 		list_del_init(&frame->list);
