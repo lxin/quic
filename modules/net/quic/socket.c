@@ -793,6 +793,9 @@ static int quic_msghdr_parse(struct sock *sk, struct msghdr *msg,
 	if (!*has_sinfo) /* No stream info; inherit flags from msg_flags. */
 		sinfo->stream_flags |= (msg->msg_flags & QUIC_MSG_STREAM_FLAGS);
 
+	if (msg->msg_flags & MSG_DONTWAIT)
+		sinfo->stream_flags |= MSG_QUIC_STREAM_DONTWAIT;
+
 	if (sinfo->stream_id != -1)
 		return 0;
 
