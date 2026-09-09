@@ -118,6 +118,7 @@ static int quic_inet_listen(struct socket *sock, int backlog)
 	/* Set socket state to LISTENING and add to sock hash table. */
 	quic_set_state(sk, QUIC_SS_LISTENING);
 	sk->sk_max_ack_backlog = backlog;
+	paths->validated = 1;
 	err = sk->sk_prot->hash(sk);
 	if (err)
 		goto free;
@@ -128,6 +129,7 @@ free:
 	sk->sk_prot->unhash(sk);
 	quic_set_state(sk, QUIC_SS_CLOSED);
 	sk->sk_max_ack_backlog = 0;
+	paths->validated = 0;
 
 	quic_conn_id_set_free(source);
 	quic_conn_id_set_free(dest);
