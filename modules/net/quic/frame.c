@@ -1168,7 +1168,7 @@ static int quic_frame_ack_process(struct sock *sk, struct quic_frame *frame,
 
 	if (!quic_get_var(&p, &len, &largest) ||
 	    !quic_get_var(&p, &len, &delay) ||
-	    !quic_get_var(&p, &len, &count) || count > QUIC_PN_MAP_MAX_GABS ||
+	    !quic_get_var(&p, &len, &count) ||
 	    !quic_get_var(&p, &len, &range))
 		return -EINVAL;
 
@@ -1224,8 +1224,10 @@ static int quic_frame_ack_process(struct sock *sk, struct quic_frame *frame,
 		}
 		largest = smallest - gap - 2;
 		smallest = largest - range;
-		quic_outq_transmitted_sack(sk, level, (s64)largest,
-					   (s64)smallest, -1, 0, gfp);
+		/* Only process first QUIC_PN_MAP_MAX_GABS to limit resources */
+		if (i < QUIC_PN_MAP_MAX_GABS)
+			quic_outq_transmitted_sack(sk, level, (s64)largest,
+						   (s64)smallest, -1, 0, gfp);
 	}
 
 	if (type != QUIC_FRAME_ACK_ECN)
