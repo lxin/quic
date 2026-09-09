@@ -182,7 +182,7 @@ static __poll_t quic_inet_poll(struct file *file, struct socket *sock,
 	}
 
 	/* Writable check. */
-	if (sk_stream_wspace(sk) > 0 && quic_outq_wspace(sk, NULL) > 0) {
+	if (quic_outq_wspace(sk, NULL) > 0) {
 		mask |= EPOLLOUT | EPOLLWRNORM;
 	} else {
 		sk_set_bit(SOCKWQ_ASYNC_NOSPACE, sk);
@@ -191,7 +191,7 @@ static __poll_t quic_inet_poll(struct file *file, struct socket *sock,
 		/* Do writeable check again after the bit is set to avoid a
 		 * lost I/O signal, similar to sctp_poll().
 		 */
-		if (sk_stream_wspace(sk) > 0 && quic_outq_wspace(sk, NULL) > 0)
+		if (quic_outq_wspace(sk, NULL) > 0)
 			mask |= EPOLLOUT | EPOLLWRNORM;
 	}
 	return mask;
