@@ -1081,7 +1081,7 @@ static int quic_packet_listen_process(struct sock *sk, struct sk_buff *skb,
 	if (packet->dcid.len < QUIC_CONN_ID_DEF_LEN) {
 		QUIC_INC_STATS(net, QUIC_MIB_PKT_INVHDRDROP);
 		kfree_skb(skb);
-		return err;
+		return -EINVAL;
 	}
 
 	err = quic_packet_get_token(&token, &p, &len); /* Read Token. */
