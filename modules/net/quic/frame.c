@@ -1582,8 +1582,12 @@ static int quic_frame_reset_stream_process(struct sock *sk,
 	if (stream->recv.state >= QUIC_STREAM_RECV_STATE_RECVD)
 		goto out; /* Skip if stream has received all data or a reset. */
 
+	if (finalsz > stream->recv.max_bytes) {
+		frame->errcode = QUIC_TRANSPORT_ERROR_FLOW_CONTROL;
+		return -EINVAL;
+	}
+
 	if (finalsz < stream->recv.highest ||
-	    finalsz > stream->recv.max_bytes ||
 	    (stream->recv.state == QUIC_STREAM_RECV_STATE_SIZE_KNOWN &&
 	     stream->recv.finalsz != finalsz)) {
 		/* rfc9000#section-4.5:
