@@ -211,7 +211,7 @@ quic_frame_new_token_create(struct sock *sk, void *data, u8 type, gfp_t gfp)
 	/* Write token flags into buffer: QUIC_TOKEN_FLAG_REGULAR means regular
 	 * token.
 	 */
-	quic_put_int(buf, QUIC_TOKEN_FLAG_REGULAR, 1);
+	buf[0] = QUIC_TOKEN_FLAG_REGULAR;
 	/* Generate token into buf; includes client's address and conn ID. */
 	err = quic_crypto_generate_token(crypto, quic_path_daddr(paths, 0),
 					 sizeof(union quic_addr),

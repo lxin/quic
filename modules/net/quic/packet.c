@@ -740,7 +740,7 @@ static int quic_packet_retry_create_and_xmit(struct sock *sk)
 	/* Write token flags into buffer: QUIC_TOKEN_FLAG_RETRY means retry
 	 * token.
 	 */
-	quic_put_int(buf, QUIC_TOKEN_FLAG_RETRY, 1);
+	buf[0] = QUIC_TOKEN_FLAG_RETRY;
 	/* Generate retry token using client's address and DCID from client
 	 * initial packet.
 	 */
