@@ -314,6 +314,7 @@ static int quic_v6_get_user_addr(struct sock *sk, union quic_addr *a,
 {
 	u32 len = sizeof(struct sockaddr_in);
 	union quic_addr *ua;
+	__be32 s_addr;
 	int type;
 
 	if (addr_len < len)
@@ -333,9 +334,14 @@ static int quic_v6_get_user_addr(struct sock *sk, union quic_addr *a,
 	if (type == IPV6_ADDR_MAPPED) {
 		if (ipv6_only_sock(sk))
 			return -EINVAL;
+		s_addr = ua->v6.sin6_addr.s6_addr32[3];
+		if (ipv4_is_multicast(s_addr))
+			return -EINVAL;
+		if (s_addr == htonl(INADDR_ANY) && !any)
+			return -EINVAL;
 		a->v4.sin_family = AF_INET;
 		a->v4.sin_port = ua->v6.sin6_port;
-		a->v4.sin_addr.s_addr = ua->v6.sin6_addr.s6_addr32[3];
+		a->v4.sin_addr.s_addr = s_addr;
 		return 0;
 	}
 	if (type != IPV6_ADDR_ANY && !(type & IPV6_ADDR_UNICAST))
