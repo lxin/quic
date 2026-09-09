@@ -56,7 +56,8 @@ static int quic_outq_transmit_flush(struct sock *sk, gfp_t gfp)
 	int count = outq->count;
 
 	outq->count = 0;
-	if (!quic_packet_empty(packet) && !quic_packet_create_and_xmit(sk, gfp))
+	if (!quic_packet_empty(packet) &&
+	    !quic_packet_create_and_xmit(sk, gfp) && packet->frames)
 		count++;
 	quic_packet_flush(sk);
 
@@ -69,6 +70,7 @@ static int quic_outq_transmit_flush(struct sock *sk, gfp_t gfp)
 static void quic_outq_transmit_ctrl(struct sock *sk, u8 level, gfp_t gfp)
 {
 	struct quic_pnspace *space = quic_pnspace(sk, level);
+	struct quic_packet *packet = quic_packet(sk);
 	struct quic_outqueue *outq = quic_outq(sk);
 	struct quic_frame *frame, *next;
 	struct list_head *head;
@@ -98,7 +100,8 @@ static void quic_outq_transmit_ctrl(struct sock *sk, u8 level, gfp_t gfp)
 		/* Flush already appended frames before processing this one. */
 		if (quic_packet_create_and_xmit(sk, gfp))
 			break;
-		outq->count++;
+		if (packet->frames)
+			outq->count++;
 		next = frame; /* Re-append this frame. */
 	}
 }
@@ -106,6 +109,7 @@ static void quic_outq_transmit_ctrl(struct sock *sk, u8 level, gfp_t gfp)
 /* Transmit application datagrams (QUIC DATAGRAM frames). */
 static void quic_outq_transmit_dgram(struct sock *sk, gfp_t gfp)
 {
+	struct quic_packet *packet = quic_packet(sk);
 	struct quic_outqueue *outq = quic_outq(sk);
 	struct quic_frame *frame, *next;
 	struct list_head *head;
@@ -123,7 +127,8 @@ static void quic_outq_transmit_dgram(struct sock *sk, gfp_t gfp)
 			continue;
 		if (quic_packet_create_and_xmit(sk, gfp))
 			break;
-		outq->count++;
+		if (packet->frames)
+			outq->count++;
 		next = frame;
 	}
 }
@@ -250,6 +255,7 @@ static bool quic_outq_delay_check(struct sock *sk, u8 level, bool nodelay)
 static void quic_outq_transmit_stream(struct sock *sk, gfp_t gfp)
 {
 	struct quic_pnspace *space = quic_pnspace(sk, QUIC_CRYPTO_APP);
+	struct quic_packet *packet = quic_packet(sk);
 	struct quic_outqueue *outq = quic_outq(sk);
 	struct quic_frame *frame, *next;
 	struct list_head *head;
@@ -277,7 +283,8 @@ static void quic_outq_transmit_stream(struct sock *sk, gfp_t gfp)
 		}
 		if (quic_packet_create_and_xmit(sk, gfp))
 			break;
-		outq->count++;
+		if (packet->frames)
+			outq->count++;
 		next = frame;
 	}
 
@@ -293,6 +300,7 @@ static void quic_outq_transmit_stream(struct sock *sk, gfp_t gfp)
 /* Sends pending frames at a specific encryption level from transmitted_list. */
 static void quic_outq_transmit_old(struct sock *sk, u8 level, gfp_t gfp)
 {
+	struct quic_packet *packet = quic_packet(sk);
 	struct quic_outqueue *outq = quic_outq(sk);
 	struct quic_frame *frame, *next;
 	struct list_head *head;
@@ -315,7 +323,8 @@ static void quic_outq_transmit_old(struct sock *sk, u8 level, gfp_t gfp)
 			continue;
 		if (quic_packet_create_and_xmit(sk, gfp))
 			break;
-		outq->count++;
+		if (packet->frames)
+			outq->count++;
 		next = frame;
 	}
 }

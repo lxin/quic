@@ -51,7 +51,7 @@ struct quic_outqueue {
 	u32 unsent_bytes;    /* Bytes queued but never transmitted */
 	u32 inflight;        /* Bytes from ack-eliciting frames in flight */
 	u32 window;          /* Congestion-controlled send window size */
-	u16 count;           /* Packets sent in current transmit round */
+	u16 count;           /* ACK-eliciting packets sent in current round */
 
 	/* Kernel consumers: nofity userspace handshake */
 	u8 receive_session_ticket; /* Expect session ticket from userspace */
