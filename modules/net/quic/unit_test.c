@@ -537,7 +537,7 @@ static void quic_cong_test1(struct kunit *test)
 	cong.is_rtt_set = 1;
 
 	KUNIT_EXPECT_EQ(test, cong.rttvar, 166500);
-	KUNIT_EXPECT_EQ(test, cong.pto, 1024000);
+	KUNIT_EXPECT_EQ(test, cong.pto, 999000);
 
 	cong.time = jiffies_to_usecs(jiffies);
 	time = cong.time - 30000;
@@ -550,7 +550,7 @@ static void quic_cong_test1(struct kunit *test)
 	/* (rttvar * 3 + rttvar_sample) / 4 */
 	KUNIT_EXPECT_EQ(test, cong.rttvar, 191156);
 	/* smoothed_rtt + rttvar * 4 */
-	KUNIT_EXPECT_EQ(test, cong.pto, 1084749);
+	KUNIT_EXPECT_EQ(test, cong.pto, 1059749);
 
 	time = cong.time - 30000;
 	ack_delay = 2500 * 8;
@@ -705,7 +705,7 @@ static void quic_cong_test1(struct kunit *test)
 	KUNIT_EXPECT_EQ(test, cong.min_rtt, 30000);
 	KUNIT_EXPECT_EQ(test, cong.smoothed_rtt, 728054);
 	KUNIT_EXPECT_EQ(test, cong.rttvar, 1069036);
-	KUNIT_EXPECT_EQ(test, cong.pto, 5029198);
+	KUNIT_EXPECT_EQ(test, cong.pto, 5004198);
 }
 
 static void quic_cong_test2(struct kunit *test)

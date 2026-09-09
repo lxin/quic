@@ -570,13 +570,16 @@ EXPORT_SYMBOL_GPL(quic_cong_on_process_ecn);
 /* Update Probe Timeout (PTO) and loss detection delay based on RTT stats. */
 static void quic_cong_pto_update(struct quic_cong *cong)
 {
-	u32 pto, loss_delay;
+	u32 loss_delay;
 
 	/* rfc9002#section-6.2.1:
 	 *   PTO = smoothed_rtt + max(4*rttvar, kGranularity) + max_ack_delay
+	 *
+	 * Calculate the base PTO here, excluding max_ack_delay. max_ack_delay
+	 * is added when calculating the PTO for the App packet number space.
 	 */
-	pto = cong->smoothed_rtt + max(4 * cong->rttvar, QUIC_KGRANULARITY);
-	cong->pto = pto + cong->max_ack_delay;
+	cong->pto = cong->smoothed_rtt +
+		    max(4 * cong->rttvar, QUIC_KGRANULARITY);
 
 	/* rfc9002#section-6.1.2:
 	 *   max(kTimeThreshold * max(smoothed_rtt, latest_rtt), kGranularity)
@@ -585,7 +588,7 @@ static void quic_cong_pto_update(struct quic_cong *cong)
 					      cong->latest_rtt));
 	cong->loss_delay = max(loss_delay, QUIC_KGRANULARITY);
 
-	pr_debug("%s: update pto: %u\n", __func__, pto);
+	pr_debug("%s: update pto: %u\n", __func__, cong->pto);
 }
 
 /* Update pacing timestamp after sending 'bytes' bytes.
