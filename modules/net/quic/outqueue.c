@@ -963,6 +963,7 @@ out:
 void quic_outq_sync_window(struct sock *sk, u32 window)
 {
 	struct quic_outqueue *outq = quic_outq(sk);
+	int sndbuf;
 
 	if (outq->window == window)
 		return;
@@ -971,8 +972,11 @@ void quic_outq_sync_window(struct sock *sk, u32 window)
 	if (sk->sk_userlocks & SOCK_SNDBUF_LOCK)
 		return;
 
-	/* Dynamically adjust sk_sndbuf based on the congestion window. */
-	sk->sk_sndbuf = (int)window * 4;
+	/* Dynamically adjust sk_sndbuf based on the congestion window,
+	 * but enforce the system-wide limit from sysctl_quic_wmem[2].
+	 */
+	sndbuf = min_t(int, window * 4, READ_ONCE(sysctl_quic_wmem[2]));
+	WRITE_ONCE(sk->sk_sndbuf, sndbuf);
 	if (sk_stream_wspace(sk) > 0)
 		sk->sk_write_space(sk); /* Wake blocked senders */
 }
