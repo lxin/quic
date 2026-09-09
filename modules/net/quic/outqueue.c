@@ -506,6 +506,11 @@ static u8 quic_level_prio(u8 level)
 	return level ?: QUIC_CRYPTO_MAX;
 }
 
+static u8 quic_frame_prio(u8 type)
+{
+	return !quic_frame_ping(type) * (1 + quic_frame_ack_eliciting(type));
+}
+
 /* Queues a control frame in control_list in correct order and optionally
  * transmits.
  */
@@ -513,17 +518,19 @@ void quic_outq_ctrl_tail(struct sock *sk, struct quic_frame *frame, bool cork,
 			 gfp_t gfp)
 {
 	struct quic_outqueue *outq = quic_outq(sk);
+	u8 f_prio, p_prio, frame_prio;
 	struct list_head *head;
 	struct quic_frame *pos;
-	u8 f_prio, p_prio;
 
 	head = &quic_outq(sk)->control_list;
 	/* Insert frame in priority order:
 	 *
 	 *   Initial (level == 1) > Handshake (level == 2) > Application
-	 *   (level == 0); At same level: Non-ack-eliciting > Ack-eliciting.
+	 *   (level == 0); At same level: Ping > Non-ack-eliciting >
+	 *   Ack-eliciting.
 	 */
 	f_prio = quic_level_prio(frame->level);
+	frame_prio = quic_frame_prio(frame->type);
 	list_for_each_entry(pos, head, list) {
 		p_prio = quic_level_prio(pos->level);
 
@@ -533,8 +540,7 @@ void quic_outq_ctrl_tail(struct sock *sk, struct quic_frame *frame, bool cork,
 			head = &pos->list;
 			break;
 		}
-		if (quic_frame_ack_eliciting(frame->type) <
-		    quic_frame_ack_eliciting(pos->type)) {
+		if (frame_prio < quic_frame_prio(pos->type)) {
 			head = &pos->list;
 			break;
 		}
