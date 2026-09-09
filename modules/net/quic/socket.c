@@ -1503,11 +1503,28 @@ static int quic_accept_sock_init(struct sock *nsk, struct sock *sk)
 {
 	struct quic_data *alpn = quic_alpn(sk);
 	struct quic_transport_param param = {};
+	struct inet_sock *ninet = inet_sk(nsk);
 	struct quic_config config = {};
+	struct ipv6_pinfo *nnp;
 	int err;
 
-	if (sk->sk_family == AF_INET6) /* Set IPv6 state if applicable. */
-		inet_sk(nsk)->pinet6 = &((struct quic6_sock *)nsk)->inet6;
+	ninet->inet_opt = NULL;
+	ninet->mc_list = NULL;
+	if (sk->sk_family == AF_INET6) { /* Set IPv6 state if applicable. */
+		ninet->pinet6 = &((struct quic6_sock *)nsk)->inet6;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 19, 0)
+		ninet->ipv6_fl_list = NULL;
+
+		nnp = inet6_sk(nsk);
+#else
+
+		nnp = inet6_sk(nsk);
+		nnp->ipv6_fl_list = NULL;
+#endif
+		nnp->ipv6_mc_list = NULL;
+		nnp->ipv6_ac_list = NULL;
+		nnp->opt = NULL;
+	}
 
 	err = quic_init_sock(nsk);
 	if (err)
