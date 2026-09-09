@@ -742,7 +742,7 @@ static inline void quic_copy_common(void *dst, size_t dlen, const void *src,
 
 #define QUIC_MSG_FLAGS \
 	(QUIC_MSG_STREAM_FLAGS | MSG_BATCH | MSG_MORE | MSG_DONTWAIT | \
-	 MSG_NOSIGNAL | MSG_WAITALL | MSG_QUIC_DATAGRAM)
+	 MSG_NOSIGNAL | MSG_WAITALL | MSG_QUIC_DATAGRAM | MSG_CMSG_COMPAT)
 
 /* Parse control messages for stream or handshake metadata from msghdr. */
 static int quic_msghdr_parse(struct sock *sk, struct msghdr *msg,
