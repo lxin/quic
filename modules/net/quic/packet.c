@@ -950,15 +950,16 @@ static int quic_packet_stateless_reset_create_and_xmit(struct sock *sk, u32 len,
 static int quic_packet_refuse_close_create_and_xmit(struct sock *sk,
 						    u32 errcode)
 {
-	struct quic_conn_id_set *id_set = quic_source(sk);
 	struct quic_path_group *paths = quic_paths(sk);
 	struct quic_packet *packet = quic_packet(sk);
 	u8 level = QUIC_CRYPTO_INITIAL;
 	struct quic_conn_id *active;
 	int err;
 
-	/* Use the client's DCID as our SCID when responding. */
-	active = quic_conn_id_active(id_set);
+	/* Set our DCID = client's SCID, and our SCID = client's DCID. */
+	active = quic_conn_id_active(quic_dest(sk));
+	quic_conn_id_update(active, packet->scid.data, packet->scid.len);
+	active = quic_conn_id_active(quic_source(sk));
 	quic_conn_id_update(active, packet->dcid.data, packet->dcid.len);
 	/* Use path[1] for sending; path[0] remains for listening only. */
 	quic_path_set_saddr(paths, 1, &packet->saddr);
