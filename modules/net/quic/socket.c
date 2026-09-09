@@ -366,7 +366,7 @@ static int quic_ioctl(struct sock *sk, int cmd, int *karg)
 		*karg = sk_rmem_alloc_get(sk);
 		break;
 	case SIOCOUTQ:
-		*karg = sk_wmem_alloc_get(sk);
+		*karg = sk->sk_wmem_queued;
 		break;
 	case SIOCOUTQNSD:
 		*karg = quic_outq(sk)->unsent_bytes;
