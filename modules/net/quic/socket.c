@@ -558,8 +558,8 @@ static int quic_connect(struct sock *sk, struct sockaddr *addr, int addr_len)
 		err = quic_path_bind(sk, paths, 0);
 		if (err)
 			goto out;
-		quic_set_sk_addr(sk, sa, true);
 	}
+	quic_set_sk_addr(sk, sa, true);
 
 	/* Generate and add destination and source connection IDs. */
 	quic_conn_id_generate(&conn_id);
