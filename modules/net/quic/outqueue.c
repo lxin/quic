@@ -675,8 +675,9 @@ void quic_outq_transmit_app_close(struct sock *sk)
 		return;
 
 	if (quic_is_establishing(sk)) {
-		/* Handshake in progress: send close in INITIAL packets. */
-		level = QUIC_CRYPTO_INITIAL;
+		/* Handshake in progress: send in INITIAL/HANDSHAKE packets. */
+		level = quic_paths(sk)->validated ? QUIC_CRYPTO_HANDSHAKE :
+						    QUIC_CRYPTO_INITIAL;
 		type = QUIC_FRAME_CONNECTION_CLOSE;
 		outq->close_errcode = QUIC_TRANSPORT_ERROR_APPLICATION;
 		goto out;
