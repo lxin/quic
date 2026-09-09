@@ -1329,6 +1329,13 @@ static int quic_recvmsg(struct sock *sk, struct msghdr *msg, size_t msg_len,
 	s64 stream_id = -1;
 	int err, fin;
 
+	if (unlikely(flags & MSG_ERRQUEUE))
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(7, 1, 0)
+		return inet_recv_error(sk, msg, msg_len);
+#else
+		return inet_recv_error(sk, msg, msg_len, addr_len);
+#endif
+
 	lock_sock(sk);
 
 	head = &quic_inq(sk)->recv_list;
