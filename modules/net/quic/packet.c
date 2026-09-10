@@ -1397,6 +1397,7 @@ void quic_packet_flush_rxq(struct sock *sk)
 	while ((skb = __skb_dequeue(head)) != NULL) {
 		/* Mark SKB decrypted before processing. */
 		QUIC_SKB_CB(skb)->resume = 1;
+		QUIC_SKB_CB(skb)->backlog = 0;
 		quic_packet_process(sk, skb, GFP_ATOMIC);
 	}
 }
