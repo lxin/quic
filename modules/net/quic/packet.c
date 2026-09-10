@@ -2227,7 +2227,6 @@ static void quic_packet_pack_frames(struct sock *sk, struct sk_buff *skb,
 	struct quic_pnspace *space;
 	u8 *p = skb->data + off;
 	s64 number;
-	u16 i = 0;
 
 	space = quic_pnspace(sk, packet->level);
 	number = space->next_pn++;
@@ -2268,7 +2267,7 @@ static void quic_packet_pack_frames(struct sock *sk, struct sk_buff *skb,
 		/* Move frame to transmitted queue. */
 		quic_outq_transmitted_tail(sk, frame);
 		/* Hold frame in sent packet record. */
-		sent->frame_array[i++] = quic_frame_get(frame);
+		sent->frame_array[sent->frames++] = quic_frame_get(frame);
 	}
 
 	if (packet->padding) /* Pack the padding frame if any. */
@@ -2328,7 +2327,7 @@ static struct quic_packet_sent *quic_packet_sent_alloc(u16 frames, gfp_t gfp)
 
 	sent = kmalloc(sizeof(*sent) + len, gfp | __GFP_ACCOUNT);
 	if (sent) {
-		sent->frames = frames;
+		sent->frames = 0;
 		sent->ecn = 0;
 	}
 
