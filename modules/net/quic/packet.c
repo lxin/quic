@@ -2443,7 +2443,7 @@ static struct sk_buff *quic_packet_handshake_create(struct sock *sk, gfp_t gfp)
 		if (level == QUIC_CRYPTO_INITIAL) {
 			len = QUIC_MIN_UDP_PAYLOAD;
 			if (packet->len < len) {
-				packet->padding = len - packet->len;
+				packet->padding += (len - packet->len);
 				packet->len = len;
 			}
 		}
@@ -2583,7 +2583,7 @@ static struct sk_buff *quic_packet_app_create(struct sock *sk, gfp_t gfp)
 			 */
 			len = QUIC_MIN_UDP_PAYLOAD;
 			if (packet->len < len) {
-				packet->padding = len - packet->len;
+				packet->padding += (len - packet->len);
 				packet->len = len;
 			}
 		}
