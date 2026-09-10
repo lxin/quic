@@ -1611,7 +1611,8 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb,
 			 * anti-amplification credit if path isn't validated.
 			 */
 			conn_id = &packet->dcid;
-			if (conn_id->len > skb->len - QUIC_HLEN ||
+			if (skb->len < QUIC_HLEN + QUIC_CONN_ID_DEF_LEN ||
+			    conn_id->len != QUIC_CONN_ID_DEF_LEN ||
 			    memcmp(conn_id->data, skb->data + QUIC_HLEN,
 				   conn_id->len)) {
 				if (!paths->validated)
