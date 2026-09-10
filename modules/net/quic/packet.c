@@ -2621,6 +2621,7 @@ static struct sk_buff *quic_packet_app_create(struct sock *sk, gfp_t gfp)
 	hdr->fixed = !quic_outq(sk)->grease_quic_bit;
 	hdr->spin = 0;
 	hdr->reserved = 0;
+	hdr->key = 0;
 	hdr->pnl = QUIC_PACKET_NUMBER_LEN - 1;
 
 	/* Choose the active destination connection ID based on path. */
