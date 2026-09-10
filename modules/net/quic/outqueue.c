@@ -410,7 +410,7 @@ int quic_outq_stream_append(struct sock *sk, struct quic_msginfo *info,
 	head = &outq->stream_list;
 	if (list_empty(head))
 		return -ENOENT;
-	/* Append only if it's the same stream, the frame is last of a sendmsg
+	/* Append only if it's the same stream, the frame is last part of a msg
 	 * (i.e., !nodelay) and it hasn't been transmitted yet (number < 0).
 	 */
 	frame = list_last_entry(head, struct quic_frame, list);
