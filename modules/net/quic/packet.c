@@ -1328,6 +1328,16 @@ static int quic_packet_version_process(struct sock *sk, struct sk_buff *skb)
 		err = -EINVAL;
 		goto err;
 	}
+	/* rfc9000#section-17.2.1:
+	 *
+	 * The value for Source Connection ID MUST be copied from the
+	 * Destination Connection ID of the received packet, which is initially
+	 * randomly selected by a client.
+	 */
+	if (quic_conn_id_cmp(&paths->orig_dcid, &packet->scid)) {
+		err = -EINVAL;
+		goto err;
+	}
 	hlen = QUIC_LONG_HLEN(&packet->dcid, &packet->scid);
 	len = skb->len - hlen;
 	if (len < QUIC_VERSION_LEN) {
