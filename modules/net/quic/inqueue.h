@@ -44,6 +44,7 @@ struct quic_inqueue {
 	u64 max_data;                /* rfc9000#section-18.2 */
 	u64 highest; /* Highest received offset across all streams */
 	u32 timeout; /* Idle timeout duration*/
+	u32 version; /* Original used QUIC version */
 	u32 events;  /* Event bitmask for notifications */
 };
 

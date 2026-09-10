@@ -576,6 +576,7 @@ static int quic_connect(struct sock *sk, struct sockaddr *addr, int addr_len)
 		goto free;
 	if (outq->version)
 		packet->version = outq->version;
+	inq->version = packet->version;
 	err = quic_crypto_initial_keys_install(crypto, active, packet->version,
 					       false);
 	if (err)
@@ -1621,6 +1622,7 @@ static int quic_accept_sock_setup(struct sock *sk,
 	 * Compatible Version Negotiation is triggered.
 	 */
 	packet->version = req->version;
+	inq->version = packet->version;
 
 	/* Save original DCID and retry DCID for building transport parameters,
 	 * and identifying the connection in quic_sock_lookup().
