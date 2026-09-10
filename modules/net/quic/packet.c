@@ -134,6 +134,10 @@ static int quic_packet_version_change(struct sock *sk,
 	struct quic_crypto *crypto = quic_crypto(sk, QUIC_CRYPTO_INITIAL);
 	int err;
 
+	/* Cannot re-install key while async crypto is in progress. */
+	if (unlikely(atomic_read(&crypto->async_pending[0])))
+		return -EBUSY;
+
 	err = quic_crypto_initial_keys_install(crypto, dcid, version,
 					       quic_is_serv(sk));
 	if (err)
