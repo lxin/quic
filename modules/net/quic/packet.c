@@ -2498,9 +2498,7 @@ static struct sk_buff *quic_packet_handshake_create(struct sock *sk, gfp_t gfp)
 
 	/* Write Token if needed. */
 	if (level == QUIC_CRYPTO_INITIAL) { /* Only Initial carries tokens. */
-		hlen = 0;
-		if (!quic_is_serv(sk)) /* Only clients send tokens. */
-			hlen = quic_token(sk)->len;
+		hlen = quic_token(sk)->len;
 		p = quic_put_var(p, hlen);
 		p = quic_put_data(p, quic_token(sk)->data, hlen);
 	}
