@@ -254,6 +254,21 @@ int quic_inq_stream_recv(struct sock *sk, struct quic_frame *frame,
 		}
 	}
 
+	/* rfc9000#section-4.5:
+	 *
+	 * Once a final size for a stream is known, it cannot change.  If a
+	 * RESET_STREAM or STREAM frame is received indicating a change in the
+	 * final size for the stream, an endpoint SHOULD respond with an error
+	 * of type FINAL_SIZE_ERROR.
+	 */
+	if (frame->stream_fin) {
+		if (off < stream->recv.highest ||
+		    (size_known && stream->recv.finalsz != off)) {
+			frame->errcode = QUIC_TRANSPORT_ERROR_FINAL_SIZE;
+			return -EINVAL;
+		}
+	}
+
 	/* Restrict out-of-order buffering to a smaller one . */
 	if (stream->recv.offset < offset)
 		rcvbuf = QUIC_RCVBUF_OOO_LIMIT(sk);
@@ -292,23 +307,7 @@ int quic_inq_stream_recv(struct sock *sk, struct quic_frame *frame,
 			}
 		}
 
-		if (!frame->stream_fin)
-			goto add;
-
-		/* rfc9000#section-4.5:
-		 *
-		 * Once a final size for a stream is known, it cannot change.
-		 * If a RESET_STREAM or STREAM frame is received indicating a
-		 * change in the final size for the stream, an endpoint SHOULD
-		 * respond with an error of type FINAL_SIZE_ERROR.
-		 */
-		if (off < stream->recv.highest ||
-		    (size_known && stream->recv.finalsz != off)) {
-			frame->errcode = QUIC_TRANSPORT_ERROR_FINAL_SIZE;
-			return -EINVAL;
-		}
-
-		if (size_known)
+		if (!frame->stream_fin || size_known)
 			goto add;
 
 		/* Notify that the stream has known the final size. */
