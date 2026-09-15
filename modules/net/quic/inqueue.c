@@ -59,6 +59,7 @@ void quic_inq_flow_control(struct sock *sk, struct quic_stream *stream,
 	struct quic_pnspace *space = quic_pnspace(sk, QUIC_CRYPTO_APP);
 	struct quic_inqueue *inq = quic_inq(sk);
 	u8 frame, transmit = 0;
+	u64 max_bytes;
 	u32 window;
 
 	if (!bytes)
@@ -78,11 +79,13 @@ void quic_inq_flow_control(struct sock *sk, struct quic_stream *stream,
 	if (inq->max_bytes >= inq->bytes + window)
 		goto stream_out;
 	frame = QUIC_FRAME_MAX_DATA;
-	if (!quic_outq_transmit_frame(sk, frame, inq, 0, true, gfp)) {
-		/* Increase max data to already read + window. */
-		inq->max_bytes = inq->bytes + window;
-		transmit = 1;
+	max_bytes = inq->max_bytes;
+	inq->max_bytes = inq->bytes + window;
+	if (quic_outq_transmit_frame(sk, frame, inq, 0, true, gfp)) {
+		inq->max_bytes = max_bytes;
+		goto stream_out;
 	}
+	transmit = 1;
 
 stream_out:
 	if (!stream)
@@ -102,10 +105,13 @@ stream_out:
 	if (stream->recv.max_bytes >= stream->recv.bytes + window)
 		goto out;
 	frame = QUIC_FRAME_MAX_STREAM_DATA;
-	if (!quic_outq_transmit_frame(sk, frame, stream, 0, true, gfp)) {
-		stream->recv.max_bytes = stream->recv.bytes + window;
-		transmit = 1;
+	max_bytes = stream->recv.max_bytes;
+	stream->recv.max_bytes = stream->recv.bytes + window;
+	if (quic_outq_transmit_frame(sk, frame, stream, 0, true, gfp)) {
+		stream->recv.max_bytes = max_bytes;
+		goto out;
 	}
+	transmit = 1;
 
 out:
 	if (transmit) {
