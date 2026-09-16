@@ -155,7 +155,7 @@ bool quic_accept_sock_exists(struct sock *sk, struct sk_buff *skb)
 		}
 	} else {
 		/* Socket not busy: process immediately. */
-		sk->sk_backlog_rcv(sk, skb); /* quic_packet_process(). */
+		sk->sk_backlog_rcv(sk, skb); /* quic_backlog_rcv(). */
 	}
 	bh_unlock_sock(sk);
 	sock_put(sk);
@@ -355,7 +355,7 @@ bool quic_listen_sock_switch(struct sk_buff *skb, struct quic_data *alpns)
 	skb_orphan(skb);
 
 	lock_sock(nsk);
-	nsk->sk_backlog_rcv(nsk, skb); /* quic_packet_process(). */
+	quic_packet_process(nsk, skb, GFP_KERNEL);
 	release_sock(nsk);
 	sock_put(nsk);
 
