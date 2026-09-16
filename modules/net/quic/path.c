@@ -282,6 +282,7 @@ void quic_path_swap(struct quic_path_group *paths)
 	 * during the non-atomic structure assignment.
 	 */
 	local_bh_disable();
+	preempt_disable_nested();
 	write_seqcount_begin(&paths->path_seq);
 	if (paths->path[1].udp_sk) {
 		paths->path[0] = paths->path[1];
@@ -293,6 +294,7 @@ void quic_path_swap(struct quic_path_group *paths)
 	paths->path[1].daddr = path.daddr;
 out:
 	write_seqcount_end(&paths->path_seq);
+	preempt_enable_nested();
 	local_bh_enable();
 }
 
