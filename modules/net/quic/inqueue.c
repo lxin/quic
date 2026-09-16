@@ -656,6 +656,9 @@ int quic_inq_event_recv(struct sock *sk, u8 event, void *data, u32 len,
 /* Process an incoming QUIC datagram frame. */
 int quic_inq_dgram_recv(struct sock *sk, struct quic_frame *frame)
 {
+	struct quic_inqueue *inq = quic_inq(sk);
+	struct list_head *head;
+
 	if (sk_rmem_alloc_get(sk) + frame->bytes > sk->sk_rcvbuf ||
 	    !quic_sk_rmem_schedule(sk, frame->bytes)) {
 		QUIC_INC_STATS(sock_net(sk), QUIC_MIB_FRM_RCVBUFDROP);
@@ -664,7 +667,15 @@ int quic_inq_dgram_recv(struct sock *sk, struct quic_frame *frame)
 
 	quic_inq_rcharge(frame, sk);
 	frame->dgram = 1; /* Mark frame as datagram for delivery. */
-	list_add_tail(&frame->list, &quic_inq(sk)->recv_list);
+
+	/* Queue frame for app delivery: early 0-RTT frames go to early_list,
+	 * moved to recv_list after handshake.
+	 */
+	head = &inq->recv_list;
+	if (frame->level && !quic_crypto(sk, QUIC_CRYPTO_APP)->recv_ready)
+		head = &inq->early_list;
+	frame->level = QUIC_CRYPTO_APP;
+	list_add_tail(&frame->list, head);
 	sk->sk_data_ready(sk);
 	return 0;
 }
