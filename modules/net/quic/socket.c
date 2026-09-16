@@ -314,7 +314,7 @@ struct sock *quic_listen_sock_lookup(struct sk_buff *skb, union quic_addr *sa,
 	 */
 out:
 	if (sk && sk->sk_reuseport)
-		sk = reuseport_select_sock(sk, quic_addr_hash(net, da), skb, 1);
+		sk = reuseport_select_sock(sk, quic_addr_hash(net, da), skb, 0);
 
 	if (sk && unlikely(!refcount_inc_not_zero(&sk->sk_refcnt)))
 		sk = NULL;
