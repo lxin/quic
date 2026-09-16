@@ -591,18 +591,20 @@ int quic_crypto_encrypt(struct quic_crypto *crypto, struct sk_buff *skb,
 		goto out;
 
 	cb->key_phase = crypto->key_phase;
+	err = quic_crypto_payload_protect(crypto, skb, true, gfp);
+	if (err)
+		return err;
+out:
+	err = quic_crypto_header_protect(crypto, skb, true, gfp);
+	if (err)
+		return err;
 	/* If a key update is pending and this is the first packet using the
 	 * new key, save the current time. Later used to clear old keys after
 	 * some time has passed (see quic_crypto_decrypt()).
 	 */
 	if (crypto->key_pending && !crypto->key_update_send_time)
 		crypto->key_update_send_time = quic_ktime_get_us();
-
-	err = quic_crypto_payload_protect(crypto, skb, true, gfp);
-	if (err)
-		return err;
-out:
-	return quic_crypto_header_protect(crypto, skb, true, gfp);
+	return 0;
 }
 EXPORT_SYMBOL_GPL(quic_crypto_encrypt);
 
