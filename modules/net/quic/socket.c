@@ -2137,7 +2137,7 @@ static int quic_sock_set_transport_param(struct sock *sk, void *kopt, u32 len)
 	if (p.remote && !quic_is_establishing(sk))
 		return -EINVAL;
 
-	param.remote = p.remote;
+	param.remote = !!p.remote;
 	quic_sock_fetch_transport_param(sk, &param);
 
 	err = quic_param_check_and_copy(&p, &param);
