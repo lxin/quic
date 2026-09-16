@@ -1053,7 +1053,6 @@ static int quic_packet_listen_process(struct sock *sk, struct sk_buff *skb,
 		cb->number_offset = (u16)(p - skb->data);
 		err = quic_packet_get_alpn(skb, &alpns);
 		if (err) {
-			QUIC_INC_STATS(net, QUIC_MIB_PKT_INVHDRDROP);
 			kfree_skb(skb);
 			return err;
 		}
