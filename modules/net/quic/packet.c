@@ -1368,16 +1368,9 @@ void quic_packet_flush_rxq(struct sock *sk)
 	}
 }
 
-static void quic_packet_decrypt_done(struct sk_buff *skb, int err)
+static void quic_packet_decrypt_done(struct sk_buff *skb)
 {
 	struct sock *sk = skb->sk;
-
-	if (err) {
-		QUIC_INC_STATS(sock_net(sk), QUIC_MIB_PKT_DECDROP);
-		kfree_skb(skb);
-		pr_debug("%s: err: %d\n", __func__, err);
-		return;
-	}
 
 	sock_hold(sk);
 	local_bh_disable();
@@ -1629,6 +1622,11 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb,
 		cb->crypto_done = quic_packet_decrypt_done;
 		err = quic_crypto_decrypt(crypto, skb, gfp);
 		if (err) {
+			if (err == -EKEYEXPIRED) {
+				cb->errcode =
+					QUIC_TRANSPORT_ERROR_AEAD_LIMIT_REACHED;
+				break;
+			}
 			if (err == -EINPROGRESS) {
 				QUIC_INC_STATS(net, QUIC_MIB_PKT_DECBACKLOGS);
 				break;
@@ -2055,6 +2053,10 @@ static int quic_packet_app_process(struct sock *sk, struct sk_buff *skb,
 	cb->crypto_done = quic_packet_decrypt_done;
 	err = quic_crypto_decrypt(crypto, skb, gfp);
 	if (err) {
+		if (err == -EKEYEXPIRED) {
+			cb->errcode = QUIC_TRANSPORT_ERROR_AEAD_LIMIT_REACHED;
+			goto err;
+		}
 		if (err == -EINPROGRESS) {
 			QUIC_INC_STATS(net, QUIC_MIB_PKT_DECBACKLOGS);
 			return err;
@@ -2739,16 +2741,9 @@ void quic_packet_flush_txq(struct sock *sk)
 	quic_packet_flush(sk);
 }
 
-static void quic_packet_encrypt_done(struct sk_buff *skb, int err)
+static void quic_packet_encrypt_done(struct sk_buff *skb)
 {
 	struct sock *sk = skb->sk;
-
-	if (err) {
-		QUIC_INC_STATS(sock_net(sk), QUIC_MIB_PKT_ENCDROP);
-		kfree_skb(skb);
-		pr_debug("%s: err: %d\n", __func__, err);
-		return;
-	}
 
 	sock_hold(sk);
 	local_bh_disable();
@@ -2831,6 +2826,13 @@ static int quic_packet_xmit(struct sock *sk, struct sk_buff *skb, gfp_t gfp)
 	cb->crypto_done = quic_packet_encrypt_done;
 	err = quic_crypto_encrypt(quic_crypto(sk, packet->level), skb, gfp);
 	if (err) {
+		if (err == -EKEYEXPIRED && !quic_is_closed(sk)) {
+			struct quic_connection_close c = {};
+
+			quic_inq_event_recv(sk, QUIC_EVENT_CONNECTION_CLOSE, &c,
+					    sizeof(c), gfp);
+			quic_set_state(sk, QUIC_SS_CLOSED);
+		}
 		if (err != -EINPROGRESS) {
 			QUIC_INC_STATS(net, QUIC_MIB_PKT_ENCDROP);
 			kfree_skb(skb);

@@ -188,12 +188,14 @@ static int quic_crypto_keys_derive_and_install(struct quic_crypto *crypto,
 	quic_data(&k, key, keylen);
 
 	if (rx) {
+		crypto->rx_fails[phase] = 0;
 		quic_data(&srt, crypto->rx_secret[phase],
 			  crypto->cipher->secretlen);
 		quic_data(&iv, crypto->rx_iv[phase], ivlen);
 		tfm = crypto->rx_tfm[phase];
 		hp_tfm = crypto->rx_hp_tfm;
 	} else {
+		crypto->tx_count[phase] = 0;
 		quic_data(&srt, crypto->tx_secret[phase],
 			  crypto->cipher->secretlen);
 		quic_data(&iv, crypto->tx_iv[phase], ivlen);
@@ -233,24 +235,40 @@ out:
 #define TLS_CIPHER_AES_CCM_128_SECRET_SIZE		32
 #define TLS_CIPHER_CHACHA20_POLY1305_SECRET_SIZE	32
 
-#define CIPHER_DESC(type, aead_n, skc_n, sha_n)[type - QUIC_CIPHER_MIN] = { \
+#define CIPHER_DESC(type, aead_n, skc_n, sha_n, \
+		    tx_lim, rx_lim)[type - QUIC_CIPHER_MIN] = { \
 	.secretlen = type ## _SECRET_SIZE, \
 	.keylen = type ## _KEY_SIZE, \
 	.aead = aead_n, \
 	.skc = skc_n, \
 	.shash = sha_n, \
+	.txlimit = tx_lim, \
+	.rxlimit = rx_lim, \
 }
+
+/* rfc9001#section-6.6: AEAD Usage Limits */
+#define QUIC_AEAD_TX_AES_GCM		(1ULL << 23)
+#define QUIC_AEAD_TX_AES_CCM		8800000ULL
+#define QUIC_AEAD_TX_CHACHA		(1ULL << 62)
+
+#define QUIC_AEAD_RX_AES_GCM		(1ULL << 52)
+#define QUIC_AEAD_RX_AES_CCM		8800000ULL
+#define QUIC_AEAD_RX_CHACHA		(1ULL << 36)
 
 static const struct quic_cipher
 ciphers[QUIC_CIPHER_MAX + 1 - QUIC_CIPHER_MIN] = {
 	CIPHER_DESC(TLS_CIPHER_AES_GCM_128,
-		    "gcm(aes)", "ecb(aes)", "hmac(sha256)"),
+		    "gcm(aes)", "ecb(aes)", "hmac(sha256)",
+		    QUIC_AEAD_TX_AES_GCM, QUIC_AEAD_RX_AES_GCM),
 	CIPHER_DESC(TLS_CIPHER_AES_GCM_256,
-		    "gcm(aes)", "ecb(aes)", "hmac(sha384)"),
+		    "gcm(aes)", "ecb(aes)", "hmac(sha384)",
+		    QUIC_AEAD_TX_AES_GCM, QUIC_AEAD_RX_AES_GCM),
 	CIPHER_DESC(TLS_CIPHER_AES_CCM_128,
-		    "ccm(aes)", "ecb(aes)", "hmac(sha256)"),
+		    "ccm(aes)", "ecb(aes)", "hmac(sha256)",
+		    QUIC_AEAD_TX_AES_CCM, QUIC_AEAD_RX_AES_CCM),
 	CIPHER_DESC(TLS_CIPHER_CHACHA20_POLY1305,
-		    "rfc7539(chacha20,poly1305)", "chacha20", "hmac(sha256)"),
+		    "rfc7539(chacha20,poly1305)", "chacha20", "hmac(sha256)",
+		    QUIC_AEAD_TX_CHACHA, QUIC_AEAD_RX_CHACHA),
 };
 
 static bool quic_crypto_is_cipher_ccm(struct quic_crypto *crypto)
@@ -466,7 +484,8 @@ static void quic_crypto_done(void *data, int err)
 	atomic_dec(&crypto->async_pending[cb->key_phase]);
 
 	kfree_sensitive(cb->crypto_ctx);
-	cb->crypto_done(skb, err);
+	cb->crypto_err = err;
+	cb->crypto_done(skb);
 }
 
 /* AEAD Usage. */
@@ -587,14 +606,21 @@ int quic_crypto_encrypt(struct quic_crypto *crypto, struct sk_buff *skb,
 	/* Packet payload is already encrypted (e.g., resumed from async),
 	 * proceed to header protection only.
 	 */
-	if (cb->resume)
-		goto out;
-
 	cb->key_phase = crypto->key_phase;
+	if (cb->resume) {
+		err = cb->crypto_err;
+		if (err)
+			return err;
+		goto out;
+	}
+
+	if (crypto->tx_count[cb->key_phase] >= crypto->cipher->txlimit)
+		return -EKEYEXPIRED;
 	err = quic_crypto_payload_protect(crypto, skb, true, gfp);
 	if (err)
 		return err;
 out:
+	crypto->tx_count[cb->key_phase]++;
 	err = quic_crypto_header_protect(crypto, skb, true, gfp);
 	if (err)
 		return err;
@@ -626,6 +652,9 @@ int quic_crypto_decrypt(struct quic_crypto *crypto, struct sk_buff *skb,
 	 * number and key phase.
 	 */
 	if (cb->resume) {
+		err = cb->crypto_err;
+		if (err)
+			goto err;
 		err = quic_crypto_get_number(skb);
 		if (err)
 			return err;
@@ -678,7 +707,7 @@ int quic_crypto_decrypt(struct quic_crypto *crypto, struct sk_buff *skb,
 			crypto->key_update_time = 0;
 			crypto->key_update_send_time = 0;
 		}
-		return err;
+		goto err;
 	}
 
 out:
@@ -708,6 +737,10 @@ out:
 			crypto->key_update_send_time = 0;
 		}
 	}
+	return 0;
+err:
+	if (++crypto->rx_fails[cb->key_phase] >= crypto->cipher->rxlimit)
+		err = -EKEYEXPIRED;
 	return err;
 }
 EXPORT_SYMBOL_GPL(quic_crypto_decrypt);

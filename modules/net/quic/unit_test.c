@@ -349,7 +349,7 @@ static u8 encrypted_data[296] = {
 
 static struct quic_crypto crypto;
 
-static void quic_encrypt_done(struct sk_buff *skb, int err)
+static void quic_encrypt_done(struct sk_buff *skb)
 {
 	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
 
@@ -363,7 +363,7 @@ static void quic_encrypt_done(struct sk_buff *skb, int err)
 	quic_crypto_encrypt(&crypto, skb, GFP_KERNEL);
 }
 
-static void quic_decrypt_done(struct sk_buff *skb, int err)
+static void quic_decrypt_done(struct sk_buff *skb)
 {
 	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
 

@@ -46,11 +46,11 @@ static inline void quic_conn_id_update(struct quic_conn_id *conn_id, u8 *data,
 }
 
 struct quic_skb_cb {
-	/* Callback and temporary context when encryption/decryption completes
-	 * in async mode
-	 */
-	void (*crypto_done)(struct sk_buff *skb, int err);
-	void *crypto_ctx;
+	void (*crypto_done)(struct sk_buff *skb); /* Async crypto callback */
+	union { /* Async context before completion, error after completion */
+		void *crypto_ctx;
+		int crypto_err;
+	};
 	union {
 		struct sk_buff *last; /* Last packet in bundle on TX */
 		u64 time; /* Arrival timestamp in UDP tunnel on RX */

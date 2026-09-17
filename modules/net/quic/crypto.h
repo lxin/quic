@@ -25,6 +25,9 @@ struct quic_cipher {
 	char *shash; /* Name of hash algorithm used for key derivation */
 	char *aead;  /* Name of AEAD algorithm used for payload en/decryption */
 	char *skc;   /* Name of cipher algorithm used for header protection */
+
+	u64 txlimit; /* Max packets encrypted per key (AEAD usage limit) */
+	u64 rxlimit; /* Max failures decrypted per key (AEAD usage limit) */
 };
 
 struct quic_crypto {
@@ -42,6 +45,8 @@ struct quic_crypto {
 	u8 tx_iv[2][QUIC_IV_LEN];      /* IVs for TX (key phase 0 and 1) */
 	u8 rx_iv[2][QUIC_IV_LEN];      /* IVs for RX (key phase 0 and 1) */
 	atomic_t async_pending[2]; /* Async pending count (key phase 0 and 1) */
+	u64 tx_count[2];           /* Packets encrypted (key phase 0 and 1) */
+	u64 rx_fails[2];           /* Failures decrypted (key phase 0 and 1) */
 
 	/* Timestamp 1st packet sent after key update */
 	u64 key_update_send_time;
