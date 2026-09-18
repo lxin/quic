@@ -1085,9 +1085,6 @@ static int quic_frame_stream_process(struct sock *sk, struct quic_frame *frame,
 		if (!quic_get_var(&p, &len, &payload_len) || payload_len > len)
 			return -EINVAL;
 	}
-	fin = !!(type & QUIC_STREAM_BIT_FIN);
-	if (!payload_len && !fin)
-		goto out;
 	/* rfc9000#section-19.8:
 	 *
 	 * The largest offset delivered on a stream -- the sum of the offset
@@ -1128,6 +1125,10 @@ static int quic_frame_stream_process(struct sock *sk, struct quic_frame *frame,
 	 * stop-sending requested.
 	 */
 	if (stream->recv.state >= QUIC_STREAM_RECV_STATE_RECVD)
+		goto out;
+
+	fin = !!(type & QUIC_STREAM_BIT_FIN);
+	if (!payload_len && !fin)
 		goto out;
 
 	/* Follows the same processing logic as quic_frame_crypto_process(). */
@@ -2240,8 +2241,6 @@ static int quic_frame_datagram_process(struct sock *sk,
 		if (!quic_get_var(&p, &len, &payload_len) || payload_len > len)
 			return -EINVAL;
 	}
-	if (!payload_len)
-		goto out;
 
 	/* rfc9221#section-3:
 	 *
@@ -2255,6 +2254,9 @@ static int quic_frame_datagram_process(struct sock *sk,
 		frame->errcode = QUIC_TRANSPORT_ERROR_PROTOCOL_VIOLATION;
 		return -EINVAL;
 	}
+
+	if (!payload_len)
+		goto out;
 
 	/* Follows the same processing logic as quic_frame_crypto_process(). */
 	nframe = quic_frame_alloc(payload_len, p, gfp);
