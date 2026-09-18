@@ -1292,6 +1292,12 @@ static int quic_frame_new_conn_id_process(struct sock *sk,
 	dcid.len = (u8)length;
 	token = p + length;
 
+	/* Reject prior beyond the last CID to limit out-of-order
+	 * NEW_CONNECTION_ID frames cached in the list.
+	 */
+	if (prior > quic_conn_id_last_number(id_set))
+		return -EINVAL;
+
 	if (prior > seqno) {
 		/* rfc9000#section-19.15:
 		 *
