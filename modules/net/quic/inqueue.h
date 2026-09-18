@@ -28,6 +28,7 @@ struct quic_inqueue {
 	u64 bytes;      /* Data already read by the application */
 
 	u8 sack_flag:2; /* SACK timer handling flag; See QUIC_SACK_FLAG_* */
+	u8 data_blocked:1; /* MAX_DATA sent and awaiting ACK */
 
 	/* Transport Parameters (local) */
 	u8 disable_compatible_version:1; /* rfc9368#section-3 */

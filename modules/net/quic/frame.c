@@ -757,6 +757,7 @@ quic_frame_max_stream_data_create(struct sock *sk, void *data, u8 type,
 	if (!frame)
 		return ERR_PTR(-ENOMEM);
 	quic_put_data(frame->data, buf, frame_len);
+	frame->stream = stream;
 
 	return frame;
 }
@@ -1981,6 +1982,12 @@ static int quic_frame_data_blocked_process(struct sock *sk,
 	if (recv_max_bytes >= inq->bytes + window)
 		goto out;
 
+	/* Prevent resource exhaustion: Only send MAX_DATA response if we
+	 * haven't already sent one that's awaiting acknowledgment.
+	 */
+	if (inq->data_blocked)
+		goto out;
+
 	inq->max_bytes = inq->bytes + window;
 	err = quic_outq_transmit_frame(sk, QUIC_FRAME_MAX_DATA, inq, 0, true,
 				       gfp);
@@ -1989,6 +1996,7 @@ static int quic_frame_data_blocked_process(struct sock *sk,
 		inq->max_bytes = recv_max_bytes;
 		return err;
 	}
+	inq->data_blocked = 1;
 out:
 	return (int)(frame->len - len);
 }
@@ -2036,6 +2044,12 @@ static int quic_frame_stream_data_blocked_process(struct sock *sk,
 	if (recv_max_bytes >= stream->recv.bytes + window)
 		goto out;
 
+	/* Prevent resource exhaustion: Only send MAX_STREAM_DATA response if we
+	 * haven't already sent one that's awaiting acknowledgment.
+	 */
+	if (stream->recv.data_blocked)
+		goto out;
+
 	stream->recv.max_bytes = stream->recv.bytes + window;
 	err = quic_outq_transmit_frame(sk, QUIC_FRAME_MAX_STREAM_DATA, stream,
 				       0, true, gfp);
@@ -2043,6 +2057,7 @@ static int quic_frame_stream_data_blocked_process(struct sock *sk,
 		stream->recv.max_bytes = recv_max_bytes;
 		return err;
 	}
+	stream->recv.data_blocked = 1;
 out:
 	return (int)(frame->len - len);
 }
@@ -2074,6 +2089,13 @@ static int quic_frame_streams_blocked_uni_process(struct sock *sk,
 	}
 	if (max > quic_stream_id_to_streams(stream_id))
 		goto out; /* Peer requested more streams than allowed. */
+
+	/* Prevent resource exhaustion: Only send MAX_STREAMS response if we
+	 * haven't already sent one that's awaiting acknowledgment.
+	 */
+	if (streams->recv.uni_blocked)
+		goto out;
+
 	/* Respond with a MAX_STREAMS_UNI frame to inform the peer of the
 	 * current limit.
 	 */
@@ -2082,6 +2104,7 @@ static int quic_frame_streams_blocked_uni_process(struct sock *sk,
 				       true, gfp);
 	if (err)
 		return err;
+	streams->recv.uni_blocked = 1;
 out:
 	return (int)(frame->len - len);
 }
@@ -2109,11 +2132,19 @@ static int quic_frame_streams_blocked_bidi_process(struct sock *sk,
 	stream_id = streams->recv.max_bidi_stream_id;
 	if (max > quic_stream_id_to_streams(stream_id))
 		goto out;
+
+	/* Prevent resource exhaustion: Only send MAX_STREAMS response if we
+	 * haven't already sent one that's awaiting acknowledgment.
+	 */
+	if (streams->recv.bidi_blocked)
+		goto out;
+
 	max = quic_stream_id_to_streams(stream_id);
 	err = quic_outq_transmit_frame(sk, QUIC_FRAME_MAX_STREAMS_BIDI, &max, 0,
 				       true, gfp);
 	if (err)
 		return err;
+	streams->recv.bidi_blocked = 1;
 out:
 	return (int)(frame->len - len);
 }
@@ -2411,21 +2442,39 @@ static void quic_frame_stream_ack(struct sock *sk, struct quic_frame *frame,
 static void quic_frame_max_data_ack(struct sock *sk, struct quic_frame *frame,
 				    gfp_t gfp)
 {
+	struct quic_inqueue *inq = quic_inq(sk);
+
+	/* Clear to allow new MAX_DATA frame in response to DATA_BLOCKED. */
+	inq->data_blocked = 0;
 }
 
 static void quic_frame_max_stream_data_ack(struct sock *sk,
 					   struct quic_frame *frame, gfp_t gfp)
 {
+	struct quic_stream *stream = frame->stream;
+
+	/* Clear to allow new MAX_STREAM_DATA frame in response to
+	 * STREAM_DATA_BLOCKED.
+	 */
+	stream->recv.data_blocked = 0;
 }
 
 static void quic_frame_max_streams_bidi_ack(struct sock *sk,
 					    struct quic_frame *frame, gfp_t gfp)
 {
+	struct quic_stream_table *streams = quic_streams(sk);
+
+	/* Clear to allow new MAX_STREAMS_BIDI frame. */
+	streams->recv.bidi_blocked = 0;
 }
 
 static void quic_frame_max_streams_uni_ack(struct sock *sk,
 					   struct quic_frame *frame, gfp_t gfp)
 {
+	struct quic_stream_table *streams = quic_streams(sk);
+
+	/* Clear to allow new MAX_STREAMS_UNI frame. */
+	streams->recv.uni_blocked = 0;
 }
 
 static void quic_frame_data_blocked_ack(struct sock *sk,

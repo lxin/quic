@@ -60,6 +60,7 @@ struct quic_stream {
 		u8 state;  /* Receive stream state, per rfc9000#section-3.2 */
 
 		u8 stop_sent; /* True if STOP_SENDING has been sent */
+		u8 data_blocked; /* MAX_STREAM_DATA sent and awaiting ACK */
 	} recv;
 };
 
@@ -84,10 +85,14 @@ struct quic_stream_limits {
 	s64 max_uni_stream_id;   /* Highest allowed uni stream ID */
 	s64 active_stream_id;    /* Most recently opened stream ID */
 
-	u8 bidi_blocked;  /* STREAMS_BLOCKED_BIDI sent, awaiting ACK */
-	u8 uni_blocked;   /* STREAMS_BLOCKED_UNI sent, awaiting ACK */
-	u8 bidi_pending;  /* MAX_STREAMS_BIDI needs to be sent */
-	u8 uni_pending;   /* MAX_STREAMS_UNI needs to be sent */
+	/* STREAMS_BLOCKED_BIDI/UNI sent and awaiting ACK for send limits and
+	 * MAX_STREAMS_BIDI/UNI sent and awaiting ACK for recv limits;
+	 * MAX_STREAMS_BIDI/UNI needs to be set for send limits.
+	 */
+	u8 bidi_blocked;
+	u8 uni_blocked;
+	u8 bidi_pending;
+	u8 uni_pending;
 
 	u16 streams_bidi; /* Number of open bidi streams */
 	u16 streams_uni;  /* Number of open uni streams */
