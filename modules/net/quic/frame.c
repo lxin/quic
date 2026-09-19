@@ -1587,9 +1587,6 @@ static int quic_frame_reset_stream_process(struct sock *sk,
 		goto out;
 	}
 
-	if (stream->recv.state >= QUIC_STREAM_RECV_STATE_RECVD)
-		goto out; /* Skip if stream has received all data or a reset. */
-
 	if (finalsz < stream->recv.highest ||
 	    (stream->recv.state == QUIC_STREAM_RECV_STATE_SIZE_KNOWN &&
 	     stream->recv.finalsz != finalsz)) {
@@ -1609,6 +1606,9 @@ static int quic_frame_reset_stream_process(struct sock *sk,
 		frame->errcode = QUIC_TRANSPORT_ERROR_FLOW_CONTROL;
 		return -EINVAL;
 	}
+
+	if (stream->recv.state >= QUIC_STREAM_RECV_STATE_RECVD)
+		goto out; /* Skip if stream has received all data or a reset. */
 
 	/* Notify that stream has received a reset. */
 	update.id = (s64)stream_id;
