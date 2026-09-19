@@ -1387,6 +1387,8 @@ void quic_outq_init(struct sock *sk)
 {
 	struct quic_outqueue *outq = quic_outq(sk);
 
+	outq->ack_delay_exponent = QUIC_DEF_ACK_DELAY_EXPONENT;
+
 	INIT_LIST_HEAD(&outq->stream_list);
 	INIT_LIST_HEAD(&outq->control_list);
 	INIT_LIST_HEAD(&outq->datagram_list);

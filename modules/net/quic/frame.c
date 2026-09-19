@@ -53,7 +53,7 @@ quic_frame_ack_create(struct sock *sk, void *data, u8 type, gfp_t gfp)
 {
 	struct quic_gap_ack_block gabs[QUIC_PN_MAP_MAX_GABS];
 	u64 largest, smallest, range, delay, *ecn_count;
-	struct quic_outqueue *outq = quic_outq(sk);
+	struct quic_inqueue *inq = quic_inq(sk);
 	u8 *p, level = *((u8 *)data);
 	struct quic_pnspace *space;
 	u32 frame_len, num_gabs, i;
@@ -74,7 +74,7 @@ quic_frame_ack_create(struct sock *sk, void *data, u8 type, gfp_t gfp)
 	range = largest - smallest;
 	/* Calculate ACK Delay, adjusted by the ACK delay exponent. */
 	delay = quic_ktime_get_us() - space->max_pn_time;
-	delay >>= outq->ack_delay_exponent;
+	delay >>= inq->ack_delay_exponent;
 
 	/* Estimate the maximum frame length:
 	 *   type + 4 * varints + ranges + ECN Counts.
@@ -1149,8 +1149,8 @@ static int quic_frame_ack_process(struct sock *sk, struct quic_frame *frame,
 				  u8 type, gfp_t gfp)
 {
 	u64 largest, smallest, range, delay, count, gap, i;
+	struct quic_outqueue *outq = quic_outq(sk);
 	u8 *p = frame->data, level = frame->level;
-	struct quic_inqueue *inq = quic_inq(sk);
 	struct quic_cong *cong = quic_cong(sk);
 	u64 ecn_count[QUIC_ECN_MAX];
 	struct quic_pnspace *space;
@@ -1190,7 +1190,7 @@ static int quic_frame_ack_process(struct sock *sk, struct quic_frame *frame,
 	}
 	smallest = largest - range;
 	/* Calculate ACK Delay, adjusted by the ACK delay exponent. */
-	delay <<= inq->ack_delay_exponent;
+	delay <<= outq->ack_delay_exponent;
 	if (quic_is_established(sk) && delay > cong->max_ack_delay)
 		delay = cong->max_ack_delay;
 	/* ACK transmitted packets within [smallest, largest] range. */
