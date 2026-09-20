@@ -1558,6 +1558,7 @@ static int quic_frame_reset_stream_process(struct sock *sk,
 					   gfp_t gfp)
 {
 	struct quic_stream_table *streams = quic_streams(sk);
+	struct quic_outqueue *outq = quic_outq(sk);
 	struct quic_inqueue *inq = quic_inq(sk);
 	struct quic_stream_update update = {};
 	u64 stream_id, errcode, finalsz;
@@ -1633,6 +1634,12 @@ static int quic_frame_reset_stream_process(struct sock *sk,
 	quic_inq_list_purge(sk, &inq->stream_list, stream);
 	quic_inq_list_purge(sk, &inq->early_list, stream);
 	quic_inq_list_purge(sk, &inq->recv_list, stream);
+
+	/* Purge stream receive control frames, e.g. MAX_STREAM_DATA and
+	 * STOP_SENDING.
+	 */
+	quic_outq_list_purge(sk, &outq->transmitted_list, stream);
+	quic_outq_list_purge(sk, &outq->control_list, stream);
 
 	/* Account remaining stream data as consumed for connection-level flow
 	 * control. Otherwise inq->bytes diverges from peer outq->bytes after
@@ -2332,6 +2339,9 @@ static void quic_frame_reset_stream_ack(struct sock *sk,
 static void quic_frame_stop_sending_ack(struct sock *sk,
 					struct quic_frame *frame, gfp_t gfp)
 {
+	struct quic_stream *stream = frame->stream;
+
+	stream->recv.stop_sent = 0;
 }
 
 static void quic_frame_crypto_ack(struct sock *sk, struct quic_frame *frame,

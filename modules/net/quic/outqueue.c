@@ -1416,8 +1416,22 @@ void quic_outq_list_purge(struct sock *sk, struct list_head *head,
 	int bytes = 0;
 
 	list_for_each_entry_safe(frame, next, head, list) {
-		if (stream && frame->stream != stream)
-			continue;
+		if (stream) {
+			if (frame->stream != stream)
+				continue;
+			/* Purge the frames only after the corresponding stream
+			 * side closes.
+			 */
+			if (quic_frame_recv_ctrl(frame->type)) {
+				if (stream->recv.state <
+				    QUIC_STREAM_RECV_STATE_RECVD)
+					continue;
+			} else {
+				if (stream->send.state <
+				    QUIC_STREAM_SEND_STATE_RECVD)
+					continue;
+			}
+		}
 
 		if (head == &outq->stream_list)
 			outq->stream_list_len -= frame->len;
