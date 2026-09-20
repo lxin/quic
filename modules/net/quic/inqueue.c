@@ -269,6 +269,12 @@ int quic_inq_stream_recv(struct sock *sk, struct quic_frame *frame,
 		}
 	}
 
+	if (stream->recv.state >= QUIC_STREAM_RECV_STATE_RECVD ||
+	    (!frame->bytes && !frame->stream_fin)) {
+		quic_frame_put(frame);
+		return 0;
+	}
+
 	/* Restrict out-of-order buffering to a smaller one . */
 	if (stream->recv.offset < offset)
 		rcvbuf = QUIC_RCVBUF_OOO_LIMIT(sk);

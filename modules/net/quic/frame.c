@@ -1069,8 +1069,8 @@ static int quic_frame_stream_process(struct sock *sk, struct quic_frame *frame,
 	u64 stream_id, payload_len, offset = 0;
 	struct quic_stream *stream;
 	struct quic_frame *nframe;
-	u8 *p = frame->data, fin;
 	u32 len = frame->len;
+	u8 *p = frame->data;
 	int err;
 
 	if (!quic_get_var(&p, &len, &stream_id))
@@ -1121,16 +1121,6 @@ static int quic_frame_stream_process(struct sock *sk, struct quic_frame *frame,
 		goto out;
 	}
 
-	/* Skip if stream already finished receiving, was reset, or
-	 * stop-sending requested.
-	 */
-	if (stream->recv.state >= QUIC_STREAM_RECV_STATE_RECVD)
-		goto out;
-
-	fin = !!(type & QUIC_STREAM_BIT_FIN);
-	if (!payload_len && !fin)
-		goto out;
-
 	/* Follows the same processing logic as quic_frame_crypto_process(). */
 	nframe = quic_frame_alloc(payload_len, p, gfp);
 	if (!nframe)
@@ -1139,7 +1129,7 @@ static int quic_frame_stream_process(struct sock *sk, struct quic_frame *frame,
 
 	nframe->offset = offset;
 	nframe->stream = stream;
-	nframe->stream_fin = fin;
+	nframe->stream_fin = !!(type & QUIC_STREAM_BIT_FIN);
 	nframe->level = frame->level;
 	nframe->bytes = nframe->len;
 
@@ -1607,8 +1597,13 @@ static int quic_frame_reset_stream_process(struct sock *sk,
 		return -EINVAL;
 	}
 
-	if (stream->recv.state >= QUIC_STREAM_RECV_STATE_RECVD)
+	if (stream->recv.state >= QUIC_STREAM_RECV_STATE_RECVD) {
+		if (finalsz != stream->recv.offset) {
+			frame->errcode = QUIC_TRANSPORT_ERROR_FINAL_SIZE;
+			return -EINVAL;
+		}
 		goto out; /* Skip if stream has received all data or a reset. */
+	}
 
 	/* Notify that stream has received a reset. */
 	update.id = (s64)stream_id;
@@ -1625,6 +1620,7 @@ static int quic_frame_reset_stream_process(struct sock *sk,
 	 */
 	stream->recv.state = update.state;
 	stream->recv.finalsz = update.finalsz;
+	stream->recv.offset = update.finalsz;
 
 	/* rfc9000#section-19.4:
 	 *
