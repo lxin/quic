@@ -1148,19 +1148,19 @@ out:
 static int quic_frame_ack_process(struct sock *sk, struct quic_frame *frame,
 				  u8 type, gfp_t gfp)
 {
-	u64 largest, smallest, range, delay, count, gap, i;
+	u64 largest, smallest, first_range, range, delay, count, gap, i;
+	u8 *gap_p, *p = frame->data, level = frame->level;
 	struct quic_outqueue *outq = quic_outq(sk);
-	u8 *p = frame->data, level = frame->level;
 	struct quic_cong *cong = quic_cong(sk);
+	u32 gap_len, len = frame->len;
 	u64 ecn_count[QUIC_ECN_MAX];
 	struct quic_pnspace *space;
-	u32 len = frame->len;
 	s64 max_pn_acked;
 
 	if (!quic_get_var(&p, &len, &largest) ||
 	    !quic_get_var(&p, &len, &delay) ||
 	    !quic_get_var(&p, &len, &count) ||
-	    !quic_get_var(&p, &len, &range))
+	    !quic_get_var(&p, &len, &first_range))
 		return -EINVAL;
 
 	space = quic_pnspace(sk, level);
@@ -1174,8 +1174,6 @@ static int quic_frame_ack_process(struct sock *sk, struct quic_frame *frame,
 		frame->errcode = QUIC_TRANSPORT_ERROR_PROTOCOL_VIOLATION;
 		return -EINVAL;
 	}
-	max_pn_acked = space->max_pn_acked_seen;
-	quic_pnspace_reset_ecn_acked(space);
 
 	/* rfc9000#section-19.3.1:
 	 *
@@ -1184,19 +1182,14 @@ static int quic_frame_ack_process(struct sock *sk, struct quic_frame *frame,
 	 * If any computed packet number is negative, an endpoint MUST generate
 	 * a connection error of type FRAME_ENCODING_ERROR.
 	 */
-	if (range > largest) {
+	if (first_range > largest) {
 		frame->errcode = QUIC_TRANSPORT_ERROR_FRAME_ENCODING;
 		return -EINVAL;
 	}
-	smallest = largest - range;
-	/* Calculate ACK Delay, adjusted by the ACK delay exponent. */
-	delay <<= outq->ack_delay_exponent;
-	if (quic_is_established(sk) && delay > cong->max_ack_delay)
-		delay = cong->max_ack_delay;
-	/* ACK transmitted packets within [smallest, largest] range. */
-	quic_outq_transmitted_sack(sk, level, (s64)largest, (s64)smallest,
-				   (s64)largest, delay, gfp);
 
+	gap_p = p;
+	gap_len = len;
+	smallest = largest - first_range;
 	for (i = 0; i < count; i++) {
 		if (!quic_get_var(&p, &len, &gap) ||
 		    !quic_get_var(&p, &len, &range))
@@ -1213,21 +1206,46 @@ static int quic_frame_ack_process(struct sock *sk, struct quic_frame *frame,
 			frame->errcode = QUIC_TRANSPORT_ERROR_FRAME_ENCODING;
 			return -EINVAL;
 		}
+		smallest = smallest - gap - 2 - range;
+	}
+
+	if (type == QUIC_FRAME_ACK_ECN &&
+	    (!quic_get_var(&p, &len, &ecn_count[QUIC_ECN_ECT0]) ||
+	     !quic_get_var(&p, &len, &ecn_count[QUIC_ECN_ECT1]) ||
+	     !quic_get_var(&p, &len, &ecn_count[QUIC_ECN_CE])))
+		return -EINVAL;
+
+	max_pn_acked = space->max_pn_acked_seen;
+	quic_pnspace_reset_ecn_acked(space);
+
+	smallest = largest - first_range;
+	/* Calculate ACK Delay, adjusted by the ACK delay exponent. */
+	delay <<= outq->ack_delay_exponent;
+	if (quic_is_established(sk) && delay > cong->max_ack_delay)
+		delay = cong->max_ack_delay;
+	/* ACK transmitted packets within [smallest, largest] range. */
+	quic_outq_transmitted_sack(sk, level, (s64)largest, (s64)smallest,
+				   (s64)largest, delay, gfp);
+
+	for (i = 0; i < count; i++) {
+		if (!quic_get_var(&gap_p, &gap_len, &gap) ||
+		    !quic_get_var(&gap_p, &gap_len, &range))
+			return -EINVAL;
+		if (gap + 2 > smallest || range > smallest - gap - 2) {
+			frame->errcode = QUIC_TRANSPORT_ERROR_FRAME_ENCODING;
+			return -EINVAL;
+		}
 		largest = smallest - gap - 2;
 		smallest = largest - range;
 		/* Only process first QUIC_PN_MAP_MAX_GABS to limit resources */
-		if (i < QUIC_PN_MAP_MAX_GABS)
-			quic_outq_transmitted_sack(sk, level, (s64)largest,
-						   (s64)smallest, -1, 0, gfp);
+		if (i >= QUIC_PN_MAP_MAX_GABS)
+			break;
+		quic_outq_transmitted_sack(sk, level, (s64)largest,
+					   (s64)smallest, -1, 0, gfp);
 	}
 
 	if (type != QUIC_FRAME_ACK_ECN)
 		goto out;
-
-	if (!quic_get_var(&p, &len, &ecn_count[QUIC_ECN_ECT0]) ||
-	    !quic_get_var(&p, &len, &ecn_count[QUIC_ECN_ECT1]) ||
-	    !quic_get_var(&p, &len, &ecn_count[QUIC_ECN_CE]))
-		return -EINVAL;
 
 	/* rfc9000#section-13.4.2.1:
 	 *
