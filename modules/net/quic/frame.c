@@ -1291,7 +1291,7 @@ static int quic_frame_new_conn_id_process(struct sock *sk,
 	}
 	if (!quic_get_var(&p, &len, &seqno) || seqno > U32_MAX ||
 	    !quic_get_var(&p, &len, &prior) ||
-	    !quic_get_var(&p, &len, &length) ||
+	    !quic_get_int(&p, &len, &length, 1) ||
 	    !length || length > QUIC_CONN_ID_MAX_LEN ||
 	    length + QUIC_CONN_ID_TOKEN_LEN > len)
 		return -EINVAL;
