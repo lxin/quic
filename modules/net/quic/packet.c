@@ -1771,7 +1771,7 @@ skip:
 		 * PROTOCOL_VIOLATION.
 		 */
 		uh = udp_hdr(skb);
-		if (ntohs(uh->len) - sizeof(*uh) < QUIC_MIN_UDP_PAYLOAD) {
+		if (ntohs(uh->len) < sizeof(*uh) + QUIC_MIN_UDP_PAYLOAD) {
 			cb->errcode = QUIC_TRANSPORT_ERROR_PROTOCOL_VIOLATION;
 			err = -EINVAL;
 			break;
