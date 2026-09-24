@@ -2291,6 +2291,7 @@ static int quic_frame_datagram_process(struct sock *sk,
 	if (!nframe)
 		return -ENOMEM;
 	nframe->skb = skb_get(frame->skb);
+	nframe->level = frame->level;
 	nframe->bytes = nframe->len;
 
 	err = quic_inq_dgram_recv(sk, nframe);
