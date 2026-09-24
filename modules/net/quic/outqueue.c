@@ -813,7 +813,6 @@ void quic_outq_transmitted_sack(struct sock *sk, u8 level, s64 largest,
 
 		if (sent->number == ack_largest) {
 			/* Update RTT if largest acknowledged is newly ACKed. */
-			quic_pnspace_set_max_pn_acked_seen(space, sent->number);
 			quic_cong_rtt_update(cong, sent->sent_time, ack_delay);
 
 			/* These two values derived from cong.pto. */

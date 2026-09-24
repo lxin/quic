@@ -1226,6 +1226,7 @@ static int quic_frame_ack_process(struct sock *sk, struct quic_frame *frame,
 	/* ACK transmitted packets within [smallest, largest] range. */
 	quic_outq_transmitted_sack(sk, level, (s64)largest, (s64)smallest,
 				   (s64)largest, delay, gfp);
+	quic_pnspace_set_max_pn_acked_seen(space, (s64)largest);
 
 	for (i = 0; i < count; i++) {
 		if (!quic_get_var(&gap_p, &gap_len, &gap) ||
