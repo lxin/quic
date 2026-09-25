@@ -2471,7 +2471,7 @@ err:
  * quic_do_setsockopt - set a QUIC socket option
  * @sk: socket to configure
  * @optname: option name (QUIC-level)
- * @optval: user buffer containing the option value
+ * @optval: user or kernel buffer containing the option value
  * @optlen: size of the option value
  *
  * Sets a QUIC socket option on a given socket.
@@ -2836,7 +2836,7 @@ static int quic_sock_get_transport_params_ext(struct sock *sk, u32 len,
  * quic_do_getsockopt - get a QUIC socket option
  * @sk: socket to query
  * @optname: option name (QUIC-level)
- * @optval: user buffer to receive the option value
+ * @optval: user or kernel buffer to receive the option value
  * @optlen: pointer to buffer size; updated with actual size on return
  *
  * Gets a QUIC socket option from a given socket.
