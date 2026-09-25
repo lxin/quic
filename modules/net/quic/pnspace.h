@@ -70,7 +70,7 @@ struct quic_pnspace {
 
 	s64 last_max_pn_seen; /* Largest PN seen before pn_map advance */
 	u64 last_max_pn_time; /* Timestamp last_max_pn_seen was received */
-	s64 min_pn_seen;      /* Smallest PN received */
+	s64 min_pn_seen;      /* Lower bound of the trackable PN window */
 	s64 max_pn_seen;      /* Largest PN received */
 	u64 max_pn_time;      /* Timestamp max_pn_seen was received */
 	s64 base_pn; /* PN corresponding to the start of the pn_map */
