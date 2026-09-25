@@ -1034,7 +1034,7 @@ static int quic_packet_listen_process(struct sock *sk, struct sk_buff *skb,
 		return err;
 	}
 	if (token.len)
-		toff = token.data - skb->data;;
+		toff = token.data - skb->data;
 
 	/* Associate skb with sk to ensure sk is valid if skb is delayed to
 	 * process in workqueue.
