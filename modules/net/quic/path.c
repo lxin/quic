@@ -452,10 +452,10 @@ out:
 /* Handle successful reception of a PMTU probe.
  *
  * Called when a probe packet is acknowledged. Updates probe size and
- * transitions state if needed (e.g., from SEARCH to COMPLETE).  Expands PMTU
+ * transitions state if needed (e.g., from SEARCH to COMPLETE). Expands PMTU
  * using binary or linear search depending on state.
  *
- * Return: New PMTU to apply if search completes, or 0 if no change.
+ * Return: New PMTU to apply, or 0 if unchanged.
  */
 u32 quic_path_pl_recv(struct quic_path_group *paths, bool *raise_timer,
 		      bool *complete)
