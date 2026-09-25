@@ -229,7 +229,7 @@ static bool quic_pnspace_next_gap_ack(const struct quic_pnspace *space,
  * This function uses a sliding window approach to ensure the most recent gaps
  * are preserved when the total number exceeds QUIC_PN_MAP_MAX_GABS. If there
  * are more gaps than the limit, the oldest gaps are merged into a single gap,
- * and the newest (QUIC_PN_MAP_MAX_GABS) gaps are preserved individually.
+ * and the newest (QUIC_PN_MAP_MAX_GABS - 1) gaps are preserved individually.
  *
  * Returns: Number of generated GABs (up to QUIC_PN_MAP_MAX_GABS).
  */
