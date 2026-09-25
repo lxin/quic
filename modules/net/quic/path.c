@@ -442,7 +442,7 @@ u32 quic_path_pl_send(struct quic_path_group *paths, s64 number)
 	}
 
 out:
-	pr_debug("%s: dst: %p, state: %d, pmtu: %d, size: %d, high: %d\n",
+	pr_debug("%s: paths: %p, state: %d, pmtu: %d, size: %d, high: %d\n",
 		 __func__, paths, paths->pl.state, paths->pl.pmtu,
 		 paths->pl.probe_size, paths->pl.probe_high);
 	paths->pl.probe_count++;
@@ -463,7 +463,7 @@ u32 quic_path_pl_recv(struct quic_path_group *paths, bool *raise_timer,
 	u32 pathmtu = 0;
 	u16 next;
 
-	pr_debug("%s: dst: %p, state: %d, pmtu: %d, size: %d, high: %d\n",
+	pr_debug("%s: paths: %p, state: %d, pmtu: %d, size: %d, high: %d\n",
 		 __func__, paths, paths->pl.state, paths->pl.pmtu,
 		 paths->pl.probe_size, paths->pl.probe_high);
 
@@ -527,7 +527,7 @@ u32 quic_path_pl_toobig(struct quic_path_group *paths, u32 pmtu,
 {
 	u32 pathmtu = 0;
 
-	pr_debug("%s: dst: %p, state: %d, pmtu: %d, size: %d, ptb: %d\n",
+	pr_debug("%s: paths: %p, state: %d, pmtu: %d, size: %d, ptb: %d\n",
 		 __func__, paths, paths->pl.state, paths->pl.pmtu,
 		 paths->pl.probe_size, pmtu);
 
