@@ -17,8 +17,9 @@
 #include "common.h"
 #include "connid.h"
 
-/* Lookup a source connection ID (scid) in the global source connection ID hash
- * table.
+/* Look up a source connection ID (SCID) in the global source connection ID hash
+ * table. Must be called with RCU read-side protection held. On success, returns
+ * the connection ID with a reference held on its socket.
  */
 struct quic_conn_id *quic_conn_id_lookup(struct net *net, u8 *scid, u32 len)
 {
