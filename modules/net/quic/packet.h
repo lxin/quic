@@ -23,7 +23,7 @@ struct quic_packet {
 	u8 taglen[2];  /* Tag length for short and long packets */
 	u16 padding;   /* Total padding bytes to append after frames */
 	u16 frames;    /* Number of ack-eliciting frames */
-	u16 mss[2];    /* MSS for datagram and non-datagram packets */
+	u16 mss[2];    /* MSS for non-datagram and datagram packets */
 	u16 hlen;      /* UDP + IP header length for sending */
 	u16 len;       /* QUIC packet length including taglen for sending */
 
