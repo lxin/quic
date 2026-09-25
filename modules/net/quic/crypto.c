@@ -1120,8 +1120,10 @@ int quic_crypto_get_retry_tag(struct quic_crypto *crypto, struct sk_buff *skb,
 }
 EXPORT_SYMBOL_GPL(quic_crypto_get_retry_tag);
 
-/* Derives a key and IV using HKDF, configures the AEAD transform and performs
- * AEAD encryption/decryption for the provided token.
+/* Protect or unprotect a token using the token AEAD transform and IV.
+ *
+ * The token AEAD key and authentication size must be initialized by
+ * quic_crypto_set_token_secret() before calling this function.
  */
 static int quic_crypto_token_protect(struct quic_crypto *crypto, u8 *token,
 				     u32 len, u32 adlen, bool enc)
@@ -1169,17 +1171,13 @@ out:
 	return err;
 }
 
-/* Generate a token for Retry or address validation.
+/* Generate a Retry or address validation token.
  *
- * Builds a token with the format: [flag][client address][timestamp][original
- * DCID][auth tag]
+ * Builds a token containing the flag, client address, timestamp and original
+ * DCID. The flag, address and timestamp are authenticated as associated data;
+ * the original DCID is encrypted with AES-GCM.
  *
- * Encrypts the token (excluding the first flag byte) using AES-GCM with a key
- * and IV derived via HKDF. The original DCID is stored to be recovered later
- * from a Client Initial packet.  Ensures the token is bound to the client
- * address and time, preventing reuse or tampering.
- *
- * Returns 0 on success or a negative error code on failure.
+ * Return: 0 on success or a negative error code on failure.
  */
 int quic_crypto_generate_token(struct quic_crypto *crypto, void *addr,
 			       u32 addrlen, struct quic_conn_id *conn_id,
@@ -1216,13 +1214,11 @@ EXPORT_SYMBOL_GPL(quic_crypto_generate_token);
 
 /* Validate a Retry or address validation token.
  *
- * Decrypts the token using derived key and IV. Checks that the decrypted
- * address matches the provided address, validates the embedded timestamp
- * against current time with a version-specific timeout. If applicable, it
- * extracts and returns the original destination connection ID (ODCID) for
- * Retry packets.
+ * Decrypts and authenticates the token, checks the client address and validates
+ * the timestamp against the timeout selected by the token flag. For a Retry
+ * token, extracts the original destination connection ID.
  *
- * Returns 0 if the token is valid, -EINVAL if invalid, or another negative
+ * Return: 0 if the token is valid, -EINVAL if invalid, or another negative
  * error code.
  */
 int quic_crypto_verify_token(struct quic_crypto *crypto, void *addr,
