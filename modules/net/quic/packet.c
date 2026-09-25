@@ -632,7 +632,7 @@ int quic_packet_rcv(struct sock *sk, struct sk_buff *skb, bool icmp)
 	sock_put(sk);
 	return 0;
 err:
-	pr_debug("%s: failed, len: %d, err: %d\n", __func__, skb->len, err);
+	pr_debug("%s: failed, len: %u, err: %d\n", __func__, skb->len, err);
 	QUIC_INC_STATS(net, QUIC_MIB_PKT_RCVDROP);
 	kfree_skb(skb);
 	return err;
