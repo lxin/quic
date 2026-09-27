@@ -606,7 +606,6 @@ int quic_crypto_encrypt(struct quic_crypto *crypto, struct sk_buff *skb,
 	/* Packet payload is already encrypted (e.g., resumed from async),
 	 * proceed to header protection only.
 	 */
-	cb->key_phase = crypto->key_phase;
 	if (cb->resume) {
 		err = cb->crypto_err;
 		if (err)
@@ -614,6 +613,7 @@ int quic_crypto_encrypt(struct quic_crypto *crypto, struct sk_buff *skb,
 		goto out;
 	}
 
+	cb->key_phase = crypto->key_phase;
 	if (crypto->tx_count[cb->key_phase] >= crypto->cipher->txlimit)
 		return -EKEYEXPIRED;
 	err = quic_crypto_payload_protect(crypto, skb, true, gfp);
