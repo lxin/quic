@@ -1014,6 +1014,17 @@ static int quic_packet_listen_process(struct sock *sk, struct sk_buff *skb,
 	/* Read Packet Type. */
 	type = quic_packet_version_get_type(version, quic_hshdr(skb)->type);
 	if (type != QUIC_PACKET_INITIAL) { /* Send a Stateless Reset. */
+		/* Silently drop 0-RTT packets when routed to wrong listener.
+		 * In multi-ALPN setups, 0-RTT packets arriving before accept()
+		 * may fall back to listener lookup with empty ALPN, matching
+		 * any listener instead of the correct one. Sending Stateless
+		 * Reset would incorrectly terminate the connection.
+		 */
+		if (type == QUIC_PACKET_0RTT &&
+		    static_branch_unlikely(&quic_alpn_demux_key)) {
+			kfree_skb(skb);
+			return -EINVAL;
+		}
 		err = quic_packet_stateless_reset_create_and_xmit(sk, skb->len,
 								  gfp);
 		consume_skb(skb);
