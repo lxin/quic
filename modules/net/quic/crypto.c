@@ -653,8 +653,18 @@ int quic_crypto_decrypt(struct quic_crypto *crypto, struct sk_buff *skb,
 	 */
 	if (cb->resume) {
 		err = cb->crypto_err;
-		if (err)
+		if (err) {
+			/* Apply same key_pending cleanup as synchronous path to
+			 * avoid deadlock in key update state machine.
+			 */
+			if (crypto->key_pending &&
+			    cb->key_phase != crypto->key_phase) {
+				crypto->key_pending = 0;
+				crypto->key_update_time = 0;
+				crypto->key_update_send_time = 0;
+			}
 			goto err;
+		}
 		err = quic_crypto_get_number(skb);
 		if (err)
 			return err;
