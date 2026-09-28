@@ -26,7 +26,7 @@ struct quic_source_conn_id {
 	struct quic_common_conn_id common;
 	struct hlist_nulls_node node; /* Hash table node for fast lookup */
 	struct rcu_head rcu; /* RCU header for deferred destruction */
-	struct sock *sk;      /* Socket associated with this Connection ID */
+	struct sock *sk;     /* Socket associated with this Connection ID */
 };
 
 struct quic_dest_conn_id {

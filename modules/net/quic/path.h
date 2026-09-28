@@ -104,8 +104,8 @@ struct quic_path_group {
 	u8 retry:1;     /* Retry used in initial packet */
 
 	/* Connection Migration (rfc9000#section-9) */
-	u8 disable_saddr_alt:1;	/* Remote disable_active_migration parameter */
-	u8 disable_daddr_alt:1;	/* Local disable_active_migration parameter */
+	u8 disable_saddr_alt:1; /* Remote disable_active_migration parameter */
+	u8 disable_daddr_alt:1; /* Local disable_active_migration parameter */
 	u8 pref_addr:1; /* Preferred address offered (rfc9000#section-18.2) */
 	u8 alt_probes;  /* Number of PATH_CHALLENGE probes sent */
 	u8 alt_state;   /* Connection migration state (see above) */

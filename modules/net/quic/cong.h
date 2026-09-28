@@ -45,40 +45,40 @@ enum quic_cong_state {
 
 struct quic_cong {
 	/* RTT tracking */
-	u32 max_ack_delay;	/* max_ack_delay from rfc9000#section-18.2 */
-	u32 smoothed_rtt;	/* Smoothed RTT */
-	u32 latest_rtt;		/* Latest RTT sample */
-	u32 min_rtt;		/* Lowest observed RTT */
-	u32 rttvar;		/* RTT variation */
-	u32 pto;		/* Probe timeout */
+	u32 max_ack_delay;   /* max_ack_delay from rfc9000#section-18.2 */
+	u32 smoothed_rtt;    /* Smoothed RTT */
+	u32 latest_rtt;      /* Latest RTT sample */
+	u32 min_rtt;         /* Lowest observed RTT */
+	u32 rttvar;          /* RTT variation */
+	u32 pto;             /* Probe timeout */
 
 	/* Timing & pacing */
-	u64 pc_start_time;      /* Persistent congestion tracking timestamp */
-	u64 recovery_time;	/* Recovery period start timestamp */
-	u64 pacing_rate;	/* Packet sending speed Bytes/sec */
-	u64 pacing_time;	/* Next scheduled send timestamp (ns) */
-	u64 time;		/* Cached current timestamp */
+	u64 pc_start_time;   /* Persistent congestion tracking timestamp */
+	u64 recovery_time;   /* Recovery period start timestamp */
+	u64 pacing_rate;     /* Packet sending speed Bytes/sec */
+	u64 pacing_time;     /* Next scheduled send timestamp (ns) */
+	u64 time;            /* Cached current timestamp */
 
 	/* Congestion window */
-	u32 max_window;		/* Max growth cap */
-	u32 min_window;		/* Min window limit */
-	u32 loss_delay;		/* Time before marking loss */
-	u32 ssthresh;		/* Slow start threshold */
-	u32 window;		/* Bytes in flight allowed */
-	u32 mss;		/* QUIC MSS (excl. UDP) */
+	u32 max_window;      /* Max growth cap */
+	u32 min_window;      /* Min window limit */
+	u32 loss_delay;      /* Time before marking loss */
+	u32 ssthresh;        /* Slow start threshold */
+	u32 window;          /* Bytes in flight allowed */
+	u32 mss;             /* QUIC MSS (excl. UDP) */
 
 	/* Algorithm-specific */
 	const struct quic_cong_ops *ops;
-	u64 priv[8];		/* Algo private data */
+	u64 priv[8];         /* Algo private data */
 
-	u32 initial_srtt;	/* Initial smoothed RTT */
-	u8 algo;		/* Congestion control algorithm */
+	u32 initial_srtt;    /* Initial smoothed RTT */
+	u8 algo;             /* Congestion control algorithm */
 
 	/* Flags & state */
-	u8 min_rtt_valid:1;	/* min_rtt initialized */
-	u8 is_rtt_set:1;	/* RTT samples exist */
-	u8 pc_detected:1;	/* Persistent congestion detected */
-	u8 state;		/* State machine in rfc9002#section-7.3 */
+	u8 min_rtt_valid:1;  /* min_rtt initialized */
+	u8 is_rtt_set:1;     /* RTT samples exist */
+	u8 pc_detected:1;    /* Persistent congestion detected */
+	u8 state;            /* State machine in rfc9002#section-7.3 */
 };
 
 /* Hooks for congestion control algorithms */
