@@ -112,7 +112,6 @@ int quic_conn_id_add(struct quic_conn_id_set *id_set,
 		     struct quic_conn_id *conn_id, u32 number, void *data,
 		     gfp_t gfp)
 {
-	bool dest = id_set->entry_size == sizeof(struct quic_dest_conn_id);
 	struct quic_source_conn_id *s_conn_id, *pos;
 	struct quic_dest_conn_id *d_conn_id;
 	struct quic_common_conn_id *common;
@@ -127,7 +126,7 @@ int quic_conn_id_add(struct quic_conn_id_set *id_set,
 		if (number == common->number) {
 			if (quic_conn_id_cmp(&common->id, conn_id))
 				return -EINVAL;
-			if (dest && data) {
+			if (!id_set->source && data) {
 				d_conn_id = (struct quic_dest_conn_id *)common;
 				if (crypto_memneq(d_conn_id->token, data,
 						  QUIC_CONN_ID_TOKEN_LEN))
@@ -148,7 +147,7 @@ int quic_conn_id_add(struct quic_conn_id_set *id_set,
 		return -ENOMEM;
 	common->id = *conn_id;
 	common->number = number;
-	if (dest) {
+	if (!id_set->source) {
 		/* For destination connection IDs, copy the stateless reset
 		 * token if available.
 		 */
@@ -257,6 +256,7 @@ void quic_conn_id_set_init(struct quic_conn_id_set *id_set, bool source)
 {
 	id_set->entry_size = source ? sizeof(struct quic_source_conn_id) :
 				      sizeof(struct quic_dest_conn_id);
+	id_set->source = source;
 	INIT_LIST_HEAD(&id_set->head);
 }
 

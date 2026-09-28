@@ -44,6 +44,7 @@ struct quic_conn_id_set {
 	u8 entry_size; /* Size of each connection ID entry in the list */
 	u8 max_count;  /* active_connection_id_limit in rfc9000#section-18.2 */
 	u8 count;      /* Current number of connection IDs in the list */
+	bool source;   /* true if this is a source conn_id set, false if dest */
 };
 
 static inline u32 quic_conn_id_first_number(struct quic_conn_id_set *id_set)
