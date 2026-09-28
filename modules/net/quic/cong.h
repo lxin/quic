@@ -75,8 +75,9 @@ struct quic_cong {
 	u8 algo;		/* Congestion control algorithm */
 
 	/* Flags & state */
-	u8 min_rtt_valid;	/* min_rtt initialized */
-	u8 is_rtt_set;		/* RTT samples exist */
+	u8 min_rtt_valid:1;	/* min_rtt initialized */
+	u8 is_rtt_set:1;	/* RTT samples exist */
+	u8 pc_detected:1;	/* Persistent congestion detected */
 	u8 state;		/* State machine in rfc9002#section-7.3 */
 };
 

@@ -525,7 +525,7 @@ void quic_cong_on_packet_lost(struct quic_cong *cong, u64 time, u32 bytes,
 {
 	if (cong->pc_start_time && time > cong->pc_start_time &&
 	    quic_cong_check_persistent_congestion(cong, time)) {
-		cong->pc_start_time = 0;
+		cong->pc_detected = 1;
 		cong->min_rtt_valid = 0;
 		cong->window = cong->min_window;
 		cong->state = QUIC_CONG_SLOW_START;
@@ -542,6 +542,11 @@ EXPORT_SYMBOL_GPL(quic_cong_on_packet_lost);
 void quic_cong_on_packet_acked(struct quic_cong *cong, u64 time, u32 bytes,
 			       s64 number)
 {
+	if (cong->pc_detected) {
+		cong->pc_detected = 0;
+		cong->pc_start_time = 0;
+		goto out;
+	}
 	/* When a packet is acked, if time - cong->pc_start_time <= duration
 	 * threshold, it means the acked packet was sent within the persistent
 	 * congestion window.
@@ -556,7 +561,7 @@ void quic_cong_on_packet_acked(struct quic_cong *cong, u64 time, u32 bytes,
 	if (cong->pc_start_time && time > cong->pc_start_time &&
 	    !quic_cong_check_persistent_congestion(cong, time))
 		cong->pc_start_time = 0;
-
+out:
 	cong->ops->on_packet_acked(cong, time, bytes, number);
 }
 EXPORT_SYMBOL_GPL(quic_cong_on_packet_acked);
