@@ -159,7 +159,7 @@ int quic_conn_id_add(struct quic_conn_id_set *id_set,
 		/* For source connection IDs, mark as hashed and insert into
 		 * the global source connection ID hashtable.
 		 */
-		common->hashed = 1;
+		common->hashed = true;
 		s_conn_id = (struct quic_source_conn_id *)common;
 		s_conn_id->sk = data;
 		net = sock_net(s_conn_id->sk);

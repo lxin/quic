@@ -18,8 +18,8 @@
 struct quic_common_conn_id {
 	struct quic_conn_id id; /* Connection ID value and its length */
 	struct list_head list;  /* List node for connection ID management */
-	u32 number; /* Sequence number assigned to this Connection ID */
-	u8 hashed;  /* Non-zero if stored in source_conn_id hash table */
+	u32 number;  /* Sequence number assigned to this Connection ID */
+	bool hashed; /* true if stored in source_conn_id hash table */
 };
 
 struct quic_source_conn_id {
