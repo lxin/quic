@@ -845,6 +845,7 @@ static void quic_cong_test2(struct kunit *test)
 	/* cong_avoid -> slow_start: if in persistent congestion */
 	time = cong.time;
 	cong.pc_start_time = time - 5000000;
+	cong.pc_detected = 0;
 	bytes = 1400;
 	quic_cong_on_packet_lost(&cong, time, bytes, 0);
 	KUNIT_EXPECT_EQ(test, cong.state, QUIC_CONG_SLOW_START);

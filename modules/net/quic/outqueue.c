@@ -774,7 +774,8 @@ void quic_outq_transmitted_sack(struct sock *sk, u8 level, s64 largest,
 	struct quic_crypto *crypto = quic_crypto(sk, level);
 	struct quic_outqueue *outq = quic_outq(sk);
 	struct quic_cong *cong = quic_cong(sk);
-	struct quic_packet_sent *sent, *next;
+	struct quic_packet_sent *sent, *prev;
+	struct list_head *head;
 	u32 acked = 0;
 
 	quic_outq_path_confirm(sk, level, largest, smallest, gfp);
@@ -784,8 +785,8 @@ void quic_outq_transmitted_sack(struct sock *sk, u8 level, s64 largest,
 	/* Iterate backwards over sent packets to efficiently process newly
 	 * ACKed packets.
 	 */
-	list_for_each_entry_safe_reverse(sent, next, &outq->packet_sent_list,
-					 list) {
+	head = &outq->packet_sent_list;
+	list_for_each_entry_safe_reverse(sent, prev, head, list) {
 		if (level != sent->level)
 			continue;
 		if (sent->number > largest)
@@ -823,6 +824,13 @@ void quic_outq_transmitted_sack(struct sock *sk, u8 level, s64 largest,
 		quic_cong_on_packet_acked(cong, sent->sent_time, sent->len,
 					  sent->number);
 		quic_outq_sync_window(sk, cong->window);
+
+		/* Mark the previous packet as a gap boundary if it is from the
+		 * same level. This prevents persistent congestion detection
+		 * from spanning an ACKed packet.
+		 */
+		if (!list_is_first(&sent->list, head) && prev->level == level)
+			prev->gap = 1;
 
 		acked += sent->len;
 		list_del(&sent->list);
@@ -1074,6 +1082,10 @@ void quic_outq_retransmit_mark(struct sock *sk, u8 level, bool immediate)
 	space->loss_time = 0;
 	cong->time = quic_ktime_get_us();
 
+	/* Reset persistent congestion tracking for this round. */
+	cong->pc_start_time = 0;
+	cong->pc_detected = 0;
+
 	list_for_each_entry_safe(sent, next, &outq->packet_sent_list, list) {
 		if (level && !sent->level)
 			break;
@@ -1112,6 +1124,10 @@ void quic_outq_retransmit_mark(struct sock *sk, u8 level, bool immediate)
 		quic_cong_on_packet_lost(cong, sent->sent_time, sent->len,
 					 sent->number);
 		quic_outq_sync_window(sk, cong->window);
+
+		/* Reset persistent congestion tracking at ACKed packet gaps. */
+		if (sent->gap)
+			cong->pc_start_time = 0;
 
 		list_del(&sent->list);
 		kfree(sent);

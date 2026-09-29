@@ -2310,6 +2310,7 @@ static struct quic_packet_sent *quic_packet_sent_alloc(u16 frames, gfp_t gfp)
 	sent = kmalloc(sizeof(*sent) + len, gfp | __GFP_ACCOUNT);
 	if (sent) {
 		sent->frames = 0;
+		sent->gap = 0;
 		sent->ecn = 0;
 	}
 

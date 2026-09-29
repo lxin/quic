@@ -523,6 +523,9 @@ static bool quic_cong_check_persistent_congestion(struct quic_cong *cong,
 void quic_cong_on_packet_lost(struct quic_cong *cong, u64 time, u32 bytes,
 			      s64 number)
 {
+	if (cong->pc_detected)
+		return;
+
 	if (cong->pc_start_time && time > cong->pc_start_time &&
 	    quic_cong_check_persistent_congestion(cong, time)) {
 		cong->pc_detected = 1;
@@ -542,26 +545,6 @@ EXPORT_SYMBOL_GPL(quic_cong_on_packet_lost);
 void quic_cong_on_packet_acked(struct quic_cong *cong, u64 time, u32 bytes,
 			       s64 number)
 {
-	if (cong->pc_detected) {
-		cong->pc_detected = 0;
-		cong->pc_start_time = 0;
-		goto out;
-	}
-	/* When a packet is acked, if time - cong->pc_start_time <= duration
-	 * threshold, it means the acked packet was sent within the persistent
-	 * congestion window.
-	 *
-	 * This breaks the condition in rfc9002#section-7.6.2:
-	 *
-	 * - across all packet number spaces, none of the packets sent between
-	 *   the send times of these two packets are acknowledged;
-	 *
-	 * so pc_start_time is reset to 0.
-	 */
-	if (cong->pc_start_time && time > cong->pc_start_time &&
-	    !quic_cong_check_persistent_congestion(cong, time))
-		cong->pc_start_time = 0;
-out:
 	cong->ops->on_packet_acked(cong, time, bytes, number);
 }
 EXPORT_SYMBOL_GPL(quic_cong_on_packet_acked);
