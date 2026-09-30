@@ -88,6 +88,7 @@ static int quic_v4_flow_route(struct sock *sk, union quic_addr *da,
 	fl4->flowi4_uid = sk->sk_uid;
 	fl4->flowi4_mark = sk->sk_mark;
 
+	security_sk_classify_flow(sk, flowi4_to_flowi_common(fl4));
 	rt = ip_route_output_flow(sock_net(sk), fl4, sk);
 	if (IS_ERR(rt))
 		return PTR_ERR(rt);
@@ -138,6 +139,8 @@ static int quic_v6_flow_route(struct sock *sk, union quic_addr *da,
 
 	fl6->flowi6_uid = sk->sk_uid;
 	fl6->flowi6_mark = sk->sk_mark;
+
+	security_sk_classify_flow(sk, flowi6_to_flowi_common(fl6));
 
 	rcu_read_lock();
 	final_p = fl6_update_dst(fl6, rcu_dereference(np->opt), &final);
