@@ -613,10 +613,21 @@ static void quic_cong_update_pacing_time(struct quic_cong *cong, u32 bytes)
 	cong->pacing_time += len_ns;
 }
 
+void quic_cong_on_packet_sent(struct quic_cong *cong, u64 time, u32 bytes,
+			      s64 number)
+{
+	if (!bytes)
+		return;
+	if (cong->ops->on_packet_sent)
+		cong->ops->on_packet_sent(cong, time, bytes, number);
+	quic_cong_update_pacing_time(cong, bytes);
+}
+EXPORT_SYMBOL_GPL(quic_cong_on_packet_sent);
+
 /* Compute and update the pacing rate based on congestion window and smoothed
  * RTT.
  */
-static void quic_cong_pace_update(struct quic_cong *cong, u64 max_rate)
+void quic_cong_pace_update(struct quic_cong *cong, u64 max_rate)
 {
 	u64 rate;
 
@@ -631,27 +642,6 @@ static void quic_cong_pace_update(struct quic_cong *cong, u64 max_rate)
 	pr_debug("%s: update pacing rate: %llu, max rate: %llu, srtt: %u\n",
 		 __func__, cong->pacing_rate, max_rate, cong->smoothed_rtt);
 }
-
-void quic_cong_on_packet_sent(struct quic_cong *cong, u64 time, u32 bytes,
-			      s64 number)
-{
-	if (!bytes)
-		return;
-	if (cong->ops->on_packet_sent)
-		cong->ops->on_packet_sent(cong, time, bytes, number);
-	quic_cong_update_pacing_time(cong, bytes);
-}
-EXPORT_SYMBOL_GPL(quic_cong_on_packet_sent);
-
-void quic_cong_on_ack_recv(struct quic_cong *cong, u32 bytes, u64 max_rate)
-{
-	if (!bytes)
-		return;
-	if (cong->ops->on_ack_recv)
-		cong->ops->on_ack_recv(cong, bytes, max_rate);
-	quic_cong_pace_update(cong, max_rate);
-}
-EXPORT_SYMBOL_GPL(quic_cong_on_ack_recv);
 
 /* rfc9002#section-5: Estimating the Round-Trip Time */
 void quic_cong_rtt_update(struct quic_cong *cong, u64 time, u32 ack_delay)

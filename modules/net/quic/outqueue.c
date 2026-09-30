@@ -829,8 +829,7 @@ void quic_outq_transmitted_sack(struct sock *sk, u8 level, s64 largest,
 		kfree(sent);
 	}
 
-	/* Call cong.on_ack_recv() where it does pacing rate update. */
-	quic_cong_on_ack_recv(cong, acked, READ_ONCE(sk->sk_max_pacing_rate));
+	quic_cong_pace_update(cong, READ_ONCE(sk->sk_max_pacing_rate));
 }
 
 /* rfc9002#section-a.8: GetLossTimeAndSpace()

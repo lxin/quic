@@ -92,7 +92,6 @@ struct quic_cong_ops {
 	/* Optional callbacks */
 	void (*on_packet_sent)(struct quic_cong *cong, u64 time, u32 bytes,
 			       s64 number);
-	void (*on_ack_recv)(struct quic_cong *cong, u32 bytes, u64 max_rate);
 	void (*on_rtt_update)(struct quic_cong *cong);
 };
 
@@ -124,8 +123,8 @@ void quic_cong_on_process_ecn(struct quic_cong *cong);
 
 void quic_cong_on_packet_sent(struct quic_cong *cong, u64 time, u32 bytes,
 			      s64 number);
-void quic_cong_on_ack_recv(struct quic_cong *cong, u32 bytes, u64 max_rate);
 void quic_cong_rtt_update(struct quic_cong *cong, u64 time, u32 ack_delay);
+void quic_cong_pace_update(struct quic_cong *cong, u64 max_rate);
 
 void quic_cong_set_srtt(struct quic_cong *cong, u32 srtt);
 void quic_cong_set_algo(struct quic_cong *cong, u8 algo);
