@@ -2332,8 +2332,13 @@ static int quic_sock_set_crypto_secret(struct sock *sk, void *kopt, u32 len)
 		return -EINVAL;
 	}
 
-	/* Install keys into the crypto context. */
 	crypto = quic_crypto(sk, s.level);
+	if ((s.send ? crypto->send_ready : crypto->recv_ready)) {
+		memzero_explicit(s.secret, sizeof(s.secret));
+		return -EINVAL;
+	}
+
+	/* Install keys into the crypto context. */
 	err = quic_crypto_set_secret(crypto, &s, packet->version);
 	memzero_explicit(s.secret, sizeof(s.secret));
 	if (err)
