@@ -830,6 +830,8 @@ int quic_crypto_set_secret(struct quic_crypto *crypto,
 		err = quic_crypto_set_cipher(crypto, srt->type);
 		if (err)
 			return err;
+	} else if (crypto->cipher_type != srt->type) {
+		return -EINVAL;
 	}
 	cipher = crypto->cipher;
 
