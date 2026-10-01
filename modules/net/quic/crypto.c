@@ -616,11 +616,11 @@ int quic_crypto_encrypt(struct quic_crypto *crypto, struct sk_buff *skb,
 	cb->key_phase = crypto->key_phase;
 	if (crypto->tx_count[cb->key_phase] >= crypto->cipher->txlimit)
 		return -EKEYEXPIRED;
+	crypto->tx_count[cb->key_phase]++;
 	err = quic_crypto_payload_protect(crypto, skb, true, gfp);
 	if (err)
 		return err;
 out:
-	crypto->tx_count[cb->key_phase]++;
 	err = quic_crypto_header_protect(crypto, skb, true, gfp);
 	if (err)
 		return err;
