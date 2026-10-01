@@ -248,11 +248,11 @@ out:
 
 /* rfc9001#section-6.6: AEAD Usage Limits */
 #define QUIC_AEAD_TX_AES_GCM		BIT_ULL(23)
-#define QUIC_AEAD_TX_AES_CCM		8800000ULL
+#define QUIC_AEAD_TX_AES_CCM		2965820ULL /* 2^21.5 */
 #define QUIC_AEAD_TX_CHACHA		BIT_ULL(62)
 
 #define QUIC_AEAD_RX_AES_GCM		BIT_ULL(52)
-#define QUIC_AEAD_RX_AES_CCM		8800000ULL
+#define QUIC_AEAD_RX_AES_CCM		2965820ULL /* 2^21.5 */
 #define QUIC_AEAD_RX_CHACHA		BIT_ULL(36)
 
 static const struct quic_cipher
