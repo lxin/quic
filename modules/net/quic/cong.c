@@ -673,9 +673,8 @@ void quic_cong_rtt_update(struct quic_cong *cong, u64 time, u32 ack_delay)
 		 */
 		cong->smoothed_rtt = cong->latest_rtt;
 		cong->rttvar = cong->smoothed_rtt / 2;
-		quic_cong_pto_update(cong);
 		cong->is_rtt_set = 1;
-		return;
+		goto out;
 	}
 
 	/* rfc9002#section-5.3:
@@ -699,6 +698,7 @@ void quic_cong_rtt_update(struct quic_cong *cong, u64 time, u32 ack_delay)
 			adjusted_rtt - cong->smoothed_rtt;
 #endif
 	cong->rttvar = (cong->rttvar * 3 + rttvar_sample) / 4;
+out:
 	quic_cong_pto_update(cong);
 
 	if (cong->ops->on_rtt_update)
