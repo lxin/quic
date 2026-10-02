@@ -50,7 +50,7 @@ struct quic_gap_ack_block {
  *   - min_pn_seen = last_max_pn_seen;
  *   - base_pn = first zero bit after last_max_pn_seen;
  *   - last_max_pn_seen = max_pn_seen;
- *   - last_max_pn_time = current time;
+ *   - last_max_pn_time = max_pn_time;
  *
  * Conditions to Advance pn_map:
  *   - (max_pn_time - last_max_pn_time) >= max_time_limit, or
