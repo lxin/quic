@@ -389,9 +389,9 @@ enum quic_plpmtud_state {
 #define QUIC_PL_BIG_STEP        32
 #define QUIC_PL_MIN_STEP        4
 
-/* Handle PLPMTUD probe failure on a QUIC path.
+/* Track PLPMTUD probe sends and handle probe exhaustion.
  *
- * Called immediately after sending a probe packet in QUIC Path MTU Discovery.
+ * Called right before sending a probe packet in QUIC Path MTU Discovery.
  * Tracks probe count and manages state transitions based on the number of
  * probes sent and current PLPMTUD state (BASE, SEARCH, COMPLETE, ERROR).
  * Detects probe failures and black holes, adjusting PMTU and probe sizes
