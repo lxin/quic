@@ -50,7 +50,7 @@ struct quic_crypto {
 
 	/* Timestamp 1st packet sent after key update */
 	u64 key_update_send_time;
-	u64 key_update_time; /* Timestamp old keys retained after key update */
+	u64 key_update_time; /* Duration to retain old keys after key update */
 	u32 version;         /* QUIC version in use */
 
 	u8 ticket_ready:1; /* True if a session ticket is ready to read */
