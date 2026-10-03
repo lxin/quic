@@ -557,13 +557,13 @@ int quic_data_from_string(struct quic_data *to, u8 *from, u32 len)
 			}
 			if (!remlen)
 				return -EOVERFLOW;
+			if (d.len == U8_MAX)
+				return -EINVAL;
 			*p++ = *from++;
 			len--;
 			d.len++;
 			remlen--;
 		}
-		if (d.len > U8_MAX)
-			return -EINVAL;
 		*d.data = (u8)(d.len);
 		to->len += d.len + 1;
 	}
