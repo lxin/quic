@@ -22,7 +22,7 @@ struct quic_cubic {
 	/* Variables of Interest in rfc9438#section-4.1.2 */
 	u32 pending_w_add; /* Accumulate fractional increments to W_est */
 	u32 origin_point;  /* W_max */
-	u32 epoch_start;   /* t_epoch */
+	u64 epoch_start;   /* t_epoch */
 	u32 pending_add;   /* Accumulates fractional additions to W_cubic */
 	u32 w_last_max;    /* last W_max */
 	u32 w_tcp;         /* W_est */
@@ -127,7 +127,7 @@ static void cubic_cong_avoid(struct quic_cong *cong, u32 bytes)
 	u64 target_add, tcp_add = 0;
 	u64 target, m;
 
-	if (cubic->epoch_start == U32_MAX) {
+	if (cubic->epoch_start == U64_MAX) {
 		cubic->epoch_start = cong->time;
 		if (cong->window < cubic->w_last_max) {
 			/*
@@ -232,7 +232,7 @@ static void cubic_recovery(struct quic_cong *cong)
 	struct quic_cubic *cubic = quic_cong_priv(cong);
 
 	cong->recovery_time = cong->time;
-	cubic->epoch_start = U32_MAX;
+	cubic->epoch_start = U64_MAX;
 
 	/* rfc9438#section-3.4:
 	 *   CUBIC sets the multiplicative window decrease factor (β__cubic_)
@@ -344,7 +344,7 @@ static void quic_cubic_on_init(struct quic_cong *cong)
 {
 	struct quic_cubic *cubic = quic_cong_priv(cong);
 
-	cubic->epoch_start = U32_MAX;
+	cubic->epoch_start = U64_MAX;
 	cubic->origin_point = 0;
 	cubic->w_last_max = 0;
 	cubic->w_tcp = 0;
