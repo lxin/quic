@@ -57,7 +57,7 @@ struct quic_gap_ack_block {
  *   - (max_pn_seen - last_max_pn_seen) > QUIC_PN_MAP_LIMIT
  *
  * Gap Search Range:
- *   - From (base_pn - 1) to max_pn_seen
+ *   - From base_pn to max_pn_seen
  */
 struct quic_pnspace {
 	/* ECN counters indexed by dir and ECN codepoint (ECT1, ECT0, CE) */
