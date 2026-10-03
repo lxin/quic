@@ -4,7 +4,7 @@
  *
  * This file is kernel test of the QUIC kernel implementation
  *
- * Initialization/cleanup for QUIC protocol support.
+ * Unit tests.
  *
  * Written or modified by:
  *    Xin Long <lucien.xin@gmail.com>
