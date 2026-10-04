@@ -20,6 +20,9 @@ static bool quic_stream_id_valid(s64 stream_id, bool is_serv, bool send)
 {
 	u8 type = (stream_id & QUIC_STREAM_TYPE_MASK);
 
+	if (stream_id < 0)
+		return false;
+
 	if (send) {
 		if (is_serv)
 			return type != QUIC_STREAM_TYPE_CLIENT_UNI;
