@@ -453,7 +453,9 @@ out:
  *
  * Called when a probe packet is acknowledged. Updates probe size and
  * transitions state if needed (e.g., from SEARCH to COMPLETE). Expands PMTU
- * using binary or linear search depending on state.
+ * using a two-phase linear search: coarse stepping (QUIC_PL_BIG_STEP) to
+ * quickly find the upper bound, then fine stepping (QUIC_PL_MIN_STEP) to
+ * refine.
  *
  * Return: New PMTU to apply, or 0 if unchanged.
  */
