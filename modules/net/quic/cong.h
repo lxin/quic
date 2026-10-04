@@ -106,7 +106,7 @@ static inline void quic_cong_set_mss(struct quic_cong *cong, u32 mss)
 	cong->min_window = mss * 2;
 
 	if (!cong->window)
-		cong->window = min(mss * 10, 14720U);
+		cong->window = min(mss * 10, max(14720U, mss * 2));
 	if (cong->window < cong->min_window)
 		cong->window = cong->min_window;
 }
