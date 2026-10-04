@@ -604,7 +604,7 @@ int quic_packet_rcv(struct sock *sk, struct sk_buff *skb, bool icmp)
 		return quic_packet_rcv_err(sk, skb);
 
 	if (skb_linearize(skb)) {
-		err = -EINVAL;
+		err = -ENOMEM;
 		goto err;
 	}
 
