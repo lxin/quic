@@ -503,7 +503,7 @@ static const struct quic_cong_ops quic_congs[] = {
 static bool quic_cong_check_persistent_congestion(struct quic_cong *cong,
 						  u64 time)
 {
-	u32 ssthresh;
+	u64 ssthresh;
 
 	time -= cong->pc_start_time;
 
