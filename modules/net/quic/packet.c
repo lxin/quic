@@ -922,9 +922,10 @@ static int quic_packet_refuse_close_create_and_xmit(struct sock *sk,
  *
  * Depending on the packet type and state, this may involve creating a request
  * socket for a new connection, responding with a Stateless Reset for
- * unexpected Handshake or 1-RTT packets, issuing a Retry packet for address
- * validation when needed, or sending a Version Negotiation packet if the
- * client's QUIC version is unsupported.
+ * unexpected non-Initial packets (Handshake, 0-RTT, 1-RTT, Retry, or invalid
+ * packets), issuing a Retry packet for address validation when needed, or
+ * sending a Version Negotiation packet if the client's QUIC version is
+ * unsupported. 0-RTT packets may be silently dropped in multi-ALPN setups.
  */
 static int quic_packet_listen_process(struct sock *sk, struct sk_buff *skb,
 				      gfp_t gfp)
