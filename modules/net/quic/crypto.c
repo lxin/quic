@@ -595,7 +595,7 @@ out:
  * encryption of the packet payload and applies header protection. It handles
  * key phase tracking and key update timing.
  *
- * Return: 0 on success, or a negative error code.
+ * Return: 0 on success, -EINPROGRESS for async operation, or negative error.
  */
 int quic_crypto_encrypt(struct quic_crypto *crypto, struct sk_buff *skb,
 			gfp_t gfp)
@@ -638,7 +638,7 @@ EXPORT_SYMBOL_GPL(quic_crypto_encrypt);
  * protection, decrypts the payload, and processes any key updates if the key
  * phase bit changes.
  *
- * Return: 0 on success, or a negative error code.
+ * Return: 0 on success, -EINPROGRESS for async operation, or negative error.
  */
 int quic_crypto_decrypt(struct quic_crypto *crypto, struct sk_buff *skb,
 			gfp_t gfp)
