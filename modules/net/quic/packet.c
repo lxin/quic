@@ -340,7 +340,9 @@ out:
 	return 1;
 }
 
-/* Queue a packet for later processing when sleeping is allowed. */
+/* Queue a packet for later processing when sleeping is allowed.
+ * Return: non-zero if skb was consumed (queued or dropped), 0 otherwise.
+ */
 static int quic_packet_deferred_schedule(struct sk_buff *skb)
 {
 	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
