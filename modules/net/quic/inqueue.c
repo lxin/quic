@@ -134,6 +134,7 @@ out:
 static bool quic_inq_stream_tail(struct sock *sk, struct quic_stream *stream,
 				 struct quic_frame *frame, gfp_t gfp)
 {
+	struct quic_outqueue *outq = quic_outq(sk);
 	struct quic_inqueue *inq = quic_inq(sk);
 	struct quic_stream_update update = {};
 	bool fin = frame->stream_fin;
@@ -184,6 +185,11 @@ static bool quic_inq_stream_tail(struct sock *sk, struct quic_stream *stream,
 			frame->stream = NULL;
 	}
 	quic_inq_list_purge(sk, &inq->stream_list, stream);
+	/* Purge outgoing recv control frames (e.g. MAX_STREAM_DATA) that
+	 * reference this stream, to prevent use-after-free on ACK.
+	 */
+	quic_outq_list_purge(sk, &outq->transmitted_list, stream);
+	quic_outq_list_purge(sk, &outq->control_list, stream);
 	/* Release stream and update limits for new streams. */
 	quic_stream_put(quic_streams(sk), stream, quic_is_serv(sk), false);
 
