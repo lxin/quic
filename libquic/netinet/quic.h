@@ -52,6 +52,7 @@ int quic_server_handshake(int sockfd, const char *pkey_file,
 enum quic_handshake_step_op {
 	QUIC_HANDSHAKE_STEP_OP_SENDMSG = 1,
 	QUIC_HANDSHAKE_STEP_OP_RECVMSG,
+	QUIC_HANDSHAKE_STEP_OP_SETSOCKOPT,
 };
 
 struct quic_handshake_step_sendmsg {
@@ -66,12 +67,21 @@ struct quic_handshake_step_recvmsg {
 	ssize_t retval;
 };
 
+struct quic_handshake_step_setsockopt {
+	int level;
+	int optname;
+	void *optval;
+	socklen_t optlen;
+	ssize_t retval;
+};
+
 struct quic_handshake_step {
 	enum quic_handshake_step_op op;
 
 	union {
 		struct quic_handshake_step_sendmsg s_sendmsg;
 		struct quic_handshake_step_recvmsg s_recvmsg;
+		struct quic_handshake_step_setsockopt s_setsockopt;
 	};
 };
 
