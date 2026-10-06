@@ -1574,7 +1574,7 @@ static int quic_accept_sock_init(struct sock *nsk, struct sock *sk)
 
 	ninet->inet_opt = NULL;
 	ninet->mc_list = NULL;
-	if (sk->sk_family == AF_INET6) { /* Set IPv6 state if applicable. */
+	if (!quic_pf_ipv4(sk)) { /* Set IPv6 state if applicable. */
 		ninet->pinet6 = &((struct quic6_sock *)nsk)->inet6;
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 19, 0)
 		ninet->ipv6_fl_list = NULL;

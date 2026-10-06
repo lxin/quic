@@ -520,6 +520,23 @@ static int quic_packet_get_alpn(struct sk_buff *skb, struct quic_data *alpn)
 	return 0;
 }
 
+static bool quic_packet_addrs_valid(struct sock *sk, struct sk_buff *skb,
+				    bool strict)
+{
+	union quic_addr sa = {}, da = {};
+	struct quic_path_group *paths;
+
+	if (!strict)
+		return quic_skb_ipv4(skb) ? !ipv6_only_sock(sk) :
+					    !quic_pf_ipv4(sk);
+
+	quic_get_msg_addrs(skb, &sa, &da);
+	paths = quic_paths(sk);
+
+	return quic_cmp_sk_addr(sk, quic_path_saddr(paths, 0), &sa) &&
+	       quic_cmp_sk_addr(sk, quic_path_daddr(paths, 0), &da);
+}
+
 /* Determine the QUIC socket associated with an incoming packet. */
 static struct sock *quic_packet_get_sock(struct sk_buff *skb, struct sock *usk)
 {
@@ -547,8 +564,12 @@ static struct sock *quic_packet_get_sock(struct sk_buff *skb, struct sock *usk)
 					      QUIC_CONN_ID_DEF_LEN);
 		if (conn_id) {
 			cb->seqno = quic_conn_id_number(conn_id);
-			/* Return associated socket. */
-			return quic_conn_id_sk(conn_id);
+			sk = quic_conn_id_sk(conn_id);
+			if (!quic_packet_addrs_valid(sk, skb, false)) {
+				sock_put(sk);
+				return ERR_PTR(-EINVAL);
+			}
+			return sk;
 		}
 
 		/* Fallback: listener socket lookup
@@ -575,7 +596,12 @@ static struct sock *quic_packet_get_sock(struct sk_buff *skb, struct sock *usk)
 	conn_id = quic_conn_id_lookup(net, dcid.data, dcid.len);
 	if (conn_id) {
 		cb->seqno = quic_conn_id_number(conn_id);
-		return quic_conn_id_sk(conn_id); /* Return associated socket. */
+		sk = quic_conn_id_sk(conn_id);
+		if (!quic_packet_addrs_valid(sk, skb, true)) {
+			sock_put(sk);
+			return ERR_PTR(-EINVAL);
+		}
+		return sk;
 	}
 
 	/* Fallback: address + DCID lookup
