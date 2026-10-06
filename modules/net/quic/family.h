@@ -15,6 +15,10 @@
 #define QUIC_PREF_ADDR_LEN \
 	(QUIC_ADDR4_LEN + QUIC_PORT_LEN + QUIC_ADDR6_LEN + QUIC_PORT_LEN)
 
+#define quic_skb_ipv4(skb)	(ip_hdr(skb)->version == 4)
+#define quic_pf_ipv4(sk)	((sk)->sk_family == PF_INET)
+#define quic_af_ipv4(a)		((a)->sa.sa_family == AF_INET)
+
 void quic_seq_dump_addr(struct seq_file *seq, union quic_addr *addr);
 bool quic_is_any_addr(union quic_addr *a);
 u32 quic_encap_len(union quic_addr *a);

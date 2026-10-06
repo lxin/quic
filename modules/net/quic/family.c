@@ -618,8 +618,6 @@ static void quic_v6_set_sk_ecn(struct sock *sk, u8 ecn)
 	inet6_sk(sk)->tclass = ((inet6_sk(sk)->tclass & ~INET_ECN_MASK) | ecn);
 }
 
-#define quic_af_ipv4(a)		((a)->sa.sa_family == AF_INET)
-
 u32 quic_encap_len(union quic_addr *a)
 {
 	return (quic_af_ipv4(a) ? sizeof(struct iphdr) :
@@ -665,8 +663,6 @@ void quic_lower_xmit(struct sock *sk, struct sk_buff *skb, union quic_addr *da,
 	local_bh_enable();
 }
 
-#define quic_skb_ipv4(skb)	(ip_hdr(skb)->version == 4)
-
 void quic_get_msg_addrs(struct sk_buff *skb, union quic_addr *da,
 			union quic_addr *sa)
 {
@@ -687,8 +683,6 @@ u8 quic_get_msg_ecn(struct sk_buff *skb)
 	return quic_skb_ipv4(skb) ? quic_v4_get_msg_ecn(skb) :
 				    quic_v6_get_msg_ecn(skb);
 }
-
-#define quic_pf_ipv4(sk)	((sk)->sk_family == PF_INET)
 
 int quic_get_user_addr(struct sock *sk, union quic_addr *a,
 		       struct sockaddr *addr, int addr_len, bool bind,
