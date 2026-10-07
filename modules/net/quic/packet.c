@@ -1034,6 +1034,18 @@ static int quic_packet_listen_process(struct sock *sk, struct sk_buff *skb,
 		return -EINVAL;
 	}
 	if (!quic_packet_compatible_versions(version)) {
+		/* rfc9000#section-5.2.2:
+		 *
+		 * If a server receives a packet that indicates an unsupported
+		 * version and if the packet is large enough to initiate a new
+		 * connection for any supported version, the server SHOULD send
+		 * a Version Negotiation packet as described in Section 6.1.
+		 */
+		if (ntohs(udp_hdr(skb)->len) <
+		    sizeof(struct udphdr) + QUIC_MIN_UDP_PAYLOAD) {
+			kfree_skb(skb);
+			return -EINVAL;
+		}
 		/* rfc9000#section-6.1:
 		 *
 		 * If the version selected by the client is not acceptable to
