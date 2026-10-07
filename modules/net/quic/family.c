@@ -56,7 +56,6 @@ static void quic_v6_udp_conf_init(struct sock *sk, struct udp_port_cfg *conf,
 	conf->local_udp_port = a->v6.sin6_port;
 	conf->use_udp6_rx_checksums = true;
 	conf->use_udp6_tx_checksums = true;
-	conf->ipv6_v6only = ipv6_only_sock(sk);
 	conf->bind_ifindex = quic_get_dev_if(sk, a);
 }
 
