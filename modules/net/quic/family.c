@@ -105,7 +105,6 @@ static int quic_v6_flow_route(struct sock *sk, union quic_addr *da,
 			      union quic_addr *sa, struct flowi *fl)
 {
 	struct ipv6_pinfo *np = inet6_sk(sk);
-	struct in6_addr *final_p, final;
 	struct ip6_flowlabel *flowlabel;
 	struct dst_entry *dst;
 	struct flowi6 *fl6;
@@ -142,11 +141,7 @@ static int quic_v6_flow_route(struct sock *sk, union quic_addr *da,
 
 	security_sk_classify_flow(sk, flowi6_to_flowi_common(fl6));
 
-	rcu_read_lock();
-	final_p = fl6_update_dst(fl6, rcu_dereference(np->opt), &final);
-	rcu_read_unlock();
-
-	dst = ip6_dst_lookup_flow(sock_net(sk), sk, fl6, final_p);
+	dst = ip6_dst_lookup_flow(sock_net(sk), sk, fl6, NULL);
 	if (IS_ERR(dst))
 		return PTR_ERR(dst);
 
