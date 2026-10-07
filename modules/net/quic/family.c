@@ -159,9 +159,10 @@ static void quic_v4_lower_xmit(struct sock *sk, struct sk_buff *skb,
 {
 	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
 	struct flowi4 *fl4 = &fl->u.ip4;
-	u8 tos = inet_sk(sk)->tos, ttl;
+	u8 tos = inet_sk(sk)->tos;
 	struct dst_entry *dst;
 	__be16 df = 0;
+	int ttl;
 
 	pr_debug("%s: skb: %p, len: %u, num: %lld, %pI4:%d -> %pI4:%d\n",
 		 __func__, skb, skb->len, cb->number, &fl4->saddr,
@@ -177,7 +178,9 @@ static void quic_v4_lower_xmit(struct sock *sk, struct sk_buff *skb,
 
 	if (cb->ecn)
 		tos = (tos & ~INET_ECN_MASK) | cb->ecn;
-	ttl = (u8)ip4_dst_hoplimit(dst);
+	ttl = READ_ONCE(inet_sk(sk)->uc_ttl);
+	if (ttl < 0)
+		ttl = ip4_dst_hoplimit(dst);
 #ifdef IPSKB_MCROUTE
 	udp_tunnel_xmit_skb((struct rtable *)dst, sk, skb, fl4->saddr,
 			    fl4->daddr, tos, ttl, df, fl4->fl4_sport,
@@ -193,10 +196,11 @@ static void quic_v6_lower_xmit(struct sock *sk, struct sk_buff *skb,
 			       struct flowi *fl)
 {
 	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
-	u8 tc = inet6_sk(sk)->tclass, ttl;
 	struct flowi6 *fl6 = &fl->u.ip6;
+	u8 tc = inet6_sk(sk)->tclass;
 	struct dst_entry *dst;
 	__be32 label;
+	int ttl;
 
 	pr_debug("%s: skb: %p, len: %u, num: %lld, %pI6c:%d -> %pI6c:%d\n",
 		 __func__, skb, skb->len, cb->number, &fl6->saddr,
@@ -210,7 +214,7 @@ static void quic_v6_lower_xmit(struct sock *sk, struct sk_buff *skb,
 
 	if (cb->ecn)
 		tc = (tc & ~INET_ECN_MASK) | cb->ecn;
-	ttl = (u8)ip6_dst_hoplimit(dst);
+	ttl = ip6_sk_dst_hoplimit(inet6_sk(sk), fl6, dst);
 	label = ip6_make_flowlabel(sock_net(sk), skb, fl6->flowlabel, true,
 				   fl6);
 #ifdef IPSKB_MCROUTE
