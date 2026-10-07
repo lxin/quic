@@ -280,8 +280,14 @@ void quic_packet_rcv_err_pmtu(struct sock *sk)
 			return;
 
 		dst = __sk_dst_get(sk);
-		if (dst)
+		if (dst) {
 			dst->ops->update_pmtu(dst, sk, NULL, info, true);
+			/* Re-read actual MTU after update_pmtu, which may have
+			 * rejected the increase. Only use values accepted by
+			 * route layer to prevent spoofed ICMP from raising MSS.
+			 */
+			info = dst_mtu(dst);
+		}
 		quic_packet_mss_update(sk, info - packet->hlen);
 		return;
 	}
