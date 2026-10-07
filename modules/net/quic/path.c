@@ -192,7 +192,7 @@ int quic_path_bind(struct sock *sk, struct quic_path_group *paths, u8 path)
 		mutex_lock(&head->lock);
 		us = quic_udp_sock_lookup(sk, a, port);
 		if (us) {
-			if (!uid_eq(sk->sk_uid, us->sk->sk_uid)) {
+			if (!uid_eq(current_fsuid(), us->sk->sk_uid)) {
 				mutex_unlock(&head->lock);
 				return -EADDRINUSE;
 			}
