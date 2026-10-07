@@ -119,7 +119,7 @@ static inline s64 quic_stream_streams_to_id(u64 streams, u8 type)
 
 struct quic_stream *quic_stream_get(struct quic_stream_table *streams,
 				    s64 stream_id, u32 flags, bool is_serv,
-				    bool send, gfp_t gfp);
+				    bool send, struct net *net, gfp_t gfp);
 void quic_stream_put(struct quic_stream_table *streams,
 		     struct quic_stream *stream, bool is_serv, bool send);
 
@@ -128,7 +128,7 @@ bool quic_stream_max_streams_update(struct quic_stream_table *streams,
 bool quic_stream_id_exceeds(struct quic_stream_table *streams,
 			    s64 stream_id, bool send);
 struct quic_stream *quic_stream_find(struct quic_stream_table *streams,
-				     s64 stream_id);
+				     s64 stream_id, struct net *net);
 
 void quic_stream_get_param(struct quic_stream_table *streams,
 			   struct quic_transport_param *p);

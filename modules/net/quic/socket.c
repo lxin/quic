@@ -958,7 +958,7 @@ static struct quic_stream *quic_sock_send_stream(struct sock *sk,
 	int err;
 
 	stream = quic_stream_get(streams, sinfo->stream_id, sinfo->stream_flags,
-				 is_serv, true, gfp);
+				 is_serv, true, sock_net(sk), gfp);
 	if (!IS_ERR(stream))
 		goto out;
 	if (PTR_ERR(stream) != -EAGAIN)
@@ -981,7 +981,7 @@ static struct quic_stream *quic_sock_send_stream(struct sock *sk,
 
 	/* Stream should now be available, retry getting the stream. */
 	stream = quic_stream_get(streams, sinfo->stream_id, sinfo->stream_flags,
-				 is_serv, true, gfp);
+				 is_serv, true, sock_net(sk), gfp);
 	if (IS_ERR(stream))
 		return stream;
 out:
@@ -1097,7 +1097,7 @@ static int quic_wait_for_stream_send(struct sock *sk,
 		/* Re-fetch the stream after sleeping. It may have been closed,
 		 * reset, or freed while the socket lock was released.
 		 */
-		stream = quic_stream_find(streams, stream_id);
+		stream = quic_stream_find(streams, stream_id, sock_net(sk));
 		if (!stream ||
 		    stream->send.state >= QUIC_STREAM_SEND_STATE_SENT) {
 			err = -EINVAL;
@@ -1817,7 +1817,7 @@ static int quic_sock_stream_reset(struct sock *sk, void *kopt, u32 len)
 	quic_copy_common(&info, sizeof(info), kopt, len);
 
 	stream = quic_stream_get(streams, info.stream_id, 0, quic_is_serv(sk),
-				 true, gfp);
+				 true, sock_net(sk), gfp);
 	if (IS_ERR(stream))
 		return PTR_ERR(stream);
 
@@ -1854,7 +1854,7 @@ static int quic_sock_stream_stop_sending(struct sock *sk, void *kopt, u32 len)
 	quic_copy_common(&info, sizeof(info), kopt, len);
 
 	stream = quic_stream_get(streams, info.stream_id, 0, quic_is_serv(sk),
-				 false, gfp);
+				 false, sock_net(sk), gfp);
 	if (IS_ERR(stream))
 		return PTR_ERR(stream);
 

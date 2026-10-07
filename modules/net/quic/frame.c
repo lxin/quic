@@ -633,7 +633,7 @@ quic_frame_reset_stream_create(struct sock *sk, void *data, u8 type, gfp_t gfp)
 	struct quic_frame *frame;
 	u32 frame_len;
 
-	stream = quic_stream_find(streams, info->stream_id);
+	stream = quic_stream_find(streams, info->stream_id, sock_net(sk));
 	if (WARN_ON_ONCE(!stream))
 		return ERR_PTR(-ENOENT);
 
@@ -679,7 +679,7 @@ quic_frame_stop_sending_create(struct sock *sk, void *data, u8 type, gfp_t gfp)
 	struct quic_frame *frame;
 	u32 frame_len;
 
-	stream = quic_stream_find(streams, info->stream_id);
+	stream = quic_stream_find(streams, info->stream_id, sock_net(sk));
 	if (WARN_ON_ONCE(!stream))
 		return ERR_PTR(-ENOENT);
 
@@ -1101,7 +1101,7 @@ static int quic_frame_stream_process(struct sock *sk, struct quic_frame *frame,
 
 	/* Look up the stream for receiving data (may create it if valid). */
 	stream = quic_stream_get(streams, (s64)stream_id, MSG_QUIC_STREAM_NEW,
-				 quic_is_serv(sk), false, gfp);
+				 quic_is_serv(sk), false, sock_net(sk), gfp);
 	if (IS_ERR(stream)) {
 		/* rfc9000#section-4.6:
 		 *
@@ -1583,7 +1583,7 @@ static int quic_frame_reset_stream_process(struct sock *sk,
 		return -EINVAL;
 
 	stream = quic_stream_get(streams, (s64)stream_id, MSG_QUIC_STREAM_NEW,
-				 quic_is_serv(sk), false, gfp);
+				 quic_is_serv(sk), false, sock_net(sk), gfp);
 	if (IS_ERR(stream)) {
 		/* rfc9000#section-19.4:
 		 *
@@ -1688,7 +1688,7 @@ static int quic_frame_stop_sending_process(struct sock *sk,
 		return -EINVAL;
 
 	stream = quic_stream_get(streams, (s64)stream_id, MSG_QUIC_STREAM_NEW,
-				 quic_is_serv(sk), true, gfp);
+				 quic_is_serv(sk), true, sock_net(sk), gfp);
 	if (IS_ERR(stream)) {
 		/* rfc9000#section-19.5:
 		 *
@@ -1775,7 +1775,7 @@ static int quic_frame_max_stream_data_process(struct sock *sk,
 		return -EINVAL;
 
 	stream = quic_stream_get(streams, (s64)stream_id, MSG_QUIC_STREAM_NEW,
-				 quic_is_serv(sk), true, gfp);
+				 quic_is_serv(sk), true, sock_net(sk), gfp);
 	if (IS_ERR(stream)) {
 		/* rfc9000#section-19.10:
 		 *
@@ -2017,7 +2017,7 @@ static int quic_frame_stream_data_blocked_process(struct sock *sk,
 		return -EINVAL;
 
 	stream = quic_stream_get(streams, (s64)stream_id, MSG_QUIC_STREAM_NEW,
-				 quic_is_serv(sk), false, gfp);
+				 quic_is_serv(sk), false, sock_net(sk), gfp);
 	if (IS_ERR(stream)) {
 		/* rfc9000#section-19.13:
 		 *

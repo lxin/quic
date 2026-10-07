@@ -10,6 +10,8 @@
  *    Xin Long <lucien.xin@gmail.com>
  */
 
+#include <net/netns/hash.h>
+#include <linux/jhash.h>
 #include <linux/quic.h>
 
 #include "common.h"
@@ -48,16 +50,17 @@ static bool quic_stream_id_uni(s64 stream_id)
 #define QUIC_STREAM_HT_SIZE	64
 
 static struct hlist_head *quic_stream_head(struct quic_stream_table *streams,
-					   s64 stream_id)
+					   s64 stream_id, struct net *net)
 {
-	/* Skip the SERVER initiator bit, which is constant per endpoint. */
-	return &streams->head[(stream_id >> 1) & (QUIC_STREAM_HT_SIZE - 1)];
+	u32 hash = jhash_1word((u32)stream_id, net_hash_mix(net));
+
+	return &streams->head[hash & (QUIC_STREAM_HT_SIZE - 1)];
 }
 
 struct quic_stream *quic_stream_find(struct quic_stream_table *streams,
-				     s64 stream_id)
+				     s64 stream_id, struct net *net)
 {
-	struct hlist_head *head = quic_stream_head(streams, stream_id);
+	struct hlist_head *head = quic_stream_head(streams, stream_id, net);
 	struct quic_stream *stream;
 
 	hlist_for_each_entry(stream, head, node) {
@@ -68,11 +71,11 @@ struct quic_stream *quic_stream_find(struct quic_stream_table *streams,
 }
 
 static void quic_stream_add(struct quic_stream_table *streams,
-			    struct quic_stream *stream)
+			    struct quic_stream *stream, struct net *net)
 {
 	struct hlist_head *head;
 
-	head = quic_stream_head(streams, stream->id);
+	head = quic_stream_head(streams, stream->id, net);
 	hlist_add_head(&stream->node, head);
 }
 
@@ -85,7 +88,8 @@ static void quic_stream_delete(struct quic_stream *stream)
 /* Create and register new streams for sending or receiving. */
 static struct quic_stream *quic_stream_create(struct quic_stream_table *streams,
 					      s64 max_stream_id, bool send,
-					      bool is_serv, gfp_t gfp)
+					      bool is_serv, struct net *net,
+					      gfp_t gfp)
 {
 	struct quic_stream *pos, *stream = NULL;
 	struct quic_stream_limits *limits;
@@ -142,7 +146,7 @@ static struct quic_stream *quic_stream_create(struct quic_stream_table *streams,
 
 	hlist_for_each_entry_safe(pos, tmp, &head, node) {
 		hlist_del_init(&pos->node);
-		quic_stream_add(streams, pos);
+		quic_stream_add(streams, pos, net);
 		count++;
 	}
 
@@ -221,14 +225,14 @@ bool quic_stream_id_exceeds(struct quic_stream_table *streams, s64 stream_id,
 /* Get or create a send or recv stream by ID. Requires sock lock held. */
 struct quic_stream *quic_stream_get(struct quic_stream_table *streams,
 				    s64 stream_id, u32 flags, bool is_serv,
-				    bool send, gfp_t gfp)
+				    bool send, struct net *net, gfp_t gfp)
 {
 	struct quic_stream *stream;
 
 	if (!quic_stream_id_valid(stream_id, is_serv, send))
 		return ERR_PTR(-EINVAL);
 
-	stream = quic_stream_find(streams, stream_id);
+	stream = quic_stream_find(streams, stream_id, net);
 	if (stream)
 		return stream;
 
@@ -249,7 +253,7 @@ struct quic_stream *quic_stream_get(struct quic_stream_table *streams,
 	if (quic_stream_id_exceeds(streams, stream_id, send))
 		return ERR_PTR(-EAGAIN);
 
-	stream = quic_stream_create(streams, stream_id, send, is_serv, gfp);
+	stream = quic_stream_create(streams, stream_id, send, is_serv, net, gfp);
 	if (!stream)
 		return ERR_PTR(-ENOMEM);
 
