@@ -46,11 +46,11 @@ struct quic_crypto {
 	u8 rx_iv[2][QUIC_IV_LEN];      /* IVs for RX (key phase 0 and 1) */
 	atomic_t async_pending[2]; /* Async pending count (key phase 0 and 1) */
 	u64 tx_count[2];           /* Packets encrypted (key phase 0 and 1) */
-	u64 rx_fails[2];           /* Failures decrypted (key phase 0 and 1) */
 
 	/* Timestamp 1st packet sent after key update */
 	u64 key_update_send_time;
 	u64 key_update_time; /* Duration to retain old keys after key update */
+	u64 rx_fails;        /* Failures decrypted */
 	u32 version;         /* QUIC version in use */
 
 	u8 ticket_ready:1; /* True if a session ticket is ready to read */

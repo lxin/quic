@@ -188,7 +188,6 @@ static int quic_crypto_keys_derive_and_install(struct quic_crypto *crypto,
 	quic_data(&k, key, keylen);
 
 	if (rx) {
-		crypto->rx_fails[phase] = 0;
 		quic_data(&srt, crypto->rx_secret[phase],
 			  crypto->cipher->secretlen);
 		quic_data(&iv, crypto->rx_iv[phase], ivlen);
@@ -749,7 +748,7 @@ out:
 	}
 	return 0;
 err:
-	if (++crypto->rx_fails[cb->key_phase] >= crypto->cipher->rxlimit)
+	if (++crypto->rx_fails >= crypto->cipher->rxlimit)
 		err = -EKEYEXPIRED;
 	return err;
 }
