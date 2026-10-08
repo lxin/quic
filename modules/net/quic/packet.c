@@ -1762,7 +1762,8 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb,
 			 */
 			paths->validated = 1;
 			quic_outq_transmitted_sack(sk, QUIC_CRYPTO_INITIAL,
-						   QUIC_PN_MAX, 0, -1, 0, gfp);
+						   QUIC_PN_MAX, 0, -1, 0, NULL,
+						   gfp);
 		}
 
 skip:

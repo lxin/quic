@@ -23,6 +23,9 @@
 #include "crypto.h"
 #include "cong.h"
 
+#define quic_cong_in_cong_avoid(cong, time)	\
+	(!quic_cong_in_slow_start(cong) && !quic_cong_in_recovery(cong, time))
+
 static void quic_pnspace_test1(struct kunit *test)
 {
 	struct quic_pnspace _space = {}, *space = &_space;
@@ -534,7 +537,7 @@ static void quic_cong_test1(struct kunit *test)
 
 	quic_cong_set_algo(&cong, QUIC_CONG_ALG_RENO);
 	quic_cong_set_srtt(&cong, QUIC_RTT_INIT);
-	cong.is_rtt_set = 1;
+	cong.first_rtt_time = 1;
 
 	KUNIT_EXPECT_EQ(test, cong.rttvar, 166500);
 	KUNIT_EXPECT_EQ(test, cong.pto, 999000);
@@ -720,12 +723,12 @@ static void quic_cong_test2(struct kunit *test)
 
 	quic_cong_set_algo(&cong, QUIC_CONG_ALG_RENO);
 	quic_cong_set_srtt(&cong, QUIC_RTT_INIT);
-	cong.is_rtt_set = 1;
+	cong.first_rtt_time = 1;
 
 	KUNIT_EXPECT_EQ(test, cong.mss, 1400);
 	KUNIT_EXPECT_EQ(test, cong.window, 14000);
 	KUNIT_EXPECT_EQ(test, cong.max_window, 262144);
-	KUNIT_EXPECT_EQ(test, cong.state, QUIC_CONG_SLOW_START);
+	KUNIT_EXPECT_EQ(test, quic_cong_in_slow_start(&cong), true);
 	KUNIT_EXPECT_EQ(test, cong.ssthresh, U32_MAX);
 
 	cong.time = jiffies_to_usecs(jiffies);
@@ -765,7 +768,7 @@ static void quic_cong_test2(struct kunit *test)
 	cong.pc_start_time = time - 300000;
 	bytes = 1400;
 	quic_cong_on_packet_lost(&cong, time, bytes, 0);
-	KUNIT_EXPECT_EQ(test, cong.state, QUIC_CONG_RECOVERY_PERIOD);
+	KUNIT_EXPECT_EQ(test, quic_cong_in_recovery(&cong, time), true);
 	KUNIT_EXPECT_EQ(test, cong.ssthresh, 131072);
 	KUNIT_EXPECT_EQ(test, cong.window, 131072);
 
@@ -774,31 +777,28 @@ static void quic_cong_test2(struct kunit *test)
 	cong.pc_start_time = time - 300000;
 	bytes = 1400;
 	quic_cong_on_packet_lost(&cong, time, bytes, 0);
-	KUNIT_EXPECT_EQ(test, cong.state, QUIC_CONG_RECOVERY_PERIOD);
+	KUNIT_EXPECT_EQ(test, quic_cong_in_recovery(&cong, time), true);
 	KUNIT_EXPECT_EQ(test, cong.ssthresh, 131072);
 	KUNIT_EXPECT_EQ(test, cong.window, 131072);
 
 	/* recovery -> cong_avoid: after SACK if recovery_time < time */
-	msleep(20);
-	cong.time = jiffies_to_usecs(jiffies);
+	cong.time += 10;
 	time = cong.time;
 	bytes = 1400;
 	quic_cong_on_packet_acked(&cong, time, bytes, 0);
-	KUNIT_EXPECT_EQ(test, cong.state, QUIC_CONG_CONGESTION_AVOIDANCE);
+	KUNIT_EXPECT_EQ(test, quic_cong_in_cong_avoid(&cong, time), true);
 
 	/* cong_avoid: cwnd increase by 'mss * bytes / cwnd' after SACK */
-	time = cong.time - 300000;
 	bytes = 1400;
 	quic_cong_on_packet_acked(&cong, time, bytes, 0);
-	KUNIT_EXPECT_EQ(test, cong.state, QUIC_CONG_CONGESTION_AVOIDANCE);
+	KUNIT_EXPECT_EQ(test, quic_cong_in_cong_avoid(&cong, time), true);
 	KUNIT_EXPECT_EQ(test, cong.window, 131100);
 
 	/* cong_avoid -> recovery: go back to recovery after one loss */
-	time = cong.time;
 	cong.pc_start_time = time - 300000;
 	bytes = 1400;
 	quic_cong_on_packet_lost(&cong, time, bytes, 0);
-	KUNIT_EXPECT_EQ(test, cong.state, QUIC_CONG_RECOVERY_PERIOD);
+	KUNIT_EXPECT_EQ(test, quic_cong_in_recovery(&cong, time), true);
 	KUNIT_EXPECT_EQ(test, cong.ssthresh, 65550);
 	KUNIT_EXPECT_EQ(test, cong.window, 65550);
 
@@ -806,7 +806,7 @@ static void quic_cong_test2(struct kunit *test)
 	time = cong.time - 300000;
 	bytes = 1400;
 	quic_cong_on_packet_acked(&cong, time, bytes, 0);
-	KUNIT_EXPECT_EQ(test, cong.state, QUIC_CONG_RECOVERY_PERIOD);
+	KUNIT_EXPECT_EQ(test, quic_cong_in_recovery(&cong, time), true);
 	KUNIT_EXPECT_EQ(test, cong.window, 65550);
 
 	/* recovery -> slow_start: if in persistent congestion */
@@ -814,55 +814,54 @@ static void quic_cong_test2(struct kunit *test)
 	cong.pc_start_time = time - 5000000;
 	bytes = 1400;
 	quic_cong_on_packet_lost(&cong, time, bytes, 0);
-	KUNIT_EXPECT_EQ(test, cong.state, QUIC_CONG_SLOW_START);
+	KUNIT_EXPECT_EQ(test, quic_cong_in_slow_start(&cong), true);
 	KUNIT_EXPECT_EQ(test, cong.ssthresh, 65550);
 	KUNIT_EXPECT_EQ(test, cong.window, 14000);
 
-	time = cong.time - 300000;
+	cong.time += 10;
+	time = cong.time;
 	bytes = 20000;
 	quic_cong_on_packet_acked(&cong, time, bytes, 0);
-	KUNIT_EXPECT_EQ(test, cong.state, QUIC_CONG_SLOW_START);
+	KUNIT_EXPECT_EQ(test, quic_cong_in_slow_start(&cong), true);
 	KUNIT_EXPECT_EQ(test, cong.window, 34000);
 
 	/* slow_start -> recovery: go to recovery after ECN */
-	quic_cong_on_process_ecn(&cong);
-	KUNIT_EXPECT_EQ(test, cong.state, QUIC_CONG_RECOVERY_PERIOD);
+	quic_cong_on_process_ecn(&cong, time);
+	KUNIT_EXPECT_EQ(test, quic_cong_in_recovery(&cong, time), true);
 	KUNIT_EXPECT_EQ(test, cong.ssthresh, 17000);
 	KUNIT_EXPECT_EQ(test, cong.window, 17000);
 
 	/* recovery: no update after ECN */
-	quic_cong_on_process_ecn(&cong);
-	KUNIT_EXPECT_EQ(test, cong.state, QUIC_CONG_RECOVERY_PERIOD);
+	quic_cong_on_process_ecn(&cong, time);
+	KUNIT_EXPECT_EQ(test, quic_cong_in_recovery(&cong, time), true);
 	KUNIT_EXPECT_EQ(test, cong.window, 17000);
 
 	/* recovery -> cong_avoid: after SACK if recovery_time < time */
-	time = cong.time + 20;
-	cong.time = time;
+	cong.time += 10;
+	time = cong.time;
 	bytes = 1400;
 	quic_cong_on_packet_acked(&cong, time, bytes, 0);
-	KUNIT_EXPECT_EQ(test, cong.state, QUIC_CONG_CONGESTION_AVOIDANCE);
+	KUNIT_EXPECT_EQ(test, quic_cong_in_cong_avoid(&cong, time), true);
 
 	/* cong_avoid -> slow_start: if in persistent congestion */
-	time = cong.time;
 	cong.pc_start_time = time - 5000000;
 	cong.pc_detected = 0;
 	bytes = 1400;
 	quic_cong_on_packet_lost(&cong, time, bytes, 0);
-	KUNIT_EXPECT_EQ(test, cong.state, QUIC_CONG_SLOW_START);
+	KUNIT_EXPECT_EQ(test, quic_cong_in_slow_start(&cong), true);
 	KUNIT_EXPECT_EQ(test, cong.ssthresh, 17000);
 	KUNIT_EXPECT_EQ(test, cong.window, 14000);
 
 	/* slow_start -> cong_avoid: after SACK if cwnd > ssthresh */
-	time = cong.time - 300000;
 	bytes = 10532;
 	quic_cong_on_packet_acked(&cong, time, bytes, 0);
-	KUNIT_EXPECT_EQ(test, cong.state, QUIC_CONG_CONGESTION_AVOIDANCE);
+	KUNIT_EXPECT_EQ(test, quic_cong_in_cong_avoid(&cong, time), true);
 	KUNIT_EXPECT_EQ(test, cong.ssthresh, 17000);
 	KUNIT_EXPECT_EQ(test, cong.window, 24532);
 
 	/* cong_avoid -> recovery: after ECN */
-	quic_cong_on_process_ecn(&cong);
-	KUNIT_EXPECT_EQ(test, cong.state, QUIC_CONG_RECOVERY_PERIOD);
+	quic_cong_on_process_ecn(&cong, time);
+	KUNIT_EXPECT_EQ(test, quic_cong_in_recovery(&cong, time), true);
 	KUNIT_EXPECT_EQ(test, cong.window, 14000);
 }
 
@@ -879,12 +878,12 @@ static void quic_cong_test3(struct kunit *test)
 
 	quic_cong_set_algo(&cong, 1); /* QUIC_CONG_ALG_CUBIC */
 	quic_cong_set_srtt(&cong, QUIC_RTT_INIT);
-	cong.is_rtt_set = 1;
+	cong.first_rtt_time = 1;
 
 	KUNIT_EXPECT_EQ(test, cong.mss, 1400);
 	KUNIT_EXPECT_EQ(test, cong.window, 14000);
 	KUNIT_EXPECT_EQ(test, cong.max_window, 106496);
-	KUNIT_EXPECT_EQ(test, cong.state, QUIC_CONG_SLOW_START);
+	KUNIT_EXPECT_EQ(test, quic_cong_in_slow_start(&cong), true);
 	KUNIT_EXPECT_EQ(test, cong.ssthresh, U32_MAX);
 
 	cong.time = jiffies_to_usecs(jiffies);
@@ -919,7 +918,7 @@ static void quic_cong_test3(struct kunit *test)
 	cong.pc_start_time = time - 300000;
 	bytes = 1400;
 	quic_cong_on_packet_lost(&cong, time, bytes, 0);
-	KUNIT_EXPECT_EQ(test, cong.state, QUIC_CONG_RECOVERY_PERIOD);
+	KUNIT_EXPECT_EQ(test, quic_cong_in_recovery(&cong, time), true);
 	KUNIT_EXPECT_EQ(test, cong.ssthresh, 74547);
 	KUNIT_EXPECT_EQ(test, cong.window, 74547);
 
@@ -928,17 +927,17 @@ static void quic_cong_test3(struct kunit *test)
 	cong.pc_start_time = time - 300000;
 	bytes = 1400;
 	quic_cong_on_packet_lost(&cong, time, bytes, 0);
-	KUNIT_EXPECT_EQ(test, cong.state, QUIC_CONG_RECOVERY_PERIOD);
+	KUNIT_EXPECT_EQ(test, quic_cong_in_recovery(&cong, time), true);
 	KUNIT_EXPECT_EQ(test, cong.ssthresh, 74547);
 	KUNIT_EXPECT_EQ(test, cong.window, 74547);
 
 	/* recovery -> cong_avoid: after SACK if recovery_time < time */
 	cwnd = cong.window;
-	time = cong.time + 20;
-	cong.time = time;
+	cong.time += 10;
+	time = cong.time;
 	bytes = 1400;
 	quic_cong_on_packet_acked(&cong, time, bytes, 0);
-	KUNIT_EXPECT_EQ(test, cong.state, QUIC_CONG_CONGESTION_AVOIDANCE);
+	KUNIT_EXPECT_EQ(test, quic_cong_in_cong_avoid(&cong, time), true);
 
 	/* cong_avoid: cwnd increase in concave/Convex after SACK */
 	inc = cong.window - cwnd;
@@ -956,7 +955,7 @@ static void quic_cong_test3(struct kunit *test)
 		inc = cong.window - cwnd;
 		cwnd = cong.window;
 	}
-	KUNIT_EXPECT_EQ(test, cong.state, QUIC_CONG_CONGESTION_AVOIDANCE);
+	KUNIT_EXPECT_EQ(test, quic_cong_in_cong_avoid(&cong, time), true);
 	KUNIT_EXPECT_EQ(test, cong.window, 82313);
 
 	/* cong_avoid -> recovery: go back to recovery after one loss */
@@ -964,7 +963,7 @@ static void quic_cong_test3(struct kunit *test)
 	cong.pc_start_time = time - 300000;
 	bytes = 1400;
 	quic_cong_on_packet_lost(&cong, time, bytes, 0);
-	KUNIT_EXPECT_EQ(test, cong.state, QUIC_CONG_RECOVERY_PERIOD);
+	KUNIT_EXPECT_EQ(test, quic_cong_in_recovery(&cong, time), true);
 	KUNIT_EXPECT_EQ(test, cong.ssthresh, 57619);
 	KUNIT_EXPECT_EQ(test, cong.window, 57619);
 
@@ -972,7 +971,7 @@ static void quic_cong_test3(struct kunit *test)
 	time = cong.time - 300000;
 	bytes = 1400;
 	quic_cong_on_packet_acked(&cong, time, bytes, 0);
-	KUNIT_EXPECT_EQ(test, cong.state, QUIC_CONG_RECOVERY_PERIOD);
+	KUNIT_EXPECT_EQ(test, quic_cong_in_recovery(&cong, time), true);
 	KUNIT_EXPECT_EQ(test, cong.window, 57619);
 
 	/* recovery -> slow_start: if in persistent congestion */
@@ -980,7 +979,7 @@ static void quic_cong_test3(struct kunit *test)
 	cong.pc_start_time = time - 5000000;
 	bytes = 1400;
 	quic_cong_on_packet_lost(&cong, time, bytes, 0);
-	KUNIT_EXPECT_EQ(test, cong.state, QUIC_CONG_SLOW_START);
+	KUNIT_EXPECT_EQ(test, quic_cong_in_slow_start(&cong), true);
 	KUNIT_EXPECT_EQ(test, cong.ssthresh, 57619);
 	KUNIT_EXPECT_EQ(test, cong.window, 14000);
 
@@ -1001,11 +1000,12 @@ static void quic_cong_test3(struct kunit *test)
 	 * cubic->css_rounds = 0;
 	 * cubic->rtt_sample_count = 1;
 	 */
-	time = cong.time - 300000;
+	cong.time += 10;
+	time = cong.time;
 	bytes = 14000;
 	number = 100;
 	quic_cong_on_packet_acked(&cong, time, bytes, number);
-	KUNIT_EXPECT_EQ(test, cong.state, QUIC_CONG_SLOW_START);
+	KUNIT_EXPECT_EQ(test, quic_cong_in_slow_start(&cong), true);
 	KUNIT_EXPECT_EQ(test, cong.window, 28000);
 
 	/* new round */
@@ -1025,60 +1025,59 @@ static void quic_cong_test3(struct kunit *test)
 	 * cubic->css_rounds = 0;
 	 * cubic->rtt_sample_count = 1;
 	 */
-	time = cong.time - 500000;
+	time = cong.time;
 	bytes = 14000;
 	number = 101;
 	quic_cong_on_packet_acked(&cong, time, bytes, number);
-	KUNIT_EXPECT_EQ(test, cong.state, QUIC_CONG_SLOW_START);
+	KUNIT_EXPECT_EQ(test, quic_cong_in_slow_start(&cong), true);
 	KUNIT_EXPECT_EQ(test, cong.window, 42000);
 
 	/* in CSS */
-	quic_cong_rtt_update(&cong, time, 0);
-	quic_cong_rtt_update(&cong, time, 0);
-	quic_cong_rtt_update(&cong, time, 0);
-	quic_cong_rtt_update(&cong, time, 0);
-	quic_cong_rtt_update(&cong, time, 0);
-	quic_cong_rtt_update(&cong, time, 0);
-	quic_cong_rtt_update(&cong, time, 0);
-	/* cubic->rtt_sample_count = 8, and enter CSS */
 	time = cong.time - 500000;
+	quic_cong_rtt_update(&cong, time, 0);
+	quic_cong_rtt_update(&cong, time, 0);
+	quic_cong_rtt_update(&cong, time, 0);
+	quic_cong_rtt_update(&cong, time, 0);
+	quic_cong_rtt_update(&cong, time, 0);
+	quic_cong_rtt_update(&cong, time, 0);
+	quic_cong_rtt_update(&cong, time, 0);
+
+	/* cubic->rtt_sample_count = 8, and enter CSS */
+	time = cong.time;
 	bytes = 4800;
 	number = 102;
 	quic_cong_on_packet_acked(&cong, time, bytes, number);
-	KUNIT_EXPECT_EQ(test, cong.state, QUIC_CONG_SLOW_START);
+	KUNIT_EXPECT_EQ(test, quic_cong_in_slow_start(&cong), true);
 	KUNIT_EXPECT_EQ(test, cong.window, 46800);
 	/* cubic->css_baseline_min_rtt = 500000 */
 
 	for (i = 0; i < 5; i++) {
-		time = cong.time - 500000;
 		bytes = 4800;
 		number = 103 + i;
 		quic_cong_on_packet_acked(&cong, time, bytes, number);
 	}
-	KUNIT_EXPECT_EQ(test, cong.state, QUIC_CONG_SLOW_START);
+	KUNIT_EXPECT_EQ(test, quic_cong_in_slow_start(&cong), true);
 	KUNIT_EXPECT_EQ(test, cong.window, 52800);
 	/* cubic->rtt_sample_count = 5 */
 
 	 /* slow_start -> cong_avoid: after SACK if cwnd >= ssthresh */
-	time = cong.time - 500000;
 	bytes = 4800;
 	number = 108;
 	quic_cong_on_packet_acked(&cong, time, bytes, number);
-	KUNIT_EXPECT_EQ(test, cong.state, QUIC_CONG_CONGESTION_AVOIDANCE);
+	KUNIT_EXPECT_EQ(test, quic_cong_in_cong_avoid(&cong, time), true);
 	KUNIT_EXPECT_EQ(test, cong.window, 54000);
 	/* cubic->rtt_sample_count = 6 */
 
-	time = cong.time - 500000;
 	bytes = 4800;
 	number = 109;
 	quic_cong_on_packet_acked(&cong, time, bytes, number);
-	KUNIT_EXPECT_EQ(test, cong.state, QUIC_CONG_CONGESTION_AVOIDANCE);
+	KUNIT_EXPECT_EQ(test, quic_cong_in_cong_avoid(&cong, time), true);
 	KUNIT_EXPECT_EQ(test, cong.window, 54003);
 	/* cubic->rtt_sample_count = 7 */
 
 	/* cong_avoid -> recovery: go back to recovery after ECN */
-	quic_cong_on_process_ecn(&cong);
-	KUNIT_EXPECT_EQ(test, cong.state, QUIC_CONG_RECOVERY_PERIOD);
+	quic_cong_on_process_ecn(&cong, time);
+	KUNIT_EXPECT_EQ(test, quic_cong_in_recovery(&cong, time), true);
 	KUNIT_EXPECT_EQ(test, cong.window, 37802);
 }
 

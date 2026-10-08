@@ -92,7 +92,7 @@ int quic_outq_transmit(struct sock *sk, gfp_t gfp);
 
 void quic_outq_transmitted_sack(struct sock *sk, u8 level, s64 largest,
 				s64 smallest, s64 ack_largest, u32 ack_delay,
-				gfp_t gfp);
+				u64 *ack_largest_time, gfp_t gfp);
 void quic_outq_packet_sent_tail(struct sock *sk, struct quic_packet_sent *info);
 void quic_outq_transmitted_tail(struct sock *sk, struct quic_frame *frame);
 void quic_outq_retransmit_mark(struct sock *sk, u8 level, bool immediate);

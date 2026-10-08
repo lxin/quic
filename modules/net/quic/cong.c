@@ -267,76 +267,21 @@ static void cubic_recovery(struct quic_cong *cong)
 static void quic_cubic_on_packet_lost(struct quic_cong *cong, u64 time,
 				      u32 bytes, s64 number)
 {
-	switch (cong->state) {
-	case QUIC_CONG_SLOW_START:
-		pr_debug("%s: slow_start -> recovery, cwnd: %u, ssthresh: %u\n",
-			 __func__, cong->window, cong->ssthresh);
-		break;
-	case QUIC_CONG_RECOVERY_PERIOD:
-		return;
-	case QUIC_CONG_CONGESTION_AVOIDANCE:
-		pr_debug("%s: cong_avoid -> recovery, cwnd: %u, ssthresh: %u\n",
-			 __func__, cong->window, cong->ssthresh);
-		break;
-	default:
-		pr_debug("%s: wrong congestion state: %d\n", __func__,
-			 cong->state);
-		return;
-	}
-
-	cong->state = QUIC_CONG_RECOVERY_PERIOD;
 	cubic_recovery(cong);
 }
 
 static void quic_cubic_on_packet_acked(struct quic_cong *cong, u64 time,
 				       u32 bytes, s64 number)
 {
-	switch (cong->state) {
-	case QUIC_CONG_SLOW_START:
+	if (quic_cong_in_slow_start(cong)) { /* Slow start */
 		cubic_slow_start(cong, bytes, number);
-		if (cong->window < cong->ssthresh)
-			break;
-		cong->state = QUIC_CONG_CONGESTION_AVOIDANCE;
-		pr_debug("%s: slow_start -> cong_avoid, cwnd: %u, ssth: %u\n",
-			 __func__, cong->window, cong->ssthresh);
-		break;
-	case QUIC_CONG_RECOVERY_PERIOD:
-		if (cong->recovery_time >= time)
-			break;
-		cong->state = QUIC_CONG_CONGESTION_AVOIDANCE;
-		pr_debug("%s: recovery -> cong_avoid, cwnd: %u, ssth: %u\n",
-			 __func__, cong->window, cong->ssthresh);
-		fallthrough;
-	case QUIC_CONG_CONGESTION_AVOIDANCE:
-		cubic_cong_avoid(cong, bytes);
-		break;
-	default:
-		pr_debug("%s: wrong congestion state: %d\n", __func__,
-			 cong->state);
 		return;
 	}
+	cubic_cong_avoid(cong, bytes); /* Congestion avoidance */
 }
 
 static void quic_cubic_on_process_ecn(struct quic_cong *cong)
 {
-	switch (cong->state) {
-	case QUIC_CONG_SLOW_START:
-		pr_debug("%s: slow_start -> recovery, cwnd: %u, ssth: %u\n",
-			 __func__, cong->window, cong->ssthresh);
-		break;
-	case QUIC_CONG_RECOVERY_PERIOD:
-		return;
-	case QUIC_CONG_CONGESTION_AVOIDANCE:
-		pr_debug("%s: cong_avoid -> recovery, cwnd: %u, ssth: %u\n",
-			 __func__, cong->window, cong->ssthresh);
-		break;
-	default:
-		pr_debug("%s: wrong congestion state: %d\n", __func__,
-			 cong->state);
-		return;
-	}
-
-	cong->state = QUIC_CONG_RECOVERY_PERIOD;
 	cubic_recovery(cong);
 }
 
@@ -406,27 +351,9 @@ static void quic_cubic_on_rtt_update(struct quic_cong *cong)
 }
 
 /* NEW RENO APIs */
-static void quic_reno_handle_packet_lost(struct quic_cong *cong)
+static void reno_recovery(struct quic_cong *cong)
 {
-	switch (cong->state) {
-	case QUIC_CONG_SLOW_START:
-		pr_debug("%s: slow_start -> recovery, cwnd: %u, ssth: %u\n",
-			 __func__, cong->window, cong->ssthresh);
-		break;
-	case QUIC_CONG_RECOVERY_PERIOD:
-		return;
-	case QUIC_CONG_CONGESTION_AVOIDANCE:
-		pr_debug("%s: cong_avoid -> recovery, cwnd: %u, ssth: %u\n",
-			 __func__, cong->window, cong->ssthresh);
-		break;
-	default:
-		pr_debug("%s: wrong congestion state: %d\n", __func__,
-			 cong->state);
-		return;
-	}
-
 	cong->recovery_time = cong->time;
-	cong->state = QUIC_CONG_RECOVERY_PERIOD;
 	cong->ssthresh = max(cong->window >> 1U, cong->min_window);
 	cong->window = cong->ssthresh;
 }
@@ -434,7 +361,7 @@ static void quic_reno_handle_packet_lost(struct quic_cong *cong)
 static void quic_reno_on_packet_lost(struct quic_cong *cong, u64 time,
 				     u32 bytes, s64 number)
 {
-	quic_reno_handle_packet_lost(cong);
+	reno_recovery(cong);
 }
 
 static void quic_reno_on_packet_acked(struct quic_cong *cong, u64 time,
@@ -442,41 +369,22 @@ static void quic_reno_on_packet_acked(struct quic_cong *cong, u64 time,
 {
 	u64 new_window;
 
-	switch (cong->state) {
-	case QUIC_CONG_SLOW_START:
+	if (quic_cong_in_slow_start(cong)) { /* Slow start */
 		new_window = (u64)cong->window + bytes;
 		cong->window = min_t(u64, new_window, cong->max_window);
-		if (cong->window < cong->ssthresh)
-			break;
-		cong->state = QUIC_CONG_CONGESTION_AVOIDANCE;
-		pr_debug("%s: slow_start -> cong_avoid, cwnd: %u, ssth: %u\n",
-			 __func__, cong->window, cong->ssthresh);
-		break;
-	case QUIC_CONG_RECOVERY_PERIOD:
-		if (cong->recovery_time >= time)
-			break;
-		cong->state = QUIC_CONG_CONGESTION_AVOIDANCE;
-		pr_debug("%s: recovery -> cong_avoid, cwnd: %u, ssth: %u\n",
-			 __func__, cong->window, cong->ssthresh);
-		fallthrough;
-	case QUIC_CONG_CONGESTION_AVOIDANCE:
-		/* cong->window is never zero; it is initialized by
-		 * quic_packet_route() during connect/accept.
-		 */
-		new_window = div64_ul((u64)cong->mss * bytes, cong->window) +
-			     cong->window;
-		cong->window = min_t(u64, new_window, cong->max_window);
-		break;
-	default:
-		pr_debug("%s: wrong congestion state: %d\n", __func__,
-			 cong->state);
 		return;
 	}
+	/* Congestion avoidance - cong->window is never zero; it is initialized
+	 * by quic_packet_route() during connect/accept.
+	 */
+	new_window = div64_ul((u64)cong->mss * bytes, cong->window) +
+		     cong->window;
+	cong->window = min_t(u64, new_window, cong->max_window);
 }
 
 static void quic_reno_on_process_ecn(struct quic_cong *cong)
 {
-	quic_reno_handle_packet_lost(cong);
+	reno_recovery(cong);
 }
 
 static void quic_reno_on_init(struct quic_cong *cong)
@@ -531,13 +439,15 @@ void quic_cong_on_packet_lost(struct quic_cong *cong, u64 time, u32 bytes,
 		cong->pc_detected = 1;
 		cong->min_rtt_valid = 0;
 		cong->window = cong->min_window;
-		cong->state = QUIC_CONG_SLOW_START;
 		return;
 	}
 
-	if (!cong->pc_start_time && cong->is_rtt_set)
+	if (!cong->pc_start_time && cong->first_rtt_time &&
+	    time > cong->first_rtt_time)
 		cong->pc_start_time = time;
 
+	if (quic_cong_in_recovery(cong, time))
+		return;
 	cong->ops->on_packet_lost(cong, time, bytes, number);
 }
 EXPORT_SYMBOL_GPL(quic_cong_on_packet_lost);
@@ -545,12 +455,16 @@ EXPORT_SYMBOL_GPL(quic_cong_on_packet_lost);
 void quic_cong_on_packet_acked(struct quic_cong *cong, u64 time, u32 bytes,
 			       s64 number)
 {
+	if (quic_cong_in_recovery(cong, time))
+		return;
 	cong->ops->on_packet_acked(cong, time, bytes, number);
 }
 EXPORT_SYMBOL_GPL(quic_cong_on_packet_acked);
 
-void quic_cong_on_process_ecn(struct quic_cong *cong)
+void quic_cong_on_process_ecn(struct quic_cong *cong, u64 time)
 {
+	if (quic_cong_in_recovery(cong, time))
+		return;
 	cong->ops->on_process_ecn(cong);
 }
 EXPORT_SYMBOL_GPL(quic_cong_on_process_ecn);
@@ -654,14 +568,14 @@ void quic_cong_rtt_update(struct quic_cong *cong, u64 time, u32 ack_delay)
 	if (cong->min_rtt > cong->latest_rtt)
 		cong->min_rtt = cong->latest_rtt;
 
-	if (!cong->is_rtt_set) {
+	if (!cong->first_rtt_time) {
 		/* rfc9002#section-5.3:
 		 *   smoothed_rtt = latest_rtt
 		 *   rttvar = latest_rtt / 2
 		 */
 		cong->smoothed_rtt = cong->latest_rtt;
 		cong->rttvar = cong->smoothed_rtt / 2;
-		cong->is_rtt_set = 1;
+		cong->first_rtt_time = time;
 		goto out;
 	}
 
@@ -700,7 +614,6 @@ void quic_cong_set_algo(struct quic_cong *cong, u8 algo)
 	if (WARN_ON_ONCE(algo >= QUIC_CONG_ALG_MAX))
 		return;
 	cong->algo = algo;
-	cong->state = QUIC_CONG_SLOW_START;
 	cong->ssthresh = U32_MAX;
 	cong->ops = &quic_congs[algo];
 	cong->ops->on_init(cong);

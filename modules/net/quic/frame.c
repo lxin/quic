@@ -1156,7 +1156,7 @@ static int quic_frame_ack_process(struct sock *sk, struct quic_frame *frame,
 	u32 gap_len, len = frame->len;
 	u64 ecn_count[QUIC_ECN_MAX];
 	struct quic_pnspace *space;
-	s64 max_pn_acked;
+	s64 max_pn_acked, time = 0;
 
 	if (!quic_get_var(&p, &len, &largest) ||
 	    !quic_get_var(&p, &len, &delay) ||
@@ -1226,7 +1226,7 @@ static int quic_frame_ack_process(struct sock *sk, struct quic_frame *frame,
 		delay = cong->max_ack_delay;
 	/* ACK transmitted packets within [smallest, largest] range. */
 	quic_outq_transmitted_sack(sk, level, (s64)largest, (s64)smallest,
-				   (s64)largest, delay, gfp);
+				   (s64)largest, delay, &time, gfp);
 	quic_pnspace_set_max_pn_acked_seen(space, (s64)largest);
 
 	for (i = 0; i < count; i++) {
@@ -1243,7 +1243,7 @@ static int quic_frame_ack_process(struct sock *sk, struct quic_frame *frame,
 		if (i >= QUIC_PN_MAP_MAX_GABS)
 			break;
 		quic_outq_transmitted_sack(sk, level, (s64)largest,
-					   (s64)smallest, -1, 0, gfp);
+					   (s64)smallest, -1, 0, NULL, gfp);
 	}
 
 	if (type != QUIC_FRAME_ACK_ECN)
@@ -1262,7 +1262,7 @@ static int quic_frame_ack_process(struct sock *sk, struct quic_frame *frame,
 		goto out;
 	}
 	if (quic_pnspace_set_ecn_peer(space, ecn_count)) {
-		quic_cong_on_process_ecn(cong);
+		quic_cong_on_process_ecn(cong, time);
 		quic_outq_sync_window(sk, cong->window);
 	}
 out:
@@ -1505,7 +1505,7 @@ static int quic_frame_handshake_done_process(struct sock *sk,
 
 	/* Handshake is complete and clean up transmitted handshake packets. */
 	quic_outq_transmitted_sack(sk, QUIC_CRYPTO_HANDSHAKE, QUIC_PN_MAX, 0,
-				   -1, 0, gfp);
+				   -1, 0, NULL, gfp);
 
 	if (paths->pref_addr) {
 		/* Initiate probing on the new path to validate it (e.g., send
@@ -2168,7 +2168,7 @@ static int quic_frame_path_response_process(struct sock *sk,
 
 	/* Peer App key ready; clean transmitted handshake packets. */
 	quic_outq_transmitted_sack(sk, QUIC_CRYPTO_HANDSHAKE, QUIC_PN_MAX, 0,
-				   -1, 0, gfp);
+				   -1, 0, NULL, gfp);
 
 	if (!quic_path_alt_state(paths, QUIC_PATH_ALT_PROBING))
 		goto out;

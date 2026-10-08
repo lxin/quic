@@ -19,6 +19,13 @@
 
 /* rfc9002#section-7.3: Congestion Control States
  *
+ * The implementation derives congestion states from conditions rather than
+ * maintaining an explicit state variable:
+ *
+ * - Slow Start: window < ssthresh
+ * - Recovery Period: time <= recovery_time
+ * - Congestion Avoidance: window >= ssthresh && time > recovery_time
+ *
  *                  New path or      +------------+
  *             persistent congestion |   Slow     |
  *         (O)---------------------->|   Start    |
@@ -37,11 +44,6 @@
  *               Acknowledgment of packet
  *                 sent during recovery
  */
-enum quic_cong_state {
-	QUIC_CONG_SLOW_START,
-	QUIC_CONG_RECOVERY_PERIOD,
-	QUIC_CONG_CONGESTION_AVOIDANCE,
-};
 
 struct quic_cong {
 	/* RTT tracking */
@@ -53,6 +55,7 @@ struct quic_cong {
 	u32 pto;             /* Probe timeout */
 
 	/* Timing & pacing */
+	u64 first_rtt_time;  /* First RTT sample timestamp */
 	u64 pc_start_time;   /* Persistent congestion tracking timestamp */
 	u64 recovery_time;   /* Recovery period start timestamp */
 	u64 pacing_rate;     /* Packet sending speed Bytes/sec */
@@ -75,10 +78,8 @@ struct quic_cong {
 	u8 algo;             /* Congestion control algorithm */
 
 	/* Flags & state */
-	u8 min_rtt_valid:1;  /* min_rtt initialized */
-	u8 is_rtt_set:1;     /* RTT samples exist */
-	u8 pc_detected:1;    /* Persistent congestion detected */
-	u8 state;            /* State machine in rfc9002#section-7.3 */
+	u8 min_rtt_valid;    /* min_rtt initialized */
+	u8 pc_detected;      /* Persistent congestion detected */
 };
 
 /* Hooks for congestion control algorithms */
@@ -116,11 +117,21 @@ static inline void *quic_cong_priv(struct quic_cong *cong)
 	return (void *)cong->priv;
 }
 
+static inline bool quic_cong_in_slow_start(struct quic_cong *cong)
+{
+	return cong->window < cong->ssthresh;
+}
+
+static inline bool quic_cong_in_recovery(struct quic_cong *cong, u64 time)
+{
+	return time <= cong->recovery_time;
+}
+
 void quic_cong_on_packet_acked(struct quic_cong *cong, u64 time, u32 bytes,
 			       s64 number);
 void quic_cong_on_packet_lost(struct quic_cong *cong, u64 time, u32 bytes,
 			      s64 number);
-void quic_cong_on_process_ecn(struct quic_cong *cong);
+void quic_cong_on_process_ecn(struct quic_cong *cong, u64 time);
 
 void quic_cong_on_packet_sent(struct quic_cong *cong, u64 time, u32 bytes,
 			      s64 number);

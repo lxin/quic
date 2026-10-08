@@ -768,7 +768,7 @@ static void quic_outq_path_confirm(struct sock *sk, u8 level, s64 largest,
  */
 void quic_outq_transmitted_sack(struct sock *sk, u8 level, s64 largest,
 				s64 smallest, s64 ack_largest, u32 ack_delay,
-				gfp_t gfp)
+				u64 *ack_largest_time, gfp_t gfp)
 {
 	struct quic_pnspace *space = quic_pnspace(sk, level);
 	struct quic_crypto *crypto = quic_crypto(sk, level);
@@ -815,6 +815,8 @@ void quic_outq_transmitted_sack(struct sock *sk, u8 level, s64 largest,
 		if (sent->number == ack_largest) {
 			/* Update RTT if largest acknowledged is newly ACKed. */
 			quic_cong_rtt_update(cong, sent->sent_time, ack_delay);
+			if (ack_largest_time)
+				*ack_largest_time = sent->sent_time;
 
 			/* These two values derived from cong.pto. */
 			space->max_time_limit = cong->pto * 2;

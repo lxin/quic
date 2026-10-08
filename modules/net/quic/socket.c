@@ -2438,7 +2438,7 @@ done:
 
 	/* Clean up transmitted handshake packets. */
 	quic_outq_transmitted_sack(sk, QUIC_CRYPTO_HANDSHAKE, QUIC_PN_MAX, 0,
-				   -1, 0, gfp);
+				   -1, 0, NULL, gfp);
 	if (paths->pref_addr) {
 		/* If a preferred address is set, bind to it to allow client
 		 * use at any time.
