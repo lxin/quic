@@ -868,6 +868,8 @@ int quic_crypto_set_token_secret(struct quic_crypto *crypto)
 
 	if (!memchr_inv(srt, 0, TLS_CIPHER_AES_GCM_128_SECRET_SIZE))
 		get_random_bytes(srt, TLS_CIPHER_AES_GCM_128_SECRET_SIZE);
+	if (!crypto->ts_off)
+		get_random_bytes(&crypto->ts_off, sizeof(crypto->ts_off));
 
 	quic_data(&s, srt, TLS_CIPHER_AES_GCM_128_SECRET_SIZE);
 	quic_data(&k, key, TLS_CIPHER_AES_GCM_128_KEY_SIZE);
@@ -1195,7 +1197,7 @@ int quic_crypto_generate_token(struct quic_crypto *crypto, void *addr,
 			       u8 *token, u32 *tlen)
 {
 	u8 *token_buf, *p, flag = *token;
-	u64 ts = quic_ktime_get_us();
+	u64 ts = quic_ktime_get_us() - crypto->ts_off;
 	u32 len, tslen = sizeof(ts);
 	int err;
 
@@ -1236,7 +1238,8 @@ int quic_crypto_verify_token(struct quic_crypto *crypto, void *addr,
 			     u32 addrlen, struct quic_conn_id *conn_id,
 			     u8 *token, u32 len)
 {
-	u64 t, ts = quic_ktime_get_us(), timeout = QUIC_TOKEN_TIMEOUT_RETRY;
+	u64 t, ts = quic_ktime_get_us() - crypto->ts_off;
+	u64 timeout = QUIC_TOKEN_TIMEOUT_RETRY;
 	u8 *token_buf, *p, flag;
 	u32 tslen = sizeof(ts);
 	int err;

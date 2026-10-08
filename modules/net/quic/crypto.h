@@ -39,6 +39,7 @@ struct quic_crypto {
 
 	const struct quic_cipher *cipher;  /* Cipher info (selected cipher) */
 	u32 cipher_type; /* Cipher suite (e.g., AES_GCM_128, etc.) */
+	u32 ts_off;      /* Random offset for token timestamps */
 
 	u8 tx_secret[2][QUIC_SECRET_LEN]; /* TX secret (key phase 0 and 1) */
 	u8 rx_secret[2][QUIC_SECRET_LEN]; /* RX secret (key phase 0 and 1) */
