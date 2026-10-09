@@ -348,7 +348,8 @@ int quic_stream_init(struct quic_stream_table *streams)
 	struct hlist_head *head;
 	int i;
 
-	head = kmalloc_array(QUIC_STREAM_HT_SIZE, sizeof(*head), GFP_KERNEL);
+	head = kmalloc_array(QUIC_STREAM_HT_SIZE, sizeof(*head),
+			     GFP_KERNEL_ACCOUNT);
 	if (!head)
 		return -ENOMEM;
 	for (i = 0; i < QUIC_STREAM_HT_SIZE; i++)
