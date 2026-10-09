@@ -2221,7 +2221,7 @@ int quic_packet_process(struct sock *sk, struct sk_buff *skb, gfp_t gfp)
 	return quic_packet_app_process(sk, skb, gfp);
 }
 
-/* Work function to process packets in the backlog queue. */
+/* Work function to process packets in the deferred list. */
 static void quic_packet_deferred_work(struct work_struct *work)
 {
 	struct quic_sock *qs = container_of(work, struct quic_sock, work);
