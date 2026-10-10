@@ -312,11 +312,11 @@ static int quic_packet_rcv_err(struct sock *sk, struct sk_buff *skb)
 	u32 info;
 
 	/* ICMP embeds the original outgoing QUIC packet, so saddr/daddr are
-	 * reversed when parsed. Only address-based socket lookup is possible
-	 * in this case.
+	 * reversed compared to incoming packets. Only address-based socket
+	 * lookup is possible in this case.
 	 */
-	quic_get_msg_addrs(skb, &saddr, &daddr);
-	sk = quic_sock_lookup(skb, &daddr, &saddr, sk, NULL);
+	quic_get_msg_addrs(skb, &daddr, &saddr);
+	sk = quic_sock_lookup(skb, &saddr, &daddr, sk, NULL);
 	if (!sk)
 		return -ENOENT;
 
@@ -697,7 +697,7 @@ static int quic_packet_retry_create_and_xmit(struct sock *sk)
 	struct quic_crypto *crypto = quic_crypto(sk, QUIC_CRYPTO_INITIAL);
 	u8 *p, buf[QUIC_FRAME_BUF_LARGE], tag[QUIC_TAG_LEN];
 	struct quic_packet *packet = quic_packet(sk);
-	union quic_addr *da = &packet->daddr;
+	union quic_addr *da = &packet->saddr;
 	struct quic_conn_id conn_id = {};
 	struct quichshdr *hdr;
 	struct sk_buff *skb;
@@ -707,7 +707,7 @@ static int quic_packet_retry_create_and_xmit(struct sock *sk)
 
 	/* Clear routing cache and compute flow route. */
 	__sk_dst_reset(sk);
-	err = quic_flow_route(sk, da, &packet->saddr, &fl);
+	err = quic_flow_route(sk, da, &packet->daddr, &fl);
 	if (err < 0)
 		return err;
 
@@ -791,7 +791,7 @@ static int quic_packet_retry_create_and_xmit(struct sock *sk)
 static int quic_packet_version_create_and_xmit(struct sock *sk, gfp_t gfp)
 {
 	struct quic_packet *packet = quic_packet(sk);
-	union quic_addr *da = &packet->daddr;
+	union quic_addr *da = &packet->saddr;
 	struct quichshdr *hdr;
 	struct sk_buff *skb;
 	u32 len, hlen, i;
@@ -801,7 +801,7 @@ static int quic_packet_version_create_and_xmit(struct sock *sk, gfp_t gfp)
 
 	/* Clear routing cache and compute flow route. */
 	__sk_dst_reset(sk);
-	err = quic_flow_route(sk, da, &packet->saddr, &fl);
+	err = quic_flow_route(sk, da, &packet->daddr, &fl);
 	if (err < 0)
 		return err;
 
@@ -865,7 +865,7 @@ static int quic_packet_stateless_reset_create_and_xmit(struct sock *sk, u32 len,
 	struct quic_crypto *crypto = quic_crypto(sk, QUIC_CRYPTO_INITIAL);
 	struct quic_packet *packet = quic_packet(sk);
 	u32 hlen, tlen = QUIC_CONN_ID_TOKEN_LEN;
-	union quic_addr *da = &packet->daddr;
+	union quic_addr *da = &packet->saddr;
 	u8 *p, token[QUIC_CONN_ID_TOKEN_LEN];
 	struct sk_buff *skb;
 	struct flowi fl;
@@ -884,7 +884,7 @@ static int quic_packet_stateless_reset_create_and_xmit(struct sock *sk, u32 len,
 
 	/* Clear routing cache and compute flow route. */
 	__sk_dst_reset(sk);
-	err = quic_flow_route(sk, da, &packet->saddr, &fl);
+	err = quic_flow_route(sk, da, &packet->daddr, &fl);
 	if (err < 0)
 		return err;
 
@@ -936,8 +936,8 @@ static int quic_packet_refuse_close_create_and_xmit(struct sock *sk,
 	active = quic_conn_id_active(quic_source(sk));
 	quic_conn_id_update(active, packet->dcid.data, packet->dcid.len);
 	/* Use path[1] for sending; path[0] remains for listening only. */
-	quic_path_set_saddr(paths, 1, &packet->saddr);
-	quic_path_set_daddr(paths, 1, &packet->daddr);
+	quic_path_set_saddr(paths, 1, &packet->daddr);
+	quic_path_set_daddr(paths, 1, &packet->saddr);
 
 	/* Reinstall Initial keys for encryption with the client's version. */
 	err = quic_packet_version_change(sk, active, packet->version);
@@ -987,10 +987,8 @@ static int quic_packet_listen_process(struct sock *sk, struct sk_buff *skb,
 			kfree_skb(skb);
 			return -EINVAL;
 		}
-		/* Read Destination address (packet->saddr) and Source address
-		 * (packet->daddr).
-		 */
-		quic_get_msg_addrs(skb, &packet->saddr, &packet->daddr);
+		/* Read Destination address and Source address from the packet. */
+		quic_get_msg_addrs(skb, &packet->daddr, &packet->saddr);
 		/* We currently only issue Connection ID with size
 		 * QUIC_CONN_ID_DEF_LEN.
 		 */
@@ -1012,10 +1010,8 @@ static int quic_packet_listen_process(struct sock *sk, struct sk_buff *skb,
 		return err;
 	}
 
-	/* Read Destination address (packet->saddr) and Source address
-	 * (packet->daddr).
-	 */
-	quic_get_msg_addrs(skb, &packet->saddr, &packet->daddr);
+	/* Read Destination address and Source address from the packet. */
+	quic_get_msg_addrs(skb, &packet->daddr, &packet->saddr);
 	req = quic_request_sock_lookup(sk);
 	if (req) /* If request sock already exists, enqueue packet directly. */
 		goto out;
@@ -1143,8 +1139,8 @@ static int quic_packet_listen_process(struct sock *sk, struct sk_buff *skb,
 
 		/* Verify Token. */
 		crypto = quic_crypto(sk, QUIC_CRYPTO_INITIAL);
-		err = quic_crypto_verify_token(crypto, &packet->daddr,
-					       sizeof(packet->daddr),
+		err = quic_crypto_verify_token(crypto, &packet->saddr,
+					       sizeof(packet->saddr),
 					       &odcid, token.data, token.len);
 		if (err) {
 			if (!retry) {
@@ -1883,13 +1879,11 @@ static int quic_packet_path_alt_detect(struct sock *sk, struct sk_buff *skb,
 	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
 	u64 seqno;
 
-	/* Read Destination address (packet->saddr) and Source address
-	 * (packet->daddr).
-	 */
-	quic_get_msg_addrs(skb, &packet->saddr, &packet->daddr);
+	/* Read Destination address and Source address from the packet. */
+	quic_get_msg_addrs(skb, &packet->daddr, &packet->saddr);
 	/* Detect alternate path if migration occurred. */
-	cb->path = quic_path_detect_alt(quic_paths(sk), &packet->saddr,
-					&packet->daddr, sk);
+	cb->path = quic_path_detect_alt(quic_paths(sk), &packet->daddr,
+					&packet->saddr, sk);
 	if (!cb->path ||
 	    quic_conn_id_select_alt(dest, cb->seqno == source->active->number))
 		return 0;

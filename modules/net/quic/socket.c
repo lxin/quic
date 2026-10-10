@@ -138,7 +138,7 @@ bool quic_accept_sock_exists(struct sock *sk, struct sk_buff *skb)
 
 	/* Look up accepted socket matching packet addresses and DCID. */
 	local_bh_disable();
-	sk = quic_sock_lookup(skb, &packet->saddr, &packet->daddr,
+	sk = quic_sock_lookup(skb, &packet->daddr, &packet->saddr,
 			      quic_path_usock(quic_paths(sk), 0),
 			      &packet->dcid);
 	if (!sk)
@@ -340,7 +340,7 @@ bool quic_listen_sock_switch(struct sk_buff *skb, struct quic_data *alpns)
 
 	local_bh_disable();
 	packet = quic_packet(sk);
-	nsk = quic_listen_sock_lookup(skb, &packet->saddr, &packet->daddr,
+	nsk = quic_listen_sock_lookup(skb, &packet->daddr, &packet->saddr,
 				      quic_path_usock(quic_paths(sk), 0),
 				      alpns);
 	if (!nsk)
@@ -1642,21 +1642,21 @@ static int quic_accept_sock_setup(struct sock *sk,
 	struct sk_buff *skb;
 	int err;
 
-	quic_path_set_saddr(paths, 0, &req->saddr);
+	quic_path_set_saddr(paths, 0, &req->daddr);
 	err = quic_path_bind(sk, paths, 0);
 	if (err)
 		return err;
-	quic_set_sk_addr(sk, &req->saddr, true);
+	quic_set_sk_addr(sk, &req->daddr, true);
 
 	lock_sock_nested(sk, SINGLE_DEPTH_NESTING);
 	/* Set destination address and resolve route (may also auto-set source
 	 * address).
 	 */
-	quic_path_set_daddr(paths, 0, &req->daddr);
+	quic_path_set_daddr(paths, 0, &req->saddr);
 	err = quic_packet_route(sk);
 	if (err)
 		goto out;
-	quic_set_sk_addr(sk, &req->daddr, false);
+	quic_set_sk_addr(sk, &req->saddr, false);
 
 	/* Generate and add destination and source connection IDs. */
 	quic_conn_id_generate(&conn_id);
