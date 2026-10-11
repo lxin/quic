@@ -531,7 +531,7 @@ u32 quic_path_pl_toobig(struct quic_path_group *paths, u32 pmtu,
 {
 	u32 pathmtu = 0;
 
-	pr_debug("%s: paths: %p, state: %d, pmtu: %d, size: %d, ptb: %d\n",
+	pr_debug("%s: paths: %p, state: %d, pmtu: %d, size: %d, ptb: %u\n",
 		 __func__, paths, paths->pl.state, paths->pl.pmtu,
 		 paths->pl.probe_size, pmtu);
 
