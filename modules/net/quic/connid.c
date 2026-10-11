@@ -51,18 +51,23 @@ struct quic_conn_id *quic_conn_id_lookup(struct net *net, u8 *scid, u32 len)
  */
 bool quic_conn_id_token_exists(struct quic_conn_id_set *id_set, u8 *token)
 {
-	struct quic_common_conn_id *common;
+	struct quic_common_conn_id *common, *last_used;
 	struct quic_dest_conn_id *dcid;
 
-	dcid = (struct quic_dest_conn_id *)id_set->active;
+	/* Determine the furthest used CID: alt if present, otherwise active. */
+	last_used = id_set->alt ?: id_set->active;
+
+	/* Fast path: check the furthest used CID first. */
+	dcid = (struct quic_dest_conn_id *)last_used;
 	if (memchr_inv(dcid->token, 0, QUIC_CONN_ID_TOKEN_LEN) &&
 	    !crypto_memneq(dcid->token, token, QUIC_CONN_ID_TOKEN_LEN))
-		return true; /* Fast path. */
+		return true;
 
+	/* Check all CIDs up to (but not including) the last used. */
 	list_for_each_entry(common, &id_set->head, list) {
+		if (common == last_used)
+			break;
 		dcid = (struct quic_dest_conn_id *)common;
-		if (common == id_set->active)
-			continue;
 		if (memchr_inv(dcid->token, 0, QUIC_CONN_ID_TOKEN_LEN) &&
 		    !crypto_memneq(dcid->token, token, QUIC_CONN_ID_TOKEN_LEN))
 			return true;
