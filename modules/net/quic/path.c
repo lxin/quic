@@ -325,8 +325,9 @@ void quic_path_unbind(struct sock *sk, struct quic_path_group *paths, u8 path)
  * This is typically called on packet receive to detect new possible network
  * paths (e.g., NAT rebinding, mobility).
  *
- * Returns true if a new alternate path was detected and updated, false
- * otherwise.
+ * Returns true if the alternate path (path[1]) matches (sa, da), regardless
+ * of whether it was newly detected or already present. Returns false if the
+ * addresses don't match the alternate path.
  */
 bool quic_path_detect_alt(struct quic_path_group *paths, union quic_addr *sa,
 			  union quic_addr *da, struct sock *sk)
