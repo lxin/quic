@@ -121,6 +121,8 @@ static struct quic_stream *quic_stream_create(struct quic_stream_table *streams,
 			} else {
 				stream->recv.max_bytes =
 					limits->max_stream_data_uni;
+				stream->recv.state =
+					QUIC_STREAM_RECV_STATE_RECV;
 				stream->recv.window = stream->recv.max_bytes;
 			}
 			hlist_add_head(&stream->node, &head);
@@ -139,6 +141,7 @@ static struct quic_stream *quic_stream_create(struct quic_stream_table *streams,
 			stream->recv.max_bytes =
 				streams->recv.max_stream_data_bidi_remote;
 		}
+		stream->recv.state = QUIC_STREAM_RECV_STATE_RECV;
 		stream->recv.window = stream->recv.max_bytes;
 		hlist_add_head(&stream->node, &head);
 		stream_id += QUIC_STREAM_ID_STEP;
