@@ -87,10 +87,10 @@ struct quic_stream_limits {
 
 	/* STREAMS_BLOCKED_BIDI/UNI sent and awaiting ACK for send limits and
 	 * MAX_STREAMS_BIDI/UNI sent and awaiting ACK for recv limits;
-	 * MAX_STREAMS_BIDI/UNI needs to be set for send limits.
 	 */
 	u8 bidi_blocked;
 	u8 uni_blocked;
+	/* MAX_STREAMS_BIDI/UNI needs to be sent for recv limits.*/
 	u8 bidi_pending;
 	u8 uni_pending;
 
