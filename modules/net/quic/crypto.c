@@ -171,8 +171,8 @@ static int quic_crypto_keys_derive(struct crypto_shash *tfm,
 }
 
 /* Derive and install reception (RX) or transmission (TX) packet protection
- * keys for the current key phase.  This installs AEAD protection key, IV, and
- * optionally header protection key.
+ * keys for a specified key phase. This installs AEAD protection key, IV, and
+ * optionally header protection key (only when not doing key update).
  */
 static int quic_crypto_keys_derive_and_install(struct quic_crypto *crypto,
 					       bool rx, u8 phase)
@@ -769,7 +769,9 @@ int quic_crypto_set_cipher(struct quic_crypto *crypto, u32 type)
 		return PTR_ERR(tfm);
 	crypto->secret_tfm = tfm;
 
-	/* Allocate AEAD and HP transform for each RX key phase. */
+	/* Allocate AEAD transform for each RX key phase and a single HP
+	 * transform shared by both phases.
+	 */
 	tfm = crypto_alloc_aead(cipher->aead, 0, 0);
 	if (IS_ERR(tfm)) {
 		err = PTR_ERR(tfm);
@@ -789,7 +791,9 @@ int quic_crypto_set_cipher(struct quic_crypto *crypto, u32 type)
 	}
 	crypto->rx_hp_tfm = tfm;
 
-	/* Allocate AEAD and HP transform for each TX key phase. */
+	/* Allocate AEAD transform for each TX key phase and a single HP
+	 * transform shared by both phases.
+	 */
 	tfm = crypto_alloc_aead(cipher->aead, 0, 0);
 	if (IS_ERR(tfm)) {
 		err = PTR_ERR(tfm);
