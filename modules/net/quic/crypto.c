@@ -1186,9 +1186,9 @@ out:
 
 /* Generate a Retry or address validation token.
  *
- * Builds a token containing the flag, client address, timestamp and original
- * DCID. The flag, address and timestamp are authenticated as associated data;
- * the original DCID is encrypted with AES-GCM.
+ * Builds a token containing the flag, timestamp, client address, and original
+ * DCID. The flag and timestamp are authenticated as associated data; the
+ * client address and original DCID are encrypted with AES-GCM.
  *
  * Return: 0 on success or a negative error code on failure.
  */
@@ -1231,8 +1231,7 @@ EXPORT_SYMBOL_GPL(quic_crypto_generate_token);
  * the timestamp against the timeout selected by the token flag. For a Retry
  * token, extracts the original destination connection ID.
  *
- * Return: 0 if the token is valid, -EINVAL if invalid, or another negative
- * error code.
+ * Return: 0 on success or a negative error code on failure.
  */
 int quic_crypto_verify_token(struct quic_crypto *crypto, void *addr,
 			     u32 addrlen, struct quic_conn_id *conn_id,
