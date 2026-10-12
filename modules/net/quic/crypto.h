@@ -26,8 +26,8 @@ struct quic_cipher {
 	char *aead;  /* Name of AEAD algorithm used for payload en/decryption */
 	char *skc;   /* Name of cipher algorithm used for header protection */
 
-	u64 txlimit; /* Max packets encrypted per key (AEAD usage limit) */
-	u64 rxlimit; /* Max failures decrypted per key (AEAD usage limit) */
+	u64 txlimit; /* Max packets encrypted per key */
+	u64 rxlimit; /* Max decryption failures per connection */
 };
 
 struct quic_crypto {
