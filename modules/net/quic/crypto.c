@@ -1200,8 +1200,8 @@ int quic_crypto_generate_token(struct quic_crypto *crypto, void *addr,
 			       u32 addrlen, struct quic_conn_id *conn_id,
 			       u8 *token, u32 *tlen)
 {
-	u8 *token_buf, *p, flag = *token;
 	u64 ts = quic_ktime_get_us() - crypto->ts_off;
+	u8 *token_buf, *p, flag = *token;
 	u32 len, tslen = sizeof(ts);
 	int err;
 
@@ -1242,10 +1242,11 @@ int quic_crypto_verify_token(struct quic_crypto *crypto, void *addr,
 			     u8 *token, u32 len)
 {
 	u64 t, ts = quic_ktime_get_us() - crypto->ts_off;
-	u64 timeout = QUIC_TOKEN_TIMEOUT_RETRY;
+	s64 timeout = QUIC_TOKEN_TIMEOUT_RETRY;
 	u8 *token_buf, *p, flag;
 	u32 tslen = sizeof(ts);
 	int err;
+	s64 age;
 
 	if (len < sizeof(flag) + tslen + addrlen + QUIC_TAG_LEN)
 		return -EINVAL;
@@ -1264,7 +1265,13 @@ int quic_crypto_verify_token(struct quic_crypto *crypto, void *addr,
 	len -= sizeof(flag);
 	if (flag == QUIC_TOKEN_FLAG_REGULAR)
 		timeout = QUIC_TOKEN_TIMEOUT_REGULAR;
-	if (!quic_get_int(&p, &len, &t, tslen) || t > ts || ts - t > timeout)
+	if (!quic_get_int(&p, &len, &t, tslen))
+		goto out;
+	/* Wraparound-safe timestamp validation (similar to time_after64).
+	 * Check if token timestamp is in the future or has expired.
+	 */
+	age = (s64)(ts - t);
+	if (age < 0 || age > timeout)
 		goto out;
 	if (crypto_memneq(p, addr, addrlen))
 		goto out;
