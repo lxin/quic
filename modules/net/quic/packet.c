@@ -1081,6 +1081,12 @@ static int quic_packet_listen_process(struct sock *sk, struct sk_buff *skb,
 		return -EINVAL;
 	}
 
+	if (ntohs(udp_hdr(skb)->len) <
+	    sizeof(struct udphdr) + QUIC_MIN_UDP_PAYLOAD) {
+		kfree_skb(skb);
+		return -EINVAL;
+	}
+
 	err = quic_packet_get_token(&token, &p, &len); /* Read Token. */
 	if (err) {
 		QUIC_INC_STATS(net, QUIC_MIB_PKT_INVHDRDROP);
