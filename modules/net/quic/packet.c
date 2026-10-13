@@ -435,21 +435,21 @@ static int quic_packet_get_alpn(struct sk_buff *skb, struct quic_data *alpn)
 	QUIC_INC_STATS(net, QUIC_MIB_PKT_DECFASTPATHS);
 	cb->resume = 1; /* Mark this packet as already decrypted. */
 
+	err = -EINVAL;
 	/* Find the QUIC CRYPTO frame. */
 	p = skb->data + cb->number_offset + cb->number_len;
 	len = cb->length - cb->number_len - QUIC_TAG_LEN;
 	for (; len && !(*p); p++, len--) /* Skip the padding frame. */
 		;
 	if (!len-- || *p++ != QUIC_FRAME_CRYPTO)
-		return 0;
+		return 0; /* No CRYPTO frame: skip ALPN demux. */
 	if (!quic_get_var(&p, &len, &offset) || offset)
-		return 0;
+		return 0; /* Fragmented CRYPTO: skip ALPN demux. */
 	if (!quic_get_var(&p, &len, &length) || length > (u64)len)
-		return 0;
+		return err;
 	if (len > (u32)length) /* Cap len to crypto frame length. */
 		len = length;
 
-	err = -EINVAL;
 	/* Verify handshake message type (ClientHello) and its length. */
 	if (!quic_get_int(&p, &len, &type, 1) || type != TLS_MT_CLIENT_HELLO)
 		return err;
@@ -490,7 +490,8 @@ static int quic_packet_get_alpn(struct sk_buff *skb, struct quic_data *alpn)
 			break;
 		if (!quic_get_int(&p, &len, &length, 2))
 			break;
-		if (len < (u32)length) /* Incomplete TLS extensions. */
+		/* Incomplete TLS extensions: skip ALPN demux. */
+		if (len < (u32)length)
 			return 0;
 		if (type == TLS_EXT_alpn) { /* Found ALPN extension. */
 			if (length > QUIC_ALPN_MAX_LEN)
