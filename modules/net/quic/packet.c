@@ -531,18 +531,25 @@ static int quic_packet_get_alpn(struct sk_buff *skb, struct quic_data *alpn)
 static bool quic_packet_addrs_valid(struct sock *sk, struct sk_buff *skb,
 				    bool strict)
 {
+	struct quic_packet *packet = quic_packet(sk);
 	struct quic_path_group *paths;
-	union quic_addr daddr, saddr;
+	union quic_addr *sa, *da;
+
+	quic_get_msg_addrs(skb, &packet->daddr, &packet->saddr);
+
+	if (QUIC_SKB_CB(skb)->seqno != -1) /* Found by addrs; skip checks. */
+		return true;
 
 	if (!strict)
 		return quic_skb_ipv4(skb) ? !ipv6_only_sock(sk) :
 					    !quic_pf_ipv4(sk);
 
-	quic_get_msg_addrs(skb, &daddr, &saddr);
 	paths = quic_paths(sk);
+	sa = &packet->saddr;
+	da = &packet->daddr;
 
-	return quic_cmp_sk_addr(sk, quic_path_saddr(paths, 0), &daddr) &&
-	       quic_cmp_sk_addr(sk, quic_path_daddr(paths, 0), &saddr);
+	return quic_cmp_sk_addr(sk, quic_path_saddr(paths, 0), da) &&
+	       quic_cmp_sk_addr(sk, quic_path_daddr(paths, 0), sa);
 }
 
 /* Determine the QUIC socket associated with an incoming packet. */
@@ -572,12 +579,7 @@ static struct sock *quic_packet_get_sock(struct sk_buff *skb, struct sock *usk)
 					      QUIC_CONN_ID_DEF_LEN);
 		if (conn_id) {
 			cb->seqno = quic_conn_id_number(conn_id);
-			sk = quic_conn_id_sk(conn_id);
-			if (!quic_packet_addrs_valid(sk, skb, false)) {
-				sock_put(sk);
-				return ERR_PTR(-EINVAL);
-			}
-			return sk;
+			return quic_conn_id_sk(conn_id);
 		}
 
 		/* Fallback: listener socket lookup
@@ -604,12 +606,7 @@ static struct sock *quic_packet_get_sock(struct sk_buff *skb, struct sock *usk)
 	conn_id = quic_conn_id_lookup(net, dcid.data, dcid.len);
 	if (conn_id) {
 		cb->seqno = quic_conn_id_number(conn_id);
-		sk = quic_conn_id_sk(conn_id);
-		if (!quic_packet_addrs_valid(sk, skb, true)) {
-			sock_put(sk);
-			return ERR_PTR(-EINVAL);
-		}
-		return sk;
+		return quic_conn_id_sk(conn_id);
 	}
 
 	/* Fallback: address + DCID lookup
@@ -977,6 +974,9 @@ static int quic_packet_listen_process(struct sock *sk, struct sk_buff *skb,
 	u64 length;
 	int err;
 
+	/* Read Destination address and Source address from the packet. */
+	quic_get_msg_addrs(skb, &packet->daddr, &packet->saddr);
+
 	if (quic_hshdr(skb)->form == QUIC_PACKET_FORM_SHORT) {
 		/* rfc9000#section-10.3:
 		 *
@@ -989,8 +989,6 @@ static int quic_packet_listen_process(struct sock *sk, struct sk_buff *skb,
 			kfree_skb(skb);
 			return -EINVAL;
 		}
-		/* Read Destination address and Source address from the packet. */
-		quic_get_msg_addrs(skb, &packet->daddr, &packet->saddr);
 		/* We currently only issue Connection ID with size
 		 * QUIC_CONN_ID_DEF_LEN.
 		 */
@@ -1012,8 +1010,6 @@ static int quic_packet_listen_process(struct sock *sk, struct sk_buff *skb,
 		return err;
 	}
 
-	/* Read Destination address and Source address from the packet. */
-	quic_get_msg_addrs(skb, &packet->daddr, &packet->saddr);
 	req = quic_request_sock_lookup(sk);
 	if (req) /* If request sock already exists, enqueue packet directly. */
 		goto out;
@@ -1634,6 +1630,11 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb,
 	if (cb->errcode) /* Re-entered after backlog scheduling. */
 		return quic_packet_process_error(sk, skb, err);
 
+	if (!quic_packet_addrs_valid(sk, skb, true)) {
+		kfree_skb(skb);
+		return -EINVAL;
+	}
+
 	/* Associate skb with sk to ensure sk is valid during async decryption
 	 * completion.
 	 */
@@ -1887,8 +1888,6 @@ static int quic_packet_path_alt_detect(struct sock *sk, struct sk_buff *skb,
 	struct quic_skb_cb *cb = QUIC_SKB_CB(skb);
 	u64 seqno;
 
-	/* Read Destination address and Source address from the packet. */
-	quic_get_msg_addrs(skb, &packet->daddr, &packet->saddr);
 	/* Detect alternate path if migration occurred. */
 	cb->path = quic_path_detect_alt(quic_paths(sk), &packet->daddr,
 					&packet->saddr, sk);
@@ -2048,6 +2047,11 @@ static int quic_packet_app_process(struct sock *sk, struct sk_buff *skb,
 
 	if (cb->errcode) /* Re-entered after backlog scheduling. */
 		goto err;
+
+	if (!quic_packet_addrs_valid(sk, skb, false)) {
+		kfree_skb(skb);
+		return -EINVAL;
+	}
 
 	sock_rps_save_rxhash(sk, skb);
 
