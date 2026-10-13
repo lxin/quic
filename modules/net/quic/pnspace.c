@@ -17,7 +17,7 @@
 
 int quic_pnspace_init(struct quic_pnspace *space)
 {
-	space->pn_map = kzalloc(BITS_TO_BYTES(QUIC_PN_MAP_INITIAL), GFP_KERNEL);
+	space->pn_map = bitmap_zalloc(QUIC_PN_MAP_INITIAL, GFP_KERNEL_ACCOUNT);
 	if (!space->pn_map)
 		return -ENOMEM;
 	space->pn_map_len = QUIC_PN_MAP_INITIAL;
@@ -32,9 +32,9 @@ EXPORT_SYMBOL_GPL(quic_pnspace_init);
 
 void quic_pnspace_free(struct quic_pnspace *space)
 {
-	space->pn_map_len = 0;
-	kfree(space->pn_map);
+	bitmap_free(space->pn_map);
 	space->pn_map = NULL;
+	space->pn_map_len = 0;
 }
 EXPORT_SYMBOL_GPL(quic_pnspace_free);
 
@@ -53,13 +53,13 @@ static int quic_pnspace_grow(struct quic_pnspace *space, u16 size, gfp_t gfp)
 	      QUIC_PN_MAP_INCREMENT;
 	len = (u16)min(space->pn_map_len + inc, QUIC_PN_MAP_SIZE);
 
-	new = kzalloc(BITS_TO_BYTES(len), gfp);
+	new = bitmap_zalloc(len, gfp | __GFP_ACCOUNT);
 	if (!new)
 		return -ENOMEM;
 
 	offset = (u16)(space->max_pn_seen + 1 - space->base_pn);
 	bitmap_copy(new, space->pn_map, offset);
-	kfree(space->pn_map);
+	bitmap_free(space->pn_map);
 	space->pn_map = new;
 	space->pn_map_len = len;
 
