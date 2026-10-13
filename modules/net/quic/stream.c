@@ -256,7 +256,8 @@ struct quic_stream *quic_stream_get(struct quic_stream_table *streams,
 	if (quic_stream_id_exceeds(streams, stream_id, send))
 		return ERR_PTR(-EAGAIN);
 
-	stream = quic_stream_create(streams, stream_id, send, is_serv, net, gfp);
+	stream = quic_stream_create(streams, stream_id, send, is_serv, net,
+				    gfp);
 	if (!stream)
 		return ERR_PTR(-ENOMEM);
 

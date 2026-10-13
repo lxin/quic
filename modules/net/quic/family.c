@@ -382,7 +382,7 @@ static int quic_v6_get_user_addr(struct sock *sk, union quic_addr *a,
 			rcu_read_unlock();
 			return -EINVAL;
 		}
-		/* Validate address ownership if binding without nonlocal_bind */
+		/* Validate addr ownership if binding without nonlocal_bind. */
 		if (local && !ipv6_chk_addr(net, &ua->v6.sin6_addr, dev, 0)) {
 			rcu_read_unlock();
 			return -EADDRNOTAVAIL;
