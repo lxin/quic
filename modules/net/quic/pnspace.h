@@ -54,7 +54,7 @@ struct quic_gap_ack_block {
  *
  * Conditions to Advance pn_map:
  *   - (max_pn_time - last_max_pn_time) >= max_time_limit, or
- *   - (max_pn_seen - last_max_pn_seen) > QUIC_PN_MAP_LIMIT
+ *   - (max_pn_seen - min(last_max_pn_seen, base_pn)) > QUIC_PN_MAP_LIMIT
  *
  * Gap Search Range:
  *   - From base_pn to max_pn_seen
