@@ -286,7 +286,8 @@ void quic_packet_rcv_err_pmtu(struct sock *sk)
 			 * rejected the increase. Only use values accepted by
 			 * route layer to prevent spoofed ICMP from raising MSS.
 			 */
-			info = dst_mtu(dst);
+			info = clamp(dst_mtu(dst), QUIC_PATH_MIN_PMTU,
+				     QUIC_PATH_MAX_PMTU);
 		}
 		quic_packet_mss_update(sk, info - packet->hlen);
 		return;
