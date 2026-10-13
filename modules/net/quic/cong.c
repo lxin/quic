@@ -575,7 +575,7 @@ void quic_cong_rtt_update(struct quic_cong *cong, u64 time, u32 ack_delay)
 		 */
 		cong->smoothed_rtt = cong->latest_rtt;
 		cong->rttvar = cong->smoothed_rtt / 2;
-		cong->first_rtt_time = time;
+		cong->first_rtt_time = cong->time;
 		goto out;
 	}
 
