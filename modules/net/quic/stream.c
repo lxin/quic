@@ -52,7 +52,7 @@ static bool quic_stream_id_uni(s64 stream_id)
 static struct hlist_head *quic_stream_head(struct quic_stream_table *streams,
 					   s64 stream_id, struct net *net)
 {
-	u32 hash = jhash_1word((u32)stream_id, net_hash_mix(net));
+	u32 hash = jhash_1word((u32)(stream_id >> 1), net_hash_mix(net));
 
 	return &streams->head[hash & (QUIC_STREAM_HT_SIZE - 1)];
 }
