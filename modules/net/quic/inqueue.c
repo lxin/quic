@@ -78,9 +78,6 @@ void quic_inq_flow_control(struct sock *sk, struct quic_stream *stream,
 		window >>= 1;
 	if (inq->max_bytes >= inq->bytes + window)
 		goto stream_out;
-	/* Don't send if we already have a MAX_DATA frame in flight. */
-	if (inq->data_blocked)
-		goto stream_out;
 	frame = QUIC_FRAME_MAX_DATA;
 	max_bytes = inq->max_bytes;
 	inq->max_bytes = inq->bytes + window;
@@ -107,9 +104,6 @@ stream_out:
 	if (sk_under_memory_pressure(sk))
 		window >>= 1;
 	if (stream->recv.max_bytes >= stream->recv.bytes + window)
-		goto out;
-	/* Don't send if we already have a MAX_STREAM_DATA frame in flight. */
-	if (stream->recv.data_blocked)
 		goto out;
 	frame = QUIC_FRAME_MAX_STREAM_DATA;
 	max_bytes = stream->recv.max_bytes;
