@@ -85,7 +85,6 @@ void quic_inq_flow_control(struct sock *sk, struct quic_stream *stream,
 		inq->max_bytes = max_bytes;
 		goto stream_out;
 	}
-	inq->data_blocked = 1;
 	transmit = 1;
 
 stream_out:
@@ -112,7 +111,6 @@ stream_out:
 		stream->recv.max_bytes = max_bytes;
 		goto out;
 	}
-	stream->recv.data_blocked = 1;
 	transmit = 1;
 
 out:
