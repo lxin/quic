@@ -651,7 +651,7 @@ static struct pernet_operations quic_net_ops = {
 #if IS_ENABLED(CONFIG_SYSCTL)
 static struct ctl_table_header *quic_sysctl_header;
 
-static struct ctl_table quic_table[] = {
+static const struct ctl_table quic_table[] = {
 	{
 		.procname	= "quic_mem",
 		.data		= &sysctl_quic_mem,
