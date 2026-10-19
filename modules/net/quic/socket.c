@@ -921,8 +921,8 @@ static int quic_wait_for_stream(struct sock *sk, s64 stream_id, u32 flags)
 			break;
 		}
 		if (sk->sk_err) {
-			err = -EPIPE;
-			pr_debug("%s: sk_err: %d\n", __func__, sk->sk_err);
+			err = sock_error(sk);
+			pr_debug("%s: sk_err: %d\n", __func__, err);
 			break;
 		}
 		if (signal_pending(current)) {
@@ -1009,8 +1009,8 @@ static int quic_wait_for_send(struct sock *sk, u32 flags, int len)
 			break;
 		}
 		if (sk->sk_err) {
-			err = -EPIPE;
-			pr_debug("%s: sk_err: %d\n", __func__, sk->sk_err);
+			err = sock_error(sk);
+			pr_debug("%s: sk_err: %d\n", __func__, err);
 			break;
 		}
 		if (signal_pending(current)) {
@@ -1067,8 +1067,8 @@ static int quic_wait_for_stream_send(struct sock *sk,
 			break;
 		}
 		if (sk->sk_err) {
-			err = -EPIPE;
-			pr_debug("%s: sk_err: %d\n", __func__, sk->sk_err);
+			err = sock_error(sk);
+			pr_debug("%s: sk_err: %d\n", __func__, err);
 			break;
 		}
 		if (signal_pending(current)) {
@@ -1355,8 +1355,8 @@ static int quic_wait_for_packet(struct sock *sk, struct list_head *head,
 			break;
 		}
 		if (sk->sk_err) {
-			err = -ENOTCONN;
-			pr_debug("%s: sk_err: %d\n", __func__, sk->sk_err);
+			err = sock_error(sk);
+			pr_debug("%s: sk_err: %d\n", __func__, err);
 			break;
 		}
 		if (signal_pending(current)) {
