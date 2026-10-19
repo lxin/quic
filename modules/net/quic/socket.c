@@ -1944,6 +1944,9 @@ static int quic_sock_set_connection_close(struct sock *sk, void *kopt, u32 len)
 	struct quic_connection_close c = {};
 	u8 *data = NULL;
 
+	if (quic_is_closed(sk) || quic_is_listen(sk))
+		return -EINVAL;
+
 	quic_copy_common(&c, sizeof(c) - 1, kopt, len);
 
 	if (strlen(c.phrase)) {
