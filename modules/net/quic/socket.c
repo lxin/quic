@@ -2279,15 +2279,13 @@ static int quic_sock_set_session_ticket(struct sock *sk, u8 *data, u32 len)
 	return quic_data_dup(quic_ticket(sk), data, len, GFP_KERNEL);
 }
 
-#define QUIC_TP_EXT_MAX_LEN	512
-
 static int quic_sock_set_transport_params_ext(struct sock *sk, u8 *p, u32 len)
 {
 	struct quic_transport_param param = {};
 	u32 errcode;
 	int err;
 
-	if (!quic_is_establishing(sk) || len > QUIC_TP_EXT_MAX_LEN)
+	if (!quic_is_establishing(sk))
 		return -EINVAL;
 
 	param.remote = 1;
@@ -2811,6 +2809,8 @@ out:
 		return -EFAULT;
 	return 0;
 }
+
+#define QUIC_TP_EXT_MAX_LEN	512
 
 static int quic_sock_get_transport_params_ext(struct sock *sk, u32 len,
 					      sockptr_t optval,
