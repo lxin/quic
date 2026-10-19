@@ -200,7 +200,7 @@ int quic_frame_parse_transport_params_ext(struct sock *sk,
 int quic_frame_stream_append(struct sock *sk, struct quic_frame *frame,
 			     struct quic_msginfo *info, bool pack);
 
-struct quic_frame *quic_frame_alloc(u32 size, u8 *data, gfp_t gfp);
+struct quic_frame *quic_frame_alloc(u16 size, u8 *data, gfp_t gfp);
 struct quic_frame *quic_frame_get(struct quic_frame *frame);
 void quic_frame_put(struct quic_frame *frame);
 

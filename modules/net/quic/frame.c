@@ -2727,7 +2727,7 @@ struct quic_frame *quic_frame_create(struct sock *sk, u8 type, void *data,
 	return frame;
 }
 
-struct quic_frame *quic_frame_alloc(u32 size, u8 *data, gfp_t gfp)
+struct quic_frame *quic_frame_alloc(u16 size, u8 *data, gfp_t gfp)
 {
 	struct quic_frame *frame;
 
@@ -2746,7 +2746,7 @@ struct quic_frame *quic_frame_alloc(u32 size, u8 *data, gfp_t gfp)
 out:
 	refcount_set(&frame->refcnt, 1);
 	frame->offset = -1;
-	frame->len = (u16)size;
+	frame->len = size;
 	frame->dlen = frame->len;
 	return frame;
 }
