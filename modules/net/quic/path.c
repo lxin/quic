@@ -65,7 +65,7 @@ static void quic_udp_sock_put_work(struct work_struct *work)
 	__hlist_del(&us->node);
 	mutex_unlock(&head->lock);
 
-	put_net(sock_net(sk));
+	put_net_track(sock_net(sk), &us->ns_tracker);
 	sock_put(sk);
 	kfree(us);
 }
@@ -106,7 +106,7 @@ static struct quic_udp_sock *quic_udp_sock_create(struct sock *sk,
 	us->sk = sock->sk;
 	memcpy(&us->addr, a, sizeof(*a));
 	us->bind_ifindex = udp_conf.bind_ifindex;
-	get_net(net);
+	get_net_track(net, &us->ns_tracker, GFP_KERNEL);
 
 	INIT_WORK(&us->work, quic_udp_sock_put_work);
 	head = quic_udp_sock_head(net, ntohs(a->v4.sin_port));
