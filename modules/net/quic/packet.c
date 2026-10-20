@@ -276,20 +276,20 @@ void quic_packet_rcv_err_pmtu(struct sock *sk)
 	info = clamp(paths->mtu_info, QUIC_PATH_MIN_PMTU, QUIC_PATH_MAX_PMTU);
 	/* If PLPMTUD is not enabled, update MSS using route and ICMP info. */
 	if (!paths->plpmtud_interval) {
+		/* Ensure we have a dst cached for update_pmtu() */
 		if (quic_packet_route(sk))
 			return;
 
 		dst = __sk_dst_get(sk);
 		if (dst) {
 			dst->ops->update_pmtu(dst, sk, NULL, info, true);
-			/* Re-read actual MTU after update_pmtu, which may have
-			 * rejected the increase. Only use values accepted by
-			 * route layer to prevent spoofed ICMP from raising MSS.
+			/* Invalidate cached dst. Next quic_packet_route()
+			 * during transmission will pick up the updated MTU
+			 * from the newly created route exception and call
+			 * quic_packet_mss_update().
 			 */
-			info = clamp(dst_mtu(dst), QUIC_PATH_MIN_PMTU,
-				     QUIC_PATH_MAX_PMTU);
+			__sk_dst_reset(sk);
 		}
-		quic_packet_mss_update(sk, info - packet->hlen);
 		return;
 	}
 	/* PLPMTUD is enabled: adjust to smaller PMTU, subtract headers and
