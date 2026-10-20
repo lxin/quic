@@ -2678,17 +2678,11 @@ void quic_packet_mss_update(struct sock *sk, u32 mss)
 	/* Limit MSS for regular QUIC packets to the max UDP payload size. */
 	if (outq->max_udp_payload_size && mss > outq->max_udp_payload_size)
 		mss = outq->max_udp_payload_size;
-	packet->mss[QUIC_PACKET_MSS_NORMAL] = (u16)mss;
+	packet->mss = (u16)mss;
 
 	/* Update congestion control with new payload space (including tag). */
-	quic_cong_set_mss(cong, packet->mss[QUIC_PACKET_MSS_NORMAL]);
+	quic_cong_set_mss(cong, packet->mss);
 	quic_outq_sync_window(sk, cong->window);
-
-	/* Limit MSS for DATAGRAM frame packets to max datagram frame size. */
-	if (outq->max_datagram_frame_size && mss >
-	    outq->max_datagram_frame_size)
-		mss = outq->max_datagram_frame_size;
-	packet->mss[QUIC_PACKET_MSS_DGRAM] = (u16)mss;
 }
 
 /* Perform routing for the QUIC packet on the specified path, update header
@@ -2839,8 +2833,7 @@ static int quic_packet_bundle(struct sock *sk, struct sk_buff *skb)
 		goto init;
 
 	/* If bundling would exceed MSS, flush the current bundle. */
-	if (packet->head->len + skb->len >
-	    packet->mss[QUIC_PACKET_MSS_NORMAL]) {
+	if (packet->head->len + skb->len > packet->mss) {
 		quic_packet_flush(sk);
 		goto init;
 	}
@@ -2976,8 +2969,7 @@ int quic_packet_tail(struct sock *sk, struct quic_frame *frame)
 	/* Check if frame would exceed the current datagram MSS (excluding AEAD
 	 * tag).
 	 */
-	if (packet->len + frame->len + frame->padding >
-	    packet->mss[frame->dgram]) {
+	if (packet->len + frame->len + frame->padding > packet->mss) {
 		/* If some data has already been added to packet, bail out. */
 		if (!quic_packet_empty(packet))
 			return 0;
@@ -3014,8 +3006,7 @@ void quic_packet_init(struct sock *sk)
 
 	packet->taglen[QUIC_PACKET_FORM_SHORT] = QUIC_TAG_LEN;
 	packet->taglen[QUIC_PACKET_FORM_LONG] = QUIC_TAG_LEN;
-	packet->mss[QUIC_PACKET_MSS_NORMAL] = QUIC_MIN_UDP_PAYLOAD;
-	packet->mss[QUIC_PACKET_MSS_DGRAM] = QUIC_MIN_UDP_PAYLOAD;
+	packet->mss = QUIC_MIN_UDP_PAYLOAD;
 
 	packet->version = QUIC_VERSION_V1;
 }

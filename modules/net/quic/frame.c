@@ -2200,12 +2200,15 @@ static struct quic_frame *
 quic_frame_datagram_create(struct sock *sk, void *data, u8 type, gfp_t gfp)
 {
 	u32 msg_len, hlen = 1, frame_len, max_frame_len;
+	struct quic_outqueue *outq = quic_outq(sk);
 	struct iov_iter *msg = data;
 	struct quic_frame *frame;
 	u8 *p;
 
 	/* MSS for dgram. */
-	max_frame_len = quic_packet_max_payload_dgram(quic_packet(sk));
+	max_frame_len = quic_packet_max_payload(quic_packet(sk));
+	if (max_frame_len > outq->max_datagram_frame_size)
+		max_frame_len = outq->max_datagram_frame_size;
 	hlen += quic_var_len(max_frame_len);
 
 	/* rfc9221#section-5:

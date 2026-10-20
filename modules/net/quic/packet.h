@@ -23,9 +23,9 @@ struct quic_packet {
 	u8 taglen[2];  /* Tag length for short and long packets */
 	u16 padding;   /* Total padding bytes to append after frames */
 	u16 frames;    /* Number of ack-eliciting frames */
-	u16 mss[2];    /* MSS for non-datagram and datagram packets */
 	u16 hlen;      /* UDP + IP header length for sending */
 	u16 len;       /* QUIC packet length including taglen for sending */
+	u16 mss;       /* MSS including taglen */
 
 	u8 path_validating:1; /* Packet contains path_validating frames */
 	u8 ack_eliciting:1;   /* Packet contains ack-eliciting frames */
@@ -72,9 +72,6 @@ struct quic_packet_sent {
 
 #define QUIC_ALPN_MAX_LEN		128
 
-#define QUIC_PACKET_MSS_NORMAL		0
-#define QUIC_PACKET_MSS_DGRAM		1
-
 #define QUIC_PACKET_FORM_SHORT		0
 #define QUIC_PACKET_FORM_LONG		1
 
@@ -90,19 +87,12 @@ static inline void quic_packet_set_taglen(struct quic_packet *packet, u8 taglen)
 
 static inline u32 quic_packet_mss(struct quic_packet *packet)
 {
-	return packet->mss[QUIC_PACKET_MSS_NORMAL] - quic_packet_taglen(packet);
+	return packet->mss - quic_packet_taglen(packet);
 }
 
 static inline u32 quic_packet_max_payload(struct quic_packet *packet)
 {
-	return packet->mss[QUIC_PACKET_MSS_NORMAL] - packet->overhead -
-	       quic_packet_taglen(packet);
-}
-
-static inline u32 quic_packet_max_payload_dgram(struct quic_packet *packet)
-{
-	return packet->mss[QUIC_PACKET_MSS_DGRAM] - packet->overhead -
-	       quic_packet_taglen(packet);
+	return packet->mss - packet->overhead - quic_packet_taglen(packet);
 }
 
 static inline bool quic_packet_empty(struct quic_packet *packet)
