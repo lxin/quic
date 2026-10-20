@@ -439,6 +439,7 @@ void quic_cong_on_packet_lost(struct quic_cong *cong, u64 time, u32 bytes,
 		cong->pc_detected = 1;
 		cong->min_rtt_valid = 0;
 		cong->window = cong->min_window;
+		cong->recovery_time = 0;
 		return;
 	}
 
