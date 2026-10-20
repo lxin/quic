@@ -873,8 +873,6 @@ int quic_crypto_set_token_secret(struct quic_crypto *crypto)
 
 	if (!memchr_inv(srt, 0, TLS_CIPHER_AES_GCM_128_SECRET_SIZE))
 		get_random_bytes(srt, TLS_CIPHER_AES_GCM_128_SECRET_SIZE);
-	if (!crypto->ts_off)
-		get_random_bytes(&crypto->ts_off, sizeof(crypto->ts_off));
 
 	quic_data(&s, srt, TLS_CIPHER_AES_GCM_128_SECRET_SIZE);
 	quic_data(&k, key, TLS_CIPHER_AES_GCM_128_KEY_SIZE);
@@ -1148,7 +1146,7 @@ static int quic_crypto_token_protect(struct quic_crypto *crypto, u8 *token,
 {
 	/* Reuse TX AEAD (phase 1) in Initial crypto. */
 	struct crypto_aead *tfm = crypto->tx_tfm[1];
-	u32 extra = enc ? QUIC_TAG_LEN : 0, tslen;
+	u32 extra = enc ? QUIC_TAG_LEN : 0, clen;
 	DECLARE_CRYPTO_WAIT(wait);
 	struct aead_request *req;
 	struct scatterlist *sg;
@@ -1156,7 +1154,7 @@ static int quic_crypto_token_protect(struct quic_crypto *crypto, u8 *token,
 	u8 *nonce, *p, i;
 	__be64 n;
 	int err;
-	u64 ts;
+	u64 c;
 
 	ctx = quic_crypto_aead_mem_alloc(tfm, 0, &nonce, &req, &sg, 1,
 					 GFP_KERNEL);
@@ -1166,11 +1164,12 @@ static int quic_crypto_token_protect(struct quic_crypto *crypto, u8 *token,
 	}
 	memcpy(nonce, crypto->tx_iv[1], QUIC_IV_LEN);
 
-	tslen = sizeof(ts);
-	p = token + adlen - tslen;
-	quic_get_int(&p, &tslen, &ts, tslen);
+	/* Read counter value from token AAD (bytes 1-8) and XOR with IV. */
+	clen = sizeof(c);
+	p = token + adlen - clen;
+	quic_get_int(&p, &clen, &c, clen);
 
-	n = cpu_to_be64(ts);
+	n = cpu_to_be64(c);
 	for (i = 0; i < sizeof(n); i++)
 		nonce[QUIC_IV_LEN - sizeof(n) + i] ^= ((u8 *)&n)[i];
 
@@ -1191,9 +1190,13 @@ out:
 
 /* Generate a Retry or address validation token.
  *
- * Builds a token containing the flag, timestamp, client address, and original
- * DCID. The flag and timestamp are authenticated as associated data; the
- * client address and original DCID are encrypted with AES-GCM.
+ * Builds a token containing the flag, counter value, timestamp, client address,
+ * and original DCID. The flag and counter value are authenticated as AAD;
+ * the timestamp, client address, and original DCID are encrypted with AES-GCM.
+ *
+ * Token: [flag(1) | counter(8) | encrypted(ts | addr | conn_id) | tag(16)]
+ *
+ * The AEAD nonce is derived by XORing the token IV with the counter value.
  *
  * Return: 0 on success or a negative error code on failure.
  */
@@ -1201,24 +1204,29 @@ int quic_crypto_generate_token(struct quic_crypto *crypto, void *addr,
 			       u32 addrlen, struct quic_conn_id *conn_id,
 			       u8 *token, u32 *tlen)
 {
-	u64 ts = quic_ktime_get_us() - crypto->ts_off;
 	u8 *token_buf, *p, flag = *token;
+	u64 ts = quic_ktime_get_us();
 	u32 len, tslen = sizeof(ts);
+	u64 counter;
 	int err;
 
-	len = sizeof(flag) + tslen + addrlen + conn_id->len + QUIC_TAG_LEN;
+	len = sizeof(flag) + sizeof(counter) + tslen + addrlen + conn_id->len +
+	      QUIC_TAG_LEN;
 	token_buf = kmalloc(len, GFP_KERNEL);
 	if (!token_buf)
 		return -ENOMEM;
 
+	/* Use counter for nonce derivation to prevent collisions. */
+	counter = crypto->tx_count[1]++;
 	p = token_buf;
 	p = quic_put_int(p, flag, sizeof(flag));
+	p = quic_put_int(p, counter, sizeof(counter));
 	p = quic_put_int(p, ts, tslen);
 	p = quic_put_data(p, addr, addrlen);
 	quic_put_data(p, conn_id->data, conn_id->len);
 
 	err = quic_crypto_token_protect(crypto, token_buf, len,
-					sizeof(flag) + tslen, true);
+					sizeof(flag) + sizeof(counter), true);
 	if (err)
 		goto out;
 
@@ -1236,27 +1244,28 @@ EXPORT_SYMBOL_GPL(quic_crypto_generate_token);
  * the timestamp against the timeout selected by the token flag. For a Retry
  * token, extracts the original destination connection ID.
  *
+ * Token: [flag(1) | counter(8) | encrypted(ts | addr | conn_id) | tag(16)]
+ *
  * Return: 0 on success or a negative error code on failure.
  */
 int quic_crypto_verify_token(struct quic_crypto *crypto, void *addr,
 			     u32 addrlen, struct quic_conn_id *conn_id,
 			     u8 *token, u32 len)
 {
-	u64 t, ts = quic_ktime_get_us() - crypto->ts_off;
 	s64 timeout = QUIC_TOKEN_TIMEOUT_RETRY;
+	u64 t, ts = quic_ktime_get_us();
 	u8 *token_buf, *p, flag;
 	u32 tslen = sizeof(ts);
 	int err;
-	s64 age;
 
-	if (len < sizeof(flag) + tslen + addrlen + QUIC_TAG_LEN)
+	if (len < sizeof(flag) + sizeof(u64) + tslen + addrlen + QUIC_TAG_LEN)
 		return -EINVAL;
 	token_buf = kmemdup(token, len, GFP_KERNEL);
 	if (!token_buf)
 		return -ENOMEM;
 
 	err = quic_crypto_token_protect(crypto, token_buf, len,
-					sizeof(flag) + tslen, false);
+					sizeof(flag) + sizeof(u64), false);
 	if (err)
 		goto out;
 
@@ -1264,16 +1273,21 @@ int quic_crypto_verify_token(struct quic_crypto *crypto, void *addr,
 	p = token_buf;
 	flag = *p++;
 	len -= sizeof(flag);
+
+	/* Skip counter value (already used for nonce derivation). */
+	p += sizeof(u64);
+	len -= sizeof(u64);
+
 	if (flag == QUIC_TOKEN_FLAG_REGULAR)
 		timeout = QUIC_TOKEN_TIMEOUT_REGULAR;
-	if (!quic_get_int(&p, &len, &t, tslen))
-		goto out;
-	/* Wraparound-safe timestamp validation (similar to time_after64).
-	 * Check if token timestamp is in the future or has expired.
+
+	/* Read timestamp from encrypted part and check if token timestamp is in
+	 * the future or has expired.
 	 */
-	age = (s64)(ts - t);
-	if (age < 0 || age > timeout)
+	if (!quic_get_int(&p, &len, &t, tslen) || ts < t || ts - t > timeout)
 		goto out;
+
+	/* Verify client address matches. */
 	if (crypto_memneq(p, addr, addrlen))
 		goto out;
 
