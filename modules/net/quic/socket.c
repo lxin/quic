@@ -499,6 +499,7 @@ static void quic_sock_destruct(struct sock *sk)
 static int quic_init_sock(struct sock *sk)
 {
 	struct quic_transport_param *p = &quic_default_param;
+	struct quic_pnspace *space;
 	struct quic_crypto *crypto;
 	u8 i;
 
@@ -525,9 +526,16 @@ static int quic_init_sock(struct sock *sk)
 	if (quic_stream_init(quic_streams(sk)))
 		return -ENOMEM;
 
+	/* Allocate pnspace structures for each packet number space. */
 	for (i = 0; i < QUIC_PNSPACE_MAX; i++) {
-		if (quic_pnspace_init(quic_pnspace(sk, i)))
+		space = kzalloc(sizeof(*space), GFP_KERNEL);
+		if (!space)
 			return -ENOMEM;
+		if (quic_pnspace_init(space)) {
+			kfree(space);
+			return -ENOMEM;
+		}
+		quic_sk(sk)->space[i] = space;
 	}
 
 	/* Allocate crypto structures for each encryption level. */
@@ -543,6 +551,7 @@ static int quic_init_sock(struct sock *sk)
 
 static void quic_destroy_sock(struct sock *sk)
 {
+	struct quic_pnspace *space;
 	u8 i;
 
 	quic_outq_free(sk);
@@ -550,8 +559,13 @@ static void quic_destroy_sock(struct sock *sk)
 	quic_timer_free(sk);
 	quic_packet_free(sk);
 
-	for (i = 0; i < QUIC_PNSPACE_MAX; i++)
-		quic_pnspace_free(quic_pnspace(sk, i));
+	for (i = 0; i < QUIC_PNSPACE_MAX; i++) {
+		space = quic_pnspace(sk, i);
+		if (!space)
+			continue;
+		quic_pnspace_free(space);
+		kfree(space);
+	}
 
 	quic_path_unbind(sk, quic_paths(sk), 0);
 	quic_path_unbind(sk, quic_paths(sk), 1);
