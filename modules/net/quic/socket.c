@@ -478,11 +478,17 @@ out:
 
 static void quic_sock_destruct(struct sock *sk)
 {
+	struct quic_crypto *crypto;
 	u8 i;
 
 	/* Deferred crypto free for async encryption/decryption. */
-	for (i = 0; i < QUIC_CRYPTO_MAX; i++)
-		quic_crypto_free(quic_crypto(sk, i));
+	for (i = 0; i < QUIC_CRYPTO_MAX; i++) {
+		crypto = quic_crypto(sk, i);
+		if (!crypto)
+			continue;
+		quic_crypto_free(crypto);
+		kfree(crypto);
+	}
 
 	/* Deferred ALPN free for RCU readers in quic_listen_sock_lookup(). */
 	quic_data_free(quic_alpn(sk));
@@ -493,6 +499,7 @@ static void quic_sock_destruct(struct sock *sk)
 static int quic_init_sock(struct sock *sk)
 {
 	struct quic_transport_param *p = &quic_default_param;
+	struct quic_crypto *crypto;
 	u8 i;
 
 	sk->sk_destruct = quic_sock_destruct;
@@ -521,6 +528,14 @@ static int quic_init_sock(struct sock *sk)
 	for (i = 0; i < QUIC_PNSPACE_MAX; i++) {
 		if (quic_pnspace_init(quic_pnspace(sk, i)))
 			return -ENOMEM;
+	}
+
+	/* Allocate crypto structures for each encryption level. */
+	for (i = 0; i < QUIC_CRYPTO_MAX; i++) {
+		crypto = kzalloc(sizeof(*crypto), GFP_KERNEL);
+		if (!crypto)
+			return -ENOMEM;
+		quic_sk(sk)->crypto[i] = crypto;
 	}
 
 	return 0;

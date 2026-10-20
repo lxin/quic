@@ -100,7 +100,7 @@ struct quic_sock {
 	struct quic_path_group		paths;
 	struct quic_cong		cong;
 	struct quic_pnspace		space[QUIC_PNSPACE_MAX];
-	struct quic_crypto		crypto[QUIC_CRYPTO_MAX];
+	struct quic_crypto		*crypto[QUIC_CRYPTO_MAX];
 
 	struct quic_outqueue		outq;
 	struct quic_inqueue		inq;
@@ -180,7 +180,7 @@ static inline struct quic_pnspace *quic_pnspace(const struct sock *sk, u8 level)
 
 static inline struct quic_crypto *quic_crypto(const struct sock *sk, u8 level)
 {
-	return &quic_sk(sk)->crypto[level];
+	return quic_sk(sk)->crypto[level];
 }
 
 static inline struct quic_outqueue *quic_outq(const struct sock *sk)
