@@ -63,6 +63,8 @@ struct quic_crypto {
 
 	u64 send_offset; /* Number of handshake bytes sent by user */
 	u64 recv_offset; /* Number of handshake bytes read by user */
+
+	struct work_struct work; /* Workqueue to destroy crypto */
 };
 
 int quic_crypto_set_secret(struct quic_crypto *crypto,

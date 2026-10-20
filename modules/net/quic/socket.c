@@ -476,6 +476,15 @@ out:
 }
 #endif
 
+static void quic_crypto_free_work(struct work_struct *w)
+{
+	struct quic_crypto *crypto = container_of(w, struct quic_crypto, work);
+
+	/* Deferred crypto cleanup in process context. */
+	quic_crypto_free(crypto);
+	kfree(crypto);
+}
+
 static void quic_sock_destruct(struct sock *sk)
 {
 	struct quic_crypto *crypto;
@@ -486,8 +495,7 @@ static void quic_sock_destruct(struct sock *sk)
 		crypto = quic_crypto(sk, i);
 		if (!crypto)
 			continue;
-		quic_crypto_free(crypto);
-		kfree(crypto);
+		queue_work(quic_wq, &crypto->work);
 	}
 
 	/* Deferred ALPN free for RCU readers in quic_listen_sock_lookup(). */
@@ -543,6 +551,7 @@ static int quic_init_sock(struct sock *sk)
 		crypto = kzalloc(sizeof(*crypto), GFP_KERNEL);
 		if (!crypto)
 			return -ENOMEM;
+		INIT_WORK(&crypto->work, quic_crypto_free_work);
 		quic_sk(sk)->crypto[i] = crypto;
 	}
 
