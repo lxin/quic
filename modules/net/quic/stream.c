@@ -311,8 +311,8 @@ void quic_stream_put(struct quic_stream_table *streams,
 }
 
 /* Updates the maximum allowed incoming stream IDs if any streams were recently
- * closed.  Recalculates the max_uni and max_bidi stream ID limits based on the
- * number of open streams and whether any were marked for deletion.
+ * closed. Recalculates the max_uni and max_bidi stream count limits based on
+ * the number of open streams and whether any were marked for deletion.
  *
  * Returns true if either max_uni or max_bidi was updated, indicating that a
  * MAX_STREAMS_UNI or MAX_STREAMS_BIDI frame should be sent to the peer.
