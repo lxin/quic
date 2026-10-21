@@ -148,7 +148,7 @@ static int quic_v6_flow_route(struct sock *sk, union quic_addr *da,
 		sa->v6.sin6_family = AF_INET6;
 		sa->v6.sin6_addr = fl6->saddr;
 		if ((ipv6_addr_type(&fl6->saddr) & IPV6_ADDR_LINKLOCAL))
-			sa->v6.sin6_scope_id = fl6->flowi6_oif;
+			sa->v6.sin6_scope_id = dst->dev->ifindex;
 	}
 	ip6_dst_store(sk, dst, false, false);
 	return 0;
