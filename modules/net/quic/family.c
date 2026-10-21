@@ -181,7 +181,7 @@ static void quic_v4_lower_xmit(struct sock *sk, struct sk_buff *skb,
 	ttl = READ_ONCE(inet_sk(sk)->uc_ttl);
 	if (ttl < 0)
 		ttl = ip4_dst_hoplimit(dst);
-#ifdef IPSKB_MCROUTE
+#ifndef LINUX_KERNEL_NO_e3411e326fa4
 	udp_tunnel_xmit_skb((struct rtable *)dst, sk, skb, fl4->saddr,
 			    fl4->daddr, tos, ttl, df, fl4->fl4_sport,
 			    fl4->fl4_dport, false, false, 0);
@@ -217,7 +217,7 @@ static void quic_v6_lower_xmit(struct sock *sk, struct sk_buff *skb,
 	ttl = ip6_sk_dst_hoplimit(inet6_sk(sk), fl6, dst);
 	label = ip6_make_flowlabel(sock_net(sk), skb, fl6->flowlabel, true,
 				   fl6);
-#ifdef IPSKB_MCROUTE
+#ifndef LINUX_KERNEL_NO_f78c75d84fe8
 	udp_tunnel6_xmit_skb(dst, sk, skb, NULL, &fl6->saddr, &fl6->daddr, tc,
 			     ttl, label, fl6->fl6_sport, fl6->fl6_dport, false,
 			     0);
@@ -771,7 +771,7 @@ bool quic_sk_accept_pmtu(struct sock *sk, struct sk_buff *skb)
 
 void quic_sk_destruct(struct sock *sk)
 {
-#ifdef RTEXT_FILTER_NAME_ONLY
+#ifndef LINUX_KERNEL_NO_1651951ebea5
 	quic_pf_ipv4(sk) ? inet_sock_destruct(sk) : inet6_sock_destruct(sk);
 #else
 	if (!quic_pf_ipv4(sk))

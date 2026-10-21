@@ -10,8 +10,6 @@
  *    Xin Long <lucien.xin@gmail.com>
  */
 
-#include <linux/version.h>
-
 #include "socket.h"
 
 static void quic_timer_timeout(struct quic_timer *t, int type, int defer_bit,
@@ -195,7 +193,7 @@ void quic_timer_stop(struct sock *sk, u8 type)
 			sock_put(sk);
 		return;
 	}
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 2, 0)
+#ifndef LINUX_KERNEL_NO_bb663f0f3c39
 	if (timer_delete(quic_timer(sk, type)))
 #else
 	if (del_timer(quic_timer(sk, type)))
@@ -220,7 +218,7 @@ void quic_timer_init(struct sock *sk)
 	/* Use hrtimer for pace timer, ensuring precise control over send
 	 * timing.
 	 */
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 13, 0)
+#ifndef LINUX_KERNEL_NO_908a1d775422
 	hrtimer_setup(hr, quic_timer_pace_timeout, CLOCK_MONOTONIC,
 		      HRTIMER_MODE_ABS_PINNED_SOFT);
 #else

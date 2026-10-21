@@ -10,9 +10,7 @@
  *    Xin Long <lucien.xin@gmail.com>
  */
 
-#include <linux/version.h>
-
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 10, 0)
+#ifndef LINUX_KERNEL_NO_f3d93817fba3
 #include <net/proto_memory.h>
 #endif
 

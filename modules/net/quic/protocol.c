@@ -11,12 +11,11 @@
  */
 
 #include <net/inet_common.h>
-#include <linux/version.h>
 #include <linux/proc_fs.h>
 #include <net/protocol.h>
 #include <net/tls.h>
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 9, 0)
+#ifndef LINUX_KERNEL_NO_490a79faf95e
 #include <net/rps.h>
 #endif
 
@@ -35,7 +34,7 @@ long sysctl_quic_mem[3];
 int sysctl_quic_rmem[3];
 int sysctl_quic_wmem[3];
 
-#ifdef TLS_MIN_RECORD_SIZE_LIM
+#ifndef LINUX_KERNEL_NO_449f68f8fffa
 static int quic_inet_connect(struct socket *sock, struct sockaddr_unsized *addr,
 			     int addr_len, int flags)
 #else
