@@ -524,7 +524,7 @@ static int quic_packet_get_alpn(struct sk_buff *skb, struct quic_data *alpn)
 		len -= length;
 		p += length;
 	}
-	pr_debug("%s: alpn_len: %d\n", __func__, alpn->len);
+	pr_debug("%s: alpn_len: %u\n", __func__, alpn->len);
 	return 0;
 }
 
