@@ -11,7 +11,6 @@
  */
 
 #include <net/inet_common.h>
-#include <linux/version.h>
 #include <asm/ioctls.h>
 #include <net/tls.h>
 
@@ -410,7 +409,7 @@ static void quic_sock_fetch_transport_param(struct sock *sk,
 	quic_stream_get_param(quic_streams(sk), p);
 }
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 5, 0)
+#ifndef LINUX_KERNEL_NO_e1d001fa5b47
 static int quic_ioctl(struct sock *sk, int cmd, int *karg)
 {
 	int err = 0;
@@ -549,7 +548,7 @@ static void quic_destroy_sock(struct sock *sk)
 	sock_prot_inuse_add(sock_net(sk), sk->sk_prot, -1);
 }
 
-#ifdef TLS_MIN_RECORD_SIZE_LIM
+#ifndef LINUX_KERNEL_NO_449f68f8fffa
 static int quic_bind(struct sock *sk, struct sockaddr_unsized *addr,
 		     int addr_len)
 #else
@@ -582,7 +581,7 @@ out:
 	return err;
 }
 
-#ifdef TLS_MIN_RECORD_SIZE_LIM
+#ifndef LINUX_KERNEL_NO_449f68f8fffa
 static int quic_connect(struct sock *sk, struct sockaddr_unsized *addr,
 			int addr_len)
 #else
@@ -1376,7 +1375,7 @@ static int quic_wait_for_packet(struct sock *sk, struct list_head *head,
 	return err;
 }
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(7, 1, 0)
+#ifndef LINUX_KERNEL_NO_8341c989ac77
 static int quic_recvmsg(struct sock *sk, struct msghdr *msg, size_t msg_len,
 			int flags)
 #else
@@ -1577,7 +1576,7 @@ static int quic_accept_sock_init(struct sock *nsk, struct sock *sk)
 	ninet->uc_ttl = -1;
 	if (!quic_pf_ipv4(sk)) { /* Set IPv6 state if applicable. */
 		ninet->pinet6 = &((struct quic6_sock *)nsk)->inet6;
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 19, 0)
+#ifndef LINUX_KERNEL_NO_1c17f4373d4d
 		ninet->ipv6_fl_list = NULL;
 
 		nnp = inet6_sk(nsk);
@@ -1714,7 +1713,7 @@ out:
 	return err;
 }
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 10, 0)
+#ifndef LINUX_KERNEL_NO_92ef0fd55ac8
 static struct sock *quic_accept(struct sock *sk, struct proto_accept_arg *arg)
 {
 	int flags = arg->flags, *errp = &arg->err;
@@ -3037,7 +3036,7 @@ struct proto quicv6_prot = {
 	.release_cb	=  quic_release_cb,
 	.no_autobind	=  true,
 	.obj_size	= sizeof(struct quic6_sock),
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0)
+#ifndef LINUX_KERNEL_NO_f5f80e32de12
 	.ipv6_pinfo_offset	=  offsetof(struct quic6_sock, inet6),
 #endif
 	.sysctl_mem		=  sysctl_quic_mem,

@@ -11,7 +11,6 @@
  */
 
 #include <net/udp_tunnel.h>
-#include <linux/version.h>
 #include <linux/quic.h>
 
 #include "common.h"
@@ -54,7 +53,7 @@ static void quic_udp_sock_put_work(struct work_struct *work)
 	 * to some lockdep warnings.
 	 */
 	sock_hold(sk);
-#ifdef RTEXT_FILTER_NAME_ONLY
+#ifndef LINUX_KERNEL_NO_944bfc1b1c6f
 	udp_tunnel_sock_release(sk);
 #else
 	udp_tunnel_sock_release(sk->sk_socket);
@@ -96,7 +95,7 @@ static struct quic_udp_sock *quic_udp_sock_create(struct sock *sk,
 	tuncfg.encap_type = 1;
 	tuncfg.encap_rcv = quic_udp_rcv;
 	tuncfg.encap_err_lookup = quic_udp_err;
-#ifdef RTEXT_FILTER_NAME_ONLY
+#ifndef LINUX_KERNEL_NO_2cba193628fe
 	setup_udp_tunnel_sock(net, sock->sk, &tuncfg);
 #else
 	setup_udp_tunnel_sock(net, sock, &tuncfg);
@@ -218,7 +217,7 @@ int quic_path_bind(struct sock *sk, struct quic_path_group *paths, u8 path)
 		return 0;
 	}
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+#ifndef LINUX_KERNEL_NO_91d0b78c5177
 	inet_sk_get_local_port_range(sk, &low, &high);
 	remaining = (high - low) + 1;
 	rover = get_random_u32_below(remaining) + low;

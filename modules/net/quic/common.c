@@ -11,11 +11,10 @@
  */
 
 #include <net/netns/hash.h>
-#include <linux/version.h>
 #include <linux/vmalloc.h>
 #include <linux/jhash.h>
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 12, 0)
+#ifndef LINUX_KERNEL_NO_5f60d5f6bbc1
 #include <linux/unaligned.h>
 #else
 #include <asm/unaligned.h>
