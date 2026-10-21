@@ -43,7 +43,7 @@ struct quic_conn_id_set {
 	struct list_head head; /* List head of available connection IDs */
 	u8 entry_size; /* Size of each connection ID entry in the list */
 	u8 max_count;  /* active_connection_id_limit in rfc9000#section-18.2 */
-	u8 count;      /* Current number of connection IDs in the list */
+	u8 count;      /* Number of consecutive connection IDs */
 	bool source;   /* true if this is a source conn_id set, false if dest */
 };
 
