@@ -627,7 +627,8 @@ out:
 	 * new key, save the current time. Later used to clear old keys after
 	 * some time has passed (see quic_crypto_decrypt()).
 	 */
-	if (crypto->key_pending && !crypto->key_update_send_time)
+	if (crypto->key_pending && !crypto->key_update_send_time &&
+	    cb->key_phase == crypto->key_phase)
 		crypto->key_update_send_time = quic_ktime_get_us();
 	return 0;
 }
