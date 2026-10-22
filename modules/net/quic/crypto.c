@@ -749,7 +749,7 @@ out:
 	}
 	return 0;
 err:
-	if (++crypto->rx_fails >= crypto->cipher->rxlimit)
+	if (err == -EBADMSG && ++crypto->rx_fails >= crypto->cipher->rxlimit)
 		err = -EKEYEXPIRED;
 	return err;
 }
