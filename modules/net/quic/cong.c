@@ -549,20 +549,21 @@ void quic_cong_pace_update(struct quic_cong *cong, u64 max_rate)
 /* rfc9002#section-5: Estimating the Round-Trip Time */
 void quic_cong_rtt_update(struct quic_cong *cong, u64 time, u32 ack_delay)
 {
-	u32 raw_rtt, adjusted_rtt, rttvar_sample;
+	u32 adjusted_rtt, rttvar_sample;
+	u64 raw_rtt;
 
 	/* Ignore RTT sample if ACK delay is suspiciously large. */
 	if (ack_delay > cong->max_ack_delay * 2)
 		return;
 
 	raw_rtt = cong->time - time;
-	if (raw_rtt > ack_delay && raw_rtt - ack_delay > QUIC_RTT_MAX)
+	if (raw_rtt > ack_delay + QUIC_RTT_MAX)
 		return;
 
 	/* rfc9002#section-5.1:
 	 *   latest_rtt = ack_time - send_time_of_largest_acked
 	 */
-	cong->latest_rtt = raw_rtt;
+	cong->latest_rtt = (u32)raw_rtt;
 
 	/* rfc9002#section-5.2: Estimating min_rtt */
 	if (!cong->min_rtt_valid) {
