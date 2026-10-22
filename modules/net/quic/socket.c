@@ -94,6 +94,10 @@ int quic_request_sock_backlog_tail(struct sock *sk,
 	u32 limit = sk->sk_rcvbuf / sk->sk_max_ack_backlog;
 	int len = skb->truesize;
 
+	/* Orphan skb to avoid double accounting for skbs already charged by
+	 * deferred scheduling.
+	 */
+	skb_orphan(skb);
 	limit =  max_t(u32, limit, QUIC_MIN_UDP_PAYLOAD * 4);
 	if (req->blen + len > limit || !quic_sk_rmem_schedule(sk, len)) {
 		QUIC_INC_STATS(sock_net(sk), QUIC_MIB_PKT_RCVDROP);
