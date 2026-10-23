@@ -109,8 +109,11 @@ void quic_timer_path_handler(struct sock *sk)
 	}
 
 	/* Send PING to keep the path alive and help detect NAT rebinding. */
-	info.level = quic_is_established(sk) ? QUIC_CRYPTO_APP :
-					       QUIC_CRYPTO_INITIAL;
+	if (quic_is_established(sk))
+		info.level = QUIC_CRYPTO_APP;
+	else
+		info.level = paths->validated ? QUIC_CRYPTO_HANDSHAKE :
+						QUIC_CRYPTO_INITIAL;
 	quic_outq_transmit_frame(sk, QUIC_FRAME_PING, &info, 0, false, gfp);
 	timeout = paths->keepalive_interval;
 out:
