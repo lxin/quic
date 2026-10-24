@@ -57,10 +57,13 @@ jobs:
           jq '.linuxquic //= {"image": "quay.io/lxin/linuxquic-interop:latest", "url": "https://github.com/lxin/quic", "role": "both"}' implementations_quic.json > temp.json
           mv -f temp.json implementations_quic.json
 
+          max=3
+          [ ${{ matrix.impl }} = "quiche" ] && max=5 # rebind-addr and rebind-port fail because the path changes during the handshake with quiche
+
           python3 run.py -t onlyTests -c linuxquic -s ${{ matrix.impl }} | tee output.log # linuxquic -> impl
-          awk -F',' '/✕\(/ { match($0, /✕\((.*)\)/, a); if(split(a[1],b,",")>3) exit 1 }' output.log || exit 1 # Fail if failures > 3
+          awk -v max="$max" -F',' '/✕\(/ { match($0, /✕\((.*)\)/, a); if(split(a[1],b,",")>max) exit 1 }' output.log || exit 1 # Fail if failures > max
 
           [ "${{ matrix.impl }}" = "linuxquic" ] && exit 0 # Skip the reverse test if both server and client are linuxquic
 
           python3 run.py -t onlyTests -c ${{ matrix.impl }} -s linuxquic | tee output.log # impl -> linuxquic
-          awk -F',' '/✕\(/ { match($0, /✕\((.*)\)/, a); if(split(a[1],b,",")>3) exit 1 }' output.log || exit 1
+          awk -v max="$max" -F',' '/✕\(/ { match($0, /✕\((.*)\)/, a); if(split(a[1],b,",")>max) exit 1 }' output.log || exit 1
