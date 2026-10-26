@@ -515,7 +515,7 @@ quic_frame_new_conn_id_create(struct sock *sk, void *data, u8 type, gfp_t gfp)
 	p = quic_put_var(p, *prior);
 	/* Generate value for the new source connection ID (SCID). */
 	quic_conn_id_generate(&scid);
-	p = quic_put_var(p, scid.len);
+	p = quic_put_int(p, scid.len, 1);
 	p = quic_put_data(p, scid.data, scid.len);
 	/* rfc9000#section-10.3:
 	 *
