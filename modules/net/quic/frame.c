@@ -2209,7 +2209,6 @@ quic_frame_datagram_create(struct sock *sk, void *data, u8 type, gfp_t gfp)
 	max_frame_len = quic_packet_max_payload(quic_packet(sk));
 	if (max_frame_len > outq->max_datagram_frame_size)
 		max_frame_len = outq->max_datagram_frame_size;
-	hlen += quic_var_len(max_frame_len);
 
 	/* rfc9221#section-5:
 	 *
@@ -2218,6 +2217,7 @@ quic_frame_datagram_create(struct sock *sk, void *data, u8 type, gfp_t gfp)
 	 * limited by other factors.
 	 */
 	msg_len = iov_iter_count(msg);
+	hlen += quic_var_len(msg_len);
 	if (msg_len + hlen > max_frame_len)
 		return ERR_PTR(-EMSGSIZE);
 
