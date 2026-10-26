@@ -264,13 +264,13 @@ static struct quic_frame_frag *quic_frame_frag_alloc(u16 len)
 static struct quic_frame *
 quic_frame_stream_create(struct sock *sk, void *data, u8 type, gfp_t gfp)
 {
-	u32 msg_len, max_frame_len, hlen = 1;
 	struct quic_msginfo *info = data;
 	struct quic_frame_frag *frag;
+	u32 max_frame_len, hlen = 1;
 	struct quic_stream *stream;
 	struct quic_frame *frame;
+	u64 msg_len, wspace;
 	u8 *p, nodelay = 0;
-	u64 wspace;
 
 	stream = info->stream;
 	/* Estimate header length: type (1 byte) + varint stream ID. */
@@ -290,7 +290,7 @@ quic_frame_stream_create(struct sock *sk, void *data, u8 type, gfp_t gfp)
 	wspace = quic_outq_wspace(sk, stream); /* Flow control limit. */
 
 	/* Trim msg_len to respect flow control and MSS constraints. */
-	if ((u64)msg_len <= wspace) { /* All data fits in flow control limit. */
+	if (msg_len <= wspace) { /* All data fits in flow control limit. */
 		if (msg_len <= max_frame_len - hlen) { /* Fits in MSS. */
 			/* If fully fits, include FIN bit if requested. */
 			if (info->flags & MSG_QUIC_STREAM_FIN)
@@ -392,11 +392,11 @@ quic_frame_handshake_done_create(struct sock *sk, void *data, u8 type,
 static struct quic_frame *
 quic_frame_crypto_create(struct sock *sk, void *data, u8 type, gfp_t gfp)
 {
-	u32 msg_len, max_frame_len, wspace, hlen = 1;
+	u32 max_frame_len, wspace, hlen = 1;
 	struct quic_msginfo *info = data;
 	struct quic_crypto *crypto;
 	struct quic_frame *frame;
-	u64 offset;
+	u64 msg_len, offset;
 	u8 *p;
 
 	max_frame_len = quic_packet_max_payload(quic_packet(sk)); /* MSS. */
@@ -2198,10 +2198,11 @@ quic_frame_invalid_create(struct sock *sk, void *data, u8 type, gfp_t gfp)
 static struct quic_frame *
 quic_frame_datagram_create(struct sock *sk, void *data, u8 type, gfp_t gfp)
 {
-	u32 msg_len, hlen = 1, frame_len, max_frame_len;
 	struct quic_outqueue *outq = quic_outq(sk);
+	u32 hlen = 1, frame_len, max_frame_len;
 	struct iov_iter *msg = data;
 	struct quic_frame *frame;
+	u64 msg_len;
 	u8 *p;
 
 	/* MSS for dgram. */
@@ -2792,9 +2793,9 @@ int quic_frame_stream_append(struct sock *sk, struct quic_frame *frame,
 {
 	struct quic_stream *stream = info->stream;
 	u8 *p, type = frame->type, nodelay = 0;
-	u32 msg_len, max_frame_len, hlen = 1;
 	struct quic_frame_frag *frag, *pos;
-	u64 wspace, offset = 0;
+	u64 msg_len, wspace, offset = 0;
+	u32 max_frame_len, hlen = 1;
 
 	/* Calculate header length:
 	 *   frame type + stream ID + (optional) offset + length.
@@ -2813,7 +2814,7 @@ int quic_frame_stream_append(struct sock *sk, struct quic_frame *frame,
 	 */
 	msg_len = iov_iter_count(info->msg);
 	wspace = quic_outq_wspace(sk, stream);
-	if ((u64)msg_len <= wspace) {
+	if (msg_len <= wspace) {
 		if (msg_len <= max_frame_len - hlen - frame->bytes) {
 			if (info->flags & MSG_QUIC_STREAM_FIN)
 				type |= QUIC_STREAM_BIT_FIN;
