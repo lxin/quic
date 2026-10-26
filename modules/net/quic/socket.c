@@ -1265,7 +1265,7 @@ static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 			err = -EINVAL;
 			goto err;
 		}
-		if (!msg_len || msg_len > sk->sk_sndbuf) {
+		if (msg_len > sk->sk_sndbuf) {
 			err = -EMSGSIZE;
 			goto err;
 		}
