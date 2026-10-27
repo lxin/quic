@@ -276,8 +276,11 @@ void quic_packet_rcv_err_pmtu(struct sock *sk)
 	info = clamp(paths->mtu_info, QUIC_PATH_MIN_PMTU, QUIC_PATH_MAX_PMTU);
 	/* If PLPMTUD is not enabled, update MSS using route and ICMP info. */
 	if (!paths->plpmtud_interval) {
-		/* Ensure we have a dst cached for update_pmtu() */
-		if (quic_packet_route(sk))
+		/* Ensure we have a dst cached for update_pmtu().
+		 * ICMP errors apply to the main path (path 0). Use
+		 * quic_packet_config() to reset dst cache if path changed.
+		 */
+		if (quic_packet_config(sk, QUIC_CRYPTO_APP, 0))
 			return;
 
 		dst = __sk_dst_get(sk);
