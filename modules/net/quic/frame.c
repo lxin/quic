@@ -1916,7 +1916,7 @@ static int quic_frame_connection_close_process(struct sock *sk,
 	if (!quic_get_var(&p, &len, &err_code))
 		return -EINVAL;
 	if (type == QUIC_FRAME_CONNECTION_CLOSE &&
-	    !quic_get_var(&p, &len, &ftype))
+	    (!quic_get_var(&p, &len, &ftype) || ftype > QUIC_FRAME_MAX))
 		return -EINVAL;
 
 	if (!quic_get_var(&p, &len, &phrase_len) || phrase_len > len)
