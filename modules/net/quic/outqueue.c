@@ -175,7 +175,7 @@ static void quic_outq_transmit_dgram(struct sock *sk, gfp_t gfp)
  * sndblock is true.
  */
 int quic_outq_flow_control(struct sock *sk, struct quic_stream *stream,
-			   u16 bytes, bool sndblock)
+			   u32 bytes, bool sndblock)
 {
 	struct quic_outqueue *outq = quic_outq(sk);
 	u8 frame, blocked = 0, transmit = 0;
