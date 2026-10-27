@@ -91,8 +91,7 @@ static void quic_outq_transmit_ctrl(struct sock *sk, u8 level, gfp_t gfp)
 			break;
 		if (frame->level != level)
 			continue;
-		if (quic_packet_config(sk, frame->level, frame->path))
-			break;
+		quic_packet_config(sk, frame->level, frame->path);
 		if (quic_outq_limit_check(sk, frame))
 			break;
 		if (quic_packet_tail(sk, frame))
@@ -156,8 +155,7 @@ static void quic_outq_transmit_dgram(struct sock *sk, gfp_t gfp)
 
 	head = &outq->datagram_list;
 	list_for_each_entry_safe(frame, next, head, list) {
-		if (quic_packet_config(sk, outq->data_level, frame->path))
-			break;
+		quic_packet_config(sk, outq->data_level, frame->path);
 		if (quic_outq_limit_check(sk, frame))
 			break;
 		if (quic_outq_delay_check(sk, outq->data_level, true))
@@ -271,8 +269,7 @@ static void quic_outq_transmit_stream(struct sock *sk, gfp_t gfp)
 
 	head = &outq->stream_list;
 	list_for_each_entry_safe(frame, next, head, list) {
-		if (quic_packet_config(sk, outq->data_level, frame->path))
-			break;
+		quic_packet_config(sk, outq->data_level, frame->path);
 		if (quic_outq_limit_check(sk, frame))
 			break;
 		if (quic_outq_delay_check(sk, outq->data_level, frame->nodelay))
@@ -316,8 +313,7 @@ static void quic_outq_transmit_old(struct sock *sk, u8 level, gfp_t gfp)
 			continue;
 		if (!quic_crypto(sk, frame->level)->send_ready)
 			break;
-		if (quic_packet_config(sk, frame->level, frame->path))
-			break;
+		quic_packet_config(sk, frame->level, frame->path);
 		if (quic_outq_limit_check(sk, frame))
 			break;
 		if (quic_packet_tail(sk, frame))
