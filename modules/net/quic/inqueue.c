@@ -188,7 +188,7 @@ out:
 	return fin;
 }
 
-#define QUIC_RCVBUF_OOO_LIMIT(sk)	((sk)->sk_rcvbuf * 3 / 4)
+#define QUIC_RCVBUF_OOO_LIMIT(sk)	((sk)->sk_rcvbuf / 4 * 3)
 
 /* Process an incoming QUIC stream frame.
  *
