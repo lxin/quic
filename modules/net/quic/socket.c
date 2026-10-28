@@ -1280,8 +1280,7 @@ static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 			if (err)
 				goto err;
 		}
-		/* Only Datagram frames with a length field are supported. */
-		frame = quic_frame_create(sk, QUIC_FRAME_DATAGRAM_LEN,
+		frame = quic_frame_create(sk, QUIC_FRAME_DATAGRAM,
 					  &msg->msg_iter, gfp);
 		if (IS_ERR(frame)) {
 			err = PTR_ERR(frame);

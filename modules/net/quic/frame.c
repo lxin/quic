@@ -280,11 +280,6 @@ quic_frame_stream_create(struct sock *sk, void *data, u8 type, gfp_t gfp)
 		type |= QUIC_STREAM_BIT_OFF;
 		hlen += quic_var_len(stream->send.bytes); /* varint Offset. */
 	}
-	/* For simplicity, always include length; set LEN bit. */
-	type |= QUIC_STREAM_BIT_LEN;
-	/* Reserve max varint length in case more data is appended later. */
-	hlen += quic_var_len(QUIC_MAX_UDP_PAYLOAD);
-
 	max_frame_len = quic_packet_max_payload(quic_packet(sk)); /* MSS. */
 	msg_len = iov_iter_count(info->msg); /* Total user message length. */
 	wspace = quic_outq_wspace(sk, stream); /* Flow control limit. */
@@ -306,6 +301,14 @@ quic_frame_stream_create(struct sock *sk, void *data, u8 type, gfp_t gfp)
 			nodelay = 1;
 			msg_len = max_frame_len - hlen;
 		}
+	}
+
+	/* Use LEN when data is small so more frames can be appended;
+	 * omit LEN when data is big as it extends to the end of the packet.
+	 */
+	if (msg_len + hlen + quic_var_len(msg_len) < max_frame_len) {
+		type |= QUIC_STREAM_BIT_LEN;
+		hlen += quic_var_len(QUIC_MAX_UDP_PAYLOAD);
 	}
 
 	frame = quic_frame_alloc(hlen, NULL, gfp);
@@ -333,7 +336,10 @@ quic_frame_stream_create(struct sock *sk, void *data, u8 type, gfp_t gfp)
 	p = quic_put_var(p, stream->id);
 	if (type & QUIC_STREAM_BIT_OFF)
 		p = quic_put_var(p, stream->send.bytes);
-	p = quic_put_var(p, msg_len);
+	if (type & QUIC_STREAM_BIT_LEN)
+		p = quic_put_var(p, msg_len);
+	else
+		frame->last = 1;
 
 	/* Finalize frame metadata. */
 	frame->type = type;
@@ -2201,7 +2207,7 @@ static struct quic_frame *
 quic_frame_datagram_create(struct sock *sk, void *data, u8 type, gfp_t gfp)
 {
 	struct quic_outqueue *outq = quic_outq(sk);
-	u32 hlen = 1, frame_len, max_frame_len;
+	u32 hlen, frame_len, max_frame_len;
 	struct iov_iter *msg = data;
 	struct quic_frame *frame;
 	u64 msg_len;
@@ -2219,17 +2225,28 @@ quic_frame_datagram_create(struct sock *sk, void *data, u8 type, gfp_t gfp)
 	 * limited by other factors.
 	 */
 	msg_len = iov_iter_count(msg);
-	hlen += quic_var_len(msg_len);
-	if (msg_len + hlen > max_frame_len)
-		return ERR_PTR(-EMSGSIZE);
+
+	/* Use DATAGRAM_LEN when data is small so more frames can be appended;
+	 * use DATAGRAM when data is big as it extends to the end of the packet.
+	 */
+	hlen = 1 + quic_var_len(msg_len);
+	if (msg_len + hlen >= max_frame_len) {
+		if (msg_len + 1 > max_frame_len)
+			return ERR_PTR(-EMSGSIZE);
+		hlen = 1;
+	} else {
+		type = QUIC_FRAME_DATAGRAM_LEN;
+	}
 
 	frame = quic_frame_alloc(msg_len + hlen, NULL, gfp);
 	if (!frame)
 		return ERR_PTR(-ENOMEM);
 
-	p = quic_put_var(frame->data, QUIC_FRAME_DATAGRAM_LEN);
-	/* For simplicity, create DATAGRAM_LEN frame with Length encoded. */
-	p = quic_put_var(p, msg_len);
+	p = quic_put_var(frame->data, type);
+	if (type == QUIC_FRAME_DATAGRAM_LEN)
+		p = quic_put_var(p, msg_len);
+	else
+		frame->last = 1;
 
 	if (!copy_from_iter_full(p, msg_len, msg)) {
 		quic_frame_put(frame);
@@ -2238,6 +2255,7 @@ quic_frame_datagram_create(struct sock *sk, void *data, u8 type, gfp_t gfp)
 	p += msg_len;
 	frame_len = (u32)(p - frame->data);
 
+	frame->type = type;
 	frame->bytes = (u16)msg_len;
 	frame->len = (u16)frame_len;
 	frame->dlen = frame->len;
@@ -2807,7 +2825,8 @@ int quic_frame_stream_append(struct sock *sk, struct quic_frame *frame,
 	if (offset)
 		hlen += quic_var_len(offset);
 	max_frame_len = quic_packet_max_payload(quic_packet(sk)); /* MSS. */
-	hlen += quic_var_len(max_frame_len);
+	if (type & QUIC_STREAM_BIT_LEN)
+		hlen += quic_var_len(max_frame_len);
 	if (max_frame_len - hlen <= frame->bytes)
 		return -EMSGSIZE; /* Not enough space for more payload. */
 
@@ -2857,7 +2876,8 @@ int quic_frame_stream_append(struct sock *sk, struct quic_frame *frame,
 	p = quic_put_var(p, stream->id);
 	if (offset)
 		p = quic_put_var(p, offset);
-	p = quic_put_var(p, frame->bytes + msg_len);
+	if (type & QUIC_STREAM_BIT_LEN)
+		p = quic_put_var(p, frame->bytes + msg_len);
 
 	frame->type = type;
 	frame->dlen = (u16)(p - frame->data);
