@@ -213,27 +213,33 @@ int quic_inq_stream_recv(struct sock *sk, struct quic_frame *frame,
 	struct quic_frame *pos;
 	bool size_known;
 
+	size_known = (stream->recv.state == QUIC_STREAM_RECV_STATE_SIZE_KNOWN);
+	off = offset + frame->bytes;
+
+	/* rfc9000#section-4.5:
+	 *
+	 * Once a final size for a stream is known, it cannot change.  If a
+	 * RESET_STREAM or STREAM frame is received indicating a change in the
+	 * final size for the stream, an endpoint SHOULD respond with an error
+	 * of type FINAL_SIZE_ERROR.
+	 */
+	if (frame->stream_fin) {
+		if (off < stream->recv.highest ||
+		    (size_known && stream->recv.finalsz != off)) {
+			frame->errcode = QUIC_TRANSPORT_ERROR_FINAL_SIZE;
+			return -EINVAL;
+		}
+	}
+
 	/* Discard duplicate frames that are fully covered by the current
 	 * receive offset.  However, do not discard if this frame carries a FIN
 	 * and the stream has not yet received any FIN, to ensure proper
 	 * handling of stream termination.
 	 */
-	size_known = (stream->recv.state == QUIC_STREAM_RECV_STATE_SIZE_KNOWN);
-	off = offset + frame->bytes;
 	if (stream->recv.offset >= off) {
 		if (size_known || !frame->stream_fin) {
 			quic_frame_put(frame);
 			return 0;
-		}
-		/* rfc9000#section-20.1:
-		 *
-		 * An endpoint received a STREAM frame or a RESET_STREAM frame
-		 * containing a final size that was lower than the size of
-		 * stream data that was already received.
-		 */
-		if (stream->recv.highest > off) {
-			frame->errcode = QUIC_TRANSPORT_ERROR_FINAL_SIZE;
-			return -EINVAL;
 		}
 	}
 
@@ -253,21 +259,6 @@ int quic_inq_stream_recv(struct sock *sk, struct quic_frame *frame,
 		}
 		/* Check for violation of known final size (protocol error). */
 		if (size_known && off > stream->recv.finalsz) {
-			frame->errcode = QUIC_TRANSPORT_ERROR_FINAL_SIZE;
-			return -EINVAL;
-		}
-	}
-
-	/* rfc9000#section-4.5:
-	 *
-	 * Once a final size for a stream is known, it cannot change.  If a
-	 * RESET_STREAM or STREAM frame is received indicating a change in the
-	 * final size for the stream, an endpoint SHOULD respond with an error
-	 * of type FINAL_SIZE_ERROR.
-	 */
-	if (frame->stream_fin) {
-		if (off < stream->recv.highest ||
-		    (size_known && stream->recv.finalsz != off)) {
 			frame->errcode = QUIC_TRANSPORT_ERROR_FINAL_SIZE;
 			return -EINVAL;
 		}
