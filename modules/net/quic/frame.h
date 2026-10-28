@@ -136,6 +136,7 @@ struct quic_frame {
 	u8  dgram:1;         /* Frame represents a datagram message (RX only) */
 	u8  event:1;         /* Frame represents an event (RX only) */
 	u8  path:1;          /* Path index used to send this frame */
+	u8  last:1;          /* No frame can be appended after this one */
 };
 
 static inline bool quic_frame_dgram(u8 type)

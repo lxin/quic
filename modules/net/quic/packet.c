@@ -2757,6 +2757,7 @@ int quic_packet_config(struct sock *sk, u8 level, u8 path)
 	packet->ipfragok = 0;
 	packet->padding = 0;
 	packet->frames = 0;
+	packet->last = 0;
 
 	packet->level = level;
 	packet->overhead = quic_packet_overhead(sk, level, path);
@@ -2966,7 +2967,7 @@ int quic_packet_tail(struct sock *sk, struct quic_frame *frame)
 	 * added).
 	 */
 	if (frame->level != (packet->level % QUIC_CRYPTO_EARLY) ||
-	    frame->path != packet->path || packet->padding)
+	    frame->path != packet->path || packet->padding || packet->last)
 		return 0;
 
 	/* Check if frame would exceed the current datagram MSS (excluding AEAD
@@ -2995,6 +2996,8 @@ int quic_packet_tail(struct sock *sk, struct quic_frame *frame)
 
 	list_move_tail(&frame->list, &packet->frame_list);
 	packet->len += frame->len;
+	if (frame->last)
+		packet->last = 1;
 	return frame->len;
 }
 
