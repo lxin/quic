@@ -1968,7 +1968,7 @@ static int quic_sock_set_connection_id(struct sock *sk, void *kopt, u32 len)
 		if (info.active <= quic_conn_id_number(active))
 			return -EINVAL;
 		active = quic_conn_id_find(id_set, info.active);
-		if (!active)
+		if (!active || quic_conn_id_dead(active))
 			return -EINVAL;
 		quic_conn_id_set_active(id_set, active);
 	}

@@ -20,6 +20,7 @@ struct quic_common_conn_id {
 	struct list_head list;  /* List node for connection ID management */
 	u32 number;  /* Sequence number assigned to this Connection ID */
 	bool hashed; /* true if stored in source_conn_id hash table */
+	bool dead;   /* true if the Connection ID has been retired */
 };
 
 struct quic_source_conn_id {
@@ -43,6 +44,7 @@ struct quic_conn_id_set {
 	struct list_head head; /* List head of available connection IDs */
 	u8 entry_size; /* Size of each connection ID entry in the list */
 	u8 max_count;  /* active_connection_id_limit in rfc9000#section-18.2 */
+	u8 use_count;  /* Number of non-retired connection IDs */
 	u8 count;      /* Number of consecutive connection IDs */
 	bool source;   /* true if this is a source conn_id set, false if dest */
 };
@@ -136,6 +138,11 @@ quic_conn_id_active(struct quic_conn_id_set *id_set)
 	return &id_set->active->id;
 }
 
+static inline bool quic_conn_id_dead(struct quic_conn_id *conn_id)
+{
+	return ((struct quic_common_conn_id *)conn_id)->dead;
+}
+
 static inline void quic_conn_id_set_active(struct quic_conn_id_set *id_set,
 					   struct quic_conn_id *active)
 {
@@ -169,7 +176,7 @@ int quic_conn_id_add(struct quic_conn_id_set *id_set,
 		     struct quic_conn_id *conn_id, u32 number, void *data,
 		     gfp_t gfp);
 bool quic_conn_id_token_exists(struct quic_conn_id_set *id_set, u8 *token);
-void quic_conn_id_remove(struct quic_conn_id_set *id_set, u32 number);
+void quic_conn_id_retire(struct quic_conn_id_set *id_set, u32 number);
 
 struct quic_conn_id *quic_conn_id_find(struct quic_conn_id_set *id_set,
 				       u32 number);

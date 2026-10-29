@@ -467,7 +467,7 @@ quic_frame_retire_conn_id_create(struct sock *sk, void *data, u8 type,
 		return ERR_PTR(-ENOMEM);
 	quic_put_data(frame->data, buf, frame_len);
 	/* Remove the specified connection ID from the destination CID set. */
-	quic_conn_id_remove(id_set, *seqno);
+	quic_conn_id_retire(id_set, *seqno);
 
 	/* Notify the QUIC stack that a CID has been retired. */
 	info.dest = 1;
@@ -1373,7 +1373,7 @@ static int quic_frame_retire_conn_id_process(struct sock *sk,
 {
 	struct quic_conn_id_set *id_set = quic_source(sk);
 	struct quic_connection_id_info info = {};
-	struct quic_conn_id *active;
+	struct quic_conn_id *conn_id;
 	u64 seqno, last, first;
 	u32 len = frame->len;
 	u8 *p = frame->data;
@@ -1404,12 +1404,14 @@ static int quic_frame_retire_conn_id_process(struct sock *sk,
 	}
 	first = quic_conn_id_first_number(id_set);
 	last  = quic_conn_id_last_number(id_set);
-	if (seqno >= first) {
-		if (seqno >= last) {
+	conn_id = quic_conn_id_find(id_set, seqno);
+	if (seqno >= first && conn_id && !quic_conn_id_dead(conn_id)) {
+		if (seqno > last || id_set->use_count == 1) {
 			/* Receipt of a RETIRE_CONNECTION_ID frame containing a
 			 * sequence number greater than any previously sent to
 			 * the peer MUST be treated as a connection error of
-			 * type PROTOCOL_VIOLATION.
+			 * type PROTOCOL_VIOLATION. Retiring the last active
+			 * Connection ID is also a PROTOCOL_VIOLATION.
 			 */
 			frame->errcode =
 				QUIC_TRANSPORT_ERROR_PROTOCOL_VIOLATION;
@@ -1417,11 +1419,11 @@ static int quic_frame_retire_conn_id_process(struct sock *sk,
 		}
 
 		/* Notify application of connection IDs change. */
-		quic_conn_id_remove(id_set, seqno);
+		quic_conn_id_retire(id_set, seqno);
 		first = quic_conn_id_first_number(id_set);
 		info.prior_to = first;
-		active = quic_conn_id_active(id_set);
-		info.active = quic_conn_id_number(active);
+		conn_id = quic_conn_id_active(id_set);
+		info.active = quic_conn_id_number(conn_id);
 		quic_inq_event_recv(sk, QUIC_EVENT_CONNECTION_ID, &info,
 				    sizeof(info), gfp);
 	}
