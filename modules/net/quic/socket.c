@@ -927,7 +927,7 @@ static int quic_msghdr_parse(struct sock *sk, struct msghdr *msg,
  * If MSG_QUIC_STREAM_SNDBLOCK is set, may send a STREAMS_BLOCKED frame.
  */
 static bool quic_sock_stream_available(struct sock *sk, s64 stream_id,
-				       u32 flags)
+				       u32 flags, gfp_t gfp)
 {
 	struct quic_stream_table *streams = quic_streams(sk);
 	u8 type, blocked;
@@ -946,8 +946,7 @@ static bool quic_sock_stream_available(struct sock *sk, s64 stream_id,
 	}
 
 	if (!blocked)
-		quic_outq_transmit_frame(sk, type, &stream_id, 0, false,
-					 GFP_KERNEL);
+		quic_outq_transmit_frame(sk, type, &stream_id, 0, false, gfp);
 	return false;
 }
 
@@ -979,7 +978,8 @@ static int quic_wait_for_stream(struct sock *sk, s64 stream_id, u32 flags)
 			err = -EAGAIN;
 			break;
 		}
-		if (quic_sock_stream_available(sk, stream_id, flags))
+		if (quic_sock_stream_available(sk, stream_id, flags,
+					       GFP_ATOMIC))
 			break;
 
 		release_sock(sk);
@@ -1018,7 +1018,7 @@ static struct quic_stream *quic_sock_send_stream(struct sock *sk,
 		return ERR_PTR(-EINVAL);
 
 	if (!quic_sock_stream_available(sk, sinfo->stream_id,
-					sinfo->stream_flags)) {
+					sinfo->stream_flags, GFP_KERNEL)) {
 		err = quic_wait_for_stream(sk, sinfo->stream_id,
 					   sinfo->stream_flags);
 		if (err)
@@ -1081,11 +1081,11 @@ static int quic_wait_for_send(struct sock *sk, u32 flags, int len)
 /* Check if a QUIC stream is writable. */
 static bool quic_sock_stream_writable(struct sock *sk,
 				      struct quic_stream *stream,
-				      u32 flags, int len)
+				      u32 flags, int len, gfp_t gfp)
 {
 	/* Check if flow control limits allow sending 'len' bytes. */
 	if (quic_outq_flow_control(sk, stream, len,
-				   flags & MSG_QUIC_STREAM_SNDBLOCK))
+				   flags & MSG_QUIC_STREAM_SNDBLOCK, gfp))
 		return false;
 	/* Check socket send buffer space and memory scheduling capacity. */
 	if (sk_stream_wspace(sk) < len || !sk_wmem_schedule(sk, len))
@@ -1133,7 +1133,8 @@ static int quic_wait_for_stream_send(struct sock *sk,
 				err = -ENOSPC;
 			break;
 		}
-		if (quic_sock_stream_writable(sk, stream, flags, len))
+		if (quic_sock_stream_writable(sk, stream, flags, len,
+					      GFP_ATOMIC))
 			break;
 
 		release_sock(sk);
@@ -1314,7 +1315,7 @@ static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 	}
 
 	do {
-		if (!quic_sock_stream_writable(sk, stream, flags, len)) {
+		if (!quic_sock_stream_writable(sk, stream, flags, len, gfp)) {
 			if (outq->force_delay) {
 				outq->force_delay = 0;
 				quic_outq_transmit(sk, gfp);

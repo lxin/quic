@@ -112,5 +112,5 @@ void quic_outq_init(struct sock *sk);
 void quic_outq_free(struct sock *sk);
 
 int quic_outq_flow_control(struct sock *sk, struct quic_stream *stream,
-			   u32 bytes, bool sndblock);
+			   u32 bytes, bool sndblock, gfp_t gfp);
 u64 quic_outq_wspace(struct sock *sk, struct quic_stream *stream);

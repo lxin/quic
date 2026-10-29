@@ -175,11 +175,10 @@ static void quic_outq_transmit_dgram(struct sock *sk, gfp_t gfp)
  * sndblock is true.
  */
 int quic_outq_flow_control(struct sock *sk, struct quic_stream *stream,
-			   u32 bytes, bool sndblock)
+			   u32 bytes, bool sndblock, gfp_t gfp)
 {
 	struct quic_outqueue *outq = quic_outq(sk);
 	u8 frame, blocked = 0, transmit = 0;
-	gfp_t gfp = GFP_KERNEL;
 
 	/* Check connection-level flow control. */
 	if (outq->bytes + bytes <= outq->max_bytes)
