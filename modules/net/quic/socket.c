@@ -1307,7 +1307,7 @@ static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 	flags |= sinfo.stream_flags;
 
 	if (!msg_len) { /* Allow stream FIN without data. */
-		if (!(flags & MSG_QUIC_STREAM_FIN)) {
+		if (!(sinfo.stream_flags & MSG_QUIC_STREAM_FIN)) {
 			err = -EMSGSIZE;
 			goto err;
 		}
