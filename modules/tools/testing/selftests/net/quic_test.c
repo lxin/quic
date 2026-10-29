@@ -265,7 +265,7 @@ static int recv_event_connection_close(int sockfd, uint32_t errcode,
 	ev = (union quic_event *)&msg[1];
 	if (ev->close.errcode != errcode || ev->close.frame != frame ||
 	    strcmp((char *)ev->close.phrase, phrase)) {
-		printf("%s: errcode=%u frame=%d phrase=%s\n", __func__,
+		printf("%s: errcode=%u frame=%u phrase=%s\n", __func__,
 		       ev->close.errcode, ev->close.frame, ev->close.phrase);
 		return -1;
 	}
@@ -380,7 +380,7 @@ static int getopt_connection_close(int sockfd, uint32_t errcode, uint8_t frame,
 		return -1;
 	if (info.errcode != errcode || info.frame != frame ||
 	    strcmp((char *)info.phrase, phrase)) {
-		printf("%s: errcode=%u frame=%d phrase=%s\n", __func__,
+		printf("%s: errcode=%u frame=%u phrase=%s\n", __func__,
 		       info.errcode, info.frame, info.phrase);
 		return -1;
 	}

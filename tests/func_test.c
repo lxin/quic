@@ -705,7 +705,7 @@ static int do_client_close_test(int sockfd)
 	ret = getsockopt(sockfd, SOL_QUIC, QUIC_SOCKOPT_CONNECTION_CLOSE, &info, &optlen);
 	if (ret == -1 || info.errcode != 10 || info.frame != 0 ||
 	    strcmp((char *)info.phrase, "this is app err")) {
-		printf("test4: FAIL ret %d, errcode %u, frame %d, phrase %s\n",
+		printf("test4: FAIL ret %d, errcode %u, frame %u, phrase %s\n",
 		       ret, info.errcode, info.frame, info.phrase);
 		return -1;
 	}
@@ -753,7 +753,7 @@ static int do_client_close_test(int sockfd)
 	pinfo = (struct quic_connection_close *)&msg[1];
 	if (pinfo->errcode != 10 || pinfo->frame != 0 ||
 	    strcmp((char *)pinfo->phrase, "this is app err")) {
-		printf("test7: FAIL errcode %u, frame %d, phrase %s\n",
+		printf("test7: FAIL errcode %u, frame %u, phrase %s\n",
 		       pinfo->errcode, pinfo->frame, pinfo->phrase);
 		return -1;
 	}

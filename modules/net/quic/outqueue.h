@@ -66,7 +66,7 @@ struct quic_outqueue {
 	u8 close_pending:1; /* CONNECTION_CLOSE frame pending transmission */
 
 	/* Close Information */
-	u8  close_frame;   /* Frame type in CONNECTION_CLOSE */
+	u32 close_frame;   /* Frame type in CONNECTION_CLOSE */
 	u32 close_errcode; /* Application or transport close error code */
 	u8  *close_phrase; /* Optional phrase in CONNECTION_CLOSE frame */
 };

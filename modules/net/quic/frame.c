@@ -1916,7 +1916,7 @@ static int quic_frame_connection_close_process(struct sock *sk,
 	if (!quic_get_var(&p, &len, &err_code))
 		return -EINVAL;
 	if (type == QUIC_FRAME_CONNECTION_CLOSE &&
-	    (!quic_get_var(&p, &len, &ftype) || ftype > QUIC_FRAME_MAX))
+	    !quic_get_var(&p, &len, &ftype))
 		return -EINVAL;
 
 	if (!quic_get_var(&p, &len, &phrase_len) || phrase_len > len)
@@ -1932,7 +1932,7 @@ static int quic_frame_connection_close_process(struct sock *sk,
 	if (type == QUIC_FRAME_CONNECTION_CLOSE)
 		QUIC_INC_STATS(sock_net(sk), QUIC_MIB_FRM_INCLOSES);
 	c.errcode = err_code;
-	c.frame = (u8)ftype;
+	c.frame = ftype;
 	quic_inq_event_recv(sk, QUIC_EVENT_CONNECTION_CLOSE, &c, sizeof(c),
 			    gfp);
 
@@ -1940,7 +1940,7 @@ static int quic_frame_connection_close_process(struct sock *sk,
 	 * getsockopt().
 	 */
 	outq->close_errcode = err_code;
-	outq->close_frame = (u8)ftype;
+	outq->close_frame = ftype;
 	kfree(outq->close_phrase);
 	outq->close_phrase = data;
 
