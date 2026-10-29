@@ -196,41 +196,59 @@ int quic_conn_id_add(struct quic_conn_id_set *id_set,
 		if (!id_set->active)
 			id_set->active = common;
 		id_set->count++;
+		id_set->use_count++;
 
 		/* Increment count for consecutive following IDs. */
 		list_for_each_entry_continue(common, &id_set->head, list) {
 			if (common->number != ++number)
 				break;
 			id_set->count++;
+			id_set->use_count++;
 		}
 	}
 	return 0;
 }
 
-/* Remove consecutive connection IDs from the set with sequence numbers less
- * than or equal to a number.
+/* Retire a connection ID by marking it dead, then remove consecutive dead
+ * entries from the head of the list.
  */
-void quic_conn_id_remove(struct quic_conn_id_set *id_set, u32 number)
+void quic_conn_id_retire(struct quic_conn_id_set *id_set, u32 number)
 {
-	struct quic_common_conn_id *common, *tmp;
+	struct quic_common_conn_id *common, *tmp, *retired = NULL;
 	struct list_head *list;
 
-	/* The number must be less than the sequence number of the last
-	 * consecutive connection ID in the set.
-	 */
-	if (WARN_ON_ONCE(number >= quic_conn_id_last_number(id_set)))
+	if (WARN_ON_ONCE(id_set->use_count <= 1))
 		return;
+
 	list = &id_set->head;
-	list_for_each_entry_safe(common, tmp, list, list) {
+	list_for_each_entry(common, list, list) {
 		if (common->number > number)
 			break;
-		if (id_set->active == common)
-			id_set->active = tmp;
-		if (id_set->alt == common)
-			id_set->alt = tmp;
+		if (common->number == number) {
+			if (common->dead)
+				return;
+			retired = common;
+			retired->dead = true;
+			id_set->use_count--;
+			break;
+		}
+	}
+
+	if (!retired)
+		return;
+
+	list_for_each_entry_safe(common, tmp, list, list) {
+		if (!common->dead)
+			break;
 		quic_conn_id_del(common);
 		id_set->count--;
 	}
+
+	/* Update the active and alternate Connection IDs. */
+	if (id_set->active == retired)
+		id_set->active = common;
+	if (id_set->alt == retired)
+		id_set->alt = common;
 }
 
 struct quic_conn_id *quic_conn_id_find(struct quic_conn_id_set *id_set,
@@ -254,7 +272,7 @@ void quic_conn_id_update_active(struct quic_conn_id_set *id_set, u32 number)
 	if (number == id_set->active->number)
 		return;
 	conn_id = quic_conn_id_find(id_set, number);
-	if (!conn_id)
+	if (!conn_id || quic_conn_id_dead(conn_id))
 		return;
 	quic_conn_id_set_active(id_set, conn_id);
 }
@@ -274,6 +292,7 @@ void quic_conn_id_set_free(struct quic_conn_id_set *id_set)
 	list_for_each_entry_safe(common, tmp, &id_set->head, list)
 		quic_conn_id_del(common);
 	id_set->count = 0;
+	id_set->use_count = 0;
 	id_set->alt = NULL;
 	id_set->active = NULL;
 }
