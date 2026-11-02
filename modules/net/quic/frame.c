@@ -2961,7 +2961,7 @@ static u8 *quic_frame_put_address(u8 *p, u16 id, union quic_addr *addr,
 
 static inline u64 quic_usec_to_msec(u32 usec)
 {
-	return DIV_ROUND_UP(usec, 1000);
+	return DIV_ROUND_UP((u64)usec, 1000);
 }
 
 static inline u64 quic_msec_to_usec(u64 msec)
