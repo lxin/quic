@@ -84,6 +84,7 @@ struct quic_request_sock *quic_request_sock_create(struct sock *sk,
 	/* Enqueue request into listen socket’s pending list for accept(). */
 	list_add_tail(&req->list, quic_reqs(sk));
 	sk_acceptq_added(sk);
+	sk->sk_data_ready(sk);
 	return req;
 }
 
@@ -109,8 +110,6 @@ int quic_request_sock_backlog_tail(struct sock *sk,
 	skb_set_owner_r(skb, sk);
 	__skb_queue_tail(&req->backlog_list, skb);
 	req->blen += len;
-
-	sk->sk_data_ready(sk);
 	return 0;
 }
 
