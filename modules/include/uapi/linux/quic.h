@@ -67,6 +67,7 @@ struct quic_handshake_info {
 struct quic_stream_info {
 	__s64	stream_id;
 	__u32	stream_flags;
+	__u32	reserved;
 };
 
 /* Socket Options APIs */
@@ -142,6 +143,7 @@ enum quic_cong_algo {
 struct quic_errinfo {
 	__s64	stream_id;
 	__u32	errcode;
+	__u32	reserved;
 };
 
 struct quic_connection_id_info {
