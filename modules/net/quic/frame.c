@@ -1410,14 +1410,21 @@ static int quic_frame_retire_conn_id_process(struct sock *sk,
 	}
 	first = quic_conn_id_first_number(id_set);
 	last  = quic_conn_id_last_number(id_set);
+	if (seqno > last) {
+		/* rfc9000#section-19.16:
+		 *
+		 * Receipt of a RETIRE_CONNECTION_ID frame containing a sequence
+		 * number greater than any previously sent to the peer MUST be
+		 * treated as a connection error of type PROTOCOL_VIOLATION.
+		 */
+		frame->errcode = QUIC_TRANSPORT_ERROR_PROTOCOL_VIOLATION;
+		return -EINVAL;
+	}
 	conn_id = quic_conn_id_find(id_set, seqno);
 	if (seqno >= first && conn_id && !quic_conn_id_dead(conn_id)) {
-		if (seqno > last || id_set->use_count == 1) {
-			/* Receipt of a RETIRE_CONNECTION_ID frame containing a
-			 * sequence number greater than any previously sent to
-			 * the peer MUST be treated as a connection error of
-			 * type PROTOCOL_VIOLATION. Retiring the last active
-			 * Connection ID is also a PROTOCOL_VIOLATION.
+		if (id_set->use_count == 1) {
+			/* Retiring the last active Connection ID is a
+			 * PROTOCOL_VIOLATION.
 			 */
 			frame->errcode =
 				QUIC_TRANSPORT_ERROR_PROTOCOL_VIOLATION;
