@@ -84,8 +84,8 @@ struct quic_stream_limits {
 	s64 max_uni_stream_id;   /* Highest allowed uni stream ID */
 	s64 active_stream_id;    /* Most recently opened stream ID */
 
-	u8 bidi_blocked;  /* STREAMS_BLOCKED_BIDI sent, awaiting ACK */
-	u8 uni_blocked;   /* STREAMS_BLOCKED_UNI sent, awaiting ACK */
+	u8 bidi_blocked;  /* STREAMS_BLOCKED/MAX_STREAMS_BIDI sent */
+	u8 uni_blocked;   /* STREAMS_BLOCKED/MAX_STREAMS_UNI sent */
 	u8 bidi_pending;  /* MAX_STREAMS_BIDI needs to be sent */
 	u8 uni_pending;   /* MAX_STREAMS_UNI needs to be sent */
 

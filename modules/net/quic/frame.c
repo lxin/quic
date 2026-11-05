@@ -2088,14 +2088,17 @@ static int quic_frame_streams_blocked_uni_process(struct sock *sk,
 	}
 	if (max >= quic_stream_id_to_streams(stream_id))
 		goto out; /* Peer already knows the current limit. */
-	/* Respond with a MAX_STREAMS_UNI frame to inform the peer of the
-	 * current (higher) limit.
+	/* Prevent resource exhaustion: Only send MAX_STREAMS response if we
+	 * haven't already sent one that's awaiting acknowledgment.
 	 */
+	if (streams->recv.uni_blocked)
+		goto out;
 	max = quic_stream_id_to_streams(stream_id);
 	err = quic_outq_transmit_frame(sk, QUIC_FRAME_MAX_STREAMS_UNI, &max, 0,
 				       true, gfp);
 	if (err)
 		return err;
+	streams->recv.uni_blocked = 1;
 out:
 	return (int)(frame->len - len);
 }
@@ -2123,11 +2126,14 @@ static int quic_frame_streams_blocked_bidi_process(struct sock *sk,
 	stream_id = streams->recv.max_bidi_stream_id;
 	if (max >= quic_stream_id_to_streams(stream_id))
 		goto out;
+	if (streams->recv.bidi_blocked)
+		goto out;
 	max = quic_stream_id_to_streams(stream_id);
 	err = quic_outq_transmit_frame(sk, QUIC_FRAME_MAX_STREAMS_BIDI, &max, 0,
 				       true, gfp);
 	if (err)
 		return err;
+	streams->recv.bidi_blocked = 1;
 out:
 	return (int)(frame->len - len);
 }
@@ -2451,11 +2457,17 @@ static void quic_frame_max_stream_data_ack(struct sock *sk,
 static void quic_frame_max_streams_bidi_ack(struct sock *sk,
 					    struct quic_frame *frame, gfp_t gfp)
 {
+	struct quic_stream_table *streams = quic_streams(sk);
+
+	streams->recv.bidi_blocked = 0;
 }
 
 static void quic_frame_max_streams_uni_ack(struct sock *sk,
 					   struct quic_frame *frame, gfp_t gfp)
 {
+	struct quic_stream_table *streams = quic_streams(sk);
+
+	streams->recv.uni_blocked = 0;
 }
 
 static void quic_frame_data_blocked_ack(struct sock *sk,
