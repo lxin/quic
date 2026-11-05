@@ -945,7 +945,7 @@ static bool quic_sock_stream_available(struct sock *sk, s64 stream_id,
 	}
 
 	if (!blocked)
-		quic_outq_transmit_frame(sk, type, &stream_id, 0, false, gfp);
+		quic_outq_transmit_frame(sk, type, NULL, 0, false, gfp);
 	return false;
 }
 

@@ -957,13 +957,13 @@ quic_frame_streams_blocked_uni_create(struct sock *sk, void *data, u8 type,
 				      gfp_t gfp)
 {
 	struct quic_stream_table *streams = quic_streams(sk);
+	s64 max = streams->send.max_uni_stream_id;
 	u8 *p, buf[QUIC_FRAME_BUF_SMALL];
 	struct quic_frame *frame;
-	s64 *max = data;
 	u32 frame_len;
 
 	p = quic_put_var(buf, type);
-	p = quic_put_var(p, quic_stream_id_to_streams(*max));
+	p = quic_put_var(p, quic_stream_id_to_streams(max));
 	frame_len = (u32)(p - buf);
 
 	frame = quic_frame_alloc(frame_len, NULL, gfp);
@@ -981,13 +981,13 @@ quic_frame_streams_blocked_bidi_create(struct sock *sk, void *data, u8 type,
 				       gfp_t gfp)
 {
 	struct quic_stream_table *streams = quic_streams(sk);
+	s64 max = streams->send.max_bidi_stream_id;
 	u8 *p, buf[QUIC_FRAME_BUF_SMALL];
 	struct quic_frame *frame;
-	s64 *max = data;
 	u32 frame_len;
 
 	p = quic_put_var(buf, type);
-	p = quic_put_var(p, quic_stream_id_to_streams(*max));
+	p = quic_put_var(p, quic_stream_id_to_streams(max));
 	frame_len = (u32)(p - buf);
 
 	frame = quic_frame_alloc(frame_len, NULL, gfp);
@@ -2086,10 +2086,10 @@ static int quic_frame_streams_blocked_uni_process(struct sock *sk,
 		frame->errcode = QUIC_TRANSPORT_ERROR_FRAME_ENCODING;
 		return -EINVAL;
 	}
-	if (max > quic_stream_id_to_streams(stream_id))
-		goto out; /* Peer requested more streams than allowed. */
+	if (max >= quic_stream_id_to_streams(stream_id))
+		goto out; /* Peer already knows the current limit. */
 	/* Respond with a MAX_STREAMS_UNI frame to inform the peer of the
-	 * current limit.
+	 * current (higher) limit.
 	 */
 	max = quic_stream_id_to_streams(stream_id);
 	err = quic_outq_transmit_frame(sk, QUIC_FRAME_MAX_STREAMS_UNI, &max, 0,
@@ -2121,7 +2121,7 @@ static int quic_frame_streams_blocked_bidi_process(struct sock *sk,
 		return -EINVAL;
 	}
 	stream_id = streams->recv.max_bidi_stream_id;
-	if (max > quic_stream_id_to_streams(stream_id))
+	if (max >= quic_stream_id_to_streams(stream_id))
 		goto out;
 	max = quic_stream_id_to_streams(stream_id);
 	err = quic_outq_transmit_frame(sk, QUIC_FRAME_MAX_STREAMS_BIDI, &max, 0,
