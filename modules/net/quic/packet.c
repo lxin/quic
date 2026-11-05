@@ -1963,10 +1963,6 @@ static int quic_packet_app_process_done(struct sock *sk, struct sk_buff *skb,
 	if (cb->number == space->max_pn_seen)
 		quic_packet_path_alt_process(sk, skb, gfp);
 
-	/* Increase anti-amplification credit if path isn't validated. */
-	if (!paths->validated)
-		paths->ampl_rcvlen += skb->len;
-
 	if (packet->has_sack) {
 		/* rfc9002#section-6:
 		 *
