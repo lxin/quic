@@ -513,6 +513,7 @@ static int quic_init_sock(struct sock *sk)
 	sk->sk_destruct = quic_sock_destruct;
 	sk->sk_write_space = quic_write_space;
 	sock_set_flag(sk, SOCK_USE_WRITE_QUEUE);
+	sock_set_flag(sk, SOCK_RCU_FREE);
 
 	sk_sockets_allocated_inc(sk);
 	sock_prot_inuse_add(sock_net(sk), sk->sk_prot, 1);
@@ -735,7 +736,6 @@ static int quic_hash(struct sock *sk)
 		/* Hash a regular socket with source and dest addrs/ports. */
 		head = quic_sock_head(quic_sock_hash(net, sa, da));
 		spin_lock_bh(&head->lock);
-		sock_set_flag(sk, SOCK_RCU_FREE);
 		__sk_nulls_add_node_rcu(sk, &head->head);
 		spin_unlock_bh(&head->lock);
 		return 0;
@@ -773,7 +773,6 @@ static int quic_hash(struct sock *sk)
 			err = reuseport_add_sock(sk, nsk, any);
 			if (err)
 				goto out;
-			sock_set_flag(sk, SOCK_RCU_FREE);
 			__sk_nulls_add_node_rcu(sk, &head->head);
 			goto out;
 		}
@@ -789,7 +788,6 @@ static int quic_hash(struct sock *sk)
 		if (err)
 			goto out;
 	}
-	sock_set_flag(sk, SOCK_RCU_FREE);
 	__sk_nulls_add_node_rcu(sk, &head->head);
 
 out:
