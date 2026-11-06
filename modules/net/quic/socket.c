@@ -2339,6 +2339,8 @@ static int quic_sock_set_transport_params_ext(struct sock *sk, u8 *p, u32 len)
 	param.remote = 1;
 	err = quic_frame_parse_transport_params_ext(sk, &param, p, len);
 	if (err) {
+		if (err == -EBUSY)
+			return err;
 		errcode = QUIC_TRANSPORT_ERROR_TRANSPORT_PARAM;
 		if (err == -EPROTONOSUPPORT)
 			errcode = QUIC_TRANSPORT_ERROR_VERSION_NEGOTIATION;
