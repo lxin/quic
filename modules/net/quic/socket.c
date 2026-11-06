@@ -1330,17 +1330,23 @@ static int quic_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 			}
 		}
 
-		/* Probe appendable size. */
-		len = quic_outq_stream_append(sk, &msginfo, false);
-		if (len >= 0) {
-			if (!sk_wmem_schedule(sk, len))
-				continue; /* Retry on memory pressure. */
-			len = quic_outq_stream_append(sk, &msginfo, true);
-			if (len >= 0) { /* Appended. */
-				bytes += len;
-				 /* Reset minimal len guess for next frame. */
-				len = 1;
-				continue;
+		/* Reuse the last queued frame before committing any data. */
+		if (!bytes) {
+			/* Probe appendable size. */
+			len = quic_outq_stream_append(sk, &msginfo, false);
+			if (len >= 0) {
+				if (!sk_wmem_schedule(sk, len))
+					continue;
+				len = quic_outq_stream_append(sk, &msginfo,
+							      true);
+				if (len >= 0) { /* Appended. */
+					bytes += len;
+					outq->force_delay = delay;
+					if (!delay)
+						quic_outq_transmit(sk, gfp);
+					len = 1;
+					continue;
+				}
 			}
 		}
 
