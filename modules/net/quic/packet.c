@@ -2879,7 +2879,7 @@ static int quic_packet_xmit(struct sock *sk, struct sk_buff *skb, gfp_t gfp)
 	WARN_ON_ONCE(!skb_set_owner_sk_safe(skb, sk));
 
 	/* Skip encryption if taglen == 0 (e.g., disable_1rtt_encryption). */
-	if (!packet->taglen[quic_hdr(skb)->form])
+	if (!quic_packet_taglen(packet))
 		goto xmit;
 
 	cb->crypto_done = quic_packet_encrypt_done;
@@ -3006,10 +3006,8 @@ void quic_packet_init(struct sock *sk)
 	skb_queue_head_init(&packet->backlog_list);
 	INIT_WORK(quic_work(sk), quic_packet_deferred_work);
 
-	packet->taglen[QUIC_PACKET_FORM_SHORT] = QUIC_TAG_LEN;
-	packet->taglen[QUIC_PACKET_FORM_LONG] = QUIC_TAG_LEN;
 	packet->mss = QUIC_MIN_UDP_PAYLOAD;
-
+	packet->taglen = QUIC_TAG_LEN;
 	packet->version = QUIC_VERSION_V1;
 }
 

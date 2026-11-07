@@ -20,7 +20,6 @@ struct quic_packet {
 	struct sk_buff *head;        /* Head skb for packet bundling on send */
 	u32 version;   /* QUIC version used/selected during handshake */
 	u16 overhead;  /* QUIC header length excluding frames */
-	u8 taglen[2];  /* Tag length for short and long packets */
 	u16 padding;   /* Total padding bytes to append after frames */
 	u16 frames;    /* Number of ack-eliciting frames */
 	u16 hlen;      /* UDP + IP header length for sending */
@@ -35,6 +34,7 @@ struct quic_packet {
 	u8 ipfragok:1;        /* Allow IP fragmentation */
 	u8 path:1;            /* Path identifier used to send this packet */
 	u8 last:1;            /* No more frame can be appended */
+	u8 taglen;            /* Tag length for short header packets */
 	u8 level;             /* Encryption level used */
 };
 
@@ -78,12 +78,7 @@ struct quic_packet_sent {
 
 static inline u8 quic_packet_taglen(struct quic_packet *packet)
 {
-	return packet->taglen[packet->level != QUIC_CRYPTO_APP];
-}
-
-static inline void quic_packet_set_taglen(struct quic_packet *packet, u8 taglen)
-{
-	packet->taglen[QUIC_PACKET_FORM_SHORT] = taglen;
+	return packet->level == QUIC_CRYPTO_APP ? packet->taglen : QUIC_TAG_LEN;
 }
 
 static inline u32 quic_packet_mss(struct quic_packet *packet)

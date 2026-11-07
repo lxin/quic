@@ -581,7 +581,6 @@ void quic_inq_get_param(struct sock *sk, struct quic_transport_param *p)
 /* Configure inqueue from transport parameters. */
 void quic_inq_set_param(struct sock *sk, struct quic_transport_param *p)
 {
-	struct quic_packet *packet = quic_packet(sk);
 	struct quic_inqueue *inq = quic_inq(sk);
 
 	if (p->remote) {
@@ -591,7 +590,7 @@ void quic_inq_set_param(struct sock *sk, struct quic_transport_param *p)
 			inq->timeout = p->max_idle_timeout;
 
 		if (inq->disable_1rtt_encryption && p->disable_1rtt_encryption)
-			quic_packet_set_taglen(packet, 0);
+			quic_packet(sk)->taglen = 0;
 		return;
 	}
 
