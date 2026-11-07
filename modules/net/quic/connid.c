@@ -210,7 +210,8 @@ int quic_conn_id_add(struct quic_conn_id_set *id_set,
 }
 
 /* Retire a connection ID by marking it dead, then remove consecutive dead
- * entries from the head of the list.
+ * entries from the head of the list. The caller must ensure the number fall
+ * within the consecutive range [first_number, last_number].
  */
 void quic_conn_id_retire(struct quic_conn_id_set *id_set, u32 number)
 {
