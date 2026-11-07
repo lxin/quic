@@ -2072,12 +2072,6 @@ static int quic_packet_app_process(struct sock *sk, struct sk_buff *skb,
 		goto err;
 	}
 
-	if (!crypto->recv_ready) {
-		/* Queue to backlog until 1-RTT keys are ready. */
-		quic_packet_backlog_tail(sk, skb);
-		return 0;
-	}
-
 	if (cb->seqno == -1) {
 		/* No valid matched connection ID was found, so treat this as a
 		 * potential stateless reset packet.
@@ -2085,6 +2079,12 @@ static int quic_packet_app_process(struct sock *sk, struct sk_buff *skb,
 		err = quic_packet_stateless_reset_process(sk, skb, gfp);
 		if (err)
 			goto err;
+		return 0;
+	}
+
+	if (!crypto->recv_ready) {
+		/* Queue to backlog until 1-RTT keys are ready. */
+		quic_packet_backlog_tail(sk, skb);
 		return 0;
 	}
 	/* Calculate Payload Length. */
