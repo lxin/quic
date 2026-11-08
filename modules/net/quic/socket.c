@@ -1973,10 +1973,16 @@ static int quic_sock_set_connection_id(struct sock *sk, void *kopt, u32 len)
 
 	active = quic_conn_id_active(id_set);
 	if (info.active) { /* Change active connection ID. */
-		/* Ensure the new active ID is greater than the current one.
-		 * All lower-numbered IDs are implicitly treated as used.
+		/* Ensure the new active ID is not below the current one.
+		 * Allowing equal permits idempotent retry after a
+		 * partial transmit failure below.
 		 */
-		if (info.active <= quic_conn_id_number(active))
+		if (info.active < quic_conn_id_number(active))
+			return -EINVAL;
+		/* The active ID must not fall in the retirement range;
+		 * otherwise the transmit loop would free it.
+		 */
+		if (info.prior_to && info.active < info.prior_to)
 			return -EINVAL;
 		active = quic_conn_id_find(id_set, info.active);
 		if (!active || quic_conn_id_dead(active))
