@@ -1920,9 +1920,11 @@ static int quic_sock_stream_stop_sending(struct sock *sk, void *kopt, u32 len)
 	if (stream->recv.state >= QUIC_STREAM_RECV_STATE_RECVD)
 		return -EINVAL;
 
-	/* Defer sending; a STOP_SENDING frame is already in flight. */
+	/* A STOP_SENDING frame is already in flight; the kernel handles
+	 * retransmission, so tell userspace the operation is in progress.
+	 */
 	if (stream->recv.stop_sent)
-		return -EAGAIN;
+		return -EALREADY;
 
 	return quic_outq_transmit_frame(sk, QUIC_FRAME_STOP_SENDING, &info, 0,
 					false, gfp);
