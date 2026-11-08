@@ -1187,7 +1187,7 @@ static int quic_packet_listen_process(struct sock *sk, struct sk_buff *skb,
 		return PTR_ERR(req);
 	}
 out:
-	/* Add to backlog list and wake blocked accept() calls */
+	/* Queue the skb on this request sock's backlog. */
 	return quic_request_sock_backlog_tail(sk, req, skb);
 }
 
