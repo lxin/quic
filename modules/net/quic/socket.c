@@ -913,10 +913,9 @@ static int quic_msghdr_parse(struct sock *sk, struct msghdr *msg,
 		sinfo->stream_id = active;
 		return 0;
 	}
-	/* No active stream, pick the next to open based on stream direction. */
-	sinfo->stream_id = streams->send.next_bidi_stream_id;
-	if (sinfo->stream_flags & MSG_QUIC_STREAM_UNI)
-		sinfo->stream_id = streams->send.next_uni_stream_id;
+	/* No active stream; leave stream_id as -1 so quic_sock_send_stream()
+	 * resolves it to the next available ID under the lock.
+	 */
 	return 0;
 }
 
@@ -995,10 +994,18 @@ static struct quic_stream *quic_sock_send_stream(struct sock *sk,
 {
 	struct quic_crypto *crypto = quic_crypto(sk, QUIC_CRYPTO_APP);
 	struct quic_stream_table *streams = quic_streams(sk);
+	bool auto_id = (sinfo->stream_id == -1);
 	bool is_serv = quic_is_serv(sk);
 	struct quic_stream *stream;
 	gfp_t gfp = GFP_KERNEL;
 	int err;
+
+retry:
+	if (auto_id) {
+		sinfo->stream_id = streams->send.next_bidi_stream_id;
+		if (sinfo->stream_flags & MSG_QUIC_STREAM_UNI)
+			sinfo->stream_id = streams->send.next_uni_stream_id;
+	}
 
 	stream = quic_stream_get(streams, sinfo->stream_id, sinfo->stream_flags,
 				 is_serv, true, sock_net(sk), gfp);
@@ -1022,11 +1029,11 @@ static struct quic_stream *quic_sock_send_stream(struct sock *sk,
 			return ERR_PTR(err);
 	}
 
-	/* Stream should now be available, retry getting the stream. */
-	stream = quic_stream_get(streams, sinfo->stream_id, sinfo->stream_flags,
-				 is_serv, true, sock_net(sk), gfp);
-	if (IS_ERR(stream))
-		return stream;
+	/* After sleeping, another thread may have consumed the ID we waited on.
+	 * Re-resolve and retry so the new ID also goes through the availability
+	 * check.
+	 */
+	goto retry;
 out:
 	if ((sinfo->stream_flags & MSG_QUIC_STREAM_NEW) &&
 	    stream->send.state != QUIC_STREAM_SEND_STATE_READY)
@@ -2649,7 +2656,6 @@ static int quic_sock_get_event(struct sock *sk, u32 len, sockptr_t optval,
 static int quic_sock_stream_open(struct sock *sk, u32 len, sockptr_t optval,
 				 sockptr_t optlen)
 {
-	struct quic_stream_table *streams = quic_streams(sk);
 	struct quic_stream_info sinfo = {};
 	struct quic_stream *stream;
 
@@ -2666,12 +2672,6 @@ static int quic_sock_stream_open(struct sock *sk, u32 len, sockptr_t optval,
 	if (sinfo.stream_flags & ~QUIC_MSG_STREAM_FLAGS)
 		return -EINVAL;
 
-	/* If stream_id is -1, assign the next available ID (bidi or uni). */
-	if (sinfo.stream_id == -1) {
-		sinfo.stream_id = streams->send.next_bidi_stream_id;
-		if (sinfo.stream_flags & MSG_QUIC_STREAM_UNI)
-			sinfo.stream_id = streams->send.next_uni_stream_id;
-	}
 	/* Mark stream as to be created. */
 	sinfo.stream_flags |= MSG_QUIC_STREAM_NEW;
 
