@@ -304,7 +304,13 @@ sample_tests()
 
 }
 
-TESTS="func perf rr netem http3 tlshd alpn ticket sample"
+pto_tests()
+{
+	print_start "Probe Timeout Tests (no Handshake packet after confirmation)"
+	./pto_test || return 1
+}
+
+TESTS="func perf rr netem http3 tlshd alpn ticket sample pto"
 trap cleanup EXIT
 
 [ "$1" = "" ] || TESTS=$@
