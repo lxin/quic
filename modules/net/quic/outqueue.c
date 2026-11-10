@@ -1191,6 +1191,16 @@ void quic_outq_transmit_pto(struct sock *sk)
 		return;
 	}
 
+	/* The timer may have expired just before an ACK emptied the flight,
+	 * and run after it: quic_timer_stop() does not stop a timer handler
+	 * waiting for the socket lock or deferred to release_sock().  Stop
+	 * the timer as quic_outq_update_loss_timer() does.  Otherwise, with
+	 * nothing in flight, quic_outq_get_pto_time() picks the Handshake
+	 * level, whose keys the peer has discarded.
+	 */
+	if (!outq->inflight && quic_paths(sk)->validated)
+		return quic_timer_stop(sk, QUIC_TIMER_LOSS);
+
 	/* No loss detected, get PTO time and associated packet number space. */
 	quic_outq_get_pto_time(sk, &level);
 
