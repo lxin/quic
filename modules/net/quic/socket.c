@@ -2507,9 +2507,10 @@ done:
 		goto out;
 	}
 
-	/* Clean up transmitted handshake packets. */
+	/* Clean up transmitted handshake packets and disable handshake keys. */
 	quic_outq_transmitted_sack(sk, QUIC_CRYPTO_HANDSHAKE, QUIC_PN_MAX, 0,
 				   -1, 0, NULL, gfp);
+	quic_crypto_discard(quic_crypto(sk, QUIC_CRYPTO_HANDSHAKE));
 	if (paths->pref_addr) {
 		/* If a preferred address is set, bind to it to allow client
 		 * use at any time.
@@ -2529,6 +2530,7 @@ done:
 	if (err)
 		goto err;
 out:
+	quic_crypto_discard(quic_crypto(sk, QUIC_CRYPTO_EARLY));
 	/* Send NEW_CONNECTION_ID frames to reach maximum connection IDs. */
 	err = quic_outq_transmit_new_conn_id(sk, 0, 0, false, gfp);
 	if (err)
