@@ -1517,6 +1517,7 @@ static int quic_frame_handshake_done_process(struct sock *sk,
 	}
 
 	/* Handshake is complete and clean up transmitted handshake packets. */
+	paths->validated = 1;
 	quic_outq_transmitted_sack(sk, QUIC_CRYPTO_HANDSHAKE, QUIC_PN_MAX, 0,
 				   -1, 0, NULL, gfp);
 

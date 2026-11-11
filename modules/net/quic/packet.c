@@ -1760,17 +1760,6 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb,
 		 */
 		quic_pnspace_inc_ecn_local(space, quic_get_msg_ecn(skb));
 
-		if (packet->has_sack) {
-			/* rfc9002#section-6:
-			 *
-			 * QUIC senders use acknowledgments to detect lost
-			 * packets and a PTO to ensure acknowledgments are
-			 * received.
-			 */
-			quic_outq_retransmit_mark(sk, cb->level, false);
-			quic_outq_update_loss_timer(sk);
-		}
-
 		if (paths->validated)
 			goto skip;
 
@@ -1783,16 +1772,32 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb,
 			 * Handshake packet from the peer, it can consider the
 			 * peer address to have been validated.
 			 *
-			 * (Handshake keys are ready, mark path validated and
-			 * clean up transmitted initial packets).
+			 * On the server this is PeerCompletedAddressValidation
+			 * (rfc9002#appendix-A.8), so set validated here.  On
+			 * the client, PeerCompletedAddressValidation requires a
+			 * Handshake ACK or handshake confirmation, so validated
+			 * is set when has_sack or on HANDSHAKE_DONE.
+			 *
+			 * Clean up transmitted initial packets on both sides.
 			 */
-			paths->validated = 1;
+			if (quic_is_serv(sk) || packet->has_sack)
+				paths->validated = 1;
 			quic_outq_transmitted_sack(sk, QUIC_CRYPTO_INITIAL,
 						   QUIC_PN_MAX, 0, -1, 0, NULL,
 						   gfp);
 		}
 
 skip:
+		if (packet->has_sack) {
+			/* rfc9002#section-6:
+			 *
+			 * QUIC senders use acknowledgments to detect lost
+			 * packets and a PTO to ensure acknowledgments are
+			 * received.
+			 */
+			quic_outq_retransmit_mark(sk, cb->level, false);
+			quic_outq_update_loss_timer(sk);
+		}
 		cb->resume = 0; /* Clear resume for next decryption */
 		/* Reset to mark header decryption incomplete. */
 		cb->number_len = 0;
