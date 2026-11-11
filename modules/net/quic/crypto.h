@@ -66,6 +66,15 @@ struct quic_crypto {
 	struct work_struct work; /* Workqueue to destroy crypto */
 };
 
+/* Mark crypto context inactive without freeing transforms; async ops may still
+ * be in flight. Actual transform cleanup is deferred to quic_sock_destruct().
+ */
+static inline void quic_crypto_discard(struct quic_crypto *crypto)
+{
+	crypto->recv_ready = 0;
+	crypto->send_ready = 0;
+}
+
 int quic_crypto_set_secret(struct quic_crypto *crypto,
 			   struct quic_crypto_secret *srt, u32 version);
 int quic_crypto_set_cipher(struct quic_crypto *crypto, u32 type);

@@ -138,6 +138,9 @@ static int quic_packet_version_change(struct sock *sk,
 	if (unlikely(atomic_read(&crypto->async_pending[0])))
 		return -EBUSY;
 
+	if (!crypto->recv_ready)
+		return -EINVAL;
+
 	err = quic_crypto_initial_keys_install(crypto, dcid, version,
 					       quic_is_serv(sk));
 	if (err)
@@ -1555,6 +1558,8 @@ static int quic_packet_handshake_header_process(struct sock *sk,
 	}
 	switch (type) {
 	case QUIC_PACKET_INITIAL:
+		if (!quic_crypto(sk, QUIC_CRYPTO_INITIAL)->recv_ready)
+			return -EINVAL;
 		err = quic_packet_get_token(&token, &p, &len); /* Read Token. */
 		if (err)
 			return err;
@@ -1574,6 +1579,8 @@ static int quic_packet_handshake_header_process(struct sock *sk,
 		break;
 	case QUIC_PACKET_HANDSHAKE:
 		if (!quic_crypto(sk, QUIC_CRYPTO_HANDSHAKE)->recv_ready) {
+			if (quic_is_established(sk))
+				return -EINVAL;
 			/* Queue to backlog until Handshake keys are ready. */
 			quic_packet_backlog_tail(sk, skb);
 			return -EINPROGRESS;
@@ -1584,6 +1591,8 @@ static int quic_packet_handshake_header_process(struct sock *sk,
 		if (!is_serv)
 			return -EINVAL;
 		if (!quic_crypto(sk, QUIC_CRYPTO_EARLY)->recv_ready) {
+			if (quic_is_established(sk))
+				return -EINVAL;
 			/* Queue to backlog until 0-RTT keys are ready. */
 			quic_packet_backlog_tail(sk, skb);
 			return -EINPROGRESS;
@@ -1785,6 +1794,7 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb,
 			quic_outq_transmitted_sack(sk, QUIC_CRYPTO_INITIAL,
 						   QUIC_PN_MAX, 0, -1, 0, NULL,
 						   gfp);
+			quic_crypto_discard(quic_crypto(sk, QUIC_CRYPTO_INITIAL));
 		}
 
 skip:
