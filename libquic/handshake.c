@@ -66,6 +66,8 @@ struct quic_handshake_ctx {
 	struct quic_smsg *send_list;
 	struct quic_smsg *send_last;
 	struct quic_rmsg rmsg;
+	uint8_t app_rx_ready:1;
+	uint8_t app_tx_ready:1;
 	uint8_t completed:1;
 	uint8_t is_serv:1;
 	struct quic_handshake_step_internal next_step;
@@ -290,7 +292,7 @@ ssize_t quic_recvmsg(int sockfd, void *msg, size_t len, int64_t *sid, uint32_t *
 	if (!cmsg)
 		return ret;
 
-	if (SOL_QUIC == cmsg->cmsg_level &&  QUIC_STREAM_INFO == cmsg->cmsg_type) {
+	if (SOL_QUIC == cmsg->cmsg_level && QUIC_STREAM_INFO == cmsg->cmsg_type) {
 		info = (struct quic_stream_info *)CMSG_DATA(cmsg);
 		if (sid)
 			*sid = info->stream_id;
@@ -425,6 +427,8 @@ static int quic_set_secret(gnutls_session_t session, gnutls_record_encryption_le
 			quic_log_error("socket setsockopt tx secret error %d %u", errno, level);
 			return -1;
 		}
+		if (secret.level == QUIC_CRYPTO_APP)
+			ctx->app_tx_ready = 1;
 	}
 	if (rx_secret) {
 		secret.send = 0;
@@ -435,16 +439,18 @@ static int quic_set_secret(gnutls_session_t session, gnutls_record_encryption_le
 			quic_log_error("socket setsockopt rx secret error %d %u", errno, level);
 			return -1;
 		}
-		if (secret.level == QUIC_CRYPTO_APP) {
-			if (ctx->is_serv) {
-				ret = gnutls_session_ticket_send(session, 1, 0);
-				if (ret) {
-					quic_log_gnutls_error(ret);
-					return ret;
-				}
+		if (secret.level == QUIC_CRYPTO_APP)
+			ctx->app_rx_ready = 1;
+	}
+	if (secret.level == QUIC_CRYPTO_APP && ctx->app_rx_ready && ctx->app_tx_ready) {
+		if (ctx->is_serv) {
+			ret = gnutls_session_ticket_send(session, 1, 0);
+			if (ret) {
+				quic_log_gnutls_error(ret);
+				return ret;
 			}
-			ctx->completed = 1;
 		}
+		ctx->completed = 1;
 	}
 	quic_log_debug("  Secret func: %u %u %u", secret.level, !!tx_secret, !!rx_secret);
 	return 0;
@@ -535,7 +541,8 @@ static void quic_smsg_append_list(struct quic_handshake_ctx *ctx,
 	if (!ctx->send_list)
 		ctx->send_list = smsg;
 	else {
-		ctx->send_last->flags |= MSG_MORE;
+		if (ctx->send_last->level == smsg->level)
+			ctx->send_last->flags |= MSG_MORE;
 		ctx->send_last->next = smsg;
 	}
 	ctx->send_last = smsg;
@@ -770,14 +777,16 @@ static int quic_handshake_sendmsg_process(struct quic_handshake_ctx *ctx)
 	ssize_t slen = s->retval;
 
 	if (slen < 0) {
-		quic_log_error("socket sendmsg(%u, %u) error %zd",
+		quic_log_error("socket sendmsg(%zu, %u) error %zd",
 			       smsg->iov.iov_len,
+			       smsg->level,
 			       slen);
 		return slen;
 	}
-	if (slen != smsg->iov.iov_len) {
-		quic_log_error("socket sendmsg(%u, %u) short %zd",
+	if ((size_t)slen != smsg->iov.iov_len) {
+		quic_log_error("socket sendmsg(%zu, %u) short %zd",
 			       smsg->iov.iov_len,
+			       smsg->level,
 			       slen);
 		return -EMSGSIZE;
 	}
@@ -797,20 +806,20 @@ static int quic_handshake_recvmsg_process(struct quic_handshake_ctx *ctx)
 	int ret;
 
 	if (rlen < 0) {
-		quic_log_error("socket recvmsg(%u) error %zd",
+		quic_log_error("socket recvmsg(%zu) error %zd",
 			       rmsg->iov.iov_len,
 			       rlen);
 		return rlen;
 	}
 
 	if (rlen == 0) {
-		quic_log_error("socket recvmsg(%u) EOF",
+		quic_log_error("socket recvmsg(%zu) EOF",
 			       rmsg->iov.iov_len);
 		return -ECONNRESET;
 	}
 
 	if (rmsg->msg.msg_flags & MSG_TRUNC) {
-		quic_log_error("socket recvmsg(%u) got MSG_TRUNC %zd",
+		quic_log_error("socket recvmsg(%zu) got MSG_TRUNC %zd",
 			       rmsg->iov.iov_len,
 			       rlen);
 		return -EMSGSIZE;
@@ -818,7 +827,7 @@ static int quic_handshake_recvmsg_process(struct quic_handshake_ctx *ctx)
 
 	ret = quic_check_rmsg_level(rmsg);
 	if (ret < 0) {
-		quic_log_error("socket recvmsg(%u) no QUIC_HANDSHAKE_INFO",
+		quic_log_error("socket recvmsg(%zu) no QUIC_HANDSHAKE_INFO",
 			       rmsg->iov.iov_len);
 		return -EBADMSG;
 	}
