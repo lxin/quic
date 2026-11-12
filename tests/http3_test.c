@@ -190,7 +190,7 @@ static int http_client_end_stream(nghttp3_conn *conn, int64_t stream_id, void *u
 
 static int http_parse_url(const char *url, struct http_request *req)
 {
-	char *colon_pos, *slash_pos;
+	const char *colon_pos, *slash_pos;
 
 	req->done = 0;
 	strcpy(req->method, "GET");

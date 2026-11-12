@@ -478,12 +478,18 @@ This section shows you the basic usage of QUIC, you can get more details via man
 
 ### Basic APIs Use in User Space
 
-- these APIs are provided (see [tests/sample_test.c](https://github.com/lxin/quic/blob/main/tests/sample_test.c) for how APIs are used):
+- these APIs are provided (see [tests/sample_test.c](https://github.com/lxin/quic/blob/main/tests/sample_test.c) and [tests/mtls_test.c](https://github.com/lxin/quic/blob/main/tests/mtls_test.c) for how APIs are used):
 
       int quic_client_handshake(int sockfd, const char *pkey_file,
                                 const char *hostname, const char *alpns);
+      int quic_client_handshake_mtls(int sockfd, const char *ca_file,
+                                     const char *cert_file, const char *pkey_file,
+                                     const char *hostname, const char *alpns);
       int quic_server_handshake(int sockfd, const char *pkey_file,
                                 const char *cert_file, const char *alpns);
+      int quic_server_handshake_mtls(int sockfd, const char *pkey_file,
+                                     const char *cert_file, const char *ca_file,
+                                     const char *alpns);
 
       ssize_t quic_sendmsg(int sockfd, const void *msg, size_t len,
                            int64_t sid, uint32_t flags);

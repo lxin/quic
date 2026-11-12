@@ -46,8 +46,14 @@ extern "C" {
 
 int quic_client_handshake(int sockfd, const char *pkey_file,
 			  const char *hostname, const char *alpns);
+int quic_client_handshake_mtls(int sockfd, const char *ca_file,
+			       const char *cert_file, const char *pkey_file,
+			       const char *hostname, const char *alpns);
 int quic_server_handshake(int sockfd, const char *pkey_file,
 			  const char *cert_file, const char *alpns);
+int quic_server_handshake_mtls(int sockfd, const char *pkey_file,
+			       const char *cert_file, const char *ca_file,
+			       const char *alpns);
 
 enum quic_handshake_step_op {
 	QUIC_HANDSHAKE_STEP_OP_SENDMSG = 1,

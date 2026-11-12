@@ -74,7 +74,8 @@ err:
 }
 
 static int quic_server_x509_handshake(int sockfd, const char *pkey,
-				      const char *cert, const char *alpns)
+				      const char *cert, const char *ca,
+				      const char *alpns, int require_client_cert)
 {
 	gnutls_certificate_credentials_t cred;
 	gnutls_session_t session;
@@ -82,21 +83,40 @@ static int quic_server_x509_handshake(int sockfd, const char *pkey,
 	char alpn[64];
 	int ret;
 
+	if (!pkey || !cert)
+		return -EINVAL;
+
 	ret = gnutls_certificate_allocate_credentials(&cred);
 	if (ret)
 		goto err;
-	ret = gnutls_certificate_set_x509_system_trust(cred);
-	if (ret < 0)
-		goto err_cred;
+
+	if (ca) {
+		ret = gnutls_certificate_set_x509_trust_file(cred, ca, GNUTLS_X509_FMT_PEM);
+		if (ret <= 0) {
+			ret = ret < 0 ? ret : GNUTLS_E_CERTIFICATE_ERROR;
+			goto err_cred;
+		}
+	} else {
+		ret = gnutls_certificate_set_x509_system_trust(cred);
+		if (ret < 0)
+			goto err_cred;
+	}
+
 	ret = gnutls_certificate_set_x509_key_file(cred, cert, pkey, GNUTLS_X509_FMT_PEM);
 	if (ret)
 		goto err_cred;
+
 	ret = gnutls_init(&session, GNUTLS_SERVER | GNUTLS_NO_AUTO_SEND_TICKET);
 	if (ret)
 		goto err_cred;
 	ret = gnutls_credentials_set(session, GNUTLS_CRD_CERTIFICATE, cred);
 	if (ret)
 		goto err_session;
+
+	if (require_client_cert) {
+		gnutls_certificate_server_set_request(session, GNUTLS_CERT_REQUIRE);
+		gnutls_session_set_verify_cert(session, NULL, 0);
+	}
 
 	ret = gnutls_priority_set_direct(session, QUIC_PRIORITY, NULL);
 	if (ret)
@@ -142,7 +162,28 @@ int quic_server_handshake(int sockfd, const char *pkey_file,
 			  const char *cert_file, const char *alpns)
 {
 	if (cert_file)
-		return  quic_server_x509_handshake(sockfd, pkey_file, cert_file, alpns);
+		return quic_server_x509_handshake(sockfd, pkey_file, cert_file,
+						  NULL, alpns, 0);
 
 	return quic_server_psk_handshake(sockfd, pkey_file, alpns);
+}
+
+/**
+ * quic_server_handshake_mtls - start a QUIC server handshake requiring client certificate authentication
+ * @sockfd: IPPROTO_QUIC type socket
+ * @pkey_file: server private key file in PEM format
+ * @cert_file: server certificate file in PEM format
+ * @ca_file: PEM CA certificate file for client verification (or NULL for system trust)
+ * @alpns: ALPNs supported and split by ','
+ *
+ * Return values:
+ * - On success, 0 is returned.
+ * - On error, a negative error value is returned.
+ */
+int quic_server_handshake_mtls(int sockfd, const char *pkey_file,
+			       const char *cert_file, const char *ca_file,
+			       const char *alpns)
+{
+	return quic_server_x509_handshake(sockfd, pkey_file, cert_file,
+					  ca_file, alpns, 1);
 }
