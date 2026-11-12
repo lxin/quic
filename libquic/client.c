@@ -78,7 +78,10 @@ err:
 	return ret;
 }
 
-static int quic_client_x509_handshake(int sockfd, const char *alpns, const char *host)
+static int quic_client_x509_handshake(int sockfd, const char *ca_file,
+				      const char *cert_file, const char *pkey_file,
+				      const char *alpns, const char *host,
+				      int verify_peer)
 {
 	gnutls_certificate_credentials_t cred;
 	gnutls_session_t session;
@@ -86,12 +89,31 @@ static int quic_client_x509_handshake(int sockfd, const char *alpns, const char 
 	char alpn[64];
 	int ret;
 
+	if ((cert_file && !pkey_file) || (!cert_file && pkey_file))
+		return -EINVAL;
+
 	ret = gnutls_certificate_allocate_credentials(&cred);
 	if (ret)
 		goto err;
-	ret = gnutls_certificate_set_x509_system_trust(cred);
-	if (ret < 0)
-		goto err_cred;
+
+	if (ca_file) {
+		ret = gnutls_certificate_set_x509_trust_file(cred, ca_file, GNUTLS_X509_FMT_PEM);
+		if (ret <= 0) {
+			ret = ret < 0 ? ret : GNUTLS_E_CERTIFICATE_ERROR;
+			goto err_cred;
+		}
+	} else {
+		ret = gnutls_certificate_set_x509_system_trust(cred);
+		if (ret < 0)
+			goto err_cred;
+	}
+
+	if (cert_file && pkey_file) {
+		ret = gnutls_certificate_set_x509_key_file(cred, cert_file, pkey_file,
+							   GNUTLS_X509_FMT_PEM);
+		if (ret)
+			goto err_cred;
+	}
 
 	ret = gnutls_init(&session, GNUTLS_CLIENT);
 	if (ret)
@@ -115,6 +137,9 @@ static int quic_client_x509_handshake(int sockfd, const char *alpns, const char 
 		if (ret)
 			goto err_session;
 	}
+
+	if (verify_peer)
+		gnutls_session_set_verify_cert(session, host, 0);
 
 	gnutls_transport_set_int(session, sockfd);
 
@@ -214,7 +239,8 @@ int quic_client_handshake(int sockfd, const char *pkey_file,
 	int ret;
 
 	if (!pkey_file)
-		return quic_client_x509_handshake(sockfd, alpns, hostname);
+		return quic_client_x509_handshake(sockfd, NULL, NULL, NULL,
+						  alpns, hostname, 0);
 
 	ret = quic_file_read_psk(pkey_file, identities, keys);
 	if (ret <= 0)
@@ -224,4 +250,25 @@ int quic_client_handshake(int sockfd, const char *pkey_file,
 
 	free(identities[0]);
 	return ret;
+}
+
+/**
+ * quic_client_handshake_mtls - start a QUIC client handshake with server verification and optional mTLS
+ * @sockfd: IPPROTO_QUIC type socket
+ * @ca_file: PEM CA certificate file for server verification (or NULL for system trust)
+ * @cert_file: client PEM certificate file for mTLS (or NULL for server-only auth)
+ * @pkey_file: client PEM private key file for mTLS (or NULL for server-only auth)
+ * @hostname: server name for SNI and certificate hostname verification
+ * @alpns: ALPNs supported and split by ','
+ *
+ * Return values:
+ * - On success, 0 is returned.
+ * - On error, a negative error value is returned.
+ */
+int quic_client_handshake_mtls(int sockfd, const char *ca_file,
+			       const char *cert_file, const char *pkey_file,
+			       const char *hostname, const char *alpns)
+{
+	return quic_client_x509_handshake(sockfd, ca_file, cert_file, pkey_file,
+					  alpns, hostname, 1);
 }
