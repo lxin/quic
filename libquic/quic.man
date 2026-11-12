@@ -446,7 +446,8 @@ capabilities.
 
 .SS quic_client_handshake() and quic_server_handshake()
 These functions are used to initiate a QUIC handshake either from the client or
-server side. They support both Certificate and PSK modes.
+server side. They support both Certificate and PSK modes. The `_mtls` variants
+additionally support mutual TLS (mTLS) with custom CA trust stores.
 
 .PP
 .B quic_server_handshake()
@@ -488,6 +489,49 @@ The function returns `0` on success and an error code on failure.
 .RE
 
 .PP
+.B quic_server_handshake_mtls()
+.RS 4
+.PP
+An application uses `quic_server_handshake_mtls()` to start a QUIC handshake from the
+server side requiring client certificate authentication (mutual TLS).
+
+.nf
+int quic_server_handshake_mtls(int sd,
+                               const char *pkey_file,
+                               const char *cert_file,
+                               const char *ca_file,
+                               const char *alpns);
+.fi
+
+.PP
+The arguments are:
+
+.TP
+.B sd
+The socket descriptor.
+
+.TP
+.B pkey_file
+The server private key file in PEM format.
+
+.TP
+.B cert_file
+The server certificate file in PEM format.
+
+.TP
+.B ca_file
+The PEM CA certificate file for client verification. If `NULL`, the system's default trust store is used.
+
+.TP
+.B alpns
+The Application-Layer Protocol Negotiation (ALPN) strings supported, separated
+by commas.
+
+.PP
+The function returns `0` on success and an error code on failure.
+.RE
+
+.PP
 .B quic_client_handshake()
 .RS 4
 .PP
@@ -515,6 +559,54 @@ The pre-shared key file for PSK mode.
 .TP
 .B hostname
 The server name for Certificate mode.
+
+.TP
+.B alpns
+The Application-Layer Protocol Negotiation (ALPN) strings supported, separated
+by commas.
+
+.PP
+The function returns `0` on success and an error code on failure.
+.RE
+
+.PP
+.B quic_client_handshake_mtls()
+.RS 4
+.PP
+An application uses `quic_client_handshake_mtls()` to start a QUIC handshake from the
+client side with server certificate verification and optional mutual TLS (mTLS).
+
+.nf
+int quic_client_handshake_mtls(int sd,
+                               const char *ca_file,
+                               const char *cert_file,
+                               const char *pkey_file,
+                               const char *hostname,
+                               const char *alpns);
+.fi
+
+.PP
+The arguments are:
+
+.TP
+.B sd
+The socket descriptor.
+
+.TP
+.B ca_file
+The PEM CA certificate file for server verification. If `NULL`, the system's default trust store is used.
+
+.TP
+.B cert_file
+The client PEM certificate file for mTLS, or `NULL` for server-only authentication.
+
+.TP
+.B pkey_file
+The client PEM private key file for mTLS, or `NULL` for server-only authentication.
+
+.TP
+.B hostname
+The server name for SNI and certificate hostname verification.
 
 .TP
 .B alpns
