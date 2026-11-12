@@ -2385,6 +2385,7 @@ static int quic_sock_set_crypto_secret(struct sock *sk, void *kopt, u32 len)
 	gfp_t gfp = GFP_KERNEL;
 	struct sk_buff *skb;
 	union quic_addr *a;
+	bool cork = false;
 	int err;
 
 	if (!quic_is_establishing(sk))
@@ -2481,6 +2482,11 @@ static int quic_sock_set_crypto_secret(struct sock *sk, void *kopt, u32 len)
 done:
 	/* Both send and receive keys are ready; handshake complete. */
 	if (!quic_is_serv(sk)) {
+		/* Userspace may set app crypto secret before sending handshake
+		 * crypto data. Cork app-level frames if no handshake data has
+		 * been sent yet to avoid flushing them before handshake msgs.
+		 */
+		cork = !quic_crypto(sk, QUIC_CRYPTO_HANDSHAKE)->send_offset;
 		if (!paths->pref_addr)
 			goto out;
 		/* The peer offered a preferred address (stored in path 1).
@@ -2532,7 +2538,7 @@ done:
 out:
 	quic_crypto_discard(quic_crypto(sk, QUIC_CRYPTO_EARLY));
 	/* Send NEW_CONNECTION_ID frames to reach maximum connection IDs. */
-	err = quic_outq_transmit_new_conn_id(sk, 0, 0, false, gfp);
+	err = quic_outq_transmit_new_conn_id(sk, 0, 0, cork, gfp);
 	if (err)
 		goto err;
 	/* Enter established state, and start PLPMTUD timer. */
