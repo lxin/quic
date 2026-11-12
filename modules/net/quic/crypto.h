@@ -64,6 +64,8 @@ struct quic_crypto {
 	u64 recv_offset; /* Number of handshake bytes read by user */
 
 	struct work_struct work; /* Workqueue to destroy crypto */
+
+	struct kcov_common_handle_id kcov_handle;
 };
 
 /* Mark crypto context inactive without freeing transforms; async ops may still

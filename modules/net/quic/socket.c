@@ -479,9 +479,11 @@ static void quic_crypto_free_work(struct work_struct *w)
 {
 	struct quic_crypto *crypto = container_of(w, struct quic_crypto, work);
 
+	kcov_remote_start_common(crypto->kcov_handle);
 	/* Deferred crypto cleanup in process context. */
 	quic_crypto_free(crypto);
 	kfree(crypto);
+	kcov_remote_stop();
 }
 
 static void quic_sock_destruct(struct sock *sk)
@@ -509,6 +511,9 @@ static int quic_init_sock(struct sock *sk)
 	struct quic_pnspace *space;
 	struct quic_crypto *crypto;
 	u8 i;
+
+	/* Route async work done for this socket to the creating task. */
+	quic_sk(sk)->kcov_handle = kcov_common_handle();
 
 	sk->sk_destruct = quic_sock_destruct;
 	sk->sk_write_space = quic_write_space;
@@ -552,6 +557,7 @@ static int quic_init_sock(struct sock *sk)
 		if (!crypto)
 			return -ENOMEM;
 		INIT_WORK(&crypto->work, quic_crypto_free_work);
+		crypto->kcov_handle = quic_sk(sk)->kcov_handle;
 		quic_sk(sk)->crypto[i] = crypto;
 	}
 
