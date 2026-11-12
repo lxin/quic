@@ -12,6 +12,7 @@
 
 #include <net/udp_tunnel.h>
 #include <linux/quic.h>
+#include <linux/kcov.h>
 
 #include "common.h"
 #include "family.h"
@@ -44,6 +45,7 @@ static void quic_udp_sock_put_work(struct work_struct *work)
 	struct quic_uhash_head *head;
 	struct sock *sk = us->sk;
 
+	kcov_remote_start_common(us->kcov_handle);
 	/* Hold the sock to safely access it in quic_udp_sock_lookup() even
 	 * after udp_tunnel_sock_release(). The release must occur before
 	 * __hlist_del() so a new UDP tunnel socket can be created for the same
@@ -67,6 +69,7 @@ static void quic_udp_sock_put_work(struct work_struct *work)
 	put_net_track(sock_net(sk), &us->ns_tracker);
 	sock_put(sk);
 	kfree(us);
+	kcov_remote_stop();
 }
 
 static struct quic_udp_sock *quic_udp_sock_create(struct sock *sk,
@@ -107,6 +110,8 @@ static struct quic_udp_sock *quic_udp_sock_create(struct sock *sk,
 	us->bind_ifindex = udp_conf.bind_ifindex;
 	get_net_track(net, &us->ns_tracker, GFP_KERNEL);
 
+	/* Route the deferred release to the task binding this UDP socket. */
+	us->kcov_handle = kcov_common_handle();
 	INIT_WORK(&us->work, quic_udp_sock_put_work);
 	head = quic_udp_sock_head(net, ntohs(a->v4.sin_port));
 	hlist_add_head(&us->node, &head->head);

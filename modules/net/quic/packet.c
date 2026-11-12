@@ -2249,12 +2249,14 @@ static void quic_packet_deferred_work(struct work_struct *work)
 	struct sk_buff_head *head;
 	struct sk_buff *skb;
 
+	kcov_remote_start_common(qs->kcov_handle);
 	lock_sock(sk);
 	head = &quic_packet(sk)->deferred_list;
 	while ((skb = __skb_dequeue(head)) != NULL)
 		quic_packet_process(sk, skb, GFP_KERNEL);
 	release_sock(sk);
 	sock_put(sk);
+	kcov_remote_stop();
 }
 
 /* Make these fixed for easy coding. */
