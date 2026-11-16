@@ -427,10 +427,10 @@ static int quic_ioctl(struct sock *sk, int cmd, int *karg)
 
 	switch (cmd) {
 	case SIOCINQ:
-		*karg = sk_rmem_alloc_get(sk);
+		*karg = quic_inq(sk)->unread_bytes;
 		break;
 	case SIOCOUTQ:
-		*karg = sk->sk_wmem_queued;
+		*karg = quic_outq(sk)->unacked_bytes;
 		break;
 	case SIOCOUTQNSD:
 		*karg = quic_outq(sk)->unsent_bytes;
@@ -457,10 +457,10 @@ static int quic_ioctl(struct sock *sk, int cmd, unsigned long arg)
 
 	switch (cmd) {
 	case SIOCINQ:
-		err = put_user(sk_rmem_alloc_get(sk), (int __user *)arg);
+		err = put_user(quic_inq(sk)->unread_bytes, (int __user *)arg);
 		break;
 	case SIOCOUTQ:
-		err = put_user(sk_wmem_alloc_get(sk), (int __user *)arg);
+		err = put_user(quic_outq(sk)->unacked_bytes, (int __user *)arg);
 		break;
 	case SIOCOUTQNSD:
 		err = put_user(quic_outq(sk)->unsent_bytes, (int __user *)arg);
@@ -1440,7 +1440,8 @@ static int quic_recvmsg(struct sock *sk, struct msghdr *msg, size_t msg_len,
 			int flags, int *addr_len)
 #endif
 {
-	u32 copy, copied = 0, freed = 0, bytes = 0;
+	u32 copy, copied = 0, freed = 0, len = 0, bytes = 0;
+	struct quic_inqueue *inq = quic_inq(sk);
 	struct quic_handshake_info hinfo = {};
 	struct quic_stream_info sinfo = {};
 	struct quic_stream *stream = NULL;
@@ -1451,7 +1452,7 @@ static int quic_recvmsg(struct sock *sk, struct msghdr *msg, size_t msg_len,
 
 	lock_sock(sk);
 
-	head = &quic_inq(sk)->recv_list;
+	head = &inq->recv_list;
 
 	err = quic_wait_for_packet(sk, head, flags);
 	if (err)
@@ -1493,15 +1494,18 @@ static int quic_recvmsg(struct sock *sk, struct msghdr *msg, size_t msg_len,
 		}
 		if (copy != frame->bytes - frame->read_offset) {
 			/* Partial copy: update read_offset and exit loop. */
-			if (!(flags & MSG_PEEK))
+			if (!(flags & MSG_PEEK)) {
 				frame->read_offset += copy;
+				inq->unread_bytes -= copy;
+			}
 			break;
 		}
 		if (!(flags & MSG_PEEK)) {
 			if (stream_id != -1) /* Stream frame. */
 				freed += frame->bytes;
 
-			bytes += quic_frame_size(frame);
+			len += quic_frame_size(frame);
+			bytes += frame->bytes - frame->read_offset;
 			list_del(&frame->list);
 			quic_frame_put(frame);
 		}
@@ -1535,7 +1539,8 @@ static int quic_recvmsg(struct sock *sk, struct msghdr *msg, size_t msg_len,
 		quic_inq_flow_control(sk, stream, freed, GFP_KERNEL);
 	}
 
-	quic_inq_data_rfree(bytes, sk); /* Release receive memory accounting. */
+	inq->unread_bytes -= bytes;
+	quic_inq_data_rfree(len, sk); /* Release receive memory accounting. */
 	err = (int)copied;
 out:
 	release_sock(sk);
@@ -2382,6 +2387,7 @@ static int quic_sock_set_crypto_secret(struct sock *sk, void *kopt, u32 len)
 	struct quic_crypto_secret s = {};
 	struct quic_crypto *crypto;
 	struct sk_buff_head tmpq;
+	struct quic_frame *pos;
 	gfp_t gfp = GFP_KERNEL;
 	struct sk_buff *skb;
 	union quic_addr *a;
@@ -2464,6 +2470,8 @@ static int quic_sock_set_crypto_secret(struct sock *sk, void *kopt, u32 len)
 		 * main receive list (recv_list) so it becomes available to the
 		 * application.
 		 */
+		list_for_each_entry(pos, &inq->early_list, list)
+			inq->unread_bytes += pos->bytes;
 		list_splice_init(&inq->early_list, &inq->recv_list);
 		sk->sk_data_ready(sk);
 	}

@@ -42,9 +42,11 @@ struct quic_inqueue {
 	u32 max_ack_delay;           /* rfc9000#section-18.2 */
 	u64 max_data;                /* rfc9000#section-18.2 */
 	u64 highest; /* Highest received offset across all streams */
-	u32 timeout; /* Idle timeout duration*/
-	u32 version; /* Original used QUIC version */
-	u32 events;  /* Event bitmask for notifications */
+
+	u32 unread_bytes; /* Payload bytes ready for reading */
+	u32 timeout;      /* Idle timeout duration */
+	u32 version;      /* Original used QUIC version */
+	u32 events;       /* Event bitmask for notifications */
 };
 
 int quic_inq_event_recv(struct sock *sk, u8 event, void *data, u32 len,

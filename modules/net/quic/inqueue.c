@@ -150,6 +150,8 @@ static bool quic_inq_stream_tail(struct sock *sk, struct quic_stream *stream,
 	head = &inq->recv_list;
 	if (frame->level && !quic_crypto(sk, QUIC_CRYPTO_APP)->recv_ready)
 		head = &inq->early_list;
+	else
+		inq->unread_bytes += frame->bytes;
 	frame->level = QUIC_CRYPTO_APP;
 	frame->stream_id = stream->id; /* Reuse frame->offset field. */
 	list_add_tail(&frame->list, head);
@@ -373,17 +375,21 @@ add:
 void quic_inq_list_purge(struct sock *sk, struct list_head *head,
 			 struct quic_stream *stream)
 {
+	struct quic_inqueue *inq = quic_inq(sk);
 	struct quic_frame *frame, *next;
-	int bytes = 0;
+	int len = 0, bytes = 0;
 
 	list_for_each_entry_safe(frame, next, head, list) {
 		if (stream && frame->stream != stream)
 			continue;
 		list_del(&frame->list);
-		bytes += quic_frame_size(frame);
+		len += quic_frame_size(frame);
+		bytes += frame->bytes - frame->read_offset;
 		quic_frame_put(frame);
 	}
-	quic_inq_data_rfree(bytes, sk);
+	if (head == &inq->recv_list)
+		inq->unread_bytes -= bytes;
+	quic_inq_data_rfree(len, sk);
 }
 
 /* Handle in-order crypto (handshake) frame delivery.
@@ -426,6 +432,7 @@ static void quic_inq_handshake_tail(struct sock *sk, struct quic_frame *frame,
 			}
 		}
 
+		inq->unread_bytes += frame->bytes;
 		frame->offset = -1; /* Reset for stream ID reuse. */
 		list_add_tail(&frame->list, head);
 		sk->sk_data_ready(sk);
@@ -614,8 +621,9 @@ void quic_inq_set_param(struct sock *sk, struct quic_transport_param *p)
 int quic_inq_event_recv(struct sock *sk, u8 event, void *data, u32 len,
 			gfp_t gfp)
 {
-	struct list_head *head = &quic_inq(sk)->recv_list;
+	struct quic_inqueue *inq = quic_inq(sk);
 	struct quic_frame *frame, *pos;
+	struct list_head *head;
 	u8 *p;
 
 	if (!event || event >= QUIC_EVENT_MAX)
@@ -641,6 +649,7 @@ int quic_inq_event_recv(struct sock *sk, u8 event, void *data, u32 len,
 	frame->bytes = frame->len;
 
 	/* Insert event frame ahead of stream or dgram data. */
+	head = &inq->recv_list;
 	list_for_each_entry(pos, head, list) {
 		if (!pos->level && !pos->event) {
 			head = &pos->list;
@@ -648,6 +657,7 @@ int quic_inq_event_recv(struct sock *sk, u8 event, void *data, u32 len,
 		}
 	}
 	quic_inq_rcharge(frame, sk);
+	inq->unread_bytes += frame->bytes;
 	list_add_tail(&frame->list, head);
 	sk->sk_data_ready(sk);
 	return 0;
@@ -674,6 +684,8 @@ int quic_inq_dgram_recv(struct sock *sk, struct quic_frame *frame)
 	head = &inq->recv_list;
 	if (frame->level && !quic_crypto(sk, QUIC_CRYPTO_APP)->recv_ready)
 		head = &inq->early_list;
+	else
+		inq->unread_bytes += frame->bytes;
 	frame->level = QUIC_CRYPTO_APP;
 	list_add_tail(&frame->list, head);
 	sk->sk_data_ready(sk);
