@@ -386,6 +386,10 @@ static void quic_outq_data_wcharge(int len, struct sock *sk)
 
 static void quic_outq_wcharge(struct quic_frame *frame, struct sock *sk)
 {
+	struct quic_outqueue *outq = quic_outq(sk);
+
+	outq->unsent_bytes += frame->bytes;
+	outq->unacked_bytes += frame->bytes;
 	quic_outq_data_wcharge(quic_frame_size(frame), sk);
 }
 
@@ -434,6 +438,7 @@ int quic_outq_stream_append(struct sock *sk, struct quic_msginfo *info,
 	outq->bytes += bytes;
 	outq->stream_list_len += (frame->len - len);
 	outq->unsent_bytes += bytes;
+	outq->unacked_bytes += bytes;
 	quic_outq_data_wcharge(bytes, sk);
 
 	return bytes;
@@ -474,7 +479,6 @@ void quic_outq_stream_tail(struct sock *sk, struct quic_frame *frame, bool cork)
 
 	outq->bytes += frame->bytes;
 	outq->stream_list_len += frame->len;
-	outq->unsent_bytes += quic_frame_size(frame);
 	quic_outq_wcharge(frame, sk);
 
 	list_add_tail(&frame->list, &outq->stream_list);
@@ -487,11 +491,8 @@ void quic_outq_stream_tail(struct sock *sk, struct quic_frame *frame, bool cork)
  */
 void quic_outq_dgram_tail(struct sock *sk, struct quic_frame *frame, bool cork)
 {
-	struct quic_outqueue *outq = quic_outq(sk);
-
-	outq->unsent_bytes += quic_frame_size(frame);
 	quic_outq_wcharge(frame, sk);
-	list_add_tail(&frame->list, &outq->datagram_list);
+	list_add_tail(&frame->list, &quic_outq(sk)->datagram_list);
 	if (!cork)
 		quic_outq_transmit(sk, GFP_KERNEL);
 }
@@ -513,12 +514,10 @@ static u8 quic_frame_prio(u8 type)
 void quic_outq_ctrl_tail(struct sock *sk, struct quic_frame *frame, bool cork,
 			 gfp_t gfp)
 {
-	struct quic_outqueue *outq = quic_outq(sk);
+	struct list_head *head = &quic_outq(sk)->control_list;
 	u8 f_prio, p_prio, frame_prio;
-	struct list_head *head;
 	struct quic_frame *pos;
 
-	head = &quic_outq(sk)->control_list;
 	/* Insert frame in priority order:
 	 *
 	 *   Initial (level == 1) > Handshake (level == 2) > Application
@@ -542,7 +541,6 @@ void quic_outq_ctrl_tail(struct sock *sk, struct quic_frame *frame, bool cork,
 		}
 	}
 
-	outq->unsent_bytes += quic_frame_size(frame);
 	quic_outq_wcharge(frame, sk);
 	list_add_tail(&frame->list, head);
 	if (!cork)
@@ -694,8 +692,8 @@ static void quic_outq_psent_sack_frames(struct sock *sk,
 					gfp_t gfp)
 {
 	struct quic_outqueue *outq = quic_outq(sk);
+	int len = 0, bytes = 0, i;
 	struct quic_frame *frame;
-	int acked = 0, i;
 
 	/* Release all frames held in this sent packet. */
 	for (i = 0; i < sent->frames; i++) {
@@ -709,7 +707,8 @@ static void quic_outq_psent_sack_frames(struct sock *sk,
 		}
 		quic_frame_put(frame); /* Drop reference held in frame_array. */
 
-		acked += quic_frame_size(frame);
+		len += quic_frame_size(frame);
+		bytes += frame->bytes;
 		/* Remove from send/transmitted list and release reference. */
 		if (!frame->transmitted && quic_frame_stream(frame->type))
 			outq->stream_list_len -= frame->len;
@@ -717,7 +716,8 @@ static void quic_outq_psent_sack_frames(struct sock *sk,
 		frame->transmitted = 0;
 		quic_frame_ack(sk, frame, gfp);
 	}
-	quic_outq_data_wfree(acked, sk);
+	outq->unacked_bytes -= bytes;
+	quic_outq_data_wfree(len, sk);
 }
 
 /* Confirms the path probe and triggers PLPMTUD state machine. */
@@ -1033,8 +1033,9 @@ static void quic_outq_retransmit_frame(struct sock *sk,
 static void quic_outq_psent_retransmit_frames(struct sock *sk,
 					      struct quic_packet_sent *sent)
 {
+	struct quic_outqueue *outq = quic_outq(sk);
+	int len = 0, bytes = 0, i;
 	struct quic_frame *frame;
-	int bytes = 0, i;
 
 	for (i = 0; i < sent->frames; i++) {
 		frame = sent->frame_array[i];
@@ -1049,7 +1050,8 @@ static void quic_outq_psent_retransmit_frames(struct sock *sk,
 
 		list_del_init(&frame->list);
 		if (!quic_frame_retransmittable(frame->type)) {
-			bytes += quic_frame_size(frame);
+			len += quic_frame_size(frame);
+			bytes += frame->bytes;
 			quic_frame_put(frame);
 			continue;
 		}
@@ -1057,7 +1059,8 @@ static void quic_outq_psent_retransmit_frames(struct sock *sk,
 		frame->transmitted = 0;
 		quic_outq_retransmit_frame(sk, frame);
 	}
-	quic_outq_data_wfree(bytes, sk);
+	outq->unacked_bytes -= bytes;
+	quic_outq_data_wfree(len, sk);
 }
 
 /* rfc9002#section-a.10: DetectAndRemoveLostPackets()
@@ -1140,25 +1143,27 @@ void quic_outq_retransmit_list(struct sock *sk, struct list_head *head)
 	struct quic_outqueue *outq = quic_outq(sk);
 	struct quic_frame *frame, *next;
 	struct quic_pnspace *space;
-	int bytes = 0;
+	int len = 0, bytes = 0;
 
 	space = quic_pnspace(sk, packet->level);
 	/* Clear transmitted bit and put them in queue for transmitting. */
 	list_for_each_entry_safe(frame, next, head, list) {
 		list_del_init(&frame->list);
 		if (frame->number < 0) {
-			outq->unsent_bytes -= quic_frame_size(frame);
+			outq->unsent_bytes -= frame->bytes;
 			frame->number = space->next_pn;
 		}
 		if (!quic_frame_retransmittable(frame->type)) {
-			bytes += quic_frame_size(frame);
+			len += quic_frame_size(frame);
+			bytes += frame->bytes;
 			quic_frame_put(frame);
 			continue;
 		}
 		frame->transmitted = 0;
 		quic_outq_retransmit_frame(sk, frame);
 	}
-	quic_outq_data_wfree(bytes, sk);
+	outq->unacked_bytes -= bytes;
+	quic_outq_data_wfree(len, sk);
 }
 
 #define QUIC_MAX_PTO_COUNT	8
@@ -1436,7 +1441,7 @@ void quic_outq_list_purge(struct sock *sk, struct list_head *head,
 {
 	struct quic_outqueue *outq = quic_outq(sk);
 	struct quic_frame *frame, *next;
-	int bytes = 0;
+	int len = 0, bytes = 0;
 
 	list_for_each_entry_safe(frame, next, head, list) {
 		if (stream) {
@@ -1459,13 +1464,15 @@ void quic_outq_list_purge(struct sock *sk, struct list_head *head,
 		if (head == &outq->stream_list)
 			outq->stream_list_len -= frame->len;
 		if (frame->number < 0)
-			outq->unsent_bytes -= quic_frame_size(frame);
+			outq->unsent_bytes -= frame->bytes;
 
-		bytes += quic_frame_size(frame);
+		len += quic_frame_size(frame);
+		bytes += frame->bytes;
 		list_del_init(&frame->list);
 		quic_frame_put(frame);
 	}
-	quic_outq_data_wfree(bytes, sk);
+	outq->unacked_bytes -= bytes;
+	quic_outq_data_wfree(len, sk);
 }
 
 void quic_outq_free(struct sock *sk)

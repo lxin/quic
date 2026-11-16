@@ -2311,7 +2311,7 @@ static void quic_packet_pack_frames(struct sock *sk, struct sk_buff *skb,
 			 * unsent byte count.
 			 */
 			frame->number = number;
-			outq->unsent_bytes -= quic_frame_size(frame);
+			outq->unsent_bytes -= frame->bytes;
 		}
 		/* Move frame to transmitted queue. */
 		quic_outq_transmitted_tail(sk, frame);

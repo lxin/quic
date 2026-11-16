@@ -48,7 +48,8 @@ struct quic_outqueue {
 	u64 max_data;                /* rfc9000#section-18.2 */
 
 	u32 stream_list_len; /* Combined payload length in stream_list */
-	u32 unsent_bytes;    /* Bytes queued but never transmitted */
+	u32 unacked_bytes;   /* Payload bytes queued or sent but not acked */
+	u32 unsent_bytes;    /* Payload bytes queued but never transmitted */
 	u32 inflight;        /* Bytes from ack-eliciting frames in flight */
 	u32 window;          /* Congestion-controlled send window size */
 	u16 count;           /* ACK-eliciting packets sent in current round */
