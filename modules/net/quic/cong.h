@@ -78,6 +78,7 @@ struct quic_cong {
 	u8 algo;             /* Congestion control algorithm */
 
 	/* Flags & state */
+	u8 window_limited;   /* Sender was cwnd-limited before ACK */
 	u8 min_rtt_valid;    /* min_rtt initialized */
 	u8 pc_detected;      /* Persistent congestion detected */
 };

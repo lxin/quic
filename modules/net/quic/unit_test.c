@@ -716,6 +716,7 @@ static void quic_cong_test2(struct kunit *test)
 	struct quic_cong cong = {};
 	u32 time, bytes;
 
+	cong.window_limited = true;
 	cong.max_ack_delay = 25000;
 	cong.max_window = 262144;
 	quic_cong_set_mss(&cong, 1400);
@@ -871,6 +872,7 @@ static void quic_cong_test3(struct kunit *test)
 	struct quic_cong cong = {};
 	s64 number;
 
+	cong.window_limited = true;
 	cong.max_ack_delay = 25000;
 	cong.max_window = 106496;
 	quic_cong_set_mss(&cong, 1400);

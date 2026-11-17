@@ -456,7 +456,7 @@ EXPORT_SYMBOL_GPL(quic_cong_on_packet_lost);
 void quic_cong_on_packet_acked(struct quic_cong *cong, u64 time, u32 bytes,
 			       s64 number)
 {
-	if (quic_cong_in_recovery(cong, time))
+	if (!cong->window_limited || quic_cong_in_recovery(cong, time))
 		return;
 	cong->ops->on_packet_acked(cong, time, bytes, number);
 }
@@ -608,7 +608,7 @@ void quic_cong_rtt_update(struct quic_cong *cong, u64 time, u32 ack_delay)
 out:
 	quic_cong_pto_update(cong);
 
-	if (cong->ops->on_rtt_update)
+	if (cong->window_limited && cong->ops->on_rtt_update)
 		cong->ops->on_rtt_update(cong);
 }
 EXPORT_SYMBOL_GPL(quic_cong_rtt_update);
