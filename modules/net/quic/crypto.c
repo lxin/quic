@@ -885,6 +885,9 @@ int quic_crypto_set_token_secret(struct quic_crypto *crypto)
 	if (err)
 		goto out;
 	err = crypto_aead_setkey(tfm, key, TLS_CIPHER_AES_GCM_128_KEY_SIZE);
+	if (err)
+		goto out;
+	get_random_bytes(&crypto->tx_count[1], sizeof(crypto->tx_count[1]));
 out:
 	memzero_explicit(key, sizeof(key));
 	return err;
