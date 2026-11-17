@@ -563,6 +563,8 @@ int quic_data_from_string(struct quic_data *to, u8 *from, u32 len)
 			d.len++;
 			remlen--;
 		}
+		if (!d.len)
+			return -EINVAL;
 		*d.data = (u8)(d.len);
 		to->len += d.len + 1;
 	}
