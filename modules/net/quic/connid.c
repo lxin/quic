@@ -210,16 +210,13 @@ int quic_conn_id_add(struct quic_conn_id_set *id_set,
 }
 
 /* Retire a connection ID by marking it dead, then remove consecutive dead
- * entries from the head of the list. The caller must ensure the number fall
+ * entries from the head of the list. The caller must ensure the number falls
  * within the consecutive range [first_number, last_number].
  */
 void quic_conn_id_retire(struct quic_conn_id_set *id_set, u32 number)
 {
 	struct quic_common_conn_id *common, *tmp, *retired = NULL;
 	struct list_head *list;
-
-	if (WARN_ON_ONCE(id_set->use_count <= 1))
-		return;
 
 	list = &id_set->head;
 	list_for_each_entry(common, list, list) {
@@ -229,14 +226,18 @@ void quic_conn_id_retire(struct quic_conn_id_set *id_set, u32 number)
 			if (common->dead)
 				return;
 			retired = common;
-			retired->dead = true;
-			id_set->use_count--;
 			break;
 		}
 	}
 
 	if (!retired)
 		return;
+
+	if (WARN_ON_ONCE(id_set->use_count <= 1))
+		return;
+
+	retired->dead = true;
+	id_set->use_count--;
 
 	list_for_each_entry_safe(common, tmp, list, list) {
 		if (!common->dead)
