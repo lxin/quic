@@ -55,7 +55,7 @@ struct quic_request_sock *quic_request_sock_lookup(struct sock *sk)
 	return NULL;
 }
 
-/* Create and enqueue a QUIC request sock for a new incoming connection. */
+/* Allocate a QUIC request sock for a new incoming connection. */
 struct quic_request_sock *quic_request_sock_create(struct sock *sk,
 						   struct quic_conn_id *odcid,
 						   u8 retry, gfp_t gfp)
@@ -81,11 +81,14 @@ struct quic_request_sock *quic_request_sock_create(struct sock *sk,
 	skb_queue_head_init(&req->backlog_list);
 	req->blen = 0;
 
-	/* Enqueue request into listen socket’s pending list for accept(). */
+	return req;
+}
+
+void quic_request_sock_enqueue(struct sock *sk, struct quic_request_sock *req)
+{
 	list_add_tail(&req->list, quic_reqs(sk));
 	sk_acceptq_added(sk);
 	sk->sk_data_ready(sk);
-	return req;
 }
 
 int quic_request_sock_backlog_tail(struct sock *sk,

@@ -260,5 +260,6 @@ struct quic_request_sock *quic_request_sock_create(struct sock *sk,
 int quic_request_sock_backlog_tail(struct sock *sk,
 				   struct quic_request_sock *req,
 				   struct sk_buff *skb);
+void quic_request_sock_enqueue(struct sock *sk, struct quic_request_sock *req);
 struct quic_request_sock *quic_request_sock_lookup(struct sock *sk);
 bool quic_sk_rmem_schedule(struct sock *sk, int size);

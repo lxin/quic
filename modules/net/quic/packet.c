@@ -1018,7 +1018,7 @@ static int quic_packet_listen_process(struct sock *sk, struct sk_buff *skb,
 
 	req = quic_request_sock_lookup(sk);
 	if (req) /* If request sock already exists, enqueue packet directly. */
-		goto out;
+		return quic_request_sock_backlog_tail(sk, req, skb);
 
 	if (quic_accept_sock_exists(sk, skb))
 		return 0; /* Already handled by matched accept socket. */
@@ -1189,9 +1189,14 @@ static int quic_packet_listen_process(struct sock *sk, struct sk_buff *skb,
 		consume_skb(skb);
 		return PTR_ERR(req);
 	}
-out:
-	/* Queue the skb on this request sock's backlog. */
-	return quic_request_sock_backlog_tail(sk, req, skb);
+	/* Queue the Initial packet, then publish to accept queue. */
+	err = quic_request_sock_backlog_tail(sk, req, skb);
+	if (err) {
+		kfree(req);
+		return err;
+	}
+	quic_request_sock_enqueue(sk, req);
+	return 0;
 }
 
 static int quic_packet_stateless_reset_process(struct sock *sk,
