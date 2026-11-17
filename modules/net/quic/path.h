@@ -54,7 +54,6 @@ struct quic_udp_sock {
 	int bind_ifindex;
 	refcount_t refcnt;
 	struct sock *sk; /* Underlying UDP tunnel socket */
-	netns_tracker ns_tracker;
 };
 
 struct quic_path {

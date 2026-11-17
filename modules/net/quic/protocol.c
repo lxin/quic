@@ -633,6 +633,9 @@ static void __net_exit quic_net_exit(struct net *net)
 {
 	struct quic_net *qn = quic_net(net);
 
+	/* Complete pending udp_tunnel_sock_release() before inet teardown. */
+	flush_workqueue(quic_wq);
+
 #if IS_ENABLED(CONFIG_PROC_FS)
 	quic_net_proc_exit(net);
 #endif
@@ -779,7 +782,6 @@ static __exit void quic_exit(void)
 #endif
 	quic_protosw_exit();
 	unregister_pernet_subsys(&quic_net_ops);
-	flush_workqueue(quic_wq);
 	destroy_workqueue(quic_wq);
 	quic_hash_tables_destroy();
 	percpu_counter_destroy(&quic_sockets_allocated);
