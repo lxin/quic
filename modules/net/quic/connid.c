@@ -245,7 +245,8 @@ void quic_conn_id_retire(struct quic_conn_id_set *id_set, u32 number)
 		id_set->count--;
 	}
 
-	/* Update the active and alternate Connection IDs. */
+	/* Update the active and alternate Connection IDs if retired. */
+	common = list_first_entry(list, struct quic_common_conn_id, list);
 	if (id_set->active == retired)
 		id_set->active = common;
 	if (id_set->alt == retired)
