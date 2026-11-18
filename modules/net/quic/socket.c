@@ -273,9 +273,7 @@ struct sock *quic_listen_sock_lookup(struct sk_buff *skb, union quic_addr *sa,
 	head = quic_listen_sock_head(hash);
 
 	rcu_read_lock();
-	/* Iterate sockets, checking ALPN requirements. Address specificity
-	 * always takes precedence over ALPN preference order.
-	 */
+	/* Iterate sockets, checking ALPN requirements. */
 	sk_nulls_for_each_rcu(tmp, node, &head->head) {
 		bool alpn_match = false;
 
