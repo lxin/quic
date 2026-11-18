@@ -35,7 +35,7 @@ static bool quic_stream_id_valid(s64 stream_id, bool is_serv, bool send)
 	return type != QUIC_STREAM_TYPE_CLIENT_UNI;
 }
 
-/* Check if a stream ID was initiated locally. */
+/* Check if a stream ID belongs to the local endpoint. */
 static bool quic_stream_id_local(s64 stream_id, bool is_serv)
 {
 	return is_serv ^ !(stream_id & QUIC_STREAM_TYPE_SERVER_MASK);
@@ -175,13 +175,14 @@ free:
 	return NULL;
 }
 
-/* Check if a send or receive stream ID is already closed. */
+/* Check if a stream ID was already used. */
 static bool quic_stream_id_closed(struct quic_stream_table *streams,
-				  s64 stream_id, bool send)
+				  s64 stream_id, bool is_serv)
 {
-	struct quic_stream_limits *limits = send ? &streams->send :
-						   &streams->recv;
+	bool local = quic_stream_id_local(stream_id, is_serv);
+	struct quic_stream_limits *limits;
 
+	limits = local ? &streams->send : &streams->recv;
 	if (quic_stream_id_uni(stream_id))
 		return stream_id < limits->next_uni_stream_id;
 	return stream_id < limits->next_bidi_stream_id;
@@ -239,16 +240,12 @@ struct quic_stream *quic_stream_get(struct quic_stream_table *streams,
 	if (stream)
 		return stream;
 
-	if (!send && quic_stream_id_local(stream_id, is_serv)) {
-		if (quic_stream_id_closed(streams, stream_id, !send))
-			return ERR_PTR(-ENOSTR);
-		return ERR_PTR(-EINVAL);
-	}
-	if (send && !quic_stream_id_local(stream_id, is_serv))
-		return ERR_PTR(-EINVAL);
-
-	if (quic_stream_id_closed(streams, stream_id, send))
+	if (quic_stream_id_closed(streams, stream_id, is_serv))
 		return ERR_PTR(-ENOSTR);
+
+	/* Cannot create if the other side must initiate this stream. */
+	if (send != quic_stream_id_local(stream_id, is_serv))
+		return ERR_PTR(-EINVAL);
 
 	if (!(flags & MSG_QUIC_STREAM_NEW))
 		return ERR_PTR(-EINVAL);
