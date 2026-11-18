@@ -656,8 +656,8 @@ quic_frame_reset_stream_create(struct sock *sk, void *data, u8 type, gfp_t gfp)
 	frame->stream = stream;
 
 	/* Clear active stream ID if this stream was active. */
-	if (streams->send.active_stream_id == stream->id)
-		streams->send.active_stream_id = -1;
+	if (streams->active_stream_id == stream->id)
+		streams->active_stream_id = -1;
 
 	return frame;
 }

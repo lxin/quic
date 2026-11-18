@@ -909,7 +909,7 @@ static int quic_msghdr_parse(struct sock *sk, struct msghdr *msg,
 
 	/* No explicit stream; use the most recently opened stream. */
 	streams = quic_streams(sk);
-	active = streams->send.active_stream_id;
+	active = streams->active_stream_id;
 	if (active != -1) {
 		sinfo->stream_id = active;
 		return 0;

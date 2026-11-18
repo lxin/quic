@@ -427,8 +427,8 @@ int quic_outq_stream_append(struct sock *sk, struct quic_msginfo *info,
 	 */
 	if (frame->type & QUIC_STREAM_BIT_FIN &&
 	    stream->send.state == QUIC_STREAM_SEND_STATE_SEND) {
-		if (streams->send.active_stream_id == stream->id)
-			streams->send.active_stream_id = -1;
+		if (streams->active_stream_id == stream->id)
+			streams->active_stream_id = -1;
 		stream->send.state = QUIC_STREAM_SEND_STATE_SENT;
 	}
 
@@ -468,8 +468,8 @@ void quic_outq_stream_tail(struct sock *sk, struct quic_frame *frame, bool cork)
 	if (frame->type & QUIC_STREAM_BIT_FIN &&
 	    stream->send.state == QUIC_STREAM_SEND_STATE_SEND) {
 		/* Clear active_stream_id if it matches the finished stream. */
-		if (streams->send.active_stream_id == stream->id)
-			streams->send.active_stream_id = -1;
+		if (streams->active_stream_id == stream->id)
+			streams->active_stream_id = -1;
 		stream->send.state = QUIC_STREAM_SEND_STATE_SENT;
 	}
 

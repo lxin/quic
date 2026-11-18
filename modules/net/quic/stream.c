@@ -259,7 +259,7 @@ struct quic_stream *quic_stream_get(struct quic_stream_table *streams,
 		return ERR_PTR(-ENOMEM);
 
 	if (send || quic_stream_id_valid(stream_id, is_serv, !send))
-		streams->send.active_stream_id = stream_id;
+		streams->active_stream_id = stream_id;
 
 	return stream;
 }
@@ -356,6 +356,7 @@ int quic_stream_init(struct quic_stream_table *streams)
 	for (i = 0; i < QUIC_STREAM_HT_SIZE; i++)
 		INIT_HLIST_HEAD(&head[i]);
 	streams->head = head;
+	streams->active_stream_id = -1;
 	return 0;
 }
 
@@ -405,7 +406,6 @@ void quic_stream_set_param(struct quic_stream_table *streams,
 	limits->max_stream_data_uni = p->max_stream_data_uni;
 	limits->max_streams_bidi = p->max_streams_bidi;
 	limits->max_streams_uni = p->max_streams_uni;
-	limits->active_stream_id = -1;
 
 	if (p->remote ^ is_serv) {
 		bidi_type = QUIC_STREAM_TYPE_CLIENT_BIDI;

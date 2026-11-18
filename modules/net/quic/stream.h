@@ -82,8 +82,6 @@ struct quic_stream_limits {
 	s64 next_uni_stream_id;  /* Next uni stream ID to open or accept */
 	s64 max_bidi_stream_id;  /* Highest allowed bidi stream ID */
 	s64 max_uni_stream_id;   /* Highest allowed uni stream ID */
-	s64 active_stream_id;    /* Most recently opened stream ID */
-
 	u8 bidi_blocked;  /* STREAMS_BLOCKED/MAX_STREAMS_BIDI sent */
 	u8 uni_blocked;   /* STREAMS_BLOCKED/MAX_STREAMS_UNI sent */
 	u8 bidi_pending;  /* MAX_STREAMS_BIDI needs to be sent */
@@ -98,6 +96,8 @@ struct quic_stream_table {
 
 	struct quic_stream_limits send; /* Limits advertised by peer */
 	struct quic_stream_limits recv; /* Limits we advertise to peer */
+
+	s64 active_stream_id; /* Most recent stream ID we can send on */
 };
 
 static inline u64 quic_stream_id_to_streams(s64 stream_id)
