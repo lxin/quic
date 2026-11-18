@@ -10,6 +10,7 @@
 
 #include <net/udp_tunnel.h>
 #include <linux/quic.h>
+#include <linux/kcov.h>
 
 #include "common.h"
 #include "pnspace.h"
@@ -106,6 +107,8 @@ struct quic_sock {
 	struct quic_inqueue		inq;
 	struct quic_packet		packet;
 	struct quic_timer		timers[QUIC_TIMER_MAX];
+
+	struct kcov_common_handle_id	kcov_handle;
 };
 
 struct quic6_sock {

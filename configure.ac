@@ -45,6 +45,7 @@ if test "x$with_modules" != "xno"; then
 		CHECK_KSYMS([inet6_sock_destruct], [Module.symvers], [], [1651951ebea5])
 		CHECK_KSYMS([hrtimer_setup], [Module.symvers], [], [908a1d775422])
 		CHECK_KSYMS([timer_delete], [Module.symvers], [], [bb663f0f3c39])
+		CHECK_KSYMS([kcov_common_handle_id], [include/linux/types.h], [], [5a13e296a3e3])
 		AC_SUBST([KCFLAGS], [$kcflags])
 
 		AC_CONFIG_FILES([modules/Makefile])
