@@ -417,9 +417,11 @@ void quic_stream_set_param(struct quic_stream_table *streams,
 
 	limits->max_bidi_stream_id =
 		quic_stream_streams_to_id(p->max_streams_bidi, bidi_type);
-	limits->next_bidi_stream_id = bidi_type;
+	if (limits->next_bidi_stream_id < bidi_type)
+		limits->next_bidi_stream_id = bidi_type;
 
 	limits->max_uni_stream_id =
 		quic_stream_streams_to_id(p->max_streams_uni, uni_type);
-	limits->next_uni_stream_id = uni_type;
+	if (limits->next_uni_stream_id < uni_type)
+		limits->next_uni_stream_id = uni_type;
 }
