@@ -1654,18 +1654,6 @@ static int quic_accept_sock_init(struct sock *nsk, struct sock *sk)
 		nnp->opt = NULL;
 	}
 
-	err = quic_init_sock(nsk);
-	if (err)
-		return err;
-
-	/* Duplicate ALPN from listen to accept socket for handshake. */
-	if (quic_data_dup(quic_alpn(nsk), alpn->data, alpn->len, GFP_KERNEL))
-		return -ENOMEM;
-
-	memcpy(quic_crypto(nsk, QUIC_CRYPTO_INITIAL)->tx_secret[1],
-	       quic_crypto(sk, QUIC_CRYPTO_INITIAL)->tx_secret[1],
-	       QUIC_SECRET_LEN);
-
 	/* Copy socket metadata. */
 	nsk->sk_type = sk->sk_type;
 	nsk->sk_flags = sk->sk_flags;
@@ -1681,6 +1669,18 @@ static int quic_accept_sock_init(struct sock *nsk, struct sock *sk)
 	nsk->sk_uid = sk->sk_uid;
 
 	inet_sk(nsk)->pmtudisc = inet_sk(sk)->pmtudisc;
+
+	err = quic_init_sock(nsk);
+	if (err)
+		return err;
+
+	/* Duplicate ALPN from listen to accept socket for handshake. */
+	if (quic_data_dup(quic_alpn(nsk), alpn->data, alpn->len, GFP_KERNEL))
+		return -ENOMEM;
+
+	memcpy(quic_crypto(nsk, QUIC_CRYPTO_INITIAL)->tx_secret[1],
+	       quic_crypto(sk, QUIC_CRYPTO_INITIAL)->tx_secret[1],
+	       QUIC_SECRET_LEN);
 
 	quic_inq(nsk)->events = quic_inq(sk)->events;
 
