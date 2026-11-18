@@ -1799,7 +1799,8 @@ static int quic_packet_handshake_process(struct sock *sk, struct sk_buff *skb,
 			quic_outq_transmitted_sack(sk, QUIC_CRYPTO_INITIAL,
 						   QUIC_PN_MAX, 0, -1, 0, NULL,
 						   gfp);
-			quic_crypto_discard(quic_crypto(sk, QUIC_CRYPTO_INITIAL));
+			quic_crypto_discard(quic_crypto(sk,
+							QUIC_CRYPTO_INITIAL));
 		}
 
 skip:
