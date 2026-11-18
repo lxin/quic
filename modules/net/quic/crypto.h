@@ -27,7 +27,7 @@ struct quic_cipher {
 	char *skc;   /* Name of cipher algorithm used for header protection */
 
 	u64 txlimit; /* Max packets encrypted per key */
-	u64 rxlimit; /* Max decryption failures per connection */
+	u64 rxlimit; /* Max decryption failures per crypto level */
 };
 
 struct quic_crypto {
