@@ -725,15 +725,8 @@ static void quic_outq_path_confirm(struct sock *sk, u8 level, s64 largest,
 				   s64 smallest, gfp_t gfp)
 {
 	struct quic_path_group *paths = quic_paths(sk);
-	struct quic_outqueue *outq = quic_outq(sk);
 	bool raise_timer, complete;
 	u32 pathmtu, intv;
-
-	/* Reset pto_count unless the client is unsure if the server has
-	 * validated the client's address.
-	 */
-	if (paths->validated)
-		outq->pto_count = 0;
 
 	/* Check if this packet number confirms PLPMTUD probe in APP level. */
 	if (level != QUIC_CRYPTO_APP ||
@@ -833,6 +826,12 @@ void quic_outq_transmitted_sack(struct sock *sk, u8 level, s64 largest,
 		list_del(&sent->list);
 		kfree(sent);
 	}
+
+	/* Reset pto_count unless the client is unsure if the server has
+	 * validated the client's address.
+	 */
+	if (acked && quic_paths(sk)->validated)
+		outq->pto_count = 0;
 
 	quic_cong_pace_update(cong, READ_ONCE(sk->sk_max_pacing_rate));
 }
